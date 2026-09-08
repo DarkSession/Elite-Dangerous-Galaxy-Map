@@ -15,6 +15,10 @@ them. Do not assume a file is there — look first.
 Application code goes in **`src/`**. The directory exists and is empty; keep source
 there rather than scattering it at the repository root.
 
+The work is planned in four phases. [docs/roadmap.md](docs/roadmap.md) records each
+phase, the facts gathered for it, the decisions that span phases and the open
+questions. Read it before proposing a change, and update it when a decision changes.
+
 ## Intended stack
 
 Taken from what [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) and
