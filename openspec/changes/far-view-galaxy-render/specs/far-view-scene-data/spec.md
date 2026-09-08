@@ -50,10 +50,13 @@ follow the corrected volume density of the model.
 The density volume SHALL be a `uint8` grid of 256 x 64 x 256 texels over the model
 bounds in `x`, the vertical range -3,000 to 3,000 light years around the mid-plane,
 and the model bounds in `z`. The vertical range exceeds the model's maximum height of
-2,867 light years so that the outermost layers lie beyond it. Each texel SHALL encode the corrected volume density `rho`
-at the texel centre as `round(255 * clamp((ln(rho + epsilon) - lo) / (hi - lo), 0, 1))`
-where `epsilon` is the model's epsilon, `lo` equals `ln(epsilon)` so that zero density
-encodes as 0, and `lo` and `hi` are reported with the volume.
+2,867 light years so that the outermost layers lie beyond it. Each texel SHALL encode
+the corrected volume density `rho` at the texel centre as
+`round(255 * clamp((ln(rho + epsilon) - lo) / (hi - lo), 0, 1))`. `epsilon` is the
+encoding floor of 1 map unit per light year. `lo` equals `ln(epsilon)`, so zero density
+encodes as 0. The volume reports `lo`, `hi` and `epsilon`. The floor sits below the
+model's epsilon of 300. The outer disc near Sol is about 30 map units per light year,
+and the lower floor gives it byte values of its own instead of the lowest few.
 
 #### Scenario: Dimensions
 - **WHEN** a test generates the volume

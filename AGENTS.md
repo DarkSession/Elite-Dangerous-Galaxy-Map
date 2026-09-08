@@ -7,22 +7,33 @@ Instructions for AI coding agents working in this repository.
 **Elite Dangerous Galaxy Map** — an interactive 3D map of the Elite Dangerous galaxy,
 rendered in the browser with WebGL.
 
-The repository is **greenfield**: right now it holds the dev container, editor
-configuration and the OpenSpec setup, and no application code. There is no
-`package.json` yet, so none of the `pnpm` scripts below exist until someone creates
-them. Do not assume a file is there — look first.
+Phase 1 is in the tree: the project setup, the galaxy model port, the scene data, the
+WebGL2 renderer and the camera. [README.md](README.md) gives the setup, the scripts and
+the control scheme.
 
-Application code goes in **`src/`**. The directory exists and is empty; keep source
-there rather than scattering it at the repository root.
+Application code goes in **`src/`**, in these directories:
+
+| Directory           | What it holds                                    |
+| ------------------- | ------------------------------------------------ |
+| `src/app/`          | Bootstrap, error messages, the URL fragment      |
+| `src/galaxy-model/` | The model port, the parameter file, its types    |
+| `src/scene-data/`   | The point cloud, the density volume, the workers |
+| `src/render/`       | The WebGL2 context, the passes, the shaders      |
+| `src/camera/`       | The view state, the projection, the controls     |
+
+Playwright tests go in `e2e/`, with the baseline image beside them. Unit tests sit next
+to the code they check, as `*.test.ts`.
+
+**The import rule**: `src/galaxy-model/` and `src/scene-data/` must not import
+`src/render/`. An ESLint `no-restricted-imports` rule in
+[eslint.config.js](eslint.config.js) fails the lint on a breach. The rule is what lets
+a different density source replace the data layers without a change in the renderer.
 
 The work is planned in four phases. [docs/roadmap.md](docs/roadmap.md) records each
 phase, the facts gathered for it, the decisions that span phases and the open
 questions. Read it before proposing a change, and update it when a decision changes.
 
-## Intended stack
-
-Taken from what [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) and
-[.vscode/](.vscode/) are wired for:
+## Stack
 
 | Piece              | Choice                                                              |
 | ------------------ | ------------------------------------------------------------------- |
@@ -88,10 +99,10 @@ Nothing reaches a human reviewer un-reviewed. Both gates are mandatory, and both
 **read-only subagent** that reports but never edits — fixing what it finds is the
 implementing agent's job.
 
-| Gate | When | Subagent |
-| --- | --- | --- |
-| Proposal | End of `/opsx:propose` (and `/opsx:update`), once proposal, specs, design and tasks all exist — before the plan is shown to a human | [`openspec-proposal-reviewer`](.claude/agents/openspec-proposal-reviewer.md) |
-| Implementation | End of `/opsx:apply`, once the code is written and the tasks are checked off — before the work is shown to a human | [`openspec-implementation-reviewer`](.claude/agents/openspec-implementation-reviewer.md) |
+| Gate           | When                                                                                                                                | Subagent                                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Proposal       | End of `/opsx:propose` (and `/opsx:update`), once proposal, specs, design and tasks all exist — before the plan is shown to a human | [`openspec-proposal-reviewer`](.claude/agents/openspec-proposal-reviewer.md)             |
+| Implementation | End of `/opsx:apply`, once the code is written and the tasks are checked off — before the work is shown to a human                  | [`openspec-implementation-reviewer`](.claude/agents/openspec-implementation-reviewer.md) |
 
 Each returns **BLOCK**, **APPROVE WITH NOTES** or **APPROVE**. On BLOCK, fix and re-run
 the gate; do not hand a human a blocked change with the objections attached as caveats.

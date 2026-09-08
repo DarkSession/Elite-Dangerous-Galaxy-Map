@@ -31,13 +31,16 @@ Last updated: 2026-09-08.
   objects. The renderer knows nothing about where they came from. A lint rule enforces
   the import direction.
 - **Hardware rendering is asserted.** The browser suite fails on a software renderer.
-- **Look.** The target is the game's galaxy map: bluish-white disc, warm core, dust
-  lanes along the arms, sparkle from many small points. The game's logo and the
-  satellite blob in its map background are not part of the target.
+- **Look.** The target is the game's galaxy map background: a cream bulge, pink-brown
+  arms that turn violet at the edge, dust lanes along the arms, sparkle from many
+  small points. The game's logo and the satellite blob in its map background are not
+  part of the target. The far view reaches this with a power of 0.35 on the density
+  before emission, a three-stop volume ramp by density, a point ramp by zone and a
+  tone map on the luminance.
 
 ## Phase 1: far view
 
-Change: `far-view-galaxy-render`. Status: proposed, under review.
+Change: `far-view-galaxy-render`. Status: implemented, under review.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
@@ -46,7 +49,7 @@ Draws the galaxy's shape from far away and lets the user move across it.
   exponential disc, truncation, four logarithmic spiral arms with a shared winding law,
   a two-component vertical profile, and a 64x64 correction grid. 29 parameters plus
   4,096 signed bytes, fitted to the game's own density maps. It ports to TypeScript in
-  about 300 lines and needs no tables beyond the grid and a 24-point zone ramp. It does
+  about 500 lines and needs no tables beyond the grid and a 24-point zone ramp. It does
   not place stars.
 - **Accuracy.** Root-mean-square error of the log surface density is about 0.2 with
   the correction grid, a factor of about 1.2. Arm positions, the bar and the radial
@@ -57,14 +60,26 @@ Draws the galaxy's shape from far away and lets the user move across it.
   fixture carries the parameter file's SHA-256.
 - **Rendering.** A point cloud of 2,000,000 samples drawn as additive sprites, and a
   256x64x256 density volume drawn by raymarching. Both are baked once in workers.
-- **Navigation.** A cursor on the galactic plane. Left drag moves the cursor in the
-  plane. Right drag orbits the cursor with pitch clamped to 5 to 89 degrees. The wheel
-  zooms between 2,000 and 120,000 light years. Keys `W A S D` pan and `R F` move the
-  cursor off the plane. The view lives in the URL fragment.
+- **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
+  pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
+  zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the
+  plane and `R F` move the cursor off the plane. The view lives in the URL fragment.
 - **Stack.** TypeScript, Vite, WebGL2 with an in-house wrapper, `gl-matrix`, plain DOM
   for the HUD, Vitest, Playwright with a GPU project, pnpm with the 7-day hold.
   three.js was considered and rejected: every pass is a custom shader, and its orbit
   controls pan in screen space rather than on the plane.
+- **GPU path in the container.** Chromium reaches the NVIDIA card with
+  `--use-gl=angle --use-angle=vulkan`, headless and headed. The `gl-egl` backend
+  reaches only the Mesa software driver here. With `--disable-gpu` Chromium exposes a
+  SwiftShader renderer string, not an empty one.
+- **Precision limit.** Camera-relative drawing keeps two points 1/32 light year apart
+  within `1e-2 * distance / 2,000` relative of the exact transform. That is the
+  `float32` limit, about 2^16 between the distance and the separation at 2,000, and no
+  code change can tighten it. Measured worst case 4.6e-3 at 2,000, 5.3e-2 at 20,000 and
+  0.2 at 120,000; a camera-in-matrix transform is more than 10 times worse.
+- **Frame time measurement.** `gl.finish()` alone does not wait in Chromium's
+  command-buffer WebGL. `measureFrames` reads one pixel after it to force the round
+  trip, so the number is a superset of draw-to-finish.
 
 ## Phase 2: close zoom with decoration stars
 
@@ -106,7 +121,7 @@ systems, and fades them out as the user zooms in.
 - **Open questions.**
   - Do decoration stars get names, for example the sector name under the cursor?
   - Do nebulae and hand-authored regions get labels, as in the game's map?
-  - Do populations get tinted by the zone ramp, or does one ramp by density stay?
+  - Do the volume ramp by density and the point ramp by zone unify into one?
   - The zoom distance at which decoration stars appear and the distance at which
     they are fully faded.
 

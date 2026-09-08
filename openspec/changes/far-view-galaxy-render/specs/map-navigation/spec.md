@@ -33,14 +33,14 @@ degrees.
 - **THEN** within 1 second the fragment contains `d=30000`
 
 ### Requirement: Cursor moves in the galactic plane
-A left-button drag SHALL move the cursor in the plane at the cursor's height so that the
-plane point under the pointer at the start of the drag stays under the pointer. The
+A right-button drag SHALL move the cursor in the plane at the cursor's height. The
+plane point under the pointer at the start of the drag SHALL stay under the pointer. The
 keys `W`, `A`, `S` and `D` SHALL move the cursor in the plane relative to the camera's
 yaw at a speed of one quarter of the distance per second. The keys `R` and `F` SHALL
 move the cursor up and down at the same speed.
 
 #### Scenario: Drag keeps the plane point under the pointer
-- **WHEN** the browser test presses the left button at a pixel, moves 200 pixels right
+- **WHEN** the browser test presses the right button at a pixel, moves 200 pixels right
   and releases
 - **THEN** the plane point that was under the first pixel projects to the release pixel
   within 1 pixel
@@ -59,14 +59,21 @@ parameter file.
 - **THEN** the cursor's `x` equals the model's upper `x` bound
 
 ### Requirement: Camera orbits the cursor
-A right-button drag SHALL change yaw by 0.3 degrees per pixel of horizontal movement
-and pitch by 0.3 degrees per pixel of vertical movement. Pitch SHALL be clamped to 5 to
+A left-button drag SHALL change yaw by 0.3 degrees per pixel of horizontal movement
+and pitch by 0.3 degrees per pixel of vertical movement. Pointer movement to the right
+SHALL increase yaw. Pointer movement down SHALL increase pitch. A left-button drag
+SHALL NOT move the cursor. Pitch SHALL be clamped to 5 to
 89 degrees above the plane. Yaw SHALL wrap into 0 to 360 degrees. The camera SHALL
 always look at the cursor.
 
 #### Scenario: Pitch clamp
-- **WHEN** a unit test applies a right drag of 1,000 pixels downward
+- **WHEN** a unit test applies a left drag of 1,000 pixels downward
 - **THEN** pitch equals 89 degrees
+
+#### Scenario: Left drag turns the camera
+- **WHEN** the browser test presses the left button, moves 60 pixels right and 30
+  pixels down from the default view, and releases
+- **THEN** yaw is 18 degrees, pitch is 44 degrees and the cursor is still at Sol
 
 #### Scenario: Camera looks at the cursor
 - **WHEN** a unit test sets any view

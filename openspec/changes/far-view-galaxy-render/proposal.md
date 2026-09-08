@@ -32,8 +32,9 @@ enough for the far view and is the only density source this change uses.
   `docs/galaxy-density-model.md`. The committed fixture pins the port.
 - Generate scene data from the model in Web Workers: a point cloud of 2,000,000 samples
   and a 256x64x256 density volume.
-- Render the scene with WebGL2 in two passes: additive point sprites and a raymarched
-  volume. Render camera-relative so positions stay exact at every distance.
+- Render the scene with WebGL2 in two scene passes and a tone map: additive point
+  sprites and a raymarched volume. Render camera-relative so positions stay exact at
+  every distance.
 - Add a camera with the game's control scheme: a cursor on the galactic plane that the
   user drags, an orbit around the cursor with clamped pitch, and wheel zoom between
   2,000 and 120,000 light years from the cursor.
@@ -48,7 +49,7 @@ enough for the far view and is the only density source this change uses.
 - The HUD, system selection and system data. Phases 3 and 4 add them.
 - Nebula labels, region labels, the satellite galaxies and the game logo.
 - Touch input and gamepad input.
-- Population tinting beyond one warm-to-cool ramp by density.
+- Tinting beyond the volume ramp by density and the point ramp by zone.
 
 ## Capabilities
 
@@ -58,8 +59,8 @@ enough for the far view and is the only density source this change uses.
   parameter file and the fixture that pins the port.
 - `far-view-scene-data`: the point cloud and density volume generated from the model,
   as typed arrays with no rendering types.
-- `far-view-rendering`: the WebGL2 renderer, its two passes, camera-relative drawing,
-  the hardware renderer assertion and the frame budget.
+- `far-view-rendering`: the WebGL2 renderer, its two scene passes and tone map,
+  camera-relative drawing, the hardware renderer assertion and the frame budget.
 - `map-navigation`: the cursor, orbit and zoom controls and their limits.
 
 ### Modified Capabilities
@@ -69,12 +70,14 @@ None. The repository has no specs yet.
 ## Scale
 
 - The model evaluates in constant time per sample. The point cloud is 2,000,000
-  samples at 8 bytes each (16 MB in the GPU). The volume is 4,194,304 bytes.
+  samples at 13 bytes each, three `float32` coordinates and one tint byte (26 MB in the
+  GPU). The volume is 4,194,304 bytes.
 - Scene data generation completes in under 5 seconds in a worker on the dev container.
 - The renderer holds a mean frame time under 16.7 ms at 1920x1080 on the dev
   container's GPU, at every zoom distance in range.
 - Positions span 100,000 light years. The game's own resolution is 1/32 light year, and
-  the renderer keeps that resolution at every camera distance.
+  the renderer keeps it to the `float32` limit of the camera-relative frame: within
+  1e-2 at the closest zoom distance, growing in proportion to the distance.
 
 ## Impact
 
@@ -85,8 +88,9 @@ None. The repository has no specs yet.
   and its latest release is more than a year old, so the 7-day hold does not affect it.
   No other runtime dependency.
 - New development dependencies: `vite`, `typescript`, `vitest`, `@playwright/test`,
-  `eslint`, `typescript-eslint`, `prettier` and `eslint-config-prettier`. No entry in
-  `minimumReleaseAgeExclude`.
+  `eslint`, `typescript-eslint`, `prettier`, `eslint-config-prettier`, and the three
+  the ESLint flat config and the Node test imports need, `@eslint/js`, `globals` and
+  `@types/node`. No entry in `minimumReleaseAgeExclude`.
 - The 13 KB parameter file, the 69 KB fixture, `docs/galaxy-density-model.md` and
   `docs/roadmap.md` are in the working tree with this proposal and are committed with
   it. `AGENTS.md` gains a pointer to the roadmap; task 8.2 edits it again. The

@@ -16,11 +16,11 @@
         // Chrome's setuid/namespace sandbox cannot start under the default container seccomp
         // profile as a non-root user. The container is the isolation boundary here.
         "--no-sandbox",
-        // ANGLE over EGL is the path the NVIDIA proprietary driver actually implements. Without
-        // this Chrome picks its own backend, fails, and silently drops to SwiftShader on the CPU.
-        // If chrome://gpu still shows SwiftShader, try "--use-gl=egl" instead of these two.
+        // ANGLE over Vulkan is the path that reaches the NVIDIA driver in this container. The
+        // gl-egl backend reaches only the Mesa software driver here, and without a backend
+        // Chrome silently drops to SwiftShader on the CPU. Check chrome://gpu after a change.
         "--use-gl=angle",
-        "--use-angle=gl-egl",
+        "--use-angle=vulkan",
         // Chrome blocklists most Linux driver/GPU combinations it has not been tested against,
         // including this one inside a container.
         "--ignore-gpu-blocklist",
@@ -51,7 +51,7 @@
       "runtimeArgs": [
         "--no-sandbox",
         "--use-gl=angle",
-        "--use-angle=gl-egl",
+        "--use-angle=vulkan",
         "--ignore-gpu-blocklist",
         "--enable-gpu-rasterization"
       ]

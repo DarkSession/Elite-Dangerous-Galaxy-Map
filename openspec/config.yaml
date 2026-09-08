@@ -5,9 +5,9 @@ context: |
   Project: Elite Dangerous Galaxy Map -- an interactive 3D map of the Elite Dangerous
   galaxy, rendered in the browser with WebGL.
 
-  Status: greenfield. The repository currently holds only the dev container and editor
-  configuration; no application code exists yet. Treat the stack below as the intended
-  target, and do not assume a file exists until you have looked for it.
+  Status: phase 1 (the far view) is in the tree, as change far-view-galaxy-render.
+  src/ holds app/, galaxy-model/, scene-data/, render/ and camera/. e2e/ holds the
+  Playwright tests. Do not assume a file exists until you have looked for it.
 
   Tech stack (as wired up by .devcontainer and .vscode):
   - TypeScript, bundled and served by Vite (dev on 5173, production preview on 4173).

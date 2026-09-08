@@ -1,0 +1,30 @@
+dist
+node_modules
+coverage
+test-results
+playwright-report
+blob-report
+
+# Committed data. Reformatting them would change the bytes the fixture hashes.
+src/galaxy-model/galaxy-model.json
+tests/fixtures/galaxy-model.json
+
+# Baseline images and other snapshots.
+e2e/**/*-snapshots/**
+
+# GLSL. Format on save is off for these by design; see .vscode/settings.json.
+*.vert
+*.frag
+*.glsl
+
+# Files this project does not own the formatting of: the OpenSpec artifacts and the
+# generated skill and command files, the dev container and the editor configuration.
+.agents
+.claude
+.devcontainer
+.vscode
+openspec
+docs
+
+# The lockfile. pnpm owns its formatting.
+pnpm-lock.yaml

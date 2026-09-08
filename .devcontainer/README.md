@@ -63,7 +63,7 @@ export default defineConfig({
           args: [
             '--no-sandbox',
             '--use-gl=angle',
-            '--use-angle=gl-egl',
+            '--use-angle=vulkan',
             '--ignore-gpu-blocklist',
             '--enable-gpu-rasterization',
           ],
@@ -73,6 +73,10 @@ export default defineConfig({
   ],
 })
 ```
+
+The ANGLE backend is `vulkan`. Inside this container `gl-egl` reaches only the Mesa software
+driver (llvmpipe or SwiftShader), headless and headed alike, and Vulkan reaches the NVIDIA card in
+both cases. `playwright.config.ts` and `launch.json` use the same flags.
 
 Assert on it rather than trusting it -- read `WEBGL_debug_renderer_info` in the page and fail the
 suite if it comes back SwiftShader, otherwise a silent fallback turns a GPU regression into a
