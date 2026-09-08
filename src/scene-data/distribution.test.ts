@@ -1,17 +1,29 @@
 // Compares the point cloud against numeric integrals of the model. The integrals use
 // polar cells, which the sampler does not, so the two paths stay independent.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, test } from 'vitest';
-import { galaxyModel } from '../galaxy-model/model';
+import { decodeDetailGrid } from '../galaxy-model/detail';
+import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
+import { createGalaxyModel } from '../galaxy-model/model';
+import type { GalaxyModel } from '../galaxy-model/model';
 import { buildSurfaceTable, generatePointCloud } from './point-cloud';
 import type { SurfaceTable } from './point-cloud';
 import type { PointCloud } from './types';
 
 const SAMPLE_COUNT = 200000;
 
+const pngPath = fileURLToPath(
+  new URL('../galaxy-model/galaxy-detail.png', import.meta.url),
+);
+
+let galaxyModel: GalaxyModel;
 let cloud: PointCloud;
 
-beforeAll(() => {
-  const table: SurfaceTable = buildSurfaceTable();
+beforeAll(async () => {
+  const grid = await decodeDetailGrid(new Uint8Array(readFileSync(pngPath)));
+  galaxyModel = createGalaxyModel(parameters, grid);
+  const table: SurfaceTable = buildSurfaceTable(galaxyModel);
   cloud = generatePointCloud(galaxyModel, {
     count: SAMPLE_COUNT,
     seed: 11,
@@ -32,7 +44,7 @@ function massFractionInside(radius: number): number {
     let sum = 0;
     for (let a = 0; a < azimuths; a += 1) {
       const angle = ((a + 0.5) * 2 * Math.PI) / azimuths;
-      sum += galaxyModel.correctedSurfaceDensity(
+      sum += galaxyModel.detailedSurfaceDensity(
         centreX + ring * Math.cos(angle),
         centreZ + ring * Math.sin(angle),
       );

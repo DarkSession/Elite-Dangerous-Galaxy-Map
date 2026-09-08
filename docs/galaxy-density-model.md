@@ -121,6 +121,39 @@ Sigma_corrected = max(0, (Sigma + epsilon) * exp(value) - epsilon)
 
 The grid rows run along `z` and columns along `x`.
 
+## Detail grid
+
+The correction grid holds the map's shape at 1,562 light years per cell. A second grid,
+[src/galaxy-model/galaxy-detail.png](../src/galaxy-model/galaxy-detail.png), holds the
+painted texture at 98 light years per cell. It is a greyscale PNG of 1024 x 1024
+pixels, 8 bits per pixel, not interlaced, 347,358 bytes. The fixture in
+[tests/fixtures/galaxy-detail.json](../tests/fixtures/galaxy-detail.json) carries the
+SHA-256 of the file and of the decoded bytes, and 203 pinned values. Both files are
+committed data, and no script in this repository writes them.
+
+Each pixel holds `round(127 * clamp(d, -3, 3) / 3) + 128`, where `d` is
+`ln((map + epsilon) / (model + epsilon))` over the pixel's cell. `map` is the game's
+density map averaged over the cell, `model` is `Sigma_corrected` averaged over the same
+cell, and `epsilon` is 300. Pixel column 0 lies at the low `x` bound and pixel row 0 at
+the low `z` bound, as for the correction grid.
+
+The port reads the file with its own decoder in
+[src/galaxy-model/png.ts](../src/galaxy-model/png.ts): the signature, the IHDR chunk,
+the IDAT chunks inflated with `DecompressionStream('deflate')`, and the five PNG row
+filters. It throws a named error for any file that is not 1024 x 1024, 8-bit greyscale
+and not interlaced.
+
+Sample the grid with the rule of the correction grid, on the stored value minus 128:
+
+```
+detail = bilinear(values[..] - 128) * scale / 127                 scale = 3
+Sigma_detailed = max(0, (Sigma_corrected + epsilon) * exp(detail) - epsilon)
+rho_detailed(x, y, z) = Sigma_detailed(x, z) * rho_y(y - cy, R)
+```
+
+The point cloud draws from `Sigma_detailed`, and the renderer multiplies the volume's
+density by `Sigma_detailed / Sigma_corrected` at each step.
+
 ## Vertical profile
 
 ```
@@ -157,6 +190,19 @@ it only as a tint.
 ## Accuracy
 
 Root-mean-square error of `ln(Sigma + epsilon)` inside 44,000 ly, against the game's
-map at 256-cell resolution: about 0.7 for the formulas alone and about 0.2 with the
-correction grid, a factor of about 1.2. The arm positions, the bar and the radial
-profile are right. Hand-painted clumps are smoothed.
+map at 1024-cell resolution:
+
+| Density                          | Cell     | Residual rms, log |
+| -------------------------------- | -------- | ----------------- |
+| formulas alone                   | -        | about 0.7         |
+| plus the correction grid         | 1,562 ly | 0.223             |
+| plus a 128 x 128 detail grid     | 781 ly   | 0.131             |
+| plus a 256 x 256 detail grid     | 391 ly   | 0.097             |
+| plus a 512 x 512 detail grid     | 195 ly   | 0.071             |
+| plus the 1024 x 1024 detail grid | 98 ly    | 0.007             |
+
+The arm positions, the bar and the radial profile come from the formulas. The
+correction grid holds the large shapes, and the detail grid holds the painted texture.
+The game's map keeps a residual of 0.068 rms at its own 48.8 light year texels, which
+no 1024 grid holds. That texel is below one pixel of the far view, where one pixel
+covers about 96 light years at the default distance.

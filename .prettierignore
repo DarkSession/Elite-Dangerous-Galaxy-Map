@@ -8,6 +8,7 @@ blob-report
 # Committed data. Reformatting them would change the bytes the fixture hashes.
 src/galaxy-model/galaxy-model.json
 tests/fixtures/galaxy-model.json
+tests/fixtures/galaxy-detail.json
 
 # Baseline images and other snapshots.
 e2e/**/*-snapshots/**

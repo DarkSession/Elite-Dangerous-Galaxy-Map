@@ -8,7 +8,7 @@ import vertexSource from './shaders/volume.vert?raw';
 import fragmentSource from './shaders/volume.frag?raw';
 
 /** The emission per unit of compressed density per light year. */
-export const DEFAULT_EMISSION = 8.0e-4;
+export const DEFAULT_EMISSION = 3.0e-4;
 
 /** The absorption per unit of compressed density per light year. */
 export const DEFAULT_ABSORPTION = 2.0e-4;
@@ -21,8 +21,14 @@ export interface VolumePassFrame {
   readonly boxMin: readonly [number, number, number];
   /** The size of the volume box in the world frame. */
   readonly boxSize: readonly [number, number, number];
+  /** The galactic centre minus the camera, in the world frame. */
+  readonly centre: readonly [number, number, number];
   readonly emission: number;
   readonly absorption: number;
+  /** The surface detail texture, or null when the grid has not arrived. */
+  readonly detail: WebGLTexture | null;
+  /** The scale one stored detail step stands for. It is 0 without a grid. */
+  readonly detailScale: number;
 }
 
 /** The volume pass. */
@@ -36,13 +42,16 @@ export function createVolumeProgram(gl: WebGL2RenderingContext): Program {
   return createProgram(gl, 'volume', vertexSource, fragmentSource, [
     'uInverseViewProjection',
     'uVolume',
+    'uDetail',
     'uBoxMin',
     'uBoxSize',
+    'uCentre',
     'uLo',
     'uSpan',
     'uEpsilon',
     'uEmission',
     'uAbsorption',
+    'uDetailScale',
   ]);
 }
 
@@ -76,15 +85,27 @@ export function createVolumePass(
         frame.boxSize[1],
         frame.boxSize[2],
       );
+      gl.uniform3f(
+        program.uniforms['uCentre'] ?? null,
+        frame.centre[0],
+        frame.centre[1],
+        frame.centre[2],
+      );
       gl.uniform1f(program.uniforms['uLo'] ?? null, volume.lo);
       gl.uniform1f(program.uniforms['uSpan'] ?? null, volume.hi - volume.lo);
       gl.uniform1f(program.uniforms['uEpsilon'] ?? null, volume.epsilon);
       gl.uniform1f(program.uniforms['uEmission'] ?? null, frame.emission);
       gl.uniform1f(program.uniforms['uAbsorption'] ?? null, frame.absorption);
+      gl.uniform1f(program.uniforms['uDetailScale'] ?? null, frame.detailScale);
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_3D, texture.texture);
       gl.uniform1i(program.uniforms['uVolume'] ?? null, 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, frame.detail);
+      gl.uniform1i(program.uniforms['uDetail'] ?? null, 1);
+      gl.activeTexture(gl.TEXTURE0);
 
       gl.bindVertexArray(emptyVertexArray);
       gl.drawArrays(gl.TRIANGLES, 0, 3);

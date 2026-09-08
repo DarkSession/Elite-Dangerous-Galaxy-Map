@@ -28,8 +28,26 @@ export interface DensityVolume {
   readonly data: Uint8Array;
 }
 
+/**
+ * A grid of the ratio of the detailed to the corrected surface density, on a
+ * logarithmic scale. The renderer multiplies the volume density by it.
+ */
+export interface SurfaceDetail {
+  /** The side of the grid, in cells. */
+  readonly size: number;
+  /** The low corner of the covered plane box in game coordinates, `x` then `z`. */
+  readonly origin: readonly [number, number];
+  /** The size of the covered plane box in light years, `x` then `z`. */
+  readonly extent: readonly [number, number];
+  /** The logarithm of the ratio that the quantisation step runs to. */
+  readonly scale: number;
+  /** One byte per cell, `x` fastest, cell (0, 0) at the low corner. */
+  readonly data: Uint8Array;
+}
+
 /** Everything the renderer draws in the far view. */
 export interface SceneData {
   readonly pointCloud: PointCloud;
   readonly volume: DensityVolume;
+  readonly detail: SurfaceDetail;
 }

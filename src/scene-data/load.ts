@@ -1,7 +1,7 @@
 // Starts both scene-data workers and waits for their results.
-import type { PointCloudRequest } from './messages';
+import type { PointCloudRequest, PointCloudResponse } from './messages';
 import { DEFAULT_POINT_COUNT, DEFAULT_SEED } from './point-cloud';
-import type { DensityVolume, PointCloud, SceneData } from './types';
+import type { DensityVolume, SceneData } from './types';
 
 /** Options for one scene-data load. */
 export interface SceneDataOptions {
@@ -29,8 +29,8 @@ function runWorker<Request, Response>(
 }
 
 /**
- * Builds the point cloud and the density volume in two workers at the same time and
- * resolves when both are ready.
+ * Builds the point cloud, the surface detail grid and the density volume in two
+ * workers at the same time and resolves when all three are ready.
  */
 export async function loadSceneData(
   options: SceneDataOptions = {},
@@ -48,10 +48,10 @@ export async function loadSceneData(
     type: 'module',
   });
 
-  const [pointCloud, volume] = await Promise.all([
-    runWorker<PointCloudRequest, PointCloud>(pointCloudWorker, request),
+  const [cloud, volume] = await Promise.all([
+    runWorker<PointCloudRequest, PointCloudResponse>(pointCloudWorker, request),
     runWorker<null, DensityVolume>(volumeWorker, null),
   ]);
 
-  return { pointCloud, volume };
+  return { pointCloud: cloud.cloud, volume, detail: cloud.detail };
 }

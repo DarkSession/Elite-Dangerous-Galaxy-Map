@@ -23,7 +23,7 @@ export interface GalaxyMapGlobal {
   /** Replaces the current view. */
   setView?: (view: Partial<TestView>) => void;
   /** Chooses which passes draw. */
-  setPasses?: (passes: { volume: boolean; points: boolean }) => void;
+  setPasses?: (passes: { volume?: boolean; points?: boolean; glow?: boolean }) => void;
   /** Projects a game position to a CSS pixel on the canvas. */
   project?: (point: [number, number, number]) => { x: number; y: number };
   /** Reads one pixel of the drawing buffer, in CSS pixels from the top left. */

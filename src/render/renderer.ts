@@ -4,11 +4,17 @@ import { cameraPosition, projectionMatrix, viewMatrix } from '../camera/projecti
 import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
-import type { DensityVolume, PointCloud } from '../scene-data/types';
-import { createFullScreenTriangle, createRenderTarget } from './buffers';
-import type { RenderTarget } from './buffers';
+import type { DensityVolume, PointCloud, SurfaceDetail } from '../scene-data/types';
+import {
+  createDetailTexture,
+  createFullScreenTriangle,
+  createRenderTarget,
+} from './buffers';
+import type { DetailTexture, RenderTarget } from './buffers';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
+import { createGlowPass, DEFAULT_GLOW_TINT, DEFAULT_GLOW_WEIGHT } from './glow-pass';
+import type { GlowPass } from './glow-pass';
 import { createPointPass, createPointProgram, POINT_RADIUS_LY } from './point-pass';
 import type { PointPass } from './point-pass';
 import type { Program } from './program';
@@ -23,13 +29,17 @@ import type { VolumePass } from './volume-pass';
 /** The largest device pixel ratio the canvas follows. */
 export const MAX_DEVICE_PIXEL_RATIO = 2;
 
-/** The brightness of one point cloud sample. */
-export const DEFAULT_POINT_BRIGHTNESS = 1.5;
+/**
+ * The brightness of one point cloud sample. The points carry a large share of the
+ * light in the disc, which is what gives the disc its grain.
+ */
+export const DEFAULT_POINT_BRIGHTNESS = 28;
 
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
   points: boolean;
+  glow: boolean;
 }
 
 /** How bright the map draws. */
@@ -38,6 +48,8 @@ export interface LookSettings {
   absorption: number;
   pointBrightness: number;
   exposure: number;
+  glowWeight: number;
+  glowTint: number;
 }
 
 /** The renderer. */
@@ -48,6 +60,8 @@ export interface Renderer {
   setVolume(volume: DensityVolume): void;
   /** Uploads the point cloud. Call it in its own animation frame. */
   setPointCloud(cloud: PointCloud): void;
+  /** Uploads the surface detail grid. Call it in its own animation frame. */
+  setDetail(detail: SurfaceDetail): void;
   /** Draws one frame. */
   render(view: View): void;
   /** Draws frames and returns the mean draw-to-finish time in milliseconds. */
@@ -78,17 +92,21 @@ export function createRenderer(
 
   const halfTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
   const sceneTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
+  const glowPass: GlowPass = createGlowPass(gl, triangle.vertexArray, float);
 
   let pointPass: PointPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
+  let detailTexture: DetailTexture | null = null;
 
-  const passes: PassSwitches = { volume: true, points: true };
+  const passes: PassSwitches = { volume: true, points: true, glow: true };
   const look: LookSettings = {
     emission: DEFAULT_EMISSION,
     absorption: DEFAULT_ABSORPTION,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
+    glowWeight: DEFAULT_GLOW_WEIGHT,
+    glowTint: DEFAULT_GLOW_TINT,
   };
 
   const viewProjection = mat4.create();
@@ -102,6 +120,7 @@ export function createRenderer(
     if (canvas.height !== height) canvas.height = height;
     sceneTarget.resize(width, height);
     halfTarget.resize(Math.max(1, width >> 1), Math.max(1, height >> 1));
+    glowPass.resize(width, height);
   };
 
   const syncPixel = new Uint8Array(4);
@@ -147,6 +166,7 @@ export function createRenderer(
     if (passes.volume && volumePass !== null && volumeBox !== null) {
       const origin = volumeBox.origin;
       const extent = volumeBox.extent;
+      const detail = detailTexture;
       volumePass.draw({
         inverseViewProjection: inverseViewProjection as Float32Array,
         boxMin: [
@@ -155,8 +175,18 @@ export function createRenderer(
           camera[2] - (origin[2] + extent[2]),
         ],
         boxSize: [extent[0], extent[1], extent[2]],
+        // The volume box is centred on the galactic centre in the plane, so the
+        // fade by radius needs no value from the model. The test "has its plane
+        // mid-point at the model centre" in `src/scene-data/volume.test.ts` holds that.
+        centre: [
+          origin[0] + 0.5 * extent[0] - camera[0],
+          origin[1] + 0.5 * extent[1] - camera[1],
+          camera[2] - (origin[2] + 0.5 * extent[2]),
+        ],
         emission: look.emission,
         absorption: look.absorption,
+        detail: detail === null ? null : detail.texture,
+        detailScale: detail === null ? 0 : detail.detail.scale / 127,
       });
     }
 
@@ -166,6 +196,17 @@ export function createRenderer(
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.blit(halfTarget.texture);
+
+    // The glow adds a blurred copy of the volume, so a halo surrounds the disc.
+    if (passes.glow && passes.volume && volumePass !== null) {
+      glowPass.render(halfTarget.texture, look.glowWeight, look.glowTint);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget.framebuffer);
+      gl.viewport(0, 0, sceneTarget.width, sceneTarget.height);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      composite.blit(glowPass.texture);
+      gl.disable(gl.BLEND);
+    }
 
     if (passes.points && pointPass !== null) {
       const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
@@ -196,6 +237,10 @@ export function createRenderer(
       pointPass?.dispose();
       pointPass = createPointPass(gl, pointProgram, cloud);
     },
+    setDetail(detail: SurfaceDetail): void {
+      detailTexture?.dispose();
+      detailTexture = createDetailTexture(gl, detail);
+    },
     render(view: View): void {
       drawFrame(view);
     },
@@ -216,6 +261,7 @@ export function createRenderer(
     setPasses(next: Partial<PassSwitches>): void {
       if (next.volume !== undefined) passes.volume = next.volume;
       if (next.points !== undefined) passes.points = next.points;
+      if (next.glow !== undefined) passes.glow = next.glow;
     },
     look,
     viewport,
@@ -247,6 +293,8 @@ export function createRenderer(
     dispose(): void {
       pointPass?.dispose();
       volumePass?.dispose();
+      detailTexture?.dispose();
+      glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();

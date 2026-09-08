@@ -58,12 +58,16 @@ link carries the view.
 ## The galaxy model
 
 The map draws from [src/galaxy-model/galaxy-model.json](src/galaxy-model/galaxy-model.json),
-a 13 KB parameter file: 29 parameters and a 64x64 correction grid.
+a 13 KB parameter file: 29 parameters and a 64x64 correction grid. A second file,
+[src/galaxy-model/galaxy-detail.png](src/galaxy-model/galaxy-detail.png), holds a
+1024x1024 detail grid as a 339 KB greyscale PNG, which refines the surface density to
+98 light years per cell.
 [docs/galaxy-density-model.md](docs/galaxy-density-model.md) gives the formulas the
-TypeScript port implements, and
-[tests/fixtures/galaxy-model.json](tests/fixtures/galaxy-model.json) pins the port to
-reference values. Both files are committed data. The fixture carries the SHA-256 of the
-parameter file, so a change to one fails the tests until the other matches.
+TypeScript port implements.
+[tests/fixtures/galaxy-model.json](tests/fixtures/galaxy-model.json) and
+[tests/fixtures/galaxy-detail.json](tests/fixtures/galaxy-detail.json) pin the port to
+reference values. All four files are committed data. Each fixture carries the SHA-256
+of the file it pins, so a change to one fails the tests until the other matches.
 
 ## Hardware rendering
 
@@ -86,12 +90,12 @@ GALAXY_MAP_EXTRA_CHROMIUM_ARGS=--disable-gpu pnpm test:e2e e2e/00-renderer.spec.
 
 ```
 src/app/            bootstrap, error messages, URL fragment
-src/galaxy-model/   the model port, the parameter file, its types
+src/galaxy-model/   the model port, the parameter file, the detail grid, its types
 src/scene-data/     the point cloud, the density volume, the workers
 src/render/         the WebGL2 context, the passes, the shaders
 src/camera/         the view state, the projection, the controls
 e2e/                the Playwright tests and the baseline image
-tests/fixtures/     the model fixture
+tests/fixtures/     the model fixture and the detail fixture
 docs/               the model formulas and the roadmap
 ```
 

@@ -1,5 +1,5 @@
 // Buffer and texture upload. This is where game coordinates become world coordinates.
-import type { DensityVolume, PointCloud } from '../scene-data/types';
+import type { DensityVolume, PointCloud, SurfaceDetail } from '../scene-data/types';
 
 /**
  * Copies point positions into the renderer's world frame, which negates `z`. Scene
@@ -107,6 +107,49 @@ export function createVolumeTexture(
   return {
     texture,
     volume,
+    dispose(): void {
+      gl.deleteTexture(texture);
+    },
+  };
+}
+
+/** The 2D texture the volume pass reads the surface detail from. */
+export interface DetailTexture {
+  readonly texture: WebGLTexture;
+  readonly detail: SurfaceDetail;
+  dispose(): void;
+}
+
+/** Uploads the surface detail grid as an R8 2D texture. */
+export function createDetailTexture(
+  gl: WebGL2RenderingContext,
+  detail: SurfaceDetail,
+): DetailTexture {
+  const texture = gl.createTexture();
+  if (texture === null) throw new Error('The context gave no texture for the detail.');
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, detail.size, detail.size);
+  gl.texSubImage2D(
+    gl.TEXTURE_2D,
+    0,
+    0,
+    0,
+    detail.size,
+    detail.size,
+    gl.RED,
+    gl.UNSIGNED_BYTE,
+    detail.data,
+  );
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+
+  return {
+    texture,
+    detail,
     dispose(): void {
       gl.deleteTexture(texture);
     },

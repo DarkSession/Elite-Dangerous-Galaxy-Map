@@ -35,12 +35,14 @@ Last updated: 2026-09-08.
   arms that turn violet at the edge, dust lanes along the arms, sparkle from many
   small points. The game's logo and the satellite blob in its map background are not
   part of the target. The far view reaches this with a power of 0.35 on the density
-  before emission, a three-stop volume ramp by density, a point ramp by zone and a
-  tone map on the luminance.
+  before emission, a three-stop volume ramp by density, coloured extinction for the
+  dust, a point ramp by zone, a glow pass for the halo, and a tone map on the
+  luminance over a dark grey background.
 
 ## Phase 1: far view
 
-Change: `far-view-galaxy-render`. Status: implemented, under review.
+Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`. Status:
+implemented, under review.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
@@ -50,16 +52,25 @@ Draws the galaxy's shape from far away and lets the user move across it.
   a two-component vertical profile, and a 64x64 correction grid. 29 parameters plus
   4,096 signed bytes, fitted to the game's own density maps. It ports to TypeScript in
   about 500 lines and needs no tables beyond the grid and a 24-point zone ramp. It does
-  not place stars.
-- **Accuracy.** Root-mean-square error of the log surface density is about 0.2 with
-  the correction grid, a factor of about 1.2. Arm positions, the bar and the radial
-  profile are right. Hand-painted clumps are smoothed.
-- **Data.** The parameter file and the fixture in `tests/fixtures/galaxy-model.json`
-  are committed data with no generating script. The parameter file carries only the
-  fields the map reads: no description, fit report, samples or attribution text. The
-  fixture carries the parameter file's SHA-256.
+  not place stars. A 1024x1024 detail grid in `src/galaxy-model/galaxy-detail.png`
+  layers on top of it and holds the painted texture at 98 light years per cell. The
+  point cloud samples the detailed density, and the volume pass multiplies its density
+  by the ratio of the detailed density to the corrected one.
+- **Accuracy.** Root-mean-square error of the log surface density is 0.223 with the
+  correction grid alone and 0.007 with the detail grid, measured at 1024 cells inside
+  44,000 light years. The game's map keeps a residual of 0.068 at its own 48.8 light
+  year texels, below one pixel of the far view.
+- **Data.** The parameter file, the detail grid and the fixtures in
+  `tests/fixtures/galaxy-model.json` and `tests/fixtures/galaxy-detail.json` are
+  committed data with no generating script. The parameter file carries only the fields
+  the map reads: no description, fit report, samples or attribution text. Each fixture
+  carries the SHA-256 of the file it pins. The map reads the PNG with its own decoder
+  in `src/galaxy-model/png.ts`, which runs in Node and in a worker.
 - **Rendering.** A point cloud of 2,000,000 samples drawn as additive sprites, and a
-  256x64x256 density volume drawn by raymarching. Both are baked once in workers.
+  256x64x256 density volume drawn by raymarching. Both are baked once in workers. A
+  glow pass blurs the volume at one eighth resolution and adds it back, which gives the
+  halo past the rim and the light between the arms. The points carry a large share of
+  the light in the disc, which gives the disc its grain.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
   zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the
@@ -122,6 +133,8 @@ systems, and fades them out as the user zooms in.
   - Do decoration stars get names, for example the sector name under the cursor?
   - Do nebulae and hand-authored regions get labels, as in the game's map?
   - Do the volume ramp by density and the point ramp by zone unify into one?
+  - Do the star counts per boxel read the detailed surface density or the corrected
+    one? The detailed density is the game's map, so it is the better budget.
   - The zoom distance at which decoration stars appear and the distance at which
     they are fully faded.
 

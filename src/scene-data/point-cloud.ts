@@ -1,8 +1,8 @@
-// Draws sample points from the model's corrected volume density.
+// Draws sample points from the model's detailed volume density.
 import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import { SeededRandom } from './random';
-import type { PointCloud } from './types';
+import type { PointCloud, SurfaceDetail } from './types';
 
 /** The side of the surface density table, in cells. */
 export const TABLE_SIZE = 1024;
@@ -12,6 +12,17 @@ export const DEFAULT_POINT_COUNT = 2_000_000;
 
 /** The seed the map uses by default. */
 export const DEFAULT_SEED = 7;
+
+/** The logarithm of the ratio that the surface detail grid runs to. */
+export const DETAIL_RATIO_SCALE = 3;
+
+/** The stored value that stands for a ratio of 1. */
+export const DETAIL_RATIO_OFFSET = 128;
+
+/** Turns a stored surface detail value back into a ratio. */
+export function decodeDetailRatio(detail: SurfaceDetail, value: number): number {
+  return Math.exp(((value - DETAIL_RATIO_OFFSET) * detail.scale) / 127);
+}
 
 /** A cumulative distribution over the cells of the surface density table. */
 export interface SurfaceTable {
@@ -23,12 +34,15 @@ export interface SurfaceTable {
   readonly origin: readonly [number, number];
   /** The size of one cell in light years, on `x` and on `z`. */
   readonly cell: readonly [number, number];
+  /** The ratio of the detailed to the corrected surface density, over the same cells. */
+  readonly detail: SurfaceDetail;
 }
 
 /**
- * Builds the cumulative distribution of corrected surface density over the model
+ * Builds the cumulative distribution of detailed surface density over the model
  * bounds. One cell holds the density at its centre; the cells all have the same area,
- * so the density is the cell's relative mass.
+ * so the density is the cell's relative mass. The same loop writes the surface detail
+ * grid, the ratio of the detailed to the corrected density at each cell centre.
  */
 export function buildSurfaceTable(
   model: GalaxyModel = galaxyModel,
@@ -39,6 +53,8 @@ export function buildSurfaceTable(
   const cellX = (model.bounds.x[1] - xLow) / size;
   const cellZ = (model.bounds.z[1] - zLow) / size;
   const cumulative = new Float64Array(size * size);
+  const ratios = new Uint8Array(size * size);
+  const limit = DETAIL_RATIO_SCALE;
 
   let total = 0;
   for (let iz = 0; iz < size; iz += 1) {
@@ -46,8 +62,18 @@ export function buildSurfaceTable(
     const row = iz * size;
     for (let ix = 0; ix < size; ix += 1) {
       const x = xLow + (ix + 0.5) * cellX;
-      total += model.correctedSurfaceDensity(x, z);
+      const corrected = model.correctedSurfaceDensity(x, z);
+      const detailed = model.detailedSurfaceDensity(x, z);
+      total += detailed;
       cumulative[row + ix] = total;
+
+      // Where both densities are 0 the ratio has no value, so the cell takes 1.
+      let logRatio = corrected > 0 && detailed > 0 ? Math.log(detailed / corrected) : 0;
+      if (corrected === 0 && detailed > 0) logRatio = limit;
+      if (detailed === 0 && corrected > 0) logRatio = -limit;
+      if (logRatio > limit) logRatio = limit;
+      if (logRatio < -limit) logRatio = -limit;
+      ratios[row + ix] = Math.round((127 * logRatio) / limit) + DETAIL_RATIO_OFFSET;
     }
   }
 
@@ -56,6 +82,13 @@ export function buildSurfaceTable(
     cumulative,
     origin: [xLow, zLow],
     cell: [cellX, cellZ],
+    detail: {
+      size,
+      origin: [xLow, zLow],
+      extent: [cellX * size, cellZ * size],
+      scale: limit,
+      data: ratios,
+    },
   };
 }
 

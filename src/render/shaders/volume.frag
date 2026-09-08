@@ -7,13 +7,16 @@ precision highp sampler3D;
 in vec3 vRay;
 
 uniform sampler3D uVolume;
+uniform sampler2D uDetail;
 uniform vec3 uBoxMin;
 uniform vec3 uBoxSize;
+uniform vec3 uCentre;
 uniform float uLo;
 uniform float uSpan;
 uniform float uEpsilon;
 uniform float uEmission;
 uniform float uAbsorption;
+uniform float uDetailScale;
 
 out vec4 fragColour;
 
@@ -26,6 +29,13 @@ const float GAMMA = 0.35;
 const vec3 HAZE = vec3(0.34, 0.32, 0.58);
 const vec3 ARMS = vec3(0.82, 0.54, 0.48);
 const vec3 CORE = vec3(1.00, 0.88, 0.72);
+// The dust absorbs blue most and red least, so the lanes are brown.
+const vec3 DUST = vec3(0.55, 1.00, 1.70);
+// The fade by galactocentric radius. The map has no texel past the painted rim, and
+// this removes the analytic tail beyond it. It does not read the density, so the
+// space between the arms keeps its light.
+const float RIM_FULL = 47000.0;
+const float RIM_ZERO = 51000.0;
 
 void main() {
   vec3 direction = normalize(vRay);
@@ -50,7 +60,7 @@ void main() {
   float step = (far - near) / float(STEPS);
   float peak = exp(uLo + uSpan) - uEpsilon;
   vec3 colour = vec3(0.0);
-  float transmittance = 1.0;
+  vec3 transmittance = vec3(1.0);
 
   for (int index = 0; index < STEPS; ++index) {
     float distance = near + (float(index) + 0.5) * step;
@@ -62,23 +72,26 @@ void main() {
       continue;
     }
 
-    float density = max(exp(uLo + encoded * uSpan) - uEpsilon, 0.0);
+    // The detail grid covers the same bounds in x and z, with the same z flip. It
+    // holds the logarithm of the ratio of the game's map to the smooth model.
+    float detail = texture(uDetail, vec2(local.x, 1.0 - local.z)).r * 255.0 - 128.0;
+    float density = max(exp(uLo + encoded * uSpan) - uEpsilon, 0.0) * exp(detail * uDetailScale);
     float compressed = pow(density / peak, GAMMA);
-    // The fade removes the thin haze past the truncation and gives the disc a soft
-    // edge. Full emission starts near a quarter of the density at Sol.
-    compressed *= smoothstep(0.03, 0.09, compressed);
-    // The compressed density at Sol is about 0.15. The arms take the middle colour
-    // from there, and the bulge takes the last.
-    vec3 tint = mix(HAZE, ARMS, smoothstep(0.03, 0.14, compressed));
-    tint = mix(tint, CORE, smoothstep(0.16, 0.45, compressed));
+    float radius = length(point.xz - uCentre.xz);
+    compressed *= 1.0 - smoothstep(RIM_FULL, RIM_ZERO, radius);
+    // The arms take the middle colour over most of the disc, and only the bulge
+    // reaches the last one.
+    vec3 tint = mix(HAZE, ARMS, smoothstep(0.02, 0.09, compressed));
+    tint = mix(tint, CORE, smoothstep(0.30, 0.70, compressed));
 
-    float extinction = compressed * uAbsorption * step;
+    vec3 extinction = DUST * (compressed * uAbsorption * step);
     colour += transmittance * tint * (compressed * uEmission * step);
     transmittance *= exp(-extinction);
-    if (transmittance < 0.002) {
+    if (all(lessThan(transmittance, vec3(0.002)))) {
       break;
     }
   }
 
-  fragColour = vec4(colour, 1.0 - transmittance);
+  float mean = dot(transmittance, vec3(1.0 / 3.0));
+  fragColour = vec4(colour, 1.0 - mean);
 }

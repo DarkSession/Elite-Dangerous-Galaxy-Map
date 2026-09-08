@@ -1,4 +1,6 @@
 // The galaxy model as one object. Nothing here knows about rendering.
+import { sampleDetail } from './detail';
+import type { SurfaceDetailGrid } from './detail';
 import parameters from './galaxy-model.json' with { type: 'json' };
 import { loadGalaxyModel } from './load';
 import {
@@ -40,12 +42,18 @@ export interface GalaxyModel {
   correctedSurfaceDensity(x: number, z: number): number;
   /** The bilinear correction value at a plane point. */
   correction(x: number, z: number): number;
+  /** The bilinear detail value at a plane point. It is 0 without a detail grid. */
+  detail(x: number, z: number): number;
+  /** Surface density in map units, with the correction grid and the detail grid. */
+  detailedSurfaceDensity(x: number, z: number): number;
   /** The fraction of a column's mass per light year at a height above the mid-plane. */
   verticalProfile(height: number, radius: number): number;
   /** The height that holds half of one side's mass, in light years. */
   halfMassHeight(radius: number): number;
   /** Volume density in map units per light year. */
   volumeDensity(x: number, y: number, z: number): number;
+  /** Volume density in map units per light year, with the detail grid. */
+  detailedVolumeDensity(x: number, y: number, z: number): number;
   /** The mass-code-0 budget in solar masses per cubic light year. */
   massDensity(x: number, y: number, z: number): number;
   /** The population zone in 0 to 1, used as a tint. */
@@ -83,8 +91,14 @@ function zoneOf(
   return zones[last] as number;
 }
 
-/** Builds the model from a parsed parameter document. */
-export function createGalaxyModel(source: unknown): GalaxyModel {
+/**
+ * Builds the model from a parsed parameter document. Without a detail grid the
+ * detailed densities equal the corrected ones.
+ */
+export function createGalaxyModel(
+  source: unknown,
+  detailGrid?: SurfaceDetailGrid,
+): GalaxyModel {
   const document = loadGalaxyModel(source);
   const surface: PreparedSurface = prepareSurface(document);
   const vertical: PreparedVertical = prepareVertical(document);
@@ -96,6 +110,27 @@ export function createGalaxyModel(source: unknown): GalaxyModel {
     return (
       correctedSurfaceDensity(surface, x, z) *
       verticalProfile(vertical, y - centreY, radius)
+    );
+  };
+
+  const detail =
+    detailGrid === undefined
+      ? (): number => 0
+      : (x: number, z: number): number =>
+          sampleDetail(detailGrid, document.bounds, x, z);
+
+  const detailedSurfaceDensity = (x: number, z: number): number => {
+    const corrected = correctedSurfaceDensity(surface, x, z);
+    if (detailGrid === undefined) return corrected;
+    const epsilon = document.epsilon;
+    const detailed = (corrected + epsilon) * Math.exp(detail(x, z)) - epsilon;
+    return detailed > 0 ? detailed : 0;
+  };
+
+  const detailedVolumeDensity = (x: number, y: number, z: number): number => {
+    const radius = Math.hypot(x - document.centre[0], z - document.centre[2]);
+    return (
+      detailedSurfaceDensity(x, z) * verticalProfile(vertical, y - centreY, radius)
     );
   };
 
@@ -111,9 +146,12 @@ export function createGalaxyModel(source: unknown): GalaxyModel {
     surfaceDensity: (x, z) => surfaceDensity(surface, x, z),
     correctedSurfaceDensity: (x, z) => correctedSurfaceDensity(surface, x, z),
     correction: (x, z) => sampleCorrection(surface, x, z),
+    detail,
+    detailedSurfaceDensity,
     verticalProfile: (height, radius) => verticalProfile(vertical, height, radius),
     halfMassHeight: (radius) => halfMassHeight(vertical, radius),
     volumeDensity,
+    detailedVolumeDensity,
     massDensity: (x, y, z) => volumeDensity(x, y, z) * budget,
     zone: (x, z) => zoneOf(document, surface, x, z),
     armAzimuth: (arm, radius) => armAzimuth(surface, arm, radius),

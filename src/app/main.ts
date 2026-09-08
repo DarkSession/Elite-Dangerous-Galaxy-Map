@@ -93,6 +93,9 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   renderer.setPointCloud(scene.pointCloud);
 
   await nextFrame();
+  renderer.setDetail(scene.detail);
+
+  await nextFrame();
   renderer.render(view);
   global.ready = true;
   window.dispatchEvent(new Event(READY_EVENT));
