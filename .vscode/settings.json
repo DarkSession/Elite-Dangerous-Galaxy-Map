@@ -1,0 +1,11 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  "[glsl]": { "editor.formatOnSave": false },
+  "files.associations": { "*.glsl": "glsl", "*.vert": "glsl", "*.frag": "glsl" },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  // The extension's runner inherits this, so its browsers land on the container display too.
+  "playwright.env": { "DISPLAY": ":1" },
+  "search.exclude": { "**/node_modules": true, "**/dist": true, "**/test-results": true }
+}

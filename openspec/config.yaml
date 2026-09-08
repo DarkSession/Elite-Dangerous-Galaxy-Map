@@ -1,0 +1,49 @@
+schema: spec-driven
+
+# Project context. Shown to AI when creating artifacts.
+context: |
+  Project: Elite Dangerous Galaxy Map -- an interactive 3D map of the Elite Dangerous
+  galaxy, rendered in the browser with WebGL.
+
+  Status: greenfield. The repository currently holds only the dev container and editor
+  configuration; no application code exists yet. Treat the stack below as the intended
+  target, and do not assume a file exists until you have looked for it.
+
+  Tech stack (as wired up by .devcontainer and .vscode):
+  - TypeScript, bundled and served by Vite (dev on 5173, production preview on 4173).
+  - WebGL for rendering, with GLSL shaders in .glsl/.vert/.frag files.
+  - Vitest for unit tests, Playwright for browser/end-to-end tests.
+  - ESLint and Prettier, both run on save in the editor.
+  - Node 22 inside a dev container with the host NVIDIA GPU passed through, so WebGL
+    runs on real hardware rather than SwiftShader.
+
+  Conventions:
+  - Rendering work must stay hardware accelerated: a test or change that silently falls
+    back to software rendering (SwiftShader / llvmpipe) is a regression, so assert on the
+    renderer rather than trusting it.
+  - Keep the map's data sources (star system data, e.g. EDSM/Spansh dumps) separate from
+    the rendering layer, so either can change without the other.
+  - Performance matters as much as correctness: the galaxy is ~400 billion systems, and
+    any spec touching data loading or drawing should say what scale it must hold up at.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Background task: the debugger waits for the "ready in" line before opening Chrome, and
+      // the server keeps running after you stop debugging. Ctrl-C it in the terminal panel, or
+      // let a rebuild replace it.
+      "label": "vite: dev server",
+      "type": "shell",
+      "command": "npm run dev -- --host 0.0.0.0 --port 5173 --strictPort",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^\\s*(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*VITE v.*",
+          "endsPattern": ".*ready in \\d+.*"
+        }
+      },
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
+    },
+    {
+      "label": "vite: build",
+      "type": "shell",
+      "command": "npm run build",
+      "group": "build",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "vite: preview",
+      "type": "shell",
+      "command": "npm run preview -- --host 0.0.0.0 --port 4173 --strictPort",
+      "dependsOn": "vite: build",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^\\s*(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*vite v.*preview.*|.*Local:.*",
+          "endsPattern": ".*Local:.*4173.*"
+        }
+      },
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
+    }
+  ]
+}

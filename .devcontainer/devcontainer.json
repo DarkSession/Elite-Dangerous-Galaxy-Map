@@ -1,0 +1,73 @@
+{
+  "name": "Elite Dangerous Galaxy Map",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Gives the container an X server plus noVNC on 6080, so Chrome can run headed and
+    // actually put the WebGL output on a screen you can look at.
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "password": "vscode",
+      "webPort": 6080,
+      "vncPort": 5901
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  // `hostRequirements: { "gpu": "optional" }` is the portable way to ask for the card, but the
+  // VS Code Dev Containers extension does not act on it: a container built with it gets the
+  // NVIDIA_* variables below and no device nodes, no driver libraries and no nvidia-smi. So the
+  // flag goes to docker directly.
+  //
+  // This makes a GPU a hard requirement. On a machine with no card, or without
+  // nvidia-container-toolkit installed and registered, docker refuses to start the container --
+  // drop the "--gpus" pair there and everything but hardware rendering still works.
+  //
+  // Chromium maps a lot of shared memory per renderer. Docker's 64MB default makes tabs die with
+  // SIGBUS under any real scene, so raise it here rather than papering over it with
+  // --disable-dev-shm-usage in the browser flags.
+  "runArgs": ["--gpus", "all", "--shm-size=1g"],
+
+  "containerEnv": {
+    "NVIDIA_VISIBLE_DEVICES": "all",
+    // The toolkit's default is "utility,compute", which carries no OpenGL. Without "graphics" it
+    // does not inject libEGL_nvidia, and the card is visible but cannot draw.
+    "NVIDIA_DRIVER_CAPABILITIES": "all",
+    // The display desktop-lite starts. Headed Chrome and headed Playwright both need it.
+    "DISPLAY": ":1",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+
+  "mounts": [
+    // Browsers are ~500MB and live in the user's cache, which a rebuild throws away.
+    "source=edgm-playwright-browsers,target=/home/node/.cache/ms-playwright,type=volume",
+    "source=edgm-claude-config,target=/home/node/.claude,type=volume"
+  ],
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // Reached from the host browser through VS Code's port forwarding.
+  "forwardPorts": [5173, 4173, 6080, 9323],
+  "portsAttributes": {
+    "5173": { "label": "Vite (dev, hot reload)", "onAutoForward": "notify" },
+    "4173": { "label": "Vite (production preview)", "onAutoForward": "notify" },
+    "6080": { "label": "noVNC (container desktop)", "onAutoForward": "silent" },
+    "9323": { "label": "Playwright HTML report", "onAutoForward": "silent" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "vitest.explorer",
+        "ms-playwright.playwright",
+        "raczzalan.webgl-glsl-editor"
+      ]
+    }
+  },
+
+  "remoteUser": "node"
+}
