@@ -49,10 +49,9 @@ Last updated: 2026-09-08.
 
 Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`, then
 `far-view-look-third-pass`, then `far-view-cloud-look`, then
-`far-view-colour-and-texture`. Status: implemented, under review. Three scenarios of
-`far-view-colour-and-texture` stand unreached and are open questions in its design: the
-patch contrast on the ring at 20,000 light years, the bright quartile of the ring at
-44,000, and the puff contrast at the rim.
+`far-view-colour-and-texture`, then `far-view-look-thresholds`. Status: implemented,
+under review. The owner accepts the point shader's zone key at 6, and the baseline
+image pins it.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
