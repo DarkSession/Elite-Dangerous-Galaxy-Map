@@ -34,15 +34,18 @@ Last updated: 2026-09-08.
 - **Look.** The target is the game's galaxy map background: a cream bulge, pink-brown
   arms that turn violet at the edge, dust lanes along the arms, sparkle from many
   small points. The game's logo and the satellite blob in its map background are not
-  part of the target. The far view reaches this with a power of 0.35 on the density
-  before emission, a three-stop volume ramp by density, coloured extinction for the
-  dust, a point ramp by zone, a glow pass for the halo, and a tone map on the
-  luminance over a dark grey background.
+  part of the target. The far view reaches this with a curve of two slopes on the
+  density before emission, a power of 0.35 above a knee at the density of the disc at
+  Sol and 0.70 below it, a four-stop volume ramp by emission from a greyed blue-violet
+  haze through dusty pink-brown arms and a soft salmon band to a cream-white core, coloured extinction
+  for the dust, a point ramp by zone, cloud sprites that give the haze its chunks, a
+  glow pass for the halo, and a tone map on the luminance over a dark grey background
+  with a dither of one 8-bit step.
 
 ## Phase 1: far view
 
-Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`. Status:
-implemented, under review.
+Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`, then
+`far-view-look-third-pass`. Status: implemented, under review.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
@@ -68,9 +71,14 @@ Draws the galaxy's shape from far away and lets the user move across it.
   in `src/galaxy-model/png.ts`, which runs in Node and in a worker.
 - **Rendering.** A point cloud of 2,000,000 samples drawn as additive sprites, and a
   256x64x256 density volume drawn by raymarching. Both are baked once in workers. A
-  glow pass blurs the volume at one eighth resolution and adds it back, which gives the
-  halo past the rim and the light between the arms. The points carry a large share of
-  the light in the disc, which gives the disc its grain.
+  cloud pass draws 10,000 of the samples as large soft additive sprites between the
+  volume and the points, so the haze is made of chunks in three dimensions; it fades
+  out below 12,000 light years and draws nothing at 2,000. A glow pass holds the
+  brightest pixels down, blurs the volume and the clouds at one eighth resolution and
+  adds them back, which gives the halo past the rim and the light between the arms.
+  The points carry a large share of the light in the disc, which gives the disc its
+  grain. The frame budget test measures eight views: two cursors at 2,000, 12,000,
+  20,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
   zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the

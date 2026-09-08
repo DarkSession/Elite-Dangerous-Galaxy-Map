@@ -38,3 +38,6 @@ pnpm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# Reference images the owner keeps beside the tree. They are not the project's to publish.
+.ref/

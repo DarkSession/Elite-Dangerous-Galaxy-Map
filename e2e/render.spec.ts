@@ -70,7 +70,12 @@ void main() { fragColour = vec4(1.0); }`,
       }, centre);
 
     await page.evaluate(() => {
-      window.__galaxyMap?.setPasses?.({ volume: false, glow: false, points: true });
+      window.__galaxyMap?.setPasses?.({
+        volume: false,
+        clouds: false,
+        glow: false,
+        points: true,
+      });
       window.__galaxyMap?.drawNow?.();
     });
     const points = await readFrame();
@@ -78,7 +83,12 @@ void main() { fragColour = vec4(1.0); }`,
     expect(points.bright - points.corners).toBeGreaterThan(0.3);
 
     await page.evaluate(() => {
-      window.__galaxyMap?.setPasses?.({ volume: false, glow: false, points: false });
+      window.__galaxyMap?.setPasses?.({
+        volume: false,
+        clouds: false,
+        glow: false,
+        points: false,
+      });
       window.__galaxyMap?.drawNow?.();
     });
     const empty = await readFrame();
@@ -91,7 +101,12 @@ void main() { fragColour = vec4(1.0); }`,
   }) => {
     await openMap(page);
     await page.evaluate(() => {
-      window.__galaxyMap?.setPasses?.({ volume: true, glow: false, points: false });
+      window.__galaxyMap?.setPasses?.({
+        volume: true,
+        clouds: false,
+        glow: false,
+        points: false,
+      });
       window.__galaxyMap?.drawNow?.();
     });
 

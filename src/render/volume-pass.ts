@@ -8,7 +8,7 @@ import vertexSource from './shaders/volume.vert?raw';
 import fragmentSource from './shaders/volume.frag?raw';
 
 /** The emission per unit of compressed density per light year. */
-export const DEFAULT_EMISSION = 3.0e-4;
+export const DEFAULT_EMISSION = 8.0e-3;
 
 /** The absorption per unit of compressed density per light year. */
 export const DEFAULT_ABSORPTION = 2.0e-4;

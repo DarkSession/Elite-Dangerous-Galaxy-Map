@@ -74,8 +74,8 @@ the density toward the top and the bottom of the volume, full inside 1,800 light
 of the mid-plane and zero at 2,880, so the bulge has no hard top. Neither fade SHALL
 depend on density, so the space between the arms keeps its light. The extinction
 SHALL absorb blue more than red, so dust lanes are brown. The ramp by emission SHALL
-run through four colours: a blue-violet haze, tan arms, an orange-red band at the
-edge of the bulge, and a cream-yellow core. A final pass SHALL tone-map the sum with
+run through four colours: a greyed blue-violet haze, dusty pink-brown arms, a soft
+salmon band at the edge of the bulge, and a cream-white core. A final pass SHALL tone-map the sum with
 a curve that reaches a white level below 1 and does not clip the bulge, so the bulge
 falls off from the centre, and SHALL blend the result over a constant dark grey
 background as `grey + (1 - grey) * colour`, so faint light stays above the
@@ -96,8 +96,8 @@ in the same frame, and the disc shows grain from the point cloud.
 - **WHEN** the browser test renders the default view and samples the pixels at
   (9,015, 0, 25,895), at Sol, and at 72 points spaced evenly on the circle of radius
   38,000 light years around the galactic centre in the plane
-- **THEN** at (9,015, 0, 25,895) red exceeds green by at least 0.12; at Sol red
-  exceeds blue by at least 0.12 and green exceeds blue by at least 0.02; and the
+- **THEN** at (9,015, 0, 25,895) red exceeds green by at least 0.05; at Sol red
+  exceeds blue by at least 0.01 and red exceeds green by at least 0.02; and the
   median over the circle of blue minus red is at least 0
 
 #### Scenario: Bulge falls off from the centre
@@ -154,9 +154,10 @@ in the same frame, and the disc shows grain from the point cloud.
 ### Requirement: Glow surrounds the disc
 A blurred copy of the volume and cloud passes SHALL be added to the scene before the
 tone map, scaled by a weight and tinted toward the haze colour. The copy SHALL be
-downsampled with a box filter before the blur, so no source pixel is skipped. The blur
-radius SHALL be a fixed fraction of the frame height, so the halo has the same width
-at every viewport size. The glow SHALL stay a halo: the sky above the disc at a side
+downsampled with a box filter before the blur, so no source pixel is skipped. The
+downsample SHALL hold the source luminance down to a clamp, so the brightest pixels do
+not spread over the whole frame. The blur radius SHALL be a fixed fraction of the
+frame height, so the halo has the same width at every viewport size. The glow SHALL stay a halo: the sky above the disc at a side
 view stays near the background. The renderer SHALL expose a switch that turns the glow
 off, beside the switches for the volume, the clouds and the points.
 
@@ -177,8 +178,10 @@ off, beside the switches for the volume, the clouds and the points.
 At 1920x1080 on the dev container's GPU, the mean render time over 300 consecutive
 frames SHALL stay under 16.7 ms at zoom distances of 2,000, 12,000, 20,000 and
 120,000 light years from the cursor, with the cursor at Sol and at the galactic
-centre. The cloud pass is fully on from 12,000 light years and its sprites are at their
-size cap below 22,000, so the distances of 12,000 and 20,000 bracket its peak fill.
+centre. The cloud pass fades out below 12,000 light years, so its fill peaks at 12,000, where
+the fade reaches one and its sprites are the largest the pass draws; at 20,000 the
+sprites are smaller. At 1920x1080 a sprite reaches its 64-pixel radius cap only when
+it is nearer than about 7,300 light years to the camera.
 Render time is measured
 from the first draw call of a frame to the return of `gl.finish()` and a one-pixel
 `readPixels` that follows it, because `gl.finish()` alone returns before the card is

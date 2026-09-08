@@ -23,11 +23,21 @@ export interface GalaxyMapGlobal {
   /** Replaces the current view. */
   setView?: (view: Partial<TestView>) => void;
   /** Chooses which passes draw. */
-  setPasses?: (passes: { volume?: boolean; points?: boolean; glow?: boolean }) => void;
+  setPasses?: (passes: {
+    volume?: boolean;
+    clouds?: boolean;
+    points?: boolean;
+    glow?: boolean;
+  }) => void;
   /** Projects a game position to a CSS pixel on the canvas. */
   project?: (point: [number, number, number]) => { x: number; y: number };
   /** Reads one pixel of the drawing buffer, in CSS pixels from the top left. */
   readPixel?: (x: number, y: number) => [number, number, number, number];
+  /**
+   * Reads a rectangle of the drawing buffer, in CSS pixels from the top left. The
+   * result holds four bytes per pixel, row by row, and the first row is the top one.
+   */
+  readRect?: (x: number, y: number, width: number, height: number) => Uint8Array;
   /** The drawing buffer size in device pixels. */
   drawingBufferSize?: () => [number, number];
   /** Draws one frame at once. */

@@ -15,12 +15,18 @@ export function toWorldPositions(positions: Float32Array): Float32Array {
   return world;
 }
 
-/** The buffers and the vertex array the point pass draws from. */
+/** The buffers and the vertex arrays the point pass and the cloud pass draw from. */
 export interface PointBuffers {
+  /** One vertex per sample, for the point sprites. */
   readonly vertexArray: WebGLVertexArrayObject;
+  /** One instance per sample over a four corner quad, for the cloud sprites. */
+  readonly cloudVertexArray: WebGLVertexArrayObject;
   readonly count: number;
   dispose(): void;
 }
+
+/** The four corners of the cloud sprite quad, as a triangle strip. */
+const CLOUD_CORNERS = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
 
 /** Uploads a point cloud. */
 export function createPointBuffers(
@@ -28,9 +34,17 @@ export function createPointBuffers(
   cloud: PointCloud,
 ): PointBuffers {
   const vertexArray = gl.createVertexArray();
+  const cloudVertexArray = gl.createVertexArray();
   const positionBuffer = gl.createBuffer();
   const tintBuffer = gl.createBuffer();
-  if (vertexArray === null || positionBuffer === null || tintBuffer === null) {
+  const cornerBuffer = gl.createBuffer();
+  if (
+    vertexArray === null ||
+    cloudVertexArray === null ||
+    positionBuffer === null ||
+    tintBuffer === null ||
+    cornerBuffer === null
+  ) {
     throw new Error('The context gave no buffer for the point cloud.');
   }
 
@@ -46,16 +60,38 @@ export function createPointBuffers(
   gl.enableVertexAttribArray(1);
   gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, true, 0, 0);
 
+  // The cloud pass reads the same two buffers once per sprite, and the corner
+  // buffer once per vertex of the quad.
+  gl.bindVertexArray(cloudVertexArray);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(0, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, tintBuffer);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, true, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, CLOUD_CORNERS, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+
   gl.bindVertexArray(null);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   return {
     vertexArray,
+    cloudVertexArray,
     count: cloud.count,
     dispose(): void {
       gl.deleteBuffer(positionBuffer);
       gl.deleteBuffer(tintBuffer);
+      gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
+      gl.deleteVertexArray(cloudVertexArray);
     },
   };
 }

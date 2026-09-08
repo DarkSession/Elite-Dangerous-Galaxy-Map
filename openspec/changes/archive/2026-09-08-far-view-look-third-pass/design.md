@@ -48,7 +48,9 @@ Facts that shape this pass, measured on the current tree at 1280x720:
 
 **Goals:**
 
-- The four gaps of the proposal closed, each with a scenario that fails today, and
+- The four gaps of the proposal closed, each with a scenario that fails today, except
+  the colour scenario, whose floors moved to the sampled reference and now also pass
+  on the tree before the change (see Open Questions); the baseline pins the colour, and
   the scenarios that hold today kept as guards.
 - The same pass structure, with one pass added. The data layers and the scene data
   do not change.
@@ -137,13 +139,13 @@ The dither adds `(hash(x, y) - hash(x + 1, y + 1)) / 255` after the blend, where
 `hash` is an integer hash of the pixel position in 0 to 1, so the sum is triangular
 over plus or minus one step and the same at every frame.
 
-### Glow: box downsample, narrower, weaker
+### Glow: box downsample, then a blur the tuning sets
 
 The glow first downsamples the half-resolution target to one eighth of the frame with
 two linear blits, each of which averages 2 x 2 texels, so the downsample is a 4 x 4 box
 and reads every source pixel. The two blur rounds then run on the small target as
 before. The sigma starts at 3 percent of the frame height per round, 4.2 percent net,
-and the weight at 0.5.
+and the weight at 0.5. The tuning went the other way; see the Open Questions.
 
 The halo pixel at 49,000 light years is about 20 pixels past the rim at the default
 view, and its glow source is the dim rim. The sky pixel at 6,000 light years is about
@@ -185,10 +187,14 @@ half-resolution target after the volume, with additive blending.
 Each sprite wants a radius of 1,500 light years on the screen, computed from the
 camera-relative range as in the point pass, capped at 64 target pixels, which is 128
 device pixels. The brightness scales by the square of the wanted over the drawn
-radius, so the cap keeps the total light of the sprite. The cap is reached below
-22,000 light years of zoom distance. The fragment shader uses the fall-off
-`(1 - r^2)^2` and the colour `mix(haze, arms, zone)`, with the same two constants as
-the volume ramp; the colour follows the design and the baseline pins it. A brightness
+radius, so the cap keeps the total light of the sprite. At 1920x1080 the half-focal
+length is 467.6 target pixels, so a sprite of this radius reaches the cap only when it
+is nearer than 11,000 light years to the camera. The tuning lowered the radius to
+1,000 light years, which moves that range to 7,300. The fragment shader uses the fall-off
+`(1 - r^2)^2` and a colour from the volume ramp's stops keyed on the zone: haze to
+arms over the disc, and the core stop from a zone of 0.45 to 0.75, because the clouds
+cover the centre and a sprite in the arm colour alone would pull it pink (the tuning
+added the core stop; the starting design had two stops). The baseline pins it. A brightness
 uniform starts at a value that puts about a quarter of the haze light in the clouds
 at the default view, and a fade uniform `smoothstep(6000, 12000, distance)` from the
 view's zoom distance turns the pass off at close range, so the pass draws nothing at
@@ -258,11 +264,15 @@ list, so the cloud pass is measured at its worst.
 - [The scenarios conflict, for example the halo floor against the sky ceiling] →
   The tuning order above, and a spec change with a stated reason as the last resort.
 - [The cloud sprites cost fill] → The cap of 64 target pixels and the fade below
-  12,000 light years bound the fill at 41 million target pixels; the frame budget
+  12,000 light years bound the fill at 164 million target pixels shaded (10,000
+  sprites of 128 x 128); the frame budget
   scenario at 12,000 light years measures it.
-- [The dither changes the baseline by one step in every pixel] → Playwright's
-  comparison has a per-pixel colour threshold of 0.2 by default, well above one step,
-  and the dither is the same at every frame.
+- [The dither changes the baseline by one step in every pixel] → The baseline test
+  sets Playwright's per-pixel colour threshold to 0.05. That is still well above one
+  8-bit step, and the dither is the same at every frame. The default of 0.2 is too
+  loose for a look test: it passes the round-one amber core against the cream one, so
+  a hue change could slip past the baseline.
+- [The baseline is blind to hue] → The threshold of 0.05 above.
 - [The band-pass measure also reads arm structure at the 41-pixel scale] → The
   threshold of 0.10 is above the 0.048 to 0.057 of today with every pass on, and the
   clouds add texture inside the band. The volume alone reads up to 0.137 already, so
@@ -274,9 +284,160 @@ list, so the cloud pass is measured at its worst.
 
 ## Open Questions
 
-- The final constants. They tune the look inside the scenarios and do not change the
-  specs. The tuning session records the reached values here: the ramp stops and
-  colours, the knee and the low slope, the exposure and the white level, the glow
-  sigma and weight, the cloud radius, brightness and fade, the point colours.
+- The final constants. They tune the look inside the scenarios. The tuning session
+  reached these values.
+
+  | Constant          | Value                                   | Where                       |
+  | ----------------- | --------------------------------------- | --------------------------- |
+  | haze stop         | (0.42, 0.40, 0.78)                      | `volume.frag`               |
+  | arms stop         | (0.90, 0.60, 0.62)                      | `volume.frag`               |
+  | band stop         | (1.00, 0.70, 0.66)                      | `volume.frag`               |
+  | core stop         | (1.00, 0.94, 0.78)                      | `volume.frag`               |
+  | ramp keys         | 0.004-0.030, 0.12-0.30, 0.42-0.68       | `volume.frag`               |
+  | knee              | 4.0e-3 of the peak                      | `volume.frag`               |
+  | high slope        | 0.35                                    | `volume.frag`               |
+  | low slope         | 0.70                                    | `volume.frag`               |
+  | rim fade          | 47,000 to 51,000 ly                     | `volume.frag`               |
+  | height fade       | 1,800 to 2,880 ly                       | `volume.frag`               |
+  | emission          | 8.0e-3                                  | `volume-pass.ts`            |
+  | absorption        | 2.0e-4                                  | `volume-pass.ts`            |
+  | point cool colour | (0.72, 0.78, 1.00)                      | `points.frag`               |
+  | point warm colour | (1.00, 0.78, 0.62)                      | `points.frag`               |
+  | point core colour | (1.00, 0.94, 0.78) from zone 0.45 to 0.75 | `points.frag`             |
+  | point zone key    | 4.0                                     | `points.frag`               |
+  | point brightness  | 70                                      | `renderer.ts`               |
+  | cloud colours     | the haze, arms and core stops, by zone  | `clouds.frag`               |
+  | cloud radius      | 1,000 ly, capped at 64 px               | `cloud-pass.ts`             |
+  | cloud gain bound  | 4                                       | `cloud-pass.ts`             |
+  | cloud brightness  | 3.24                                    | `cloud-pass.ts`             |
+  | cloud fade        | 6,000 to 12,000 ly                      | `cloud-pass.ts`             |
+  | cloud count       | 10,000 sprites                          | `cloud-pass.ts`             |
+  | glow sigma        | 10 percent of the height per round      | `glow-pass.ts`              |
+  | glow weight       | 6.0                                     | `glow-pass.ts`              |
+  | glow tint         | 0.15 toward (0.97, 0.93, 1.81)          | `glow-pass.ts`, `blur.frag` |
+  | glow clamp        | 0.01                                    | `glow-pass.ts`              |
+  | exposure          | 0.026                                   | `composite-pass.ts`         |
+  | white level       | 0.95                                    | `tonemap.frag`              |
+  | background        | (0.038, 0.036, 0.048)                   | `tonemap.frag`              |
+
+- The ramp stops come from the reference image, not from the eye. The owner holds the
+  reference outside the tree. A headless browser decoded it, and the sampling took the
+  median over 36 points on each ring, at 12.65 image pixels per 1,000 light years with
+  the minor axis at 0.42 of the major one. The reached values are the same rings of
+  the default view, read the same way. Both are display colours, 0 to 255.
+
+  | Ring                | Reference     | Reached       |
+  | ------------------- | ------------- | ------------- |
+  | centre              | 251, 244, 235 | 250, 241, 221 |
+  | 5,000 ly            | 248, 238, 229 | 246, 236, 217 |
+  | 9,000 ly            | 240, 222, 209 | 237, 215, 203 |
+  | 14,000 ly           | 215, 184, 181 | 142, 121, 121 |
+  | 20,000 ly           | 164, 137, 140 | 100, 87, 97   |
+  | 25,900 ly, at Sol   | 122, 105, 115 | 86, 73, 77    |
+  | 32,000 ly           | 68, 66, 84    | 59, 51, 57    |
+  | 38,000 ly           | 51, 47, 56    | 35, 32, 40    |
+  | 44,000 ly           | 30, 31, 41    | 18, 17, 21    |
+  | corner              | 2, 2, 2       | 10, 9, 12     |
+
+  The hues track the reference from the core to the rim: cream-white at the centre,
+  pink-brown through the arms, and blue above red from 32,000 light years out. The
+  frame is darker than the reference between 14,000 and 25,900 light years. That is a
+  brightness matter, and the non-colour scenarios pin it: a higher exposure breaks the
+  fall-off from the centre to 5,000 light years, and a flatter emission curve breaks
+  the patch contrast at 32,000. It is left for the next pass.
+
+- Two departures from the design's ramp table, both toward the reference.
+
+  1. **The warm stops are pink-brown, not tan or orange-red.** The design read the
+     bulge edge as orange-red and the arms as tan. The samples read them as a soft
+     salmon and a dusty pink-brown, with blue close under red. The samples rule, so
+     the arms are (0.90, 0.60, 0.62) and the band (1.00, 0.70, 0.66).
+  2. **The ramp keys reach the core earlier**, at 0.42 to 0.68 rather than from 0.85,
+     and the band at 0.12 to 0.30 rather than 0.50 to 0.60. The reference holds a
+     cream core over the whole bulge and turns to pink-brown only at the arms.
+
+- The cloud and point shaders carry the core stop as well. The clouds cover the
+  centre, so a cloud painted with the arm colour alone pulls the centre pixel to pink
+  and breaks the centre green over blue. Both key the core on the zone attribute, from
+  0.45 to 0.75, because a sprite has no compressed density of its own. The zone is
+  0.209 at the disc at Sol and 0.896 at the peak of the model.
+
+- Three constants left the design's starting values by a wide margin, and this is why.
+
+  1. **The glow sigma is 10 percent of the frame height per round, not 3 percent.**
+     The design read the halo and the sky as one trade at a single sigma. They are not:
+     the halo pixel sits 46 pixels past the painted rim, and the sky pixel sits 74
+     pixels above an edge-on disc that is far brighter than the rim. At a narrow sigma
+     the sky rises about 30 times faster than the halo, and the halo floor of 0.02
+     costs a sky of 0.8. A wide blur puts both pixels inside the same broad skirt, so
+     the ratio falls to about 2 and a weight that lifts the halo to 0.025 leaves the
+     sky at 0.07.
+  2. **The glow source is held down before the blur** (`glow-source.frag`, the
+     `glowClamp` look setting). Without it a wide blur spreads the brilliant edge-on
+     bulge over the whole frame. The hold is soft, `colour * clamp / (clamp +
+     luminance)`, so it leaves the faint rim as it is and stops at the clamp. This is
+     the one structural addition beyond the design.
+  3. **The exposure is 0.026, not the value that puts the centre near L = 2.5.** The
+     centre sits at L = 4.1. Below that the bulge falls under the 0.80 floor of the
+     default-view scenario; above it the fall-off to 5,000 light years drops under
+     0.03, because the density model is only 1.4 times brighter at the centre than
+     5,000 light years out once the clouds are added.
+
+- The cloud sprite gain has a bound of 4. The size cap holds a sprite to 64 pixels of
+  radius and multiplies its brightness by the square of the ratio of the radius it
+  wants to the radius it draws, so that the sprite keeps its light. That ratio has no
+  bound as the sprite nears the camera: within about 51 light years the product passes
+  65,504, the largest value the 16-bit float target holds, the glow source turns the
+  overflow into a not-a-number, and the blur spreads it over the whole frame. The
+  bound of 4 keeps the light of a sprite that wants up to twice the cap, which at
+  1920x1080 is a range of 3,650 light years, and holds it flat below that. It changes
+  no view the scenarios read: at 1920x1080 the cap itself starts only below 7,300
+  light years. At the side view at 12,000 light years the bound lowers the mean frame
+  luminance from 0.722 to 0.718, and the glow source now also replaces a not-a-number
+  or an overflow with a finite value, so no single sprite can flood the frame.
+
+- Three spec thresholds moved down, to the colours the reference gives. The frame
+  clears the new floor at all three, and its hues sit near the reference's; the
+  earlier numbers described a more saturated disc than the reference holds.
+
+  | Clause                            | Was  | Now  | Reference | Reached |
+  | --------------------------------- | ---- | ---- | --------- | ------- |
+  | red over green at 9,015 ly        | 0.12 | 0.05 | 0.069     | 0.114   |
+  | red over blue at Sol              | 0.12 | 0.01 | 0.028     | 0.024   |
+  | at Sol, was green over blue 0.02  | 0.02 | 0.02 | -0.038    | -0.016  |
+
+  The third clause changed its channels as well as its number. The reference has blue
+  above green at Sol's radius, so green over blue cannot hold at any saturation. The
+  clause now asks that red exceeds green by 0.02; the reference gives 0.066 and the
+  frame gives 0.039.
+
+- The new scenarios read these values on the tree before the change, with the task 1
+  helpers and switches added and nothing else. Nine of the seventeen tests failed at the thresholds of the time.
+
+  | Scenario                    | Before               | Threshold      |
+  | --------------------------- | -------------------- | -------------- |
+  | band red over green         | 0.106                | at least 0.05  |
+  | Sol red over blue           | 0.024                | at least 0.01  |
+  | Sol red over green          | 0.059                | at least 0.02  |
+  | bulge fall-off to 5,000 ly  | -0.002               | at least 0.03  |
+  | patch contrast at 32,000 ly | 1.67 to 1            | 2.5 to 1       |
+  | halo past the rim           | 0.064                | 0.02 to 0.05   |
+  | sky 6,000 ly above          | 0.506                | at most 0.20   |
+  | chunks from above           | 0.048                | above 0.10     |
+  | chunks from the side        | 0.031                | above 0.10     |
+  | clouds carry light          | 0                    | at least 0.03  |
+  | flat colour dither step     | 0                    | at least 0.25  |
+
+  The table holds the thresholds as they now read. Three of them moved down after this
+  reading, and the colour scenario passes at the pre-change values as well. That
+  scenario is a floor under the hue, not the measure of the colour work; the ring
+  table above measures that.
+
+  The eight that passed: the default view, the space between the arms, the bulge's
+  soft top, the dark grey background, the grain at Sol, the median blue over red on
+  the 38,000 light year circle, the clouds fading at close range and the stable
+  dither. The task list expected the soft top to fail. It passes because the old tone
+  curve saturates the whole bulge top, so no two rows differ by much; the new curve
+  keeps the fall-off and the height fade holds the step under 0.05 all the same.
 - Whether the near view of a later phase keeps the clouds at some distance, or
   replaces them with its own haze. The fade uniform makes either possible.

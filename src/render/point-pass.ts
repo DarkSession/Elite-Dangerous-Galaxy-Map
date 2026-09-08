@@ -25,6 +25,8 @@ export interface PointPassFrame {
 /** The point pass. */
 export interface PointPass {
   draw(frame: PointPassFrame): void;
+  /** The buffers the cloud pass draws the same samples from. */
+  readonly buffers: PointBuffers;
   dispose(): void;
 }
 
@@ -48,6 +50,7 @@ export function createPointPass(
   const buffers: PointBuffers = createPointBuffers(gl, cloud);
 
   return {
+    buffers,
     draw(frame: PointPassFrame): void {
       gl.useProgram(program.program);
       gl.uniformMatrix4fv(

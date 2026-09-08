@@ -21,14 +21,23 @@ uniform float uDetailScale;
 out vec4 fragColour;
 
 const int STEPS = 96;
-// The emission is the decoded density relative to the peak, raised to this power. The
-// peak texel is about 250 times the density at Sol, and the power brings that ratio
-// to about 7, so the bulge and the disc share one display range, as in the game's map.
+// The emission is the decoded density relative to the peak, through a curve with two
+// slopes on a logarithmic scale. Above the knee the power keeps the bulge and the
+// disc in one display range. Below it the larger power spreads the low densities, so
+// the patches the detail grid holds reach the screen.
 const float GAMMA = 0.35;
-// The ramp by compressed density: violet haze at the edge, pink-brown arms, cream bulge.
-const vec3 HAZE = vec3(0.34, 0.32, 0.58);
-const vec3 ARMS = vec3(0.82, 0.54, 0.48);
-const vec3 CORE = vec3(1.00, 0.88, 0.72);
+const float LOW_GAMMA = 0.70;
+// The knee sits at the density of the disc at Sol, relative to the peak texel.
+const float KNEE = 4.0e-3;
+// The ramp by compressed density, aimed at the reference image: a greyed blue-violet
+// haze, dusty pink-brown arms, a soft salmon band at the edge of the bulge, and a
+// cream-white core. HAZE, ARMS and CORE must stay equal to the same names in
+// clouds.frag and points.frag: GLSL has no include, so the ramp is written out in
+// each shader that draws part of the disc.
+const vec3 HAZE = vec3(0.42, 0.40, 0.78);
+const vec3 ARMS = vec3(0.90, 0.60, 0.62);
+const vec3 BAND = vec3(1.00, 0.70, 0.66);
+const vec3 CORE = vec3(1.00, 0.94, 0.78);
 // The dust absorbs blue most and red least, so the lanes are brown.
 const vec3 DUST = vec3(0.55, 1.00, 1.70);
 // The fade by galactocentric radius. The map has no texel past the painted rim, and
@@ -36,6 +45,11 @@ const vec3 DUST = vec3(0.55, 1.00, 1.70);
 // space between the arms keeps its light.
 const float RIM_FULL = 47000.0;
 const float RIM_ZERO = 51000.0;
+// The fade by height above the mid-plane. The model's vertical profile stops at
+// 2,867 light years with the bulge still lit, so this spreads its top over 1,080
+// light years and the bulge has no hard edge.
+const float HEIGHT_FULL = 1800.0;
+const float HEIGHT_ZERO = 2880.0;
 
 void main() {
   vec3 direction = normalize(vRay);
@@ -76,13 +90,18 @@ void main() {
     // holds the logarithm of the ratio of the game's map to the smooth model.
     float detail = texture(uDetail, vec2(local.x, 1.0 - local.z)).r * 255.0 - 128.0;
     float density = max(exp(uLo + encoded * uSpan) - uEpsilon, 0.0) * exp(detail * uDetailScale);
-    float compressed = pow(density / peak, GAMMA);
+    float ratio = density / peak;
+    float compressed = ratio >= KNEE
+      ? pow(ratio, GAMMA)
+      : pow(KNEE, GAMMA) * pow(ratio / KNEE, LOW_GAMMA);
     float radius = length(point.xz - uCentre.xz);
     compressed *= 1.0 - smoothstep(RIM_FULL, RIM_ZERO, radius);
-    // The arms take the middle colour over most of the disc, and only the bulge
-    // reaches the last one.
-    vec3 tint = mix(HAZE, ARMS, smoothstep(0.02, 0.09, compressed));
-    tint = mix(tint, CORE, smoothstep(0.30, 0.70, compressed));
+    compressed *= 1.0 - smoothstep(HEIGHT_FULL, HEIGHT_ZERO, abs(point.y - uCentre.y));
+    // The arms take the second colour over most of the disc, the band the edge of
+    // the bulge, and only the centre reaches the last one.
+    vec3 tint = mix(HAZE, ARMS, smoothstep(0.004, 0.030, compressed));
+    tint = mix(tint, BAND, smoothstep(0.12, 0.30, compressed));
+    tint = mix(tint, CORE, smoothstep(0.42, 0.68, compressed));
 
     vec3 extinction = DUST * (compressed * uAbsorption * step);
     colour += transmittance * tint * (compressed * uEmission * step);

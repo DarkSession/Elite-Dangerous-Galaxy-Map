@@ -6,7 +6,7 @@ import blitSource from './shaders/blit.frag?raw';
 import tonemapSource from './shaders/tonemap.frag?raw';
 
 /** The exposure the tone map applies before the gamma curve. */
-export const DEFAULT_EXPOSURE = 1.0;
+export const DEFAULT_EXPOSURE = 0.026;
 
 /** The two full-screen passes. */
 export interface CompositePass {

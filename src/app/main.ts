@@ -69,6 +69,7 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   global.setPasses = (next) => renderer.setPasses(next);
   global.drawingBufferSize = () => renderer.drawingBufferSize();
   global.readPixel = (x, y) => renderer.readPixel(x, y);
+  global.readRect = (x, y, width, height) => renderer.readRect(x, y, width, height);
   global.measureFrames = (count) => renderer.measureFrames(view, count);
   global.drawNow = () => renderer.render(view);
   global.planePointAt = (x, y) =>

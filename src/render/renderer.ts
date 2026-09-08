@@ -11,9 +11,22 @@ import {
   createRenderTarget,
 } from './buffers';
 import type { DetailTexture, RenderTarget } from './buffers';
+import {
+  cloudFade,
+  createCloudPass,
+  createCloudProgram,
+  CLOUD_RADIUS_LY,
+  DEFAULT_CLOUD_BRIGHTNESS,
+} from './cloud-pass';
+import type { CloudPass } from './cloud-pass';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
-import { createGlowPass, DEFAULT_GLOW_TINT, DEFAULT_GLOW_WEIGHT } from './glow-pass';
+import {
+  createGlowPass,
+  DEFAULT_GLOW_CLAMP,
+  DEFAULT_GLOW_TINT,
+  DEFAULT_GLOW_WEIGHT,
+} from './glow-pass';
 import type { GlowPass } from './glow-pass';
 import { createPointPass, createPointProgram, POINT_RADIUS_LY } from './point-pass';
 import type { PointPass } from './point-pass';
@@ -33,11 +46,12 @@ export const MAX_DEVICE_PIXEL_RATIO = 2;
  * The brightness of one point cloud sample. The points carry a large share of the
  * light in the disc, which is what gives the disc its grain.
  */
-export const DEFAULT_POINT_BRIGHTNESS = 28;
+export const DEFAULT_POINT_BRIGHTNESS = 70;
 
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
+  clouds: boolean;
   points: boolean;
   glow: boolean;
 }
@@ -46,10 +60,12 @@ export interface PassSwitches {
 export interface LookSettings {
   emission: number;
   absorption: number;
+  cloudBrightness: number;
   pointBrightness: number;
   exposure: number;
   glowWeight: number;
   glowTint: number;
+  glowClamp: number;
 }
 
 /** The renderer. */
@@ -76,6 +92,12 @@ export interface Renderer {
   drawingBufferSize(): [number, number];
   /** Reads one pixel, in CSS pixels from the top left. */
   readPixel(x: number, y: number): [number, number, number, number];
+  /**
+   * Reads a rectangle of pixels, in CSS pixels from the top left. The result holds
+   * four bytes per pixel, row by row, and the first row is the top one. It throws a
+   * `RangeError` if any part of the rectangle is outside the drawing buffer.
+   */
+  readRect(x: number, y: number, width: number, height: number): Uint8Array;
   dispose(): void;
 }
 
@@ -87,6 +109,7 @@ export function createRenderer(
   const float = gl.getExtension('EXT_color_buffer_float') !== null;
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
+  const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
 
@@ -95,18 +118,26 @@ export function createRenderer(
   const glowPass: GlowPass = createGlowPass(gl, triangle.vertexArray, float);
 
   let pointPass: PointPass | null = null;
+  let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
   let detailTexture: DetailTexture | null = null;
 
-  const passes: PassSwitches = { volume: true, points: true, glow: true };
+  const passes: PassSwitches = {
+    volume: true,
+    clouds: true,
+    points: true,
+    glow: true,
+  };
   const look: LookSettings = {
     emission: DEFAULT_EMISSION,
     absorption: DEFAULT_ABSORPTION,
+    cloudBrightness: DEFAULT_CLOUD_BRIGHTNESS,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
     glowWeight: DEFAULT_GLOW_WEIGHT,
     glowTint: DEFAULT_GLOW_TINT,
+    glowClamp: DEFAULT_GLOW_CLAMP,
   };
 
   const viewProjection = mat4.create();
@@ -190,16 +221,37 @@ export function createRenderer(
       });
     }
 
-    // The scene target holds the sum of both passes.
+    // The cloud sprites join the volume in the half-resolution target, so the glow
+    // reads the same source as the halo it made before.
+    if (passes.clouds && cloudPass !== null) {
+      const halfFocal =
+        halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+      cloudPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        chunkOffset: [-camera[0], -camera[1], camera[2]],
+        targetSize: [halfTarget.width, halfTarget.height],
+        spriteScale: halfFocal * CLOUD_RADIUS_LY,
+        brightness: look.cloudBrightness,
+        fade: cloudFade(view.distance),
+      });
+    }
+
+    // The scene target holds the sum of the scene passes.
     gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget.framebuffer);
     gl.viewport(0, 0, sceneTarget.width, sceneTarget.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.blit(halfTarget.texture);
 
-    // The glow adds a blurred copy of the volume, so a halo surrounds the disc.
-    if (passes.glow && passes.volume && volumePass !== null) {
-      glowPass.render(halfTarget.texture, look.glowWeight, look.glowTint);
+    // The glow adds a blurred copy of the volume and the clouds, so a halo
+    // surrounds the disc.
+    if (passes.glow && (passes.volume || passes.clouds)) {
+      glowPass.render(
+        halfTarget.texture,
+        look.glowWeight,
+        look.glowTint,
+        look.glowClamp,
+      );
       gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget.framebuffer);
       gl.viewport(0, 0, sceneTarget.width, sceneTarget.height);
       gl.enable(gl.BLEND);
@@ -236,6 +288,7 @@ export function createRenderer(
     setPointCloud(cloud: PointCloud): void {
       pointPass?.dispose();
       pointPass = createPointPass(gl, pointProgram, cloud);
+      cloudPass = createCloudPass(gl, cloudProgram, pointPass.buffers);
     },
     setDetail(detail: SurfaceDetail): void {
       detailTexture?.dispose();
@@ -260,6 +313,7 @@ export function createRenderer(
     },
     setPasses(next: Partial<PassSwitches>): void {
       if (next.volume !== undefined) passes.volume = next.volume;
+      if (next.clouds !== undefined) passes.clouds = next.clouds;
       if (next.points !== undefined) passes.points = next.points;
       if (next.glow !== undefined) passes.glow = next.glow;
     },
@@ -290,12 +344,54 @@ export function createRenderer(
         pixel[3] as number,
       ];
     },
+    readRect(x: number, y: number, width: number, height: number): Uint8Array {
+      const ratio = canvas.width / Math.max(1, canvas.clientWidth);
+      const wide = Math.max(1, Math.round(width * ratio));
+      const tall = Math.max(1, Math.round(height * ratio));
+      const left = Math.round(x * ratio);
+      const top = Math.round(y * ratio);
+      // A rectangle that leaves the frame is a fault in the caller. A silent move back
+      // inside would give a test a different sample from the one it asked for.
+      if (
+        left < 0 ||
+        top < 0 ||
+        left + wide > canvas.width ||
+        top + tall > canvas.height
+      ) {
+        throw new RangeError(
+          `readRect ${x},${y} ${width}x${height} leaves the ` +
+            `${canvas.width}x${canvas.height} drawing buffer`,
+        );
+      }
+      const rows = new Uint8Array(wide * tall * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.readPixels(
+        left,
+        canvas.height - top - tall,
+        wide,
+        tall,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        rows,
+      );
+      // `readPixels` gives the bottom row first, so the copy turns the block over.
+      const result = new Uint8Array(rows.length);
+      const stride = wide * 4;
+      for (let row = 0; row < tall; row += 1) {
+        result.set(
+          rows.subarray((tall - 1 - row) * stride, (tall - row) * stride),
+          row * stride,
+        );
+      }
+      return result;
+    },
     dispose(): void {
       pointPass?.dispose();
       volumePass?.dispose();
       detailTexture?.dispose();
       glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
+      gl.deleteProgram(cloudProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();
       triangle.dispose();
