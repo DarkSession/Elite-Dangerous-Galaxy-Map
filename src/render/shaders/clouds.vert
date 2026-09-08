@@ -12,6 +12,7 @@ layout(location = 4) in vec2 aCorner;
 
 uniform mat4 uViewProjection;
 uniform vec3 uChunkOffset;
+uniform vec3 uCentre;
 uniform vec2 uTargetSize;
 uniform float uSpriteScale;
 uniform float uMaxRadius;
@@ -21,6 +22,10 @@ uniform float uDensityPower;
 uniform float uRatioFloor;
 uniform float uRatioCeiling;
 uniform float uRadiusReference;
+uniform float uFloorPower;
+uniform float uSpreadPower;
+uniform float uSpreadBase;
+uniform float uSpreadColour;
 uniform float uFade;
 uniform float uShapeSide;
 uniform float uShapeColumns;
@@ -30,6 +35,19 @@ out vec2 vLocal;
 out vec2 vShapeUv;
 out float vTint;
 out float vBrightness;
+out float vSpread;
+out float vSpreadKey;
+out float vBlend;
+
+// The fade by galactocentric radius. The placement reaches past the painted rim, and
+// the reference shows no puff outside the disc.
+const float RIM_FULL = 44000.0;
+const float RIM_ZERO = 48000.0;
+
+// The galactocentric radii over which the colour runs from the inner ramp to the outer
+// one. They must stay equal to the same names in volume.frag.
+const float BLEND_IN = 20000.0;
+const float BLEND_OUT = 32000.0;
 
 // A hash of the sprite index, in 0 to 1. It uses shifts and exclusive or only,
 // because GLSL ES 3.00 leaves an overflow of a `uint` multiply undefined. The cloud
@@ -57,6 +75,9 @@ void main() {
     vShapeUv = vec2(0.0);
     vTint = 0.0;
     vBrightness = 0.0;
+    vSpread = 0.0;
+    vSpreadKey = 0.0;
+    vBlend = 0.0;
     return;
   }
 
@@ -90,10 +111,37 @@ void main() {
   // sprites stays bounded as the camera comes closer.
   float capFade = 1.0 - smoothstep(0.5 * uMaxRadius, uMaxRadius, wanted);
   // The ratio is held between a floor and a ceiling and divided by the ceiling: the
-  // model truncates at the rim, where the reference still shows puffs, and the bulge
-  // would take all the light without the ceiling.
-  float ratio = clamp(aRatio, uRatioFloor, uRatioCeiling) / uRatioCeiling;
+  // bulge would take all the light without the ceiling, and the floor holds the light
+  // of the outer disc where the model runs out.
+  float held = clamp(aRatio, uRatioFloor, uRatioCeiling);
+  float ratio = held / uRatioCeiling;
+  // Below the floor the brightness keeps falling, with a gentler power. A sprite in a
+  // dense part of the rim is then brighter than one in empty space, and the sprites
+  // past the model's truncation go faint.
+  float thin = pow(min(aRatio / uRatioFloor, 1.0), uFloorPower);
+  // The brightness spread. The factor has mean 1, so the sum of the sprites does not
+  // change. The key applies it where the held ratio is at the floor, which is the
+  // outer disc, and drops it at three times the floor, so the inner disc keeps its
+  // smooth sum.
+  float factor = (1.0 + uSpreadPower) * pow(hash(gl_InstanceID + 16381), uSpreadPower);
+  // A share of the light stays out of the lottery, so the outer disc keeps a ground of
+  // faint sprites and the winners are the puffs on that ground. The mean stays 1.
+  float mixed = uSpreadBase + (1.0 - uSpreadBase) * factor;
+  vSpreadKey = 1.0 - smoothstep(uRatioFloor, 3.0 * uRatioFloor, held);
+  float spread = mix(1.0, mixed, vSpreadKey);
+  // The colour follows the light the sprite carries, against a fixed level at which it
+  // takes the whole patch colour, so the puffs where the arms end are pink and empty
+  // space stays blue.
+  vSpread = clamp((thin * spread) / uSpreadColour, 0.0, 1.0);
+  // The spread modulates the density. It never lifts a sprite above the brightness of
+  // one at the ceiling ratio.
+  float value = min(pow(ratio, uDensityPower) * thin * spread, 1.0);
+  // The galactocentric radius carries the colour from the inner ramp to the outer one,
+  // and the rim fade keeps light off the space outside the painted rim.
+  float radius = length(relative.xz - uCentre.xz);
+  vBlend = smoothstep(BLEND_IN, BLEND_OUT, radius);
+  float rimFade = 1.0 - smoothstep(RIM_FULL, RIM_ZERO, radius);
   vBrightness =
-    uBrightness * uFade * capFade * pow(ratio, uDensityPower) *
+    uBrightness * uFade * capFade * rimFade * value *
     pow(aRadius / uRadiusReference, uSizePower);
 }

@@ -13,10 +13,10 @@ out vec4 fragColour;
 // each shader that draws part of the disc.
 const vec3 COOL = vec3(0.72, 0.78, 1.00);
 const vec3 WARM = vec3(1.00, 0.78, 0.62);
-const vec3 CORE = vec3(1.00, 0.94, 0.78);
-// The zone at the disc at Sol is 0.209, so this key puts Sol past the middle. The
+const vec3 CORE = vec3(1.00, 0.97, 0.92);
+// The zone at the disc at Sol is 0.209, so this key puts Sol at the warm end. The
 // zone reaches 0.896 at the peak of the model, so the core key sits near the top.
-const float ZONE_SCALE = 4.0;
+const float ZONE_SCALE = 6.0;
 const float CORE_LOW = 0.45;
 const float CORE_HIGH = 0.75;
 

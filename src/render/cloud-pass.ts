@@ -13,7 +13,7 @@ export const CLOUD_MAX_RADIUS_PIXELS = 64;
  * The brightness of one cloud sprite at the reference radius, at or above the ratio
  * ceiling.
  */
-export const DEFAULT_CLOUD_BRIGHTNESS = 0.68;
+export const DEFAULT_CLOUD_BRIGHTNESS = 0.6;
 
 /**
  * The power the sprite radius carries into the brightness. At -1 the light of one
@@ -47,6 +47,35 @@ export const CLOUD_RATIO_FLOOR = 1e-4;
  */
 export const CLOUD_RATIO_CEILING = 1e-3;
 
+/**
+ * The power of the sprite brightness spread. The factor is `(1 + power)` times a hash
+ * of the sample index raised to this power, which has mean 1 and a heavy tail: most
+ * sprites go faint and a few carry the light. It applies where the held density ratio
+ * is at the floor, so the puffs at the rim stand apart.
+ */
+export const CLOUD_SPREAD_POWER = 12;
+
+/**
+ * The share of the sprite light that stays out of the spread. The ground of the outer
+ * disc comes from it, so the haze there is not made of the winners of the spread alone.
+ */
+export const CLOUD_SPREAD_BASE = 0.35;
+
+/**
+ * The fixed level of light at which a sprite takes the whole patch colour. Below it
+ * the sprite runs toward the haze colour, so the rim reads as pink puffs on a blue
+ * ground. A sprite at the floor with the base alone carries 0.35, which is 0.14 of the
+ * level.
+ */
+export const CLOUD_SPREAD_COLOUR = 2.5;
+
+/**
+ * The power the density ratio carries into the brightness below the floor. The floor
+ * holds the light of the outer disc, and this power keeps the light falling under it,
+ * so a sprite where the arms end is brighter than one in empty space.
+ */
+export const CLOUD_FLOOR_POWER = 0.3;
+
 /** The radius at which the size power leaves the brightness alone, in light years. */
 export const CLOUD_RADIUS_REFERENCE_LY = 1000;
 
@@ -69,6 +98,8 @@ export interface CloudPassFrame {
   readonly viewProjection: Float32Array;
   /** The chunk origin minus the camera position, in the world frame. */
   readonly chunkOffset: readonly [number, number, number];
+  /** The galactic centre minus the camera, in the world frame. */
+  readonly centre: readonly [number, number, number];
   /** The size of the target the pass draws into, in pixels. */
   readonly targetSize: readonly [number, number];
   /** Target pixels per light year of sprite radius at one light year of range. */
@@ -90,6 +121,7 @@ export function createCloudProgram(gl: WebGL2RenderingContext): Program {
   return createProgram(gl, 'clouds', vertexSource, fragmentSource, [
     'uViewProjection',
     'uChunkOffset',
+    'uCentre',
     'uTargetSize',
     'uSpriteScale',
     'uMaxRadius',
@@ -99,6 +131,10 @@ export function createCloudProgram(gl: WebGL2RenderingContext): Program {
     'uRatioFloor',
     'uRatioCeiling',
     'uRadiusReference',
+    'uFloorPower',
+    'uSpreadPower',
+    'uSpreadBase',
+    'uSpreadColour',
     'uFade',
     'uShapeSide',
     'uShapeColumns',
@@ -132,6 +168,12 @@ export function createCloudPass(
         frame.chunkOffset[1],
         frame.chunkOffset[2],
       );
+      gl.uniform3f(
+        program.uniforms['uCentre'] ?? null,
+        frame.centre[0],
+        frame.centre[1],
+        frame.centre[2],
+      );
       gl.uniform2f(
         program.uniforms['uTargetSize'] ?? null,
         frame.targetSize[0],
@@ -148,6 +190,10 @@ export function createCloudPass(
         program.uniforms['uRadiusReference'] ?? null,
         CLOUD_RADIUS_REFERENCE_LY,
       );
+      gl.uniform1f(program.uniforms['uFloorPower'] ?? null, CLOUD_FLOOR_POWER);
+      gl.uniform1f(program.uniforms['uSpreadPower'] ?? null, CLOUD_SPREAD_POWER);
+      gl.uniform1f(program.uniforms['uSpreadBase'] ?? null, CLOUD_SPREAD_BASE);
+      gl.uniform1f(program.uniforms['uSpreadColour'] ?? null, CLOUD_SPREAD_COLOUR);
       gl.uniform1f(program.uniforms['uFade'] ?? null, frame.fade);
       gl.uniform1f(program.uniforms['uShapeSide'] ?? null, shapes.side);
       gl.uniform1f(program.uniforms['uShapeColumns'] ?? null, SHAPE_COLUMNS);

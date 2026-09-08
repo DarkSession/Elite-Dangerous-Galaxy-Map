@@ -368,3 +368,54 @@ export async function meanLuminanceFrame(page: Page): Promise<number> {
     return (4 * sum) / (255 * bytes.length);
   });
 }
+
+/**
+ * Reads the 5 x 5 mean colour at the 72 points spaced evenly on a circle around the
+ * galactic centre in the plane, and subtracts the mean colour of the four corner
+ * pixels. Each triple is red, green and blue on a 0 to 1 scale.
+ */
+export async function ringColour5(
+  page: Page,
+  radius: number,
+): Promise<[number, number, number][]> {
+  const points = ringPoints(radius);
+  return page.evaluate((ring) => {
+    const map = window.__galaxyMap;
+    if (map?.readRect === undefined || map.project === undefined) return [];
+    const mean5 = (x: number, y: number): [number, number, number] => {
+      const bytes = map.readRect?.(Math.round(x) - 2, Math.round(y) - 2, 5, 5);
+      if (bytes === undefined) return [0, 0, 0];
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      for (let index = 0; index < bytes.length; index += 4) {
+        red += bytes[index] as number;
+        green += bytes[index + 1] as number;
+        blue += bytes[index + 2] as number;
+      }
+      const count = bytes.length / 4;
+      return [red / (255 * count), green / (255 * count), blue / (255 * count)];
+    };
+    const canvas = document.getElementById('map');
+    if (!(canvas instanceof HTMLCanvasElement)) return [];
+    const right = canvas.clientWidth - 3;
+    const bottom = canvas.clientHeight - 3;
+    const corners: [number, number, number] = [0, 0, 0];
+    for (const [x, y] of [
+      [2, 2],
+      [right, 2],
+      [2, bottom],
+      [right, bottom],
+    ]) {
+      const [red, green, blue] = map.readPixel?.(x as number, y as number) ?? [0, 0, 0];
+      corners[0] += red / (4 * 255);
+      corners[1] += green / (4 * 255);
+      corners[2] += blue / (4 * 255);
+    }
+    return ring.map((point): [number, number, number] => {
+      const screen = map.project?.(point) ?? { x: 0, y: 0 };
+      const [red, green, blue] = mean5(screen.x, screen.y);
+      return [red - corners[0], green - corners[1], blue - corners[2]];
+    });
+  }, points);
+}

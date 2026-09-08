@@ -53,7 +53,7 @@ export const MAX_DEVICE_PIXEL_RATIO = 2;
  * The brightness of one point cloud sample. The points carry a large share of the
  * light in the disc, which is what gives the disc its grain.
  */
-export const DEFAULT_POINT_BRIGHTNESS = 70;
+export const DEFAULT_POINT_BRIGHTNESS = 60;
 
 /** Which passes draw. */
 export interface PassSwitches {
@@ -233,13 +233,22 @@ export function createRenderer(
     }
 
     // The cloud sprites join the volume in the half-resolution target, so the glow
-    // reads the same source as the halo it made before.
-    if (passes.clouds && cloudPass !== null) {
+    // reads the same source as the halo it made before. The pass needs the galactic
+    // centre for its fade at the rim, and the volume box carries it, so the pass
+    // waits for the volume. One scene message sets the volume before the cloud set.
+    if (passes.clouds && cloudPass !== null && volumeBox !== null) {
       const halfFocal =
         halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+      const origin = volumeBox.origin;
+      const extent = volumeBox.extent;
       cloudPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
+        centre: [
+          origin[0] + 0.5 * extent[0] - camera[0],
+          origin[1] + 0.5 * extent[1] - camera[1],
+          camera[2] - (origin[2] + 0.5 * extent[2]),
+        ],
         targetSize: [halfTarget.width, halfTarget.height],
         spriteScale: halfFocal,
         brightness: look.cloudBrightness,
