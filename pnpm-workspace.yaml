@@ -1,0 +1,15 @@
+# pnpm settings for this project. (pnpm reads its settings from here, not just .npmrc.)
+
+# Supply-chain hold: never install a package version that was published less than
+# 10080 minutes -- 7 days -- ago. Most malicious releases from a hijacked maintainer
+# account are spotted and unpublished within hours, so a week of distance is cheap
+# insurance and costs nothing but being slightly behind the newest release.
+#
+# It applies to resolution, so `pnpm add x` picks the newest version that is already
+# a week old, and versions already pinned in pnpm-lock.yaml are unaffected.
+#
+# To take a fresh release deliberately -- a security fix you actually want on day
+# zero -- exempt it rather than lowering the hold for everything:
+#   minimumReleaseAgeExclude:
+#     - some-package
+minimumReleaseAge: 10080

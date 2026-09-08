@@ -16,6 +16,10 @@ context: |
   - ESLint and Prettier, both run on save in the editor.
   - Node 22 inside a dev container with the host NVIDIA GPU passed through, so WebGL
     runs on real hardware rather than SwiftShader.
+  - pnpm is the package manager -- never npm or yarn. pnpm-workspace.yaml sets
+    minimumReleaseAge: 10080, a 7-day hold on newly published versions as a supply-chain
+    measure, so resolved versions are deliberately a week behind the newest release.
+  - Application code lives in src/.
 
   Conventions:
   - Rendering work must stay hardware accelerated: a test or change that silently falls

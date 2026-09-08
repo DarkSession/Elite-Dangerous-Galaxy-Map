@@ -1,0 +1,40 @@
+# Dependencies. pnpm-lock.yaml is committed on purpose -- it is what makes an install
+# reproducible, and what the 7-day release hold in pnpm-workspace.yaml pins against.
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Vite's dependency pre-bundling cache
+.vite/
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+playwright/.cache/
+
+# Environment. .env is for local secrets; commit .env.example instead.
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor and OS noise. .vscode/ is committed on purpose -- the launch configs and
+# tasks are part of the dev setup -- so only ignore the per-machine files inside it.
+.vscode/*.local
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

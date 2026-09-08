@@ -7,7 +7,7 @@
       // let a rebuild replace it.
       "label": "vite: dev server",
       "type": "shell",
-      "command": "npm run dev -- --host 0.0.0.0 --port 5173 --strictPort",
+      "command": "pnpm dev --host 0.0.0.0 --port 5173 --strictPort",
       "isBackground": true,
       "problemMatcher": {
         "owner": "vite",
@@ -31,14 +31,14 @@
     {
       "label": "vite: build",
       "type": "shell",
-      "command": "npm run build",
+      "command": "pnpm build",
       "group": "build",
       "problemMatcher": ["$tsc"]
     },
     {
       "label": "vite: preview",
       "type": "shell",
-      "command": "npm run preview -- --host 0.0.0.0 --port 4173 --strictPort",
+      "command": "pnpm preview --host 0.0.0.0 --port 4173 --strictPort",
       "dependsOn": "vite: build",
       "isBackground": true,
       "problemMatcher": {

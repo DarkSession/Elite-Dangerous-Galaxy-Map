@@ -35,10 +35,11 @@ npx --yes playwright install chromium
 npm install -g @fission-ai/openspec@latest
 
 if [ -f package.json ]; then
-  npm install
+  pnpm install
 fi
 
 node --version
+pnpm --version
 gh --version | head -1
 openspec --version
 
