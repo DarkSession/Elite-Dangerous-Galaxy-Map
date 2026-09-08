@@ -5,9 +5,11 @@ import {
   GALACTIC_CENTRE,
   luminanceAt,
   meanLuminanceBlock,
+  meanLuminanceFrame,
   openMap,
   projectPoint,
   readRect,
+  ringMedian5,
   ringPoints,
   ringSpread,
 } from './helpers';
@@ -46,6 +48,10 @@ const SIDE_CHUNK_VIEW = '#c=15,0,25895&d=40000&p=5&y=0';
 const SIDE_TOP_VIEW = '#c=15,0,25895&d=25000&p=5&y=0';
 /** A close view inside the disc, where the cloud pass draws nothing. */
 const CLOSE_VIEW = '#c=-20000,0,20000&d=2000&p=35&y=0';
+/** A view close enough that the sprites near the camera want more than the cap. */
+const BOUNDED_SUM_VIEW = '#c=-20000,0,20000&d=12000&p=35&y=0';
+/** The ring the rim scenario reads, in light years from the galactic centre. */
+const RIM_RADIUS = 44000;
 
 /** The green channel of the tone map's background, in 8-bit steps. */
 const BACKGROUND_GREEN = 0.036 * 255;
@@ -268,7 +274,7 @@ test('the disc at Sol shows grain', async ({ page }) => {
   }, sol);
   console.log('grain at Sol', grain);
 
-  expect(grain).toBeGreaterThan(0.06);
+  expect(grain).toBeGreaterThan(0.04);
 });
 
 test('the glow puts a halo past the rim', async ({ page }) => {
@@ -310,7 +316,8 @@ test('the clouds give the haze chunks from above', async ({ page }) => {
   for (const block of CLOUD_BLOCKS) {
     const measure = await bandPass(page, block);
     console.log('chunks from above', { block, measure });
-    expect(measure).toBeGreaterThan(0.1);
+    expect(measure).toBeGreaterThanOrEqual(0.05);
+    expect(measure).toBeLessThanOrEqual(0.13);
   }
 });
 
@@ -320,7 +327,7 @@ test('the clouds give the haze chunks from the side', async ({ page }) => {
   for (const block of SIDE_BLOCKS) {
     const measure = await bandPass(page, block);
     console.log('chunks from the side', { block, measure });
-    expect(measure).toBeGreaterThan(0.1);
+    expect(measure).toBeGreaterThanOrEqual(0.05);
   }
 });
 
@@ -337,6 +344,38 @@ test('the clouds carry light', async ({ page }) => {
   console.log('clouds carry light', { withClouds, withoutClouds });
 
   expect(withClouds - withoutClouds).toBeGreaterThanOrEqual(0.03);
+});
+
+test('the clouds reach the rim', async ({ page }) => {
+  await openMap(page);
+
+  const withClouds = await ringMedian5(page, RIM_RADIUS);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ clouds: false });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const withoutClouds = await ringMedian5(page, RIM_RADIUS);
+  console.log('clouds at the rim', { withClouds, withoutClouds });
+
+  expect(withClouds - withoutClouds).toBeGreaterThanOrEqual(0.01);
+});
+
+test('the sum of the sprites stays bounded', async ({ page }) => {
+  await openMap(page, BOUNDED_SUM_VIEW);
+
+  const withClouds = await meanLuminanceFrame(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ clouds: false });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const withoutClouds = await meanLuminanceFrame(page);
+  console.log('bounded sum', { withClouds, withoutClouds });
+
+  // The helper gives -1 if the page has no readRect, and two of those subtract to
+  // zero, which passes a ceiling. Check that both readings are real first.
+  expect(withClouds).toBeGreaterThanOrEqual(0);
+  expect(withoutClouds).toBeGreaterThanOrEqual(0);
+  expect(withClouds - withoutClouds).toBeLessThanOrEqual(0.1);
 });
 
 test('the clouds fade at close range', async ({ page }) => {

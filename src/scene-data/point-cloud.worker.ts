@@ -2,7 +2,12 @@
 import { loadDetailGrid } from '../galaxy-model/detail';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import { createGalaxyModel } from '../galaxy-model/model';
-import { pointCloudTransferables, surfaceDetailTransferables } from './messages';
+import { generateCloudSet } from './cloud-set';
+import {
+  cloudSetTransferables,
+  pointCloudTransferables,
+  surfaceDetailTransferables,
+} from './messages';
 import type { PointCloudRequest, PointCloudResponse } from './messages';
 import {
   buildSurfaceTable,
@@ -22,9 +27,16 @@ async function build(request: PointCloudRequest | null): Promise<void> {
     seed: request?.seed ?? DEFAULT_SEED,
     table,
   });
-  const response: PointCloudResponse = { cloud, detail: table.detail };
+  // The cloud set comes from the same table, with its own seed, so its samples do
+  // not repeat the point cloud's.
+  const cloudSet = generateCloudSet(model, {
+    seed: (request?.seed ?? DEFAULT_SEED) + 1,
+    table,
+  });
+  const response: PointCloudResponse = { cloud, cloudSet, detail: table.detail };
   scope.postMessage(response, [
     ...pointCloudTransferables(cloud),
+    ...cloudSetTransferables(cloudSet),
     ...surfaceDetailTransferables(table.detail),
   ]);
 }

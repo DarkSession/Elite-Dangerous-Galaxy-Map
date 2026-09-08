@@ -1,5 +1,12 @@
 // Buffer and texture upload. This is where game coordinates become world coordinates.
-import type { DensityVolume, PointCloud, SurfaceDetail } from '../scene-data/types';
+import type {
+  CloudSet,
+  DensityVolume,
+  PointCloud,
+  SurfaceDetail,
+} from '../scene-data/types';
+import { shapeAtlasSide } from './cloud-shapes';
+import type { CloudShapes } from './cloud-shapes';
 
 /**
  * Copies point positions into the renderer's world frame, which negates `z`. Scene
@@ -15,12 +22,10 @@ export function toWorldPositions(positions: Float32Array): Float32Array {
   return world;
 }
 
-/** The buffers and the vertex arrays the point pass and the cloud pass draw from. */
+/** The buffers and the vertex array the point pass draws from. */
 export interface PointBuffers {
   /** One vertex per sample, for the point sprites. */
   readonly vertexArray: WebGLVertexArrayObject;
-  /** One instance per sample over a four corner quad, for the cloud sprites. */
-  readonly cloudVertexArray: WebGLVertexArrayObject;
   readonly count: number;
   dispose(): void;
 }
@@ -28,23 +33,140 @@ export interface PointBuffers {
 /** The four corners of the cloud sprite quad, as a triangle strip. */
 const CLOUD_CORNERS = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
 
+/** The buffers and the vertex array the cloud pass draws from. */
+export interface CloudBuffers {
+  /** One instance per sample over a four corner quad. */
+  readonly vertexArray: WebGLVertexArrayObject;
+  readonly count: number;
+  dispose(): void;
+}
+
+/** Uploads a cloud set. */
+export function createCloudBuffers(
+  gl: WebGL2RenderingContext,
+  set: CloudSet,
+): CloudBuffers {
+  const vertexArray = gl.createVertexArray();
+  const positionBuffer = gl.createBuffer();
+  const tintBuffer = gl.createBuffer();
+  const radiusBuffer = gl.createBuffer();
+  const ratioBuffer = gl.createBuffer();
+  const cornerBuffer = gl.createBuffer();
+  if (
+    vertexArray === null ||
+    positionBuffer === null ||
+    tintBuffer === null ||
+    radiusBuffer === null ||
+    ratioBuffer === null ||
+    cornerBuffer === null
+  ) {
+    throw new Error('The context gave no buffer for the cloud set.');
+  }
+
+  gl.bindVertexArray(vertexArray);
+
+  // The first four attributes step once per sprite; the corner steps per vertex.
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, toWorldPositions(set.positions), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(0, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, tintBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, set.tints, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, true, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, radiusBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, set.radii, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(2, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, ratioBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, set.ratios, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(3, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, CLOUD_CORNERS, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(4);
+  gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+  return {
+    vertexArray,
+    count: set.count,
+    dispose(): void {
+      gl.deleteBuffer(positionBuffer);
+      gl.deleteBuffer(tintBuffer);
+      gl.deleteBuffer(radiusBuffer);
+      gl.deleteBuffer(ratioBuffer);
+      gl.deleteBuffer(cornerBuffer);
+      gl.deleteVertexArray(vertexArray);
+    },
+  };
+}
+
+/** The 2D texture the cloud pass reads the sprite shapes from. */
+export interface ShapeTexture {
+  readonly texture: WebGLTexture;
+  readonly shapes: CloudShapes;
+  dispose(): void;
+}
+
+/** Uploads the cloud shape atlas as an R8 2D texture. */
+export function createShapeTexture(
+  gl: WebGL2RenderingContext,
+  shapes: CloudShapes,
+): ShapeTexture {
+  const texture = gl.createTexture();
+  if (texture === null) {
+    throw new Error('The context gave no texture for the cloud shapes.');
+  }
+  const side = shapeAtlasSide(shapes);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, side, side);
+  gl.texSubImage2D(
+    gl.TEXTURE_2D,
+    0,
+    0,
+    0,
+    side,
+    side,
+    gl.RED,
+    gl.UNSIGNED_BYTE,
+    shapes.data,
+  );
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+
+  return {
+    texture,
+    shapes,
+    dispose(): void {
+      gl.deleteTexture(texture);
+    },
+  };
+}
+
 /** Uploads a point cloud. */
 export function createPointBuffers(
   gl: WebGL2RenderingContext,
   cloud: PointCloud,
 ): PointBuffers {
   const vertexArray = gl.createVertexArray();
-  const cloudVertexArray = gl.createVertexArray();
   const positionBuffer = gl.createBuffer();
   const tintBuffer = gl.createBuffer();
-  const cornerBuffer = gl.createBuffer();
-  if (
-    vertexArray === null ||
-    cloudVertexArray === null ||
-    positionBuffer === null ||
-    tintBuffer === null ||
-    cornerBuffer === null
-  ) {
+  if (vertexArray === null || positionBuffer === null || tintBuffer === null) {
     throw new Error('The context gave no buffer for the point cloud.');
   }
 
@@ -60,38 +182,16 @@ export function createPointBuffers(
   gl.enableVertexAttribArray(1);
   gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, true, 0, 0);
 
-  // The cloud pass reads the same two buffers once per sprite, and the corner
-  // buffer once per vertex of the quad.
-  gl.bindVertexArray(cloudVertexArray);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.vertexAttribDivisor(0, 1);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, tintBuffer);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, true, 0, 0);
-  gl.vertexAttribDivisor(1, 1);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, CLOUD_CORNERS, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
-
   gl.bindVertexArray(null);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   return {
     vertexArray,
-    cloudVertexArray,
     count: cloud.count,
     dispose(): void {
       gl.deleteBuffer(positionBuffer);
       gl.deleteBuffer(tintBuffer);
-      gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
-      gl.deleteVertexArray(cloudVertexArray);
     },
   };
 }

@@ -38,14 +38,16 @@ Last updated: 2026-09-08.
   density before emission, a power of 0.35 above a knee at the density of the disc at
   Sol and 0.70 below it, a four-stop volume ramp by emission from a greyed blue-violet
   haze through dusty pink-brown arms and a soft salmon band to a cream-white core, coloured extinction
-  for the dust, a point ramp by zone, cloud sprites that give the haze its chunks, a
+  for the dust, a point ramp by zone, 40,000 cloud sprites of 500 to 4,000 light years
+  with ragged generated shapes that give the haze its chunks out to the rim, a
   glow pass for the halo, and a tone map on the luminance over a dark grey background
   with a dither of one 8-bit step.
 
 ## Phase 1: far view
 
 Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`, then
-`far-view-look-third-pass`. Status: implemented, under review.
+`far-view-look-third-pass`, then `far-view-cloud-look`. Status: implemented, under
+review.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
@@ -71,14 +73,19 @@ Draws the galaxy's shape from far away and lets the user move across it.
   in `src/galaxy-model/png.ts`, which runs in Node and in a worker.
 - **Rendering.** A point cloud of 2,000,000 samples drawn as additive sprites, and a
   256x64x256 density volume drawn by raymarching. Both are baked once in workers. A
-  cloud pass draws 10,000 of the samples as large soft additive sprites between the
-  volume and the points, so the haze is made of chunks in three dimensions; it fades
-  out below 12,000 light years and draws nothing at 2,000. A glow pass holds the
+  cloud pass draws a second set of 40,000 samples as large soft additive sprites
+  between the volume and the points, so the haze is made of chunks in three
+  dimensions. The set is placed by the square root of the cell mass with a floor that
+  reaches the rim, each sprite reads one of 16 generated shapes with a ragged outline,
+  and its radius is log-uniform from 500 to 4,000 light years. A sprite fades out from
+  half the 64 pixel cap to the cap, which holds the layers per pixel near level from
+  12,000 to 30,000 light years. The pass fades out below 12,000 light years and draws
+  nothing at 2,000. A glow pass holds the
   brightest pixels down, blurs the volume and the clouds at one eighth resolution and
   adds them back, which gives the halo past the rim and the light between the arms.
   The points carry a large share of the light in the disc, which gives the disc its
-  grain. The frame budget test measures eight views: two cursors at 2,000, 12,000,
-  20,000 and 120,000 light years.
+  grain. The frame budget test measures ten views: two cursors at 2,000, 12,000,
+  20,000, 30,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
   zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the

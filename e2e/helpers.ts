@@ -312,3 +312,59 @@ export async function columnLuminance(
     { x, top, count },
   );
 }
+
+/**
+ * The median of the 5 x 5 mean luminance at the 72 points spaced evenly on a circle
+ * around the galactic centre in the plane.
+ */
+export async function ringMedian5(page: Page, radius: number): Promise<number> {
+  const points = ringPoints(radius);
+  const readings = await page.evaluate((ring) => {
+    const map = window.__galaxyMap;
+    if (map?.readRect === undefined || map.project === undefined) return [];
+    const mean5 = (x: number, y: number): number => {
+      const bytes = map.readRect?.(Math.round(x) - 2, Math.round(y) - 2, 5, 5);
+      if (bytes === undefined) return 0;
+      let sum = 0;
+      for (let index = 0; index < bytes.length; index += 4) {
+        sum +=
+          0.2126 * (bytes[index] as number) +
+          0.7152 * (bytes[index + 1] as number) +
+          0.0722 * (bytes[index + 2] as number);
+      }
+      return (4 * sum) / (255 * bytes.length);
+    };
+    return ring.map((point) => {
+      const screen = map.project?.(point) ?? { x: 0, y: 0 };
+      return mean5(screen.x, screen.y);
+    });
+  }, points);
+
+  const sorted = [...readings].sort((a, b) => a - b);
+  if (sorted.length === 0) return -1;
+  const low = sorted[Math.floor((sorted.length - 1) / 2)] as number;
+  const high = sorted[Math.ceil((sorted.length - 1) / 2)] as number;
+  return (low + high) / 2;
+}
+
+/**
+ * The mean luminance of the whole frame. The sum runs inside the page, so the
+ * millions of byte values do not cross the protocol.
+ */
+export async function meanLuminanceFrame(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const map = window.__galaxyMap;
+    if (map?.readRect === undefined) return -1;
+    const canvas = document.getElementById('map');
+    if (!(canvas instanceof HTMLCanvasElement)) return -1;
+    const bytes = map.readRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    let sum = 0;
+    for (let index = 0; index < bytes.length; index += 4) {
+      sum +=
+        0.2126 * (bytes[index] as number) +
+        0.7152 * (bytes[index + 1] as number) +
+        0.0722 * (bytes[index + 2] as number);
+    }
+    return (4 * sum) / (255 * bytes.length);
+  });
+}

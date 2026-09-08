@@ -1,11 +1,14 @@
 #version 300 es
-// A large soft round sprite. The pass draws with additive blending, so the sprites
-// give the haze its chunks.
+// A soft sprite with an irregular outline, read from the shape atlas. The pass draws
+// with additive blending, so the sprites give the haze its chunks.
 precision highp float;
 
-in vec2 vCorner;
+in vec2 vLocal;
+in vec2 vShapeUv;
 in float vTint;
 in float vBrightness;
+
+uniform sampler2D uShapes;
 
 out vec4 fragColour;
 
@@ -22,13 +25,13 @@ const float CORE_LOW = 0.45;
 const float CORE_HIGH = 0.75;
 
 void main() {
-  float radius = dot(vCorner, vCorner);
-  if (radius > 1.0) {
+  // The shape is zero outside its inscribed disc, and the corners of the turned quad
+  // reach past it, so this drop keeps the lookup inside the shape's cell.
+  if (dot(vLocal, vLocal) > 1.0) {
     discard;
   }
-  float falloff = 1.0 - radius;
-  falloff *= falloff;
+  float shape = texture(uShapes, vShapeUv).r;
   vec3 colour = mix(HAZE, ARMS, clamp(vTint * ZONE_SCALE, 0.0, 1.0));
   colour = mix(colour, CORE, smoothstep(CORE_LOW, CORE_HIGH, vTint));
-  fragColour = vec4(colour * (falloff * vBrightness), 0.0);
+  fragColour = vec4(colour * (shape * vBrightness), 0.0);
 }

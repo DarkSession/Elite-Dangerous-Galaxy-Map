@@ -19,7 +19,7 @@ const TAPS_PER_SIGMA = 2;
 export const GLOW_DIVISOR = 8;
 
 /** The brightness of the halo, relative to the volume pass. */
-export const DEFAULT_GLOW_WEIGHT = 6.0;
+export const DEFAULT_GLOW_WEIGHT = 9.0;
 
 /** How far the halo moves toward the haze colour, 0 to 1. */
 export const DEFAULT_GLOW_TINT = 0.15;
