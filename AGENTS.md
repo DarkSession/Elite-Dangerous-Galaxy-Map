@@ -20,16 +20,16 @@ there rather than scattering it at the repository root.
 Taken from what [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) and
 [.vscode/](.vscode/) are wired for:
 
-| Piece | Choice |
-| --- | --- |
-| Language | TypeScript |
-| Package manager | **pnpm** — not npm, not yarn |
-| Build / dev server | Vite — dev on 5173, production preview on 4173 |
-| Rendering | WebGL, with GLSL in `.glsl` / `.vert` / `.frag` files |
-| Unit tests | Vitest |
-| Browser tests | Playwright |
-| Lint / format | ESLint and Prettier, both run on save |
-| Runtime | Node 22, in a dev container with the host NVIDIA GPU passed through |
+| Piece              | Choice                                                              |
+| ------------------ | ------------------------------------------------------------------- |
+| Language           | TypeScript                                                          |
+| Package manager    | **pnpm** — not npm, not yarn                                        |
+| Build / dev server | Vite — dev on 5173, production preview on 4173                      |
+| Rendering          | WebGL, with GLSL in `.glsl` / `.vert` / `.frag` files               |
+| Unit tests         | Vitest                                                              |
+| Browser tests      | Playwright                                                          |
+| Lint / format      | ESLint and Prettier, both run on save                               |
+| Runtime            | Node 22, in a dev container with the host NVIDIA GPU passed through |
 
 ## pnpm, and the 7-day release hold
 
@@ -46,7 +46,7 @@ window.
 What this means in practice:
 
 - `pnpm add x` resolves to the newest version of `x` that is already a week old, which
-  is often *not* the version on the npm page. That is working as intended — do not
+  is often _not_ the version on the npm page. That is working as intended — do not
   "fix" it by pinning the newest version by hand.
 - Versions already in `pnpm-lock.yaml` install normally, however old or new.
 - If a fresh release is genuinely needed on day zero (a real security fix), add that
@@ -78,6 +78,37 @@ The skill and command files under `.claude/` and `.agents/skills/` are generated
 `openspec init` / `openspec update` — edit `openspec/config.yaml` instead of editing
 them by hand, or the next update overwrites your changes.
 
+### Two review gates
+
+Nothing reaches a human reviewer un-reviewed. Both gates are mandatory, and both run a
+**read-only subagent** that reports but never edits — fixing what it finds is the
+implementing agent's job.
+
+| Gate | When | Subagent |
+| --- | --- | --- |
+| Proposal | End of `/opsx:propose` (and `/opsx:update`), once proposal, specs, design and tasks all exist — before the plan is shown to a human | [`openspec-proposal-reviewer`](.claude/agents/openspec-proposal-reviewer.md) |
+| Implementation | End of `/opsx:apply`, once the code is written and the tasks are checked off — before the work is shown to a human | [`openspec-implementation-reviewer`](.claude/agents/openspec-implementation-reviewer.md) |
+
+Each returns **BLOCK**, **APPROVE WITH NOTES** or **APPROVE**. On BLOCK, fix and re-run
+the gate; do not hand a human a blocked change with the objections attached as caveats.
+When you do present, state the verdict and the findings — including the ones you decided
+against acting on, and why.
+
+Before the implementation gate, run the tests yourself. The gate is not a substitute for
+that, and a reviewer sent into a broken tree wastes its run.
+
+If a subagent cannot be launched, say so plainly. Reviewing your own work and calling
+that the gate is the one failure mode that makes these worse than useless, because it
+launders an unreviewed change into a reviewed one.
+
+The gate instructions live in `openspec/config.yaml` (`rules.tasks` for the proposal
+gate, `operations.apply.guidance` for the implementation one), so they are injected into
+the generated instructions and survive `openspec update`. A caveat when editing that
+file: a list entry containing a colon followed by a space parses as a YAML map rather
+than a string, and OpenSpec then drops the whole block without an error. Keep plain
+entries colon-free or write them as a `|` block, and check with
+`openspec instructions tasks --change <id>` that your text actually comes out.
+
 ## Rules that are specific to this project
 
 - **Hardware rendering is a requirement, not a nicety.** The dev container exists to
@@ -101,3 +132,14 @@ them by hand, or the next update overwrites your changes.
 - Commit only when asked. The default branch is `main`.
 - Prettier and ESLint own formatting; do not hand-format against them, and leave GLSL
   files alone (format-on-save is off for them by design).
+
+## Language and documentation
+
+Use [ASD-STE-100](https://www.asd-ste100.org/) (Simplified Technical English) everywhere: replies to the person you are working with, code, comments, documentation, commit messages and pull requests.
+
+- One idea per sentence. Keep instructions to 20 words and descriptions to 25. Keep a paragraph to six sentences.
+- Active voice, present tense. Name who or what does the thing.
+- One word, one meaning. Choose a term and keep it; do not vary it for style.
+- Plain, common words. No metaphor, no idiom, no literary phrasing, no marketing adjectives, no emoji, and no jargon the reader did not use first: "add a tooltip to the heat glosses" beats "the glosses find their voice at last". Identifiers, test names and headings follow the same rule.
+- Say it once, and say it directly. Drop throat-clearing openers ("it is worth noting that"), self-assessment ("comprehensive", "robust", "seamless") and hedging that carries no information. If deleting a sentence loses nothing, delete it.
+- Write a procedure as numbered steps in the order you do them, with the condition before the action: "If the build fails, read the policy output."

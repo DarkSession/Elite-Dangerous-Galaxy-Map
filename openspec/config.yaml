@@ -30,24 +30,72 @@ context: |
   - Performance matters as much as correctness: the galaxy is ~400 billion systems, and
     any spec touching data loading or drawing should say what scale it must hold up at.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# Per-artifact rules.
+#
+# GATE 1 -- a subagent reviews the proposal before any human sees it. The full gate sits
+# on the last artifact (tasks), where the artifact set is complete; the earlier ones
+# carry a reminder so regenerating a single artifact cannot slip past it.
+#
+# Note for editors -- an entry containing a colon followed by a space parses as a YAML
+# map, not a string, and OpenSpec then drops the block without complaining. Keep plain
+# entries colon-free, or write them as a "|" block.
+rules:
+  proposal:
+    - State the problem before the solution, and state the non-goals.
+    - Every requirement must be verifiable -- something a test could fail on. "Fast",
+      "robust" and "intuitive" are not requirements.
+    - Anything touching data loading or rendering must state the scale it holds up at.
+    - Review gate -- this proposal goes to the openspec-proposal-reviewer subagent
+      before any human sees it. Do not present it as ready until that review has run.
+  specs:
+    - Review gate -- the openspec-proposal-reviewer subagent reviews this change before
+      human review. Do not present it as ready until that review has run.
+  design:
+    - Review gate -- the openspec-proposal-reviewer subagent reviews this change before
+      human review. Do not present it as ready until that review has run.
+  tasks:
+    - Tasks must be ordered, independently checkable, and include the tests. A task list
+      ending at "implement it" is not a plan.
+    - |
+      GATE -- proposal review, mandatory, before human review.
+      The artifact set is complete at this point. Before presenting anything to a human:
+        1. Launch the openspec-proposal-reviewer subagent (Agent/Task tool,
+           subagent_type openspec-proposal-reviewer) and give it the change id.
+        2. Wait for its verdict. Do not summarise the proposal to the human first.
+        3. On BLOCK, fix the artifacts and re-run the gate. Do not carry a blocked
+           proposal to a human with the objections attached as caveats.
+        4. When presenting, state the verdict and the findings, including any you chose
+           not to act on, and why.
+      The reviewer is read-only and never edits artifacts -- fixes are yours to make.
+      If the subagent cannot be run, say so plainly instead of reviewing your own work
+      and calling that the gate.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+# Per-operation guidance.
+#
+# GATE 2 -- a subagent reviews the implementation before any human sees it.
+operations:
+  apply:
+    guidance:
+      - |
+        GATE -- implementation review, mandatory, before human review.
+        Once the implementation is complete and the tasks are checked off, and before
+        presenting the work to a human:
+          1. Run the project's tests yourself first. The gate is not a substitute for
+             that, and handing a reviewer a broken tree wastes the run.
+          2. Launch the openspec-implementation-reviewer subagent (Agent/Task tool,
+             subagent_type openspec-implementation-reviewer) with the change id.
+          3. Wait for its verdict. On BLOCK, fix and re-run the gate -- a blocked
+             implementation does not go to a human with the findings as footnotes.
+          4. When presenting, state the verdict and the findings, including any you
+             disagreed with, and why.
+        The reviewer is read-only -- fixes are yours to make.
+        If the subagent cannot be run, say so plainly rather than reviewing your own
+        implementation and calling that the gate.
+      - Report test results as they actually were. A failing suite is reported as
+        failing, with its output.
+  archive:
+    guidance:
+      - Before archiving, confirm both review gates actually ran for this change -- the
+        proposal gate before human review of the plan, the implementation gate before
+        human review of the code. If either was skipped, say so rather than quietly
+        archiving over it.
