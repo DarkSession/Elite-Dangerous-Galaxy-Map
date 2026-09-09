@@ -237,9 +237,10 @@ harder shape.
 
 The shape is the mild one on purpose. A boxel draws at most 256 stars, so the spread's
 own scatter divided by the square root of the count is the scatter of the boxel's drawn
-light. The point cloud's harder shape, `(0.05 + 12 * u^16) / 0.755882`, has a standard
-deviation of 2.6 times its mean, which puts a boxel 16 percent out and the worst of
-1,856 boxels 67 percent out; that is a checkerboard at the boxel scale. The mild shape
+light. The point cloud's harder shape is `(0.05 + 12 * u^16) / 0.7559`, where 0.7559 is
+the constant `points.vert` carries for the exact mean of 0.7558823529. That shape has a
+standard deviation of 2.6 times its mean, which puts a boxel 16 percent out and the
+worst of 1,856 boxels 67 percent out; that is a checkerboard at the boxel scale. The mild shape
 has a standard deviation of 0.89, which is 5.6 percent per boxel. The point cloud can
 afford the harder shape because its 2,000,000 samples are not grouped into boxels.
 

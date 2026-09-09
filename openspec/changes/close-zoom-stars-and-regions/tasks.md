@@ -180,6 +180,6 @@
 
 ## 10. Review gate
 
-- [ ] 10.1 Run the `openspec-implementation-reviewer` subagent with the change id, fix
+- [x] 10.1 Run the `openspec-implementation-reviewer` subagent with the change id, fix
       what it blocks on, and re-run it; verify the verdict is APPROVE or APPROVE WITH
       NOTES before the work goes to a human

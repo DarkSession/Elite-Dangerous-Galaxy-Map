@@ -16,6 +16,7 @@ import {
   DRAWN_BOXEL_COUNT,
   DRAWN_CLASS_COUNT,
   listBlockBoxels,
+  listDrawnBoxels,
   starOffsets,
 } from '../scene-data/boxel';
 import {
@@ -195,19 +196,19 @@ describe('a star sprite', () => {
 });
 
 describe('the brightness spread', () => {
-  test('does not change a boxel light', () => {
-    // The mean runs over the star indices of a full boxel, for every boxel of the drawn
-    // set. One boxel draws at most 256 stars and the spread's own standard deviation is
-    // 0.89 times its mean, so the mean over a single boxel scatters by about 0.056 and
-    // the worst of the 1,856 boxels is 0.205 from 1. Over the whole field that scatter
-    // falls to 0.0013, and the field's light rests on the field mean.
+  /** The mean, the worst boxel and the ends of the spread over a set of boxels. */
+  function spreadOver(seeds: number[]): {
+    mean: number;
+    worstBoxel: number;
+    low: number;
+    high: number;
+  } {
     let total = 0;
     let count = 0;
     let worstBoxel = 0;
     let low = Number.POSITIVE_INFINITY;
     let high = 0;
-    for (let boxel = 0; boxel < DRAWN_BOXEL_COUNT; boxel += 1) {
-      const seed = boxelSeed([boxel % 60, Math.floor(boxel / 60), 7], 1);
+    for (const seed of seeds) {
       let sum = 0;
       for (let star = 0; star < STARS_PER_BOXEL; star += 1) {
         const value = starSpread(seed, star);
@@ -219,21 +220,47 @@ describe('the brightness spread', () => {
       count += STARS_PER_BOXEL;
       worstBoxel = Math.max(worstBoxel, Math.abs(sum / STARS_PER_BOXEL - 1));
     }
-    expect(Math.abs(total / count - 1)).toBeLessThan(0.01);
-    expect(worstBoxel).toBeLessThan(0.3);
+    return { mean: total / count, worstBoxel, low, high };
+  }
+
+  test('does not change a boxel light', () => {
+    // The set is the one the field draws at Sol at 500 light years: 1,856 boxels over
+    // the four size classes, with the index pattern and the seeds of a real frame.
+    //
+    // The mean runs over the star indices of a full boxel, for every boxel of that set.
+    // One boxel draws at most 256 stars and the spread's own standard deviation is 0.89
+    // times its mean, so the mean over a single boxel scatters by about 0.056 and the
+    // worst of the 1,856 is 0.212 from 1. Over the whole field that scatter falls to
+    // 0.0013, and the field's light rests on the field mean.
+    const drawn = listDrawnBoxels([0, 0, 0], 500);
+    expect(drawn.length).toBe(DRAWN_BOXEL_COUNT);
+    expect(new Set(drawn.map((boxel) => boxel.sizeClass)).size).toBe(DRAWN_CLASS_COUNT);
+    const field = spreadOver(
+      drawn.map((boxel) => boxelSeed(boxel.index, boxel.sizeClass)),
+    );
+
+    expect(Math.abs(field.mean - 1)).toBeLessThan(0.01);
+    expect(field.worstBoxel).toBeLessThan(0.3);
     // The faintest star of the field against the brightest.
-    expect(high / low).toBeGreaterThanOrEqual(10);
+    expect(field.high / field.low).toBeGreaterThanOrEqual(10);
 
     // One full boxel on its own spans the same factor.
-    const seed = boxelSeed([2499, 2049, 1205], 1);
-    let boxelLow = Number.POSITIVE_INFINITY;
-    let boxelHigh = 0;
-    for (let star = 0; star < STARS_PER_BOXEL; star += 1) {
-      const value = starSpread(seed, star);
-      boxelLow = Math.min(boxelLow, value);
-      boxelHigh = Math.max(boxelHigh, value);
+    const one = spreadOver([boxelSeed([2499, 2049, 1205], 1)]);
+    expect(one.high / one.low).toBeGreaterThanOrEqual(10);
+  });
+
+  test('keeps its mean over a block of neighbouring seeds of one size class', () => {
+    // A harder correlation case than a drawn set: 1,856 boxels that are neighbours on
+    // two axes, all of size class 1, so a hash that carried its input pattern through
+    // would show here.
+    const seeds: number[] = [];
+    for (let boxel = 0; boxel < DRAWN_BOXEL_COUNT; boxel += 1) {
+      seeds.push(boxelSeed([boxel % 60, Math.floor(boxel / 60), 7], 1));
     }
-    expect(boxelHigh / boxelLow).toBeGreaterThanOrEqual(10);
+    const block = spreadOver(seeds);
+    expect(Math.abs(block.mean - 1)).toBeLessThan(0.01);
+    expect(block.worstBoxel).toBeLessThan(0.3);
+    expect(block.high / block.low).toBeGreaterThanOrEqual(10);
   });
 
   test('carries the normalising constant the shader carries', () => {
