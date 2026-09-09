@@ -177,7 +177,7 @@ what bounds the frame:
 **The calibration** is a ramp on the logarithm of the detailed mass density: 4.8 systems
 per solar mass at the density of the disc at Sol, falling linearly in the logarithm to 1
 at the model's peak density, held flat outside that range. At Sol this gives 3.798
-systems per 1,000 cubic light years against the roadmap's measured 3.8, and 15,651
+systems per 1,000 cubic light years against the roadmap's measured 3.8, and 15,592
 systems within 100 light years against its measured 16,000. The roadmap also records
 "about 4 systems per solar mass in the disc"; 4.8 is the value that reproduces the
 neighbourhood counts, and the roadmap's calibration line is corrected to it.
@@ -219,6 +219,29 @@ on-screen size after the clamp to 1 to 16 pixels. The sprite then deposits
 `lightPerStar / range^2` times a fixed constant, whatever its radius and whatever the
 clamp does — inverse square while the sprite is at the clamp, constant surface
 brightness while it is resolved, which is what a real source does.
+
+### The brightness of a star carries a spread, and the mean of the spread is 1
+
+The field's grain and the light it shows on screen pull against each other. The handover
+pins the linear light the field adds, and the tone map is concave, so the displayed sum
+of a fixed light is largest when the light is spread evenly over pixels and smallest
+when it sits on few. Grain is the opposite arrangement of the same light. A wider star
+therefore raises the mean and lowers the grain, and no radius clears both thresholds the
+spec sets.
+
+A per-star spread of brightness moves the frontier out. The shader takes a fourth value
+from the same hash that places the star and multiplies the brightness by
+`(0.3 + 3 * u^4) / 0.9`, whose mean over `u` in 0 to 1 is 1, so a boxel's light does not
+change. `src/render/shaders/points.vert` already does this for the point cloud, with a
+harder shape.
+
+The shape is the mild one on purpose. A boxel draws at most 256 stars, so the spread's
+own scatter divided by the square root of the count is the scatter of the boxel's drawn
+light. The point cloud's harder shape, `(0.05 + 12 * u^16) / 0.755882`, has a standard
+deviation of 2.6 times its mean, which puts a boxel 16 percent out and the worst of
+1,856 boxels 67 percent out; that is a checkerboard at the boxel scale. The mild shape
+has a standard deviation of 0.89, which is 5.6 percent per boxel. The point cloud can
+afford the harder shape because its 2,000,000 samples are not grouped into boxels.
 
 ### The CPU owns the boxel table, the GPU owns the star positions
 
@@ -325,9 +348,12 @@ right, which is where the region is. This is not a corner case — at 500 light 
 inside a region the centroid is often thousands of light years behind the camera.
 
 The anchor is then held inside the viewport with a 48 pixel inset, so the region the
-camera sits inside keeps a label at the frame edge. Candidates are placed largest
-footprint first, a label that would overlap a placed one is dropped, and at most 12 are
-placed.
+camera sits inside keeps a label at the frame edge. The candidate whose centroid is
+nearest the cursor is placed first, and the rest follow largest footprint first. A label
+that would overlap a placed one is dropped, and at most 12 are placed. The nearest
+centroid goes first because a pure largest-first order never names the region the view
+is centred on: at a view of the galactic centre 33 regions are candidates and the
+`Galactic Centre` is the smallest of them, so the cap of 12 is reached long before it.
 
 _Alternative:_ draw the labels into the canvas. Rejected: text in WebGL needs a glyph
 atlas, and a DOM label is readable by the browser test without a pixel measure.
@@ -401,6 +427,18 @@ naming all of them.
 - **A pre-1.0 dependency.** A patch release can change an export. → The version is
   pinned exactly, the four leaves are wrapped in `src/scene-data/`, and a unit test
   asserts the two constants the map depends on: the galaxy origin and the sector edge.
+
+- **The main thread builds a second model before the first frame.** The star field's
+  counts read the detailed density, so the main thread fetches and decodes the
+  1024 x 1024 detail grid and builds a `GalaxyModel` that carries it, as
+  `point-cloud.worker.ts` does. That work sits inside the window
+  `far-view-scene-data`'s "Main thread stays responsive" scenario measures, and the
+  requirement names workers rather than a main-thread build. The scenario passes in the
+  suite. It fails when that spec runs alone in a cold browser, at 373 to 392 ms against
+  its 100 ms limit, but it fails there before this change as well, at 301 to 342 ms: the
+  long task is the main bundle's module evaluation and it grows with the bundle. This
+  change makes a pre-existing defect worse and does not cause it. The defect belongs to
+  the test's own premise, which measures a warm browser, and it is reported separately.
 
 ## Migration Plan
 

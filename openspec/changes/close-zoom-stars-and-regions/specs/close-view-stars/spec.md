@@ -159,7 +159,10 @@ separate rules.
 
 The point cloud places its samples in proportion to the same detailed density, so the
 light per unit volume of the two sources SHALL be equal wherever the field draws stars,
-not only at the density the constant was fitted at. A boxel whose count rounds to zero
+not only at the density the constant was fitted at. The equality is of the light the
+boxel carries. The per-star spread then scatters a boxel's drawn light about that value,
+and the point cloud's own sample count scatters its light the same way, so neither
+source deposits its exact expected light in any one volume. A boxel whose count rounds to zero
 draws none, and the light it would carry is under 3e-5 of one point cloud sample's, so
 it cannot show.
 
@@ -185,11 +188,19 @@ spacing of the `n` stars its boxel draws, so a boxel that draws every system it 
 gives sharp points and a boxel at the cap gives wider, softer ones that read as a wash.
 The on-screen size SHALL be held between 1 and 16 pixels.
 
-A star's brightness SHALL be `lightPerStar * focal^2 / (range * size)^2`, where `focal`
-is the pixels per light year at one light year of range and `size` is the on-screen size
-after the clamp. The light the sprite deposits is then `lightPerStar / range^2` times a
-constant, whatever the star's radius and whatever the size clamp does. The radius
-therefore sets only how concentrated a star's light is, never how much of it there is.
+A star's brightness SHALL be `lightPerStar * focal^2 / (range * size)^2`, times the
+handover factor, times a per-star spread, where `focal` is the pixels per light year at
+one light year of range and `size` is the on-screen size after the clamp. Without the
+spread the light the sprite deposits is `lightPerStar / range^2` times a constant,
+whatever the star's radius and whatever the size clamp does. The radius therefore sets
+only how concentrated a star's light is, never how much of it there is.
+
+The spread SHALL come from the same hash the star's position comes from, and its mean
+over the stars of the drawn set SHALL be 1, so the field's light does not depend on it.
+One boxel draws at most 256 stars, so its own mean departs from 1 by a sampling error,
+and the shape SHALL be chosen to hold that departure small. The spread is what gives the field its grain: a real population of stars
+covers many magnitudes, and the point pass already spreads its own samples the same way.
+A shape whose scatter is too large makes neighbouring boxels read as blocks.
 
 #### Scenario: A capped boxel draws wider stars
 
@@ -197,6 +208,14 @@ therefore sets only how concentrated a star's light is, never how much of it the
   draws every system it holds, and of a 1,280 light year boxel 2,000 light years from
   the galactic centre, which is capped
 - **THEN** the second radius is at least 20 times the first
+
+#### Scenario: The spread does not change the field's light
+
+- **WHEN** a unit test takes the mean of the spread over every star of the drawn set,
+  the largest departure from 1 of any one boxel's own mean, and the ratio of the
+  faintest to the brightest value the spread gives
+- **THEN** the mean over the drawn set is 1 within 1 percent, no one boxel's mean is
+  more than 0.3 from 1, and the ratio spans at least a factor of 10
 
 #### Scenario: The deposited light does not follow the radius
 
@@ -290,7 +309,7 @@ The renderer SHALL expose a `stars` switch beside the switches for the volume, t
 clouds, the points and the glow.
 
 The mean luminance the field adds over the whole frame is small, and it cannot be made
-larger. The handover pins the linear light the field carries, and the tone map is
+larger without giving up the grain. The handover pins the linear light the field carries, and the tone map is
 concave, so the displayed sum of a fixed light is largest when the light is spread
 evenly over the pixels and smallest when it sits on few. Grain is the opposite
 arrangement of the same light. A wider star therefore raises the mean and lowers the

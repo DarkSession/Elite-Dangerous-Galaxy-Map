@@ -95,17 +95,22 @@ export function starPixelSize(focal: number, range: number, radius: number): num
 }
 
 /**
- * The brightness of a star. The sprite then deposits `lightPerStar / range^2` times
- * `focal^2`, whatever the star's radius is and whatever the size clamp does.
+ * The brightness of a star, as the whole expression `stars.vert` carries: the light per
+ * star, the handover fade and the per-star spread, over the square of the on-screen
+ * size. The sprite then deposits `lightPerStar * fade * spread / range^2` times
+ * `focal^2`, whatever the star's radius is and whatever the size clamp does. Pass a
+ * fade and a spread of 1 to read the rule without them.
  */
 export function starBrightness(
   lightPerStar: number,
   focal: number,
   range: number,
   radius: number,
+  fade: number,
+  spread: number,
 ): number {
   const size = starPixelSize(focal, range, radius);
-  return (lightPerStar * focal * focal) / (range * size * range * size);
+  return (lightPerStar * focal * focal * fade * spread) / (range * size * range * size);
 }
 
 /**

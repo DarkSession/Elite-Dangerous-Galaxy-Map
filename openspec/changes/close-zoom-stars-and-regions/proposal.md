@@ -82,8 +82,12 @@ Non-goals:
   (two passes, two switches, the handover radii), `src/render/shaders/points.vert`
   (the range fade), `src/scene-data/types.ts` and `src/scene-data/load.ts` (the region
   line set), `src/render/global.ts` and `e2e/global.d.ts` (the test hooks),
-  `index.html` (the label overlay element), `README.md` and `docs/roadmap.md` (the
-  zoom range, and the roadmap's calibration line).
+  `index.html` (the label overlay element), `src/app/main.ts` (a model that carries the
+  detail grid, for the star counts), `README.md` and `docs/roadmap.md` (the zoom range,
+  and the roadmap's calibration line). `DEFAULT_POINT_BRIGHTNESS` moves from
+  `src/render/renderer.ts` to `src/render/point-pass.ts`, beside `POINT_RADIUS_LY`, so
+  the star pass can derive its light constant from both without an import cycle. The
+  value does not change.
 - **New dependency.** `@elite-dangerous-almanac/core`, MIT for its code, with
   source-specific terms for its data. The codex region tables come from
   klightspeed's EliteDangerousRegionMap under MIT, and the game data behind them falls

@@ -41,7 +41,9 @@ beforeAll(() => {
   outDir = mkdtempSync(join(tmpdir(), 'galaxy-map-bundle-'));
   // The build runs alone, without the type check the `build` script also runs, because
   // this test reads the emitted chunks and nothing else.
-  execFileSync('npx', ['vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
+  // This repository uses pnpm. `npx` is npm tooling and would fetch from the registry
+  // outside the 7-day release hold if the local binary were ever missing.
+  execFileSync('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
     cwd: root,
     stdio: 'pipe',
   });
