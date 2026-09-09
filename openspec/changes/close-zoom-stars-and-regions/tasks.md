@@ -173,10 +173,9 @@
       lookup size to 199 KiB, record the answers to the phase 2 open questions — the
       counts and the light read the detailed density, the labels and boundaries are the
       codex regions in a zoom band, and the zoom band is 30,000 light years down —
-      replace the level-of-detail line "Per-level alpha driven by camera distance gives
-      the fade" with the scheme that replaced it, four nesting classes with one fade by
-      range and one weight by zoom distance, and record that one chunk per boxel is now
-      in use
+      and record that one chunk per boxel is now in use. The level-of-detail line and
+      the phase 2 status line are already corrected, and phase 2.1 records the fade
+      between the classes, so leave both alone
 
 ## 10. Review gate
 

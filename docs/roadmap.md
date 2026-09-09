@@ -1,10 +1,10 @@
 # Roadmap
 
-The map is built in four phases. Each phase is one OpenSpec change. This document
+The map is built in the phases below. Each phase is one OpenSpec change. This document
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-08.
+Last updated: 2026-09-09.
 
 ## Facts that hold for every phase
 
@@ -118,7 +118,7 @@ Draws the galaxy's shape from far away and lets the user move across it.
 
 ## Phase 2: close zoom with decoration stars
 
-Change: not yet created.
+Change: `close-zoom-stars-and-regions`. Status: proposed, not yet implemented.
 
 Extends the zoom down to individual stars. Draws stars that are decoration, not real
 systems, and fades them out as the user zooms in.
@@ -132,8 +132,9 @@ systems, and fades them out as the user zooms in.
 - **Level of detail.** The game's mass-code hierarchy is an octree: a sector is 1,280
   light years, mass code `h`; each lower code halves the edge down to `a` at 10 light
   years. Each level is a chunk. A boxel's stars come from a hash of its address, so the
-  same boxel always shows the same stars. Per-level alpha driven by camera distance
-  gives the fade.
+  same boxel always shows the same stars. Four classes draw at once, picked by the zoom
+  distance, and the set steps from one group of four to the next. Phase 2.1 turns that
+  step into a fade.
 - **Budget.** Sol's neighbourhood has about 16,000 systems within 100 light years and
   about 2,000,000 within 500. The level-of-detail scheme must keep the drawn count
   bounded. The spec for this phase must state that bound.
@@ -161,6 +162,45 @@ systems, and fades them out as the user zooms in.
     one? The detailed density is the game's map, so it is the better budget.
   - The zoom distance at which decoration stars appear and the distance at which
     they are fully faded.
+
+## Phase 2.1: the level of detail fades
+
+Change: not yet created.
+
+Replaces the step at each level-of-detail threshold with a fade, so stars appear
+gradually as the user zooms in.
+
+- **Problem.** Phase 2 picks four size classes from the zoom distance with
+  `clamp(ceil(log2(distance / 320)), 0, 4)`. The set steps at 640, 1,280, 2,560 and
+  5,120 light years. At a step the finest class halves its edge, the coarsest class
+  goes, and every boxel address changes, so one frame holds a different set of stars
+  from the frame before it.
+- **Scheme.** Take the position inside the class band,
+  `f = s0 - log2(distance / 320)`, which runs from 0 to 1 over one octave of zoom. Draw
+  five classes and weight the two ends by it: class `s0-1` at `f`; class `s0` with its
+  full 512 boxels, its inner 64 at `1 - f`; the three middle classes at 1; class `s0+3`
+  at `1 - f`. At `f = 0` this is the phase 2 set. At `f = 1` it is the next band's set.
+  The step then changes nothing.
+- **Fine end.** The two classes cover the same volume and their weights sum to 1, so
+  the light is held and there is no edge in space.
+- **Coarse end.** Class `s0+3` fades out where the point cloud takes over, so the fade
+  and the radius the field stays fully lit to trade against one another. This is the
+  part that needs work before the phase is proposed.
+- **Cost.** 2,368 boxels against phase 2's 1,856, which is 28 percent more. A cap of
+  200 stars per boxel in place of 256 gives 473,600 sprites, under phase 2's bound of
+  475,136, so the frame budget does not move.
+- **Not a superset.** The coarse set is not a subset of the fine one, because each
+  boxel hashes its own stars. The change is a cross-dissolve between two star sets over
+  one octave, which is about 5 wheel notches. A true superset needs a coarse star to
+  resolve to a fine boxel's star, which costs per-vertex work the sprite count does not
+  allow.
+- **Test.** A browser test steps the zoom distance across each of the four thresholds
+  and reads the mean absolute frame difference. A step must not differ more than a move
+  of the same size away from a threshold.
+- **Open questions.**
+  - The coarse end rule, and the radius the field stays fully lit to.
+  - Whether the cap comes down to 200 or the sprite bound goes up.
+  - Whether the weight is `f` or a smoothstep of `f`.
 
 ## Phase 3: real systems from data
 
