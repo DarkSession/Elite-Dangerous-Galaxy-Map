@@ -3,6 +3,7 @@ import type {
   CloudSet,
   DensityVolume,
   PointCloud,
+  RegionLines,
   SceneData,
   SurfaceDetail,
 } from './types';
@@ -25,6 +26,9 @@ export interface PointCloudResponse {
 
 /** What the volume worker sends back. */
 export type VolumeResponse = DensityVolume;
+
+/** What the region line worker sends back. */
+export type RegionLinesResponse = RegionLines;
 
 /** The buffers a point cloud message moves instead of copying. */
 export function pointCloudTransferables(cloud: PointCloud): Transferable[] {
@@ -51,6 +55,11 @@ export function surfaceDetailTransferables(detail: SurfaceDetail): Transferable[
   return [detail.data.buffer as ArrayBuffer];
 }
 
+/** The buffer a region line message moves instead of copying. */
+export function regionLinesTransferables(lines: RegionLines): Transferable[] {
+  return [lines.positions.buffer as ArrayBuffer];
+}
+
 /** Every buffer a whole scene-data object holds. */
 export function sceneDataTransferables(scene: SceneData): Transferable[] {
   return [
@@ -58,5 +67,6 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...cloudSetTransferables(scene.cloudSet),
     ...volumeTransferables(scene.volume),
     ...surfaceDetailTransferables(scene.detail),
+    ...regionLinesTransferables(scene.regionLines),
   ];
 }

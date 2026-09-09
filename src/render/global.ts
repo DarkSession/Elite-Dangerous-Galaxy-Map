@@ -27,8 +27,16 @@ export interface GalaxyMapGlobal {
     volume?: boolean;
     clouds?: boolean;
     points?: boolean;
+    stars?: boolean;
     glow?: boolean;
+    regions?: boolean;
   }) => void;
+  /** How many vertices the last frame's star draw issued. */
+  starVertexCount?: () => number;
+  /** The sum of the drawn counts over the last frame's boxels. */
+  starDrawnCount?: () => number;
+  /** The boundary run endpoints the page drew, as `x`, `y`, `z` per endpoint. */
+  regionLinePositions?: () => Float32Array;
   /** Projects a game position to a CSS pixel on the canvas. */
   project?: (point: [number, number, number]) => { x: number; y: number };
   /** Reads one pixel of the drawing buffer, in CSS pixels from the top left. */

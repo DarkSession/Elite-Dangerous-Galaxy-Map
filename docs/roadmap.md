@@ -25,8 +25,8 @@ Last updated: 2026-09-09.
   function at the data boundary. Stored positions stay in game coordinates.
 - **Camera-relative drawing.** Every chunk holds positions relative to its own origin.
   The CPU computes `chunkOrigin - cameraPosition` in `float64` each frame. No buffer
-  changes when the camera moves. Phase 1 sets this up with one chunk per pass; phase 2
-  uses it with one chunk per boxel.
+  changes when the camera moves. Phase 1 sets this up with one chunk per pass. Phase 2
+  uses one chunk per boxel, and the star field draws 1,856 of them per frame.
 - **Data and rendering stay separate.** Data producers emit typed arrays and plain
   objects. The renderer knows nothing about where they came from. A lint rule enforces
   the import direction.
@@ -118,17 +118,24 @@ Draws the galaxy's shape from far away and lets the user move across it.
 
 ## Phase 2: close zoom with decoration stars
 
-Change: `close-zoom-stars-and-regions`. Status: proposed, not yet implemented.
+Change: `close-zoom-stars-and-regions`. Status: implemented.
 
 Extends the zoom down to individual stars. Draws stars that are decoration, not real
 systems, and fades them out as the user zooms in.
 
 - **Constraint.** Public information only. The game's own generation rules are not
   reproduced. Star positions are invented.
-- **Density.** The phase 1 model gives the mass budget at any point. Measured against
-  the game: about 4 systems per solar mass of budget in the disc and about 1 in the
-  densest parts. Counts per boxel come from density times boxel volume times that
-  calibration.
+- **Density.** The phase 1 model gives the mass budget at any point. The calibration is
+  4.8 systems per solar mass of budget at the density of the disc at Sol, and it falls
+  in the logarithm to 1 at the model's peak density. A boxel's count is the detailed
+  density at its centre, times the boxel volume, times that calibration. The ramp
+  reproduces the neighbourhood: 3.798 systems per 1,000 cubic light years at Sol
+  against a measured 3.8, and 15,592 systems within 100 light years against a measured
+  16,000. It does not reproduce two figures at galaxy scale: 1.49 million systems
+  within 500 light years of Sol against a measured 2,000,000, and 9.23e10 over the
+  whole model against the game's 400 billion. The first gap is the model's own vertical
+  fall-off. The second sits in the core, where the calibration falls to 1 and every
+  boxel is capped, so no drawn count changes.
 - **Level of detail.** The game's mass-code hierarchy is an octree: a sector is 1,280
   light years, mass code `h`; each lower code halves the edge down to `a` at 10 light
   years. Each level is a chunk. A boxel's stars come from a hash of its address, so the
@@ -145,8 +152,9 @@ systems, and fades them out as the user zooms in.
   - `astro/galaxy-grid`, `astro/mass-code`, `astro/sector-name`,
     `astro/system-address`: sector and boxel geometry, procedural names both ways.
   - `astro/hand-authored-regions`: named regions as spheres (Pleiades, Coalsack, ...).
-  - `astro/codex-region` (about 9 KiB) and `astro/codex-region-lookup` (about 208 KiB):
-    the 42 codex regions and a 49 light year lookup grid.
+  - `astro/codex-region` (about 9 KiB) and `astro/codex-region-lookup` (199 KiB): the
+    42 codex regions and a 49 light year lookup grid. The lookup grid is worker only,
+    so it stays out of the main bundle.
   - `astro/nebulae-real` (about 16 KiB), `astro/nebulae-procgen` (about 16 KiB),
     `astro/nebulae-planetary` (about 399 KiB): 5,835 nebulae in total, each a name, a
     system and a position.
@@ -154,14 +162,22 @@ systems, and fades them out as the user zooms in.
 - **Licence.** The almanac's code is MIT. Its data carries source-specific terms,
   including Frontier's non-commercial media-usage notice and CC BY-NC 4.0 for some
   derived material. Review `THIRD_PARTY_NOTICES.md` in the package before release.
+- **Answers this phase gives.**
+  - The star counts read the **detailed** density, and so does the light each boxel
+    carries. It is the density the point cloud is placed by, so the two sources carry
+    the same light per unit volume at every density and the handover shows no step. A
+    star field on the corrected density would differ by a factor of 0.52 to 1.76 around
+    the ring at 20,000 light years from the centre.
+  - The labels and the boundaries are the 42 codex regions, drawn in a zoom band.
+    Nebulae and hand-authored regions stay out.
+  - The zoom band runs from 30,000 light years down. Both the boundaries and the labels
+    are absent at 30,000 and full at 20,000. The boundaries fade out again below 3,000
+    and draw nothing at 2,000, where one grid cell covers more than 15 pixels. The
+    labels stay to the closest zoom. The star field fades in over the same kind of
+    band: nothing at 8,000 light years, full at 4,000 and below.
 - **Open questions.**
   - Do decoration stars get names, for example the sector name under the cursor?
-  - Do nebulae and hand-authored regions get labels, as in the game's map?
   - Do the volume ramp by density and the point ramp by zone unify into one?
-  - Do the star counts per boxel read the detailed surface density or the corrected
-    one? The detailed density is the game's map, so it is the better budget.
-  - The zoom distance at which decoration stars appear and the distance at which
-    they are fully faded.
 
 ## Phase 2.1: the level of detail fades
 

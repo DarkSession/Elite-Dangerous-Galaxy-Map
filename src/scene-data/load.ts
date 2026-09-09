@@ -1,5 +1,9 @@
-// Starts both scene-data workers and waits for their results.
-import type { PointCloudRequest, PointCloudResponse } from './messages';
+// Starts every scene-data worker and waits for their results.
+import type {
+  PointCloudRequest,
+  PointCloudResponse,
+  RegionLinesResponse,
+} from './messages';
 import { DEFAULT_POINT_COUNT, DEFAULT_SEED } from './point-cloud';
 import type { DensityVolume, SceneData } from './types';
 
@@ -29,8 +33,9 @@ function runWorker<Request, Response>(
 }
 
 /**
- * Builds the point cloud, the cloud set, the surface detail grid and the density
- * volume in two workers at the same time and resolves when all four are ready.
+ * Builds the point cloud, the cloud set, the surface detail grid, the density volume
+ * and the region boundary set in three workers at the same time, and resolves when
+ * all five are ready.
  */
 export async function loadSceneData(
   options: SceneDataOptions = {},
@@ -47,10 +52,15 @@ export async function loadSceneData(
   const volumeWorker = new Worker(new URL('./volume.worker.ts', import.meta.url), {
     type: 'module',
   });
+  const regionWorker = new Worker(
+    new URL('./region-lines.worker.ts', import.meta.url),
+    { type: 'module' },
+  );
 
-  const [cloud, volume] = await Promise.all([
+  const [cloud, volume, regionLines] = await Promise.all([
     runWorker<PointCloudRequest, PointCloudResponse>(pointCloudWorker, request),
     runWorker<null, DensityVolume>(volumeWorker, null),
+    runWorker<null, RegionLinesResponse>(regionWorker, null),
   ]);
 
   return {
@@ -58,5 +68,6 @@ export async function loadSceneData(
     cloudSet: cloud.cloudSet,
     volume,
     detail: cloud.detail,
+    regionLines,
   };
 }

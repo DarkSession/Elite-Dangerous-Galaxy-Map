@@ -243,6 +243,18 @@ export function starOffsets(seed: number, starIndex: number): [number, number, n
   ];
 }
 
+/**
+ * The fourth value of a star's hash, in 0 to 1. The star pass shapes it into the
+ * brightness spread that gives the field its grain. It is a value of its own, so the
+ * spread never moves the star.
+ */
+export function starSpreadValue(seed: number, starIndex: number): number {
+  const first = mix(((seed >>> 0) + Math.imul(starIndex >>> 0, STAR_STRIDE)) >>> 0);
+  const second = mix((first ^ 0x68bc21eb) >>> 0);
+  const third = mix((second ^ 0x02e5be93) >>> 0);
+  return (mix((third ^ 0x7fb5d329) >>> 0) >>> 8) / 16777216;
+}
+
 /** The position of a star of a boxel in game coordinates, in light years. */
 export function starPosition(
   index: BoxelIndex,

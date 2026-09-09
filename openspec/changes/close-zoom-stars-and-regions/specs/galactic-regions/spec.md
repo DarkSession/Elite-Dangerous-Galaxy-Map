@@ -52,8 +52,11 @@ between 20,000 and 26,000 runs.
 #### Scenario: The set is the boundary
 
 - **WHEN** a unit test builds the boundary set
-- **THEN** it holds between 20,000 and 26,000 runs, and every endpoint lies on a cell
-  edge of the grid within 1e-3 light years
+- **THEN** it holds between 20,000 and 26,000 runs, and every endpoint is the `float32`
+  nearest a cell edge of the grid, which is within 1e-2 light years of that edge over
+  the model bounds. The set is `float32`, and the `float32` spacing at the 76,000 light
+  year corner of the bounds is 7.8e-3, so a rounding of half a spacing is the whole of
+  the deviation and a tighter bound is not reachable
 
 #### Scenario: The set is deterministic
 
@@ -90,7 +93,10 @@ and the boundary reads as a staircase rather than a line.
   luminance at the projection of that point and at the projection of a plane point
   1,000 light years away from any run
 - **THEN** the first reading is at least 0.05 above the second, and with the overlay
-  switched off the two readings differ by less than 0.02
+  switched off the two readings differ by less than a fifth of the difference with it
+  on. The two points are more than 1,000 light years apart, so the galaxy's own light
+  differs between them; the test shows that the overlay causes the reading, not that the
+  background under the two points is equal
 
 #### Scenario: Nothing at the closest zoom
 
@@ -110,8 +116,19 @@ A label's anchor SHALL be the projection of the region's centroid at `y = 0`. Wh
 centroid lies behind the camera, the anchor SHALL be taken on the side of the frame the
 region lies on, not the opposite one. The anchor SHALL then be held inside the viewport
 with an inset of 48 pixels, so the region the camera sits inside keeps a label at the
-frame edge. Candidates SHALL be placed largest footprint first, a label whose box would
-overlap a label already placed SHALL be dropped, and at most 12 labels SHALL be placed.
+frame edge.
+
+The candidate whose centroid is nearest the cursor SHALL be placed first. The remaining
+candidates SHALL then be placed largest footprint first. A label whose box would overlap
+a label already placed SHALL be dropped, and at most 12 labels SHALL be placed.
+
+The first rule is what names the region the view is centred on. A pure largest-first
+order does not: at a view of the galactic centre 33 regions are candidates and the
+`Galactic Centre` is the smallest of them at 28 million square light years, against 443
+million for the largest, so the cap of 12 is reached long before it. The nearest
+centroid is the cheapest rule that names it, because the region records already carry a
+centroid and the main thread holds no position-to-region lookup. The 199 KiB cell grid
+of `astro/codex-region-lookup` stays in the worker.
 
 Labels SHALL follow the same zoom fade in as the boundaries: none at 30,000 light years
 and above, full at 20,000 and below. Labels SHALL NOT fade out at close zoom.

@@ -3,11 +3,15 @@ import { attachControls } from '../camera/controls';
 import { planePoint, project } from '../camera/projection';
 import { normaliseView } from '../camera/view';
 import type { View } from '../camera/view';
+import { loadDetailGrid } from '../galaxy-model/detail';
+import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
+import { createGalaxyModel } from '../galaxy-model/model';
 import { createRenderContext } from '../render/context';
 import { galaxyMapGlobal } from '../render/global';
 import { createProgram } from '../render/program';
 import { createRenderer } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
+import { createLabelOverlay } from './labels';
 import { createFragmentWriter, parseViewFragment } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
@@ -37,16 +41,30 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   }
   const gl = context.gl;
 
-  // The workers run while the main thread compiles the programs.
+  // The workers run while the main thread compiles the programs. The star field needs
+  // the model with the detail grid, because its counts and its light both read the
+  // detailed density, so the grid loads beside them.
   const sceneDataPromise = loadSceneData();
+  const detailGridPromise = loadDetailGrid();
 
   await nextFrame();
   const renderer = createRenderer(gl, target);
   renderer.resize();
 
+  const labelHost = document.getElementById('labels');
+  const labels = labelHost === null ? null : createLabelOverlay(labelHost);
+  // The region switch removes the boundary lines and the labels together, so the page
+  // keeps the state of the switch the labels read.
+  let regionsOn = true;
+
   const view: View = normaliseView(parseViewFragment(window.location.hash));
   const writer = createFragmentWriter(view);
   const controls = attachControls(target, view, { onChange: () => writer.schedule() });
+
+  const drawFrame = (): void => {
+    renderer.render(view);
+    labels?.update(view, renderer.viewport(), regionsOn);
+  };
 
   global.getView = () => ({
     cursor: [view.cursor[0], view.cursor[1], view.cursor[2]],
@@ -66,12 +84,18 @@ async function start(target: HTMLCanvasElement): Promise<void> {
     const screen = project(view, point, renderer.viewport());
     return { x: screen.x, y: screen.y };
   };
-  global.setPasses = (next) => renderer.setPasses(next);
+  global.setPasses = (next) => {
+    renderer.setPasses(next);
+    if (next.regions !== undefined) regionsOn = next.regions;
+    drawFrame();
+  };
+  global.starVertexCount = () => renderer.starVertexCount();
+  global.starDrawnCount = () => renderer.starDrawnCount();
   global.drawingBufferSize = () => renderer.drawingBufferSize();
   global.readPixel = (x, y) => renderer.readPixel(x, y);
   global.readRect = (x, y, width, height) => renderer.readRect(x, y, width, height);
   global.measureFrames = (count) => renderer.measureFrames(view, count);
-  global.drawNow = () => renderer.render(view);
+  global.drawNow = () => drawFrame();
   global.planePointAt = (x, y) =>
     planePoint(view, { x, y }, renderer.viewport(), view.cursor[1]);
   global.compileTestProgram = (vertex, fragment) => {
@@ -100,7 +124,15 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   renderer.setDetail(scene.detail);
 
   await nextFrame();
-  renderer.render(view);
+  renderer.setRegionLines(scene.regionLines);
+  global.regionLinePositions = () => scene.regionLines.positions;
+
+  const detailGrid = await detailGridPromise;
+  await nextFrame();
+  renderer.setStarField(createGalaxyModel(parameters, detailGrid));
+
+  await nextFrame();
+  drawFrame();
   global.ready = true;
   window.dispatchEvent(new Event(READY_EVENT));
 
@@ -109,7 +141,7 @@ async function start(target: HTMLCanvasElement): Promise<void> {
     const seconds = Math.min((now - previous) / 1000, 0.1);
     previous = now;
     controls.update(seconds);
-    renderer.render(view);
+    drawFrame();
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

@@ -65,10 +65,22 @@ export interface SurfaceDetail {
   readonly data: Uint8Array;
 }
 
+/**
+ * The boundaries of the galactic codex regions, as line runs on the galactic plane.
+ * A run is two endpoints, and every endpoint lies on an edge of the region grid.
+ */
+export interface RegionLines {
+  /** The number of runs. */
+  readonly count: number;
+  /** Three `float32` game coordinates per endpoint, two endpoints per run. */
+  readonly positions: Float32Array;
+}
+
 /** Everything the renderer draws in the far view. */
 export interface SceneData {
   readonly pointCloud: PointCloud;
   readonly cloudSet: CloudSet;
   readonly volume: DensityVolume;
   readonly detail: SurfaceDetail;
+  readonly regionLines: RegionLines;
 }

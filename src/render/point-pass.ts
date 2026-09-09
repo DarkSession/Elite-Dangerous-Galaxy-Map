@@ -10,6 +10,12 @@ import fragmentSource from './shaders/points.frag?raw';
 /** How large a sample looks, in light years, before the pixel clamp. */
 export const POINT_RADIUS_LY = 12;
 
+/**
+ * The brightness of one point cloud sample. The points carry a large share of the
+ * light in the disc, which is what gives the disc its grain.
+ */
+export const DEFAULT_POINT_BRIGHTNESS = 60;
+
 /** What one point pass draw needs. */
 export interface PointPassFrame {
   /** The combined projection and view matrix, with no translation. */
@@ -20,6 +26,10 @@ export interface PointPassFrame {
   readonly pointScale: number;
   /** The brightness of one sample. */
   readonly brightness: number;
+  /** The weight of the star field's handover, 0 to 1. */
+  readonly handoverWeight: number;
+  /** The inner and the outer radius of the handover fade, in light years. */
+  readonly handover: readonly [number, number];
 }
 
 /** The point pass. */
@@ -37,6 +47,8 @@ export function createPointProgram(gl: WebGL2RenderingContext): Program {
     'uChunkOffset',
     'uPointScale',
     'uBrightness',
+    'uHandoverWeight',
+    'uHandover',
   ]);
 }
 
@@ -66,6 +78,12 @@ export function createPointPass(
       );
       gl.uniform1f(program.uniforms['uPointScale'] ?? null, frame.pointScale);
       gl.uniform1f(program.uniforms['uBrightness'] ?? null, frame.brightness);
+      gl.uniform1f(program.uniforms['uHandoverWeight'] ?? null, frame.handoverWeight);
+      gl.uniform2f(
+        program.uniforms['uHandover'] ?? null,
+        frame.handover[0],
+        frame.handover[1],
+      );
 
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);

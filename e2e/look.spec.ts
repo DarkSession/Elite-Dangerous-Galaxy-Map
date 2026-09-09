@@ -578,6 +578,31 @@ test('the dither is stable', async ({ page }) => {
   expect(Buffer.compare(first, second)).toBe(0);
 });
 
+test('the added passes leave the far view alone', async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.drawNow?.();
+  });
+  // The reading takes the canvas alone. An element screenshot of `#map` captures the
+  // page clipped to the canvas box, so it would also carry the label overlay.
+  const frameOf = async (): Promise<string> =>
+    page.evaluate(() => {
+      const canvas = document.getElementById('map');
+      if (!(canvas instanceof HTMLCanvasElement)) return '';
+      return canvas.toDataURL('image/png');
+    });
+
+  const withBoth = await frameOf();
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ stars: false, regions: false });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const withoutBoth = await frameOf();
+
+  expect(withBoth.length).toBeGreaterThan(0);
+  expect(withBoth).toBe(withoutBoth);
+});
+
 test('the default view matches the baseline image', async ({ page }) => {
   await openMap(page);
   // The per-pixel threshold is far below Playwright's default of 0.2, which lets a
