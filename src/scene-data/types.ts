@@ -10,6 +10,26 @@ export interface PointCloud {
   readonly tints: Uint8Array;
 }
 
+/**
+ * A set of cloud samples. The renderer draws one soft sprite per sample, so the haze
+ * is made of overlapping puffs.
+ */
+export interface CloudSet {
+  /** The number of samples. */
+  readonly count: number;
+  /** Three `float32` game coordinates per sample, in light years. */
+  readonly positions: Float32Array;
+  /** One population zone byte per sample, 0 to 255. */
+  readonly tints: Uint8Array;
+  /** One `float32` radius per sample, in light years. */
+  readonly radii: Float32Array;
+  /**
+   * One `float32` per sample: the smooth surface density at the centre of the cell
+   * that holds the sample, over the largest such density of the table.
+   */
+  readonly ratios: Float32Array;
+}
+
 /** A grid of the model's volume density, encoded on a logarithmic scale. */
 export interface DensityVolume {
   /** Texel counts on `x`, `y` and `z`. */
@@ -48,6 +68,7 @@ export interface SurfaceDetail {
 /** Everything the renderer draws in the far view. */
 export interface SceneData {
   readonly pointCloud: PointCloud;
+  readonly cloudSet: CloudSet;
   readonly volume: DensityVolume;
   readonly detail: SurfaceDetail;
 }

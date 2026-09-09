@@ -35,17 +35,23 @@ Last updated: 2026-09-08.
   arms that turn violet at the edge, dust lanes along the arms, sparkle from many
   small points. The game's logo and the satellite blob in its map background are not
   part of the target. The far view reaches this with a curve of two slopes on the
-  density before emission, a power of 0.35 above a knee at the density of the disc at
-  Sol and 0.70 below it, a four-stop volume ramp by emission from a greyed blue-violet
-  haze through dusty pink-brown arms and a soft salmon band to a cream-white core, coloured extinction
-  for the dust, a point ramp by zone, cloud sprites that give the haze its chunks, a
+  density before emission, a power of 0.34 above a knee at five times the density of the
+  disc at Sol and 0.87 below it, a volume ramp on two axes that runs from red-brown
+  lanes through a salmon band to a near-white core over the inner disc and from a blue
+  haze to dusty pink arms over the outer one, blended by galactocentric radius from
+  20,000 to 32,000 light years, coloured extinction
+  for the dust, a point ramp by zone, 40,000 cloud sprites of 500 to 4,000 light years
+  with ragged generated shapes that give the haze its chunks out to the rim, a
   glow pass for the halo, and a tone map on the luminance over a dark grey background
   with a dither of one 8-bit step.
 
 ## Phase 1: far view
 
 Changes: `far-view-galaxy-render`, then `far-view-look-second-pass`, then
-`far-view-look-third-pass`. Status: implemented, under review.
+`far-view-look-third-pass`, then `far-view-cloud-look`, then
+`far-view-colour-and-texture`, then `far-view-look-thresholds`. Status: implemented,
+under review. The owner accepts the point shader's zone key at 6, and the baseline
+image pins it.
 
 Draws the galaxy's shape from far away and lets the user move across it.
 
@@ -71,14 +77,24 @@ Draws the galaxy's shape from far away and lets the user move across it.
   in `src/galaxy-model/png.ts`, which runs in Node and in a worker.
 - **Rendering.** A point cloud of 2,000,000 samples drawn as additive sprites, and a
   256x64x256 density volume drawn by raymarching. Both are baked once in workers. A
-  cloud pass draws 10,000 of the samples as large soft additive sprites between the
-  volume and the points, so the haze is made of chunks in three dimensions; it fades
-  out below 12,000 light years and draws nothing at 2,000. A glow pass holds the
+  cloud pass draws a second set of 40,000 samples as large soft additive sprites
+  between the volume and the points, so the haze is made of chunks in three
+  dimensions. The set is placed by the square root of the cell mass with a floor that
+  reaches the rim, each sprite reads one of 16 generated shapes with a ragged outline,
+  and its radius is log-uniform from 500 to 4,000 light years. A sprite fades out from
+  half the 64 pixel cap to the cap, which holds the layers per pixel near level from
+  12,000 to 30,000 light years. The pass fades out below 12,000 light years and draws
+  nothing at 2,000. A sprite carries the volume's two ramps and the same blend by
+  radius, so it draws the lanes over the inner disc and the haze over the outer one. Its
+  brightness falls with a gentle power below the density floor and fades to zero from
+  44,000 to 48,000 light years, and a spread of mean 1 over a ground of 0.35 moves light
+  from the median sprite to a few puffs at the rim, which carry the arm colour on the
+  blue ground. A glow pass holds the
   brightest pixels down, blurs the volume and the clouds at one eighth resolution and
   adds them back, which gives the halo past the rim and the light between the arms.
   The points carry a large share of the light in the disc, which gives the disc its
-  grain. The frame budget test measures eight views: two cursors at 2,000, 12,000,
-  20,000 and 120,000 light years.
+  grain. The frame budget test measures ten views: two cursors at 2,000, 12,000,
+  20,000, 30,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
   zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the

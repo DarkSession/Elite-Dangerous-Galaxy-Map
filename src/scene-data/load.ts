@@ -29,8 +29,8 @@ function runWorker<Request, Response>(
 }
 
 /**
- * Builds the point cloud, the surface detail grid and the density volume in two
- * workers at the same time and resolves when all three are ready.
+ * Builds the point cloud, the cloud set, the surface detail grid and the density
+ * volume in two workers at the same time and resolves when all four are ready.
  */
 export async function loadSceneData(
   options: SceneDataOptions = {},
@@ -53,5 +53,10 @@ export async function loadSceneData(
     runWorker<null, DensityVolume>(volumeWorker, null),
   ]);
 
-  return { pointCloud: cloud.cloud, volume, detail: cloud.detail };
+  return {
+    pointCloud: cloud.cloud,
+    cloudSet: cloud.cloudSet,
+    volume,
+    detail: cloud.detail,
+  };
 }

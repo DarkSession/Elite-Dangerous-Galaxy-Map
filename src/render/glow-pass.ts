@@ -22,7 +22,7 @@ export const GLOW_DIVISOR = 8;
 export const DEFAULT_GLOW_WEIGHT = 6.0;
 
 /** How far the halo moves toward the haze colour, 0 to 1. */
-export const DEFAULT_GLOW_TINT = 0.15;
+export const DEFAULT_GLOW_TINT = 0.8;
 
 /**
  * The scene luminance at which the glow source stops rising. The blur spreads a peak

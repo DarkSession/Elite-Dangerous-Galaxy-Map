@@ -6,9 +6,9 @@ const BUDGET_MS = 16.7;
 
 const SOL: [number, number, number] = [0, 0, 0];
 const GALACTIC_CENTRE: [number, number, number] = [15, -35, 25895];
-// 12,000 light years is where the cloud pass draws in full, so it is the view that
-// costs the most.
-const DISTANCES = [2000, 12000, 20000, 120000];
+// The cloud pass draws in full from 12,000 light years, and the sprite layers per
+// pixel peak between 12,000 and 30,000, so both distances are in the list.
+const DISTANCES = [2000, 12000, 20000, 30000, 120000];
 
 test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 

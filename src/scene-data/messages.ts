@@ -1,5 +1,11 @@
 // The messages the scene-data workers exchange with the main thread.
-import type { DensityVolume, PointCloud, SceneData, SurfaceDetail } from './types';
+import type {
+  CloudSet,
+  DensityVolume,
+  PointCloud,
+  SceneData,
+  SurfaceDetail,
+} from './types';
 
 /** What the main thread asks the point cloud worker for. */
 export interface PointCloudRequest {
@@ -7,9 +13,13 @@ export interface PointCloudRequest {
   readonly seed: number;
 }
 
-/** What the point cloud worker sends back: the cloud and the surface detail grid. */
+/**
+ * What the point cloud worker sends back: the point cloud, the cloud set and the
+ * surface detail grid. All three come from one surface table.
+ */
 export interface PointCloudResponse {
   readonly cloud: PointCloud;
+  readonly cloudSet: CloudSet;
   readonly detail: SurfaceDetail;
 }
 
@@ -19,6 +29,16 @@ export type VolumeResponse = DensityVolume;
 /** The buffers a point cloud message moves instead of copying. */
 export function pointCloudTransferables(cloud: PointCloud): Transferable[] {
   return [cloud.positions.buffer as ArrayBuffer, cloud.tints.buffer as ArrayBuffer];
+}
+
+/** The buffers a cloud set message moves instead of copying. */
+export function cloudSetTransferables(set: CloudSet): Transferable[] {
+  return [
+    set.positions.buffer as ArrayBuffer,
+    set.tints.buffer as ArrayBuffer,
+    set.radii.buffer as ArrayBuffer,
+    set.ratios.buffer as ArrayBuffer,
+  ];
 }
 
 /** The buffers a volume message moves instead of copying. */
@@ -35,6 +55,7 @@ export function surfaceDetailTransferables(detail: SurfaceDetail): Transferable[
 export function sceneDataTransferables(scene: SceneData): Transferable[] {
   return [
     ...pointCloudTransferables(scene.pointCloud),
+    ...cloudSetTransferables(scene.cloudSet),
     ...volumeTransferables(scene.volume),
     ...surfaceDetailTransferables(scene.detail),
   ];

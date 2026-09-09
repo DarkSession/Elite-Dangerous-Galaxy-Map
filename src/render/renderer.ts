@@ -4,21 +4,28 @@ import { cameraPosition, projectionMatrix, viewMatrix } from '../camera/projecti
 import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
-import type { DensityVolume, PointCloud, SurfaceDetail } from '../scene-data/types';
+import type {
+  CloudSet,
+  DensityVolume,
+  PointCloud,
+  SurfaceDetail,
+} from '../scene-data/types';
 import {
+  createCloudBuffers,
   createDetailTexture,
   createFullScreenTriangle,
   createRenderTarget,
+  createShapeTexture,
 } from './buffers';
-import type { DetailTexture, RenderTarget } from './buffers';
+import type { DetailTexture, RenderTarget, ShapeTexture } from './buffers';
 import {
   cloudFade,
   createCloudPass,
   createCloudProgram,
-  CLOUD_RADIUS_LY,
   DEFAULT_CLOUD_BRIGHTNESS,
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
+import { generateCloudShapes } from './cloud-shapes';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
 import {
@@ -46,7 +53,7 @@ export const MAX_DEVICE_PIXEL_RATIO = 2;
  * The brightness of one point cloud sample. The points carry a large share of the
  * light in the disc, which is what gives the disc its grain.
  */
-export const DEFAULT_POINT_BRIGHTNESS = 70;
+export const DEFAULT_POINT_BRIGHTNESS = 60;
 
 /** Which passes draw. */
 export interface PassSwitches {
@@ -76,6 +83,8 @@ export interface Renderer {
   setVolume(volume: DensityVolume): void;
   /** Uploads the point cloud. Call it in its own animation frame. */
   setPointCloud(cloud: PointCloud): void;
+  /** Uploads the cloud set. Call it in its own animation frame. */
+  setCloudSet(set: CloudSet): void;
   /** Uploads the surface detail grid. Call it in its own animation frame. */
   setDetail(detail: SurfaceDetail): void;
   /** Draws one frame. */
@@ -112,6 +121,8 @@ export function createRenderer(
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
+
+  const shapeTexture: ShapeTexture = createShapeTexture(gl, generateCloudShapes());
 
   const halfTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
   const sceneTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
@@ -222,15 +233,24 @@ export function createRenderer(
     }
 
     // The cloud sprites join the volume in the half-resolution target, so the glow
-    // reads the same source as the halo it made before.
-    if (passes.clouds && cloudPass !== null) {
+    // reads the same source as the halo it made before. The pass needs the galactic
+    // centre for its fade at the rim, and the volume box carries it, so the pass
+    // waits for the volume. One scene message sets the volume before the cloud set.
+    if (passes.clouds && cloudPass !== null && volumeBox !== null) {
       const halfFocal =
         halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+      const origin = volumeBox.origin;
+      const extent = volumeBox.extent;
       cloudPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
+        centre: [
+          origin[0] + 0.5 * extent[0] - camera[0],
+          origin[1] + 0.5 * extent[1] - camera[1],
+          camera[2] - (origin[2] + 0.5 * extent[2]),
+        ],
         targetSize: [halfTarget.width, halfTarget.height],
-        spriteScale: halfFocal * CLOUD_RADIUS_LY,
+        spriteScale: halfFocal,
         brightness: look.cloudBrightness,
         fade: cloudFade(view.distance),
       });
@@ -288,7 +308,15 @@ export function createRenderer(
     setPointCloud(cloud: PointCloud): void {
       pointPass?.dispose();
       pointPass = createPointPass(gl, pointProgram, cloud);
-      cloudPass = createCloudPass(gl, cloudProgram, pointPass.buffers);
+    },
+    setCloudSet(set: CloudSet): void {
+      cloudPass?.dispose();
+      cloudPass = createCloudPass(
+        gl,
+        cloudProgram,
+        createCloudBuffers(gl, set),
+        shapeTexture,
+      );
     },
     setDetail(detail: SurfaceDetail): void {
       detailTexture?.dispose();
@@ -387,8 +415,10 @@ export function createRenderer(
     },
     dispose(): void {
       pointPass?.dispose();
+      cloudPass?.dispose();
       volumePass?.dispose();
       detailTexture?.dispose();
+      shapeTexture.dispose();
       glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(cloudProgram.program);

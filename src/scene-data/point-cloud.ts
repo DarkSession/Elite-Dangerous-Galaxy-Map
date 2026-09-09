@@ -107,6 +107,60 @@ export function findCell(cumulative: Float64Array, target: number): number {
   return low;
 }
 
+/** What one height draw needs from the model's vertical profile. */
+export interface HeightDraw {
+  /** The scale height of the inner component, in light years. */
+  readonly innerScale: number;
+  /** The scale height of the outer component, in light years. */
+  readonly outerScale: number;
+  /** The radius at which the blend weight is one half, in light years. */
+  readonly transitionRadius: number;
+  /** The width of the blend, in light years. */
+  readonly transitionWidth: number;
+  /** The largest height the profile holds, in light years. */
+  readonly maxHeight: number;
+}
+
+/** Reads the vertical profile the height draw uses. */
+export function heightDrawOf(model: GalaxyModel): HeightDraw {
+  const vertical = model.document.vertical;
+  return {
+    innerScale: vertical.inner.scale_ly,
+    outerScale: vertical.outer.scale_ly,
+    transitionRadius: vertical.transition.radius_ly,
+    transitionWidth: vertical.transition.width_ly,
+    maxHeight: vertical.max_height_ly,
+  };
+}
+
+/**
+ * Draws one height above the mid-plane by inverse transform of whichever component
+ * the blend weight selects. The point cloud and the cloud set both call it, so the
+ * two sets share one vertical distribution.
+ */
+export function drawHeight(
+  draw: HeightDraw,
+  radius: number,
+  random: SeededRandom,
+): number {
+  const weight =
+    1 / (1 + Math.exp((radius - draw.transitionRadius) / draw.transitionWidth));
+
+  // The vertical profile is cut at the maximum height, so a draw above it is
+  // replaced. The cut holds under 0.02 percent of the column, so the loop almost
+  // never repeats.
+  let height: number;
+  do {
+    const sign = random.float() < 0.5 ? -1 : 1;
+    const u = random.float();
+    height =
+      random.float() < weight
+        ? sign * draw.innerScale * Math.atanh(u)
+        : sign * -draw.outerScale * Math.log(1 - u);
+  } while (Math.abs(height) > draw.maxHeight);
+  return height;
+}
+
 /** Options for one point cloud build. */
 export interface PointCloudOptions {
   /** The number of samples. */
@@ -140,12 +194,7 @@ export function generatePointCloud(
   const cellX = table.cell[0];
   const cellZ = table.cell[1];
 
-  const vertical = model.document.vertical;
-  const innerScale = vertical.inner.scale_ly;
-  const outerScale = vertical.outer.scale_ly;
-  const transitionRadius = vertical.transition.radius_ly;
-  const transitionWidth = vertical.transition.width_ly;
-  const maxHeight = vertical.max_height_ly;
+  const height = heightDrawOf(model);
   const centreY = model.centre[1];
 
   const positions = new Float32Array(count * 3);
@@ -158,25 +207,11 @@ export function generatePointCloud(
     const x = originX + (ix + random.float()) * cellX;
     const z = originZ + (iz + random.float()) * cellZ;
 
-    const radius = model.radius(x, z);
-    const weight = 1 / (1 + Math.exp((radius - transitionRadius) / transitionWidth));
-
-    // The vertical profile is cut at the maximum height, so a draw above it is
-    // replaced. The cut holds under 0.02 percent of the column, so the loop almost
-    // never repeats.
-    let height: number;
-    do {
-      const sign = random.float() < 0.5 ? -1 : 1;
-      const u = random.float();
-      height =
-        random.float() < weight
-          ? sign * innerScale * Math.atanh(u)
-          : sign * -outerScale * Math.log(1 - u);
-    } while (Math.abs(height) > maxHeight);
+    const above = drawHeight(height, model.radius(x, z), random);
 
     const base = index * 3;
     positions[base] = x;
-    positions[base + 1] = centreY + height;
+    positions[base + 1] = centreY + above;
     positions[base + 2] = z;
     tints[index] = Math.round(model.zone(x, z) * 255);
   }

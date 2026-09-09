@@ -14,7 +14,7 @@ out vec4 fragColour;
 
 // The haze colour of the volume ramp, divided by its own luminance, so the tint moves
 // the hue and keeps the brightness.
-const vec3 HAZE_TINT = vec3(0.97, 0.93, 1.81);
+const vec3 HAZE_TINT = vec3(0.76, 0.88, 2.92);
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 // The taps sit half a standard deviation apart, so the nine of them cover two
 // standard deviations on each side.

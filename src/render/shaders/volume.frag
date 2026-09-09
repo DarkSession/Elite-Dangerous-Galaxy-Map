@@ -25,20 +25,34 @@ const int STEPS = 96;
 // slopes on a logarithmic scale. Above the knee the power keeps the bulge and the
 // disc in one display range. Below it the larger power spreads the low densities, so
 // the patches the detail grid holds reach the screen.
-const float GAMMA = 0.35;
-const float LOW_GAMMA = 0.70;
-// The knee sits at the density of the disc at Sol, relative to the peak texel.
-const float KNEE = 4.0e-3;
-// The ramp by compressed density, aimed at the reference image: a greyed blue-violet
-// haze, dusty pink-brown arms, a soft salmon band at the edge of the bulge, and a
-// cream-white core. HAZE, ARMS and CORE must stay equal to the same names in
-// clouds.frag and points.frag: GLSL has no include, so the ramp is written out in
-// each shader that draws part of the disc.
-const vec3 HAZE = vec3(0.42, 0.40, 0.78);
+const float GAMMA = 0.34;
+const float LOW_GAMMA = 0.87;
+// The knee sits at the density of the disc at 14,000 light years, relative to the
+// peak texel, so the whole outer disc runs on the low slope and holds its contrast.
+const float KNEE = 2.13e-2;
+// The ramp has two axes: the compressed density and the galactocentric radius. The
+// inner ramp runs from a red-brown dust lane through a soft salmon band to a
+// near-white core. The outer ramp runs from a blue haze to a dusty pink
+// patch colour. HAZE, ARMS and CORE must stay equal to the same names in clouds.frag
+// and points.frag: GLSL has no include, so the ramp is written out in each shader
+// that draws part of the disc.
+const vec3 HAZE = vec3(0.26, 0.30, 1.00);
 const vec3 ARMS = vec3(0.90, 0.60, 0.62);
-const vec3 BAND = vec3(1.00, 0.70, 0.66);
-const vec3 CORE = vec3(1.00, 0.94, 0.78);
-// The dust absorbs blue most and red least, so the lanes are brown.
+const vec3 LANE = vec3(1.36, 0.66, 0.62);
+const vec3 BAND = vec3(1.00, 0.78, 0.78);
+const vec3 CORE = vec3(1.00, 0.97, 0.92);
+// The keys of the two ramps, in compressed density.
+const float LANE_LOW = 0.08;
+const float LANE_HIGH = 0.20;
+const float CORE_LOW = 0.24;
+const float CORE_HIGH = 0.95;
+const float PATCH_LOW = 0.005;
+const float PATCH_HIGH = 0.030;
+// The galactocentric radius blends the inner ramp into the outer one. The reference
+// paints the disc by region, and the radius is the region.
+const float BLEND_IN = 20000.0;
+const float BLEND_OUT = 32000.0;
+// The dust absorbs blue most and red least, so the light behind it turns warm.
 const vec3 DUST = vec3(0.55, 1.00, 1.70);
 // The fade by galactocentric radius. The map has no texel past the painted rim, and
 // this removes the analytic tail beyond it. It does not read the density, so the
@@ -97,11 +111,13 @@ void main() {
     float radius = length(point.xz - uCentre.xz);
     compressed *= 1.0 - smoothstep(RIM_FULL, RIM_ZERO, radius);
     compressed *= 1.0 - smoothstep(HEIGHT_FULL, HEIGHT_ZERO, abs(point.y - uCentre.y));
-    // The arms take the second colour over most of the disc, the band the edge of
-    // the bulge, and only the centre reaches the last one.
-    vec3 tint = mix(HAZE, ARMS, smoothstep(0.004, 0.030, compressed));
-    tint = mix(tint, BAND, smoothstep(0.12, 0.30, compressed));
-    tint = mix(tint, CORE, smoothstep(0.42, 0.68, compressed));
+    // Inside the inner disc the lanes are red-brown, the disc is salmon and only the
+    // centre reaches the core colour. In the outer disc the space between the patches
+    // is blue and the patches are pink.
+    vec3 inner = mix(LANE, BAND, smoothstep(LANE_LOW, LANE_HIGH, compressed));
+    inner = mix(inner, CORE, smoothstep(CORE_LOW, CORE_HIGH, compressed));
+    vec3 outer = mix(HAZE, ARMS, smoothstep(PATCH_LOW, PATCH_HIGH, compressed));
+    vec3 tint = mix(inner, outer, smoothstep(BLEND_IN, BLEND_OUT, radius));
 
     vec3 extinction = DUST * (compressed * uAbsorption * step);
     colour += transmittance * tint * (compressed * uEmission * step);

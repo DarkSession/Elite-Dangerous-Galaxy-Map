@@ -94,6 +94,9 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   renderer.setPointCloud(scene.pointCloud);
 
   await nextFrame();
+  renderer.setCloudSet(scene.cloudSet);
+
+  await nextFrame();
   renderer.setDetail(scene.detail);
 
   await nextFrame();
