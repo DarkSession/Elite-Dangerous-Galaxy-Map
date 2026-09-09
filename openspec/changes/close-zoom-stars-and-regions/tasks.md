@@ -1,59 +1,59 @@
 ## 1. The zoom limit
 
-- [ ] 1.1 Change `MIN_DISTANCE` in `src/camera/view.ts` from 2,000 to 500; verify the
+- [x] 1.1 Change `MIN_DISTANCE` in `src/camera/view.ts` from 2,000 to 500; verify the
       unit tests "zoom in", "limits" and "a stored fragment still loads" pass. This
       comes first because every close-zoom browser test later opens a fragment at 500
       light years, which `clampDistance` would otherwise raise to 2,000
-- [ ] 1.2 Extend the camera-relative precision unit test to 500 light years, and set
+- [x] 1.2 Extend the camera-relative precision unit test to 500 light years, and set
       `PRECISION_LIMIT_AT_MIN_DISTANCE` in `src/camera/precision.test.ts` to 2.5e-3 so
       the bound does not loosen fourfold when `MIN_DISTANCE` falls; verify every
       relative error stays below `1e-2 * distance / 2,000` at 500, 2,000, 20,000 and
       120,000
-- [ ] 1.3 Update the zoom range in `README.md` and in `docs/roadmap.md`; verify both
+- [x] 1.3 Update the zoom range in `README.md` and in `docs/roadmap.md`; verify both
       read 500 to 120,000 light years
-- [ ] 1.4 Run the existing navigation browser tests; verify they pass at the new limit
+- [x] 1.4 Run the existing navigation browser tests; verify they pass at the new limit
 
 ## 2. The dependency and its terms
 
-- [ ] 2.1 Add `@elite-dangerous-almanac/core` with `pnpm add` and pin the exact version
+- [x] 2.1 Add `@elite-dangerous-almanac/core` with `pnpm add` and pin the exact version
       the 7-day hold resolves; verify `pnpm-lock.yaml` holds that version with no range
       and that no `package-lock.json` appeared. If the resolved version is not 0.2.8,
       re-measure the trace figures in `design.md` against it and correct them
-- [ ] 2.2 Add a unit test that asserts the package's galaxy origin is
+- [x] 2.2 Add a unit test that asserts the package's galaxy origin is
       (-49,985, -40,985, -24,105) and its sector edge is 1,280 light years; verify it
       passes with `pnpm test`
-- [ ] 2.3 Add `THIRD_PARTY_NOTICES.md` naming `@elite-dangerous-almanac/core`,
+- [x] 2.3 Add `THIRD_PARTY_NOTICES.md` naming `@elite-dangerous-almanac/core`,
       `EliteDangerousRegionMap`, `MIT` and `Frontier`, and a unit test that reads it;
       verify the scenario "the notice names every source" passes
-- [ ] 2.4 Run `pnpm build` and search the bundle for the package's procedural naming
+- [x] 2.4 Run `pnpm build` and search the bundle for the package's procedural naming
       tables; verify either that they are absent, or that the BSD 3-Clause text is added
       to `THIRD_PARTY_NOTICES.md`
 
 ## 3. The model and the boxel grid
 
-- [ ] 3.1 Add `detailedMassDensity(x, y, z)` to `src/galaxy-model/model.ts`, the
+- [x] 3.1 Add `detailedMassDensity(x, y, z)` to `src/galaxy-model/model.ts`, the
       detailed volume density times the budget constant; verify the unit tests
       "detailed and corrected agree without a grid" and "the detail grid moves the
       budget" pass
-- [ ] 3.2 Write `src/scene-data/boxel.ts`: the size class edges from the package, the
+- [x] 3.2 Write `src/scene-data/boxel.ts`: the size class edges from the package, the
       boxel index of a position, the origin of an index, and the hash of a boxel index
       with a star index; verify the unit test "a star lies inside its boxel" passes for
       200 boxels of each class
-- [ ] 3.3 Add the base class rule `clamp(ceil(log2(distance / 320)), 0, 4)` and the
+- [x] 3.3 Add the base class rule `clamp(ceil(log2(distance / 320)), 0, 4)` and the
       top-down block builder — the coarsest class takes indices `c - 4` to `c + 3`,
       each class above the base drops `c - 2` to `c + 1`, and the class below draws the
       refinement of exactly those; verify the unit tests "base class follows the zoom
       distance" and "the drawn set holds 1,856 boxels" pass
-- [ ] 3.4 Add the nesting test over 20,000 random camera positions at every base class
+- [x] 3.4 Add the nesting test over 20,000 random camera positions at every base class
       the rule can select, 1 to 4;
       verify that a class's dropped boxels are exactly the block of the class below,
       that every block holds 8 boxels per axis, and that the camera lies inside every
       block
-- [ ] 3.5 Add the covered-radius tests; verify the shortest distance from the camera to
+- [x] 3.5 Add the covered-radius tests; verify the shortest distance from the camera to
       a face of the coarsest block is at least `3 * edge(s0+3)` at every one of those
       positions, and that the covered radius is at least 0.75 of the zoom distance at
       200 distances spaced in the logarithm from 500 to 5,120 light years
-- [ ] 3.6 Run `pnpm lint`; verify `src/scene-data/` still imports no renderer
+- [x] 3.6 Run `pnpm lint`; verify `src/scene-data/` still imports no renderer
 
 ## 4. The counts and the light
 
@@ -75,14 +75,15 @@
       light does not follow the radius" pass
 - [ ] 4.5 Add the boxel table builder that writes one record per boxel — the origin
       less the camera position in `float64`, the edge, the drawn count, the light per
-      star, the star radius and the population zone — with a cache by boxel index; verify a unit test
+      star, the star radius, the population zone and the boxel seed — with a cache by
+      boxel index; verify a unit test
       that the table holds 1,856 records and that moving the camera inside one boxel of
       the base class recomputes no count
 
 ## 5. The star pass
 
-- [ ] 5.1 Write `src/render/shaders/stars.vert` and `stars.frag`: the hash from
-      `gl_InstanceID` and `gl_VertexID`, the position inside the boxel, the size clamp
+- [ ] 5.1 Write `src/render/shaders/stars.vert` and `stars.frag`: the hash from the
+      boxel seed and `gl_VertexID`, the position inside the boxel, the size clamp
       of 1 to 16 pixels with the brightness compensation, and the point cloud's colour
       ramp by zone; verify the shaders compile through the page's `compileTestProgram`
       hook

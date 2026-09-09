@@ -8,7 +8,8 @@
 // value. The error that is left comes from the matrix multiply, and it is the
 // `float32` limit: at distance 2,000 the separation of 1/32 light year is 2^-16 of
 // the coordinate, which leaves 8 mantissa bits, so one rounding is about 4e-3 of the
-// separation. The bound grows in proportion to the distance.
+// separation. The bound grows in proportion to the distance, so the limit at the
+// closest zoom distance of 500 light years is a quarter of the limit at 2,000.
 import { describe, expect, test } from 'vitest';
 import { galaxyModel } from '../galaxy-model/model';
 import { cameraPosition, viewProjectionMatrix } from './projection';
@@ -19,9 +20,12 @@ import { mat4 } from 'gl-matrix';
 const round = Math.fround;
 
 /** The largest relative error allowed at the closest zoom distance. */
-export const PRECISION_LIMIT_AT_MIN_DISTANCE = 1e-2;
+export const PRECISION_LIMIT_AT_MIN_DISTANCE = 2.5e-3;
 
-/** The relative error allowed at a distance. */
+/** The distance the spec states the relative error bound of 1e-2 at, in light years. */
+const REFERENCE_DISTANCE = 2000;
+
+/** The relative error allowed at a distance, which is `1e-2 * distance / 2,000`. */
 export function precisionLimit(distance: number): number {
   return (PRECISION_LIMIT_AT_MIN_DISTANCE * distance) / MIN_DISTANCE;
 }
@@ -30,7 +34,7 @@ const viewport = { width: 1920, height: 1080 };
 const SEPARATION = 1 / 32;
 const YAWS = [0, 37, 120, 199, 275, 350];
 const PITCHES = [5, 20, 35, 60, 89];
-const DISTANCES = [MIN_DISTANCE, 20000, MAX_DISTANCE];
+const DISTANCES = [MIN_DISTANCE, REFERENCE_DISTANCE, 20000, MAX_DISTANCE];
 
 /** The cursors the sweep visits: Sol, the centre, the far corner and the bounds. */
 function sweepCursors(): [number, number, number][] {
@@ -135,8 +139,8 @@ function worstError(cursor: [number, number, number], distance: number): number 
 
 describe('camera-relative drawing', () => {
   test('keeps a separation of 1/32 light year at the far corner at 2,000', () => {
-    expect(worstError([50000, 0, 75000], MIN_DISTANCE)).toBeLessThan(
-      PRECISION_LIMIT_AT_MIN_DISTANCE,
+    expect(worstError([50000, 0, 75000], REFERENCE_DISTANCE)).toBeLessThan(
+      precisionLimit(REFERENCE_DISTANCE),
     );
   });
 
@@ -153,7 +157,7 @@ describe('camera-relative drawing', () => {
 
   test('is far better than a transform that keeps the camera in the matrix', () => {
     const cursor: [number, number, number] = [50000, 0, 75000];
-    const view: View = { cursor, distance: MIN_DISTANCE, yaw: 0, pitch: 35 };
+    const view: View = { cursor, distance: REFERENCE_DISTANCE, yaw: 0, pitch: 35 };
     const camera = cameraPosition(view);
 
     // Without camera-relative drawing the vertex shader would multiply the world
@@ -185,7 +189,7 @@ describe('camera-relative drawing', () => {
     );
     const naiveError = Math.abs(measured - exact) / exact;
 
-    expect(naiveError).toBeGreaterThan(PRECISION_LIMIT_AT_MIN_DISTANCE);
+    expect(naiveError).toBeGreaterThan(precisionLimit(REFERENCE_DISTANCE));
     expect(relativeError(view, 2)).toBeLessThan(naiveError / 10);
   });
 });

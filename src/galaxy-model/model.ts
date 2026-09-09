@@ -56,6 +56,8 @@ export interface GalaxyModel {
   detailedVolumeDensity(x: number, y: number, z: number): number;
   /** The mass-code-0 budget in solar masses per cubic light year. */
   massDensity(x: number, y: number, z: number): number;
+  /** The mass-code-0 budget from the detailed volume density, in the same unit. */
+  detailedMassDensity(x: number, y: number, z: number): number;
   /** The population zone in 0 to 1, used as a tint. */
   zone(x: number, z: number): number;
   /** The azimuth of an arm's centre line at a radius, in radians. */
@@ -153,6 +155,7 @@ export function createGalaxyModel(
     volumeDensity,
     detailedVolumeDensity,
     massDensity: (x, y, z) => volumeDensity(x, y, z) * budget,
+    detailedMassDensity: (x, y, z) => detailedVolumeDensity(x, y, z) * budget,
     zone: (x, z) => zoneOf(document, surface, x, z),
     armAzimuth: (arm, radius) => armAzimuth(surface, arm, radius),
     armPoint: (arm, radius) => armPoint(surface, arm, radius),

@@ -47,7 +47,7 @@ reaches it.
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.      |
 | Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.              |
-| Wheel           | Changes the distance by 1.15 per notch, between 2,000 and 120,000 light years.                   |
+| Wheel           | Changes the distance by 1.15 per notch, between 500 and 120,000 light years.                     |
 | `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second. |
 | `R` `F`         | Move the cursor up and down at the same speed.                                                   |
 

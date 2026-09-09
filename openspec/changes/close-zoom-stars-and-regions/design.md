@@ -224,14 +224,21 @@ brightness while it is resolved, which is what a real source does.
 
 Per frame the CPU writes one record per boxel: the boxel origin **less the camera
 position, computed in `float64`**, the edge, the drawn count, the light per star, the
-star radius and the population zone. That is 1,856 * 8 floats, 59,392 bytes or 58 KiB,
-uploaded with `bufferSubData`.
+star radius, the population zone and the boxel seed. That is 1,856 * 9 values, 66,816
+bytes or 65 KiB, uploaded with `bufferSubData`.
+
+The seed is the ninth value because the shader cannot recover the boxel's address on
+its own. `gl_InstanceID` is only the slot in the table, and the camera-relative origin
+carries no grid index. The CPU therefore hashes the grid index and the size class into
+one 32-bit seed, `boxelSeed(index, sizeClass)`, and the shader hashes that seed with
+the star index. The seed reaches the shader as an unsigned integer attribute, not as a
+`float32`, because a `float32` holds only 24 of its 32 bits.
 
 The pass is one `drawArraysInstanced(POINTS, 0, 256, 1856)` call. `gl_InstanceID` is
-the boxel, `gl_VertexID` is the star index inside it. The vertex shader hashes the two
-into three values in 0 to 1 and places the star at `origin + u * edge`. A vertex whose
-index is at or above the boxel's drawn count gets a size of 0 and a position behind the
-camera.
+the boxel, `gl_VertexID` is the star index inside it. The vertex shader hashes the seed
+and the star index into three values in 0 to 1 and places the star at
+`origin + u * edge`. A vertex whose index is at or above the boxel's drawn count gets a
+size of 0 and a position behind the camera.
 
 Two consequences fall out:
 

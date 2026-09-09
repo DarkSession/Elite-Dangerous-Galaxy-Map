@@ -15,7 +15,7 @@ export interface View {
 }
 
 /** The closest the camera comes to the cursor, in light years. */
-export const MIN_DISTANCE = 2000;
+export const MIN_DISTANCE = 500;
 
 /** The furthest the camera goes from the cursor, in light years. */
 export const MAX_DISTANCE = 120000;
