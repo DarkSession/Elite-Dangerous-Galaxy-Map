@@ -11,7 +11,8 @@ function makeScene(): SceneData {
   const cloudTints = new Uint8Array([30]);
   const cloudRadii = new Float32Array([1500]);
   const cloudRatios = new Float32Array([0.25]);
-  const runs = new Float32Array([0, 0, 0, 0, 0, 100]);
+  const chain = new Float32Array([0, 0, 0, 0, 0, 100]);
+  const regionIds = new Uint8Array([1, 2, 3, 4]);
   return {
     pointCloud: { count: 2, positions, tints },
     cloudSet: {
@@ -37,7 +38,19 @@ function makeScene(): SceneData {
       scale: 3,
       data: detail,
     },
-    regionLines: { count: 1, positions: runs },
+    regionLines: {
+      chainCount: 1,
+      vertexCount: 2,
+      positions: chain,
+      first: new Uint32Array([0]),
+      last: new Uint32Array([1]),
+    },
+    regionGrid: {
+      size: 2,
+      origin: [0, 0],
+      cell: 100,
+      ids: regionIds,
+    },
   };
 }
 
@@ -62,7 +75,10 @@ describe('scene data', () => {
     expect(Array.from(received.detail.data)).toEqual([120, 128, 136, 200]);
     expect(received.detail.scale).toBe(3);
     expect(Array.from(received.regionLines.positions)).toEqual([0, 0, 0, 0, 0, 100]);
-    expect(received.regionLines.count).toBe(1);
+    expect(received.regionLines.chainCount).toBe(1);
+    expect(Array.from(received.regionLines.first)).toEqual([0]);
+    expect(Array.from(received.regionLines.last)).toEqual([1]);
+    expect(Array.from(received.regionGrid.ids)).toEqual([1, 2, 3, 4]);
 
     expect(scene.pointCloud.positions.buffer.byteLength).toBe(0);
     expect(scene.pointCloud.tints.buffer.byteLength).toBe(0);
@@ -73,6 +89,9 @@ describe('scene data', () => {
     expect(scene.volume.data.buffer.byteLength).toBe(0);
     expect(scene.detail.data.buffer.byteLength).toBe(0);
     expect(scene.regionLines.positions.buffer.byteLength).toBe(0);
+    expect(scene.regionLines.first.buffer.byteLength).toBe(0);
+    expect(scene.regionLines.last.buffer.byteLength).toBe(0);
+    expect(scene.regionGrid.ids.buffer.byteLength).toBe(0);
 
     channel.port1.close();
     channel.port2.close();

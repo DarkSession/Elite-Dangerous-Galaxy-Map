@@ -296,7 +296,17 @@ test('the outer haze is blue and its patches are pink', async ({ page }) => {
 test('the bulge has a soft top', async ({ page }) => {
   await openMap(page, SIDE_TOP_VIEW);
   await page.evaluate(() => {
-    window.__galaxyMap?.setPasses?.({ points: false, clouds: false, glow: false });
+    // This view sits at 25,000 light years, inside the band where the region overlay
+    // fades in, and the camera looks along the plane. The boundary lines then cross
+    // the column this test reads, and a 4 CSS pixel line makes a step of its own. The
+    // reading is about the top of the bulge, so the overlay goes off with the other
+    // passes that do not belong to the volume.
+    window.__galaxyMap?.setPasses?.({
+      points: false,
+      clouds: false,
+      glow: false,
+      regions: false,
+    });
     window.__galaxyMap?.drawNow?.();
   });
 

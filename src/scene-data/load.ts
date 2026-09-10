@@ -57,7 +57,7 @@ export async function loadSceneData(
     { type: 'module' },
   );
 
-  const [cloud, volume, regionLines] = await Promise.all([
+  const [cloud, volume, region] = await Promise.all([
     runWorker<PointCloudRequest, PointCloudResponse>(pointCloudWorker, request),
     runWorker<null, DensityVolume>(volumeWorker, null),
     runWorker<null, RegionLinesResponse>(regionWorker, null),
@@ -68,6 +68,7 @@ export async function loadSceneData(
     cloudSet: cloud.cloudSet,
     volume,
     detail: cloud.detail,
-    regionLines,
+    regionLines: region.lines,
+    regionGrid: region.grid,
   };
 }

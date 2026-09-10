@@ -11,6 +11,7 @@ import { galaxyMapGlobal } from '../render/global';
 import { createProgram } from '../render/program';
 import { createRenderer } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
+import { coarseRegionIdAt, regionOfId } from '../scene-data/regions';
 import { createLabelOverlay } from './labels';
 import { createFragmentWriter, parseViewFragment } from './url-view';
 
@@ -98,6 +99,11 @@ async function start(target: HTMLCanvasElement): Promise<void> {
   global.drawNow = () => drawFrame();
   global.planePointAt = (x, y) =>
     planePoint(view, { x, y }, renderer.viewport(), view.cursor[1]);
+  global.regionSampleCounts = () => labels?.lastCounts() ?? [];
+  global.regionSampleTotal = () => labels?.lastSampleCount() ?? 0;
+  global.labelSampling = () =>
+    labels?.sampling() ?? { frames: 0, meanMs: 0, worstMs: 0 };
+  global.resetLabelSampling = () => labels?.resetSampling();
   global.compileTestProgram = (vertex, fragment) => {
     try {
       const probe = createProgram(gl, 'probe', vertex, fragment);
@@ -125,7 +131,20 @@ async function start(target: HTMLCanvasElement): Promise<void> {
 
   await nextFrame();
   renderer.setRegionLines(scene.regionLines);
+  labels?.setGrid(scene.regionGrid);
+  // The test that checks every label names a region on the screen resolves the frame
+  // for itself through this hook, so it never reads the counts the label code made.
+  global.regionNameAtScreen = (x, y) => {
+    const point = planePoint(view, { x, y }, renderer.viewport(), 0);
+    if (point === null) return null;
+    const id = coarseRegionIdAt(scene.regionGrid, point[0], point[2]);
+    return regionOfId(id)?.name ?? null;
+  };
   global.regionLinePositions = () => scene.regionLines.positions;
+  global.regionLineChains = () => ({
+    first: scene.regionLines.first,
+    last: scene.regionLines.last,
+  });
 
   const detailGrid = await detailGridPromise;
   await nextFrame();

@@ -1,99 +1,174 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { GALACTIC_CENTRE, openMap, projectPoint } from './helpers';
+import { SHARP_CORNER, VERTICAL_CROSSING } from './region-views';
+import type { ChosenView } from './region-views';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
 /** A view inside the band where the overlay draws in full. */
 const MEDIUM_DISTANCE = 10000;
-/** A view below the fade out, where the overlay draws nothing. */
-const CLOSE_DISTANCE = 1500;
+
+/** The two close views the boundary must still draw at, in light years. */
+const CLOSE_DISTANCES = [1500, 500];
+
+/** How many CSS pixels around the corner the join reading takes. */
+const JOIN_RADIUS = 8;
 
 /** Two plane points, one on a boundary and one away from every boundary. */
 interface BoundarySample {
-  /** The midpoint of the longest run, in game coordinates. */
+  /** The midpoint of the longest segment, in game coordinates. */
   readonly onBoundary: [number, number, number];
-  /** A point at least 1,000 light years from every run, in game coordinates. */
+  /** A point at least 1,000 light years from every chain, in game coordinates. */
   readonly away: [number, number, number];
-  /** The distance from the boundary point to the nearest run, in light years. */
+  /** The distance from the boundary point to the nearest chain, in light years. */
   readonly onBoundaryGap: number;
-  /** The distance from the away point to the nearest run, in light years. */
+  /** The distance from the away point to the nearest chain, in light years. */
   readonly awayClearance: number;
 }
 
 /**
  * Reads the boundary set out of the page and picks the two plane points the readings
  * compare. The page holds the set the worker traced, so the test measures the data the
- * map draws. The away point sits near the boundary point and at nearly the same
- * galactocentric radius, so the galaxy under the two readings is as alike as the map
- * allows.
+ * map draws. The set stores the vertices of a chain once, so the reader walks the
+ * chains through the first and the last index of each one: a pair of vertices is a
+ * segment only inside one chain. The away point sits near the boundary point and at
+ * nearly the same galactocentric radius, so the galaxy under the two readings is as
+ * alike as the map allows.
  */
 async function boundarySample(page: Page): Promise<BoundarySample> {
   const sample = await page.evaluate((centre) => {
     const positions = window.__galaxyMap?.regionLinePositions?.();
-    if (positions === undefined || positions.length === 0) return null;
+    const chains = window.__galaxyMap?.regionLineChains?.();
+    if (positions === undefined || chains === undefined) return null;
+    if (positions.length === 0 || chains.first.length === 0) return null;
+
+    const forEachSegment = (
+      visit: (x0: number, z0: number, x1: number, z1: number) => void,
+    ): void => {
+      for (let chain = 0; chain < chains.first.length; chain += 1) {
+        const first = chains.first[chain] as number;
+        const last = chains.last[chain] as number;
+        for (let vertex = first; vertex < last; vertex += 1) {
+          visit(
+            positions[vertex * 3] as number,
+            positions[vertex * 3 + 2] as number,
+            positions[(vertex + 1) * 3] as number,
+            positions[(vertex + 1) * 3 + 2] as number,
+          );
+        }
+      }
+    };
 
     const gapTo = (x: number, z: number): number => {
       let shortest = Number.POSITIVE_INFINITY;
-      for (let index = 0; index < positions.length; index += 6) {
-        const x0 = positions[index] as number;
-        const z0 = positions[index + 2] as number;
-        const dx = (positions[index + 3] as number) - x0;
-        const dz = (positions[index + 5] as number) - z0;
+      forEachSegment((x0, z0, x1, z1) => {
+        const dx = x1 - x0;
+        const dz = z1 - z0;
         const length = dx * dx + dz * dz;
         let t = length === 0 ? 0 : ((x - x0) * dx + (z - z0) * dz) / length;
         if (t < 0) t = 0;
         if (t > 1) t = 1;
         const gap = Math.hypot(x - (x0 + t * dx), z - (z0 + t * dz));
         if (gap < shortest) shortest = gap;
+      });
+      return shortest;
+    };
+
+    // A grid of the vertices, so the search for a point away from every chain costs a
+    // few cells and not all 68,000 vertices. The chains carry a vertex about every 5
+    // light years, so the distance to the nearest vertex stands in for the distance to
+    // the nearest chain while the search runs. The two points it chooses then get the
+    // exact reading.
+    const CELL = 300;
+    const buckets = new Map<number, number[]>();
+    const keyOf = (x: number, z: number): number =>
+      Math.floor(x / CELL) * 100000 + Math.floor(z / CELL);
+    for (let vertex = 0; vertex * 3 < positions.length; vertex += 1) {
+      const key = keyOf(
+        positions[vertex * 3] as number,
+        positions[vertex * 3 + 2] as number,
+      );
+      const held = buckets.get(key);
+      if (held === undefined) buckets.set(key, [vertex]);
+      else held.push(vertex);
+    }
+    const nearestVertex = (x: number, z: number): number => {
+      const cellX = Math.floor(x / CELL);
+      const cellZ = Math.floor(z / CELL);
+      let shortest = Number.POSITIVE_INFINITY;
+      for (let ring = 0; ring <= 12; ring += 1) {
+        for (let stepZ = -ring; stepZ <= ring; stepZ += 1) {
+          for (let stepX = -ring; stepX <= ring; stepX += 1) {
+            if (Math.max(Math.abs(stepX), Math.abs(stepZ)) !== ring) continue;
+            const held = buckets.get((cellX + stepX) * 100000 + cellZ + stepZ);
+            if (held === undefined) continue;
+            for (const vertex of held) {
+              const away = Math.hypot(
+                x - (positions[vertex * 3] as number),
+                z - (positions[vertex * 3 + 2] as number),
+              );
+              if (away < shortest) shortest = away;
+            }
+          }
+        }
+        if (shortest <= ring * CELL) break;
       }
       return shortest;
     };
 
-    let best = 0;
-    let bestIndex = 0;
-    for (let index = 0; index < positions.length; index += 6) {
-      const dx = (positions[index + 3] as number) - (positions[index] as number);
-      const dz = (positions[index + 5] as number) - (positions[index + 2] as number);
-      const length = Math.hypot(dx, dz);
-      if (length > best) {
-        best = length;
-        bestIndex = index;
-      }
-    }
-    const onBoundary: [number, number, number] = [
-      ((positions[bestIndex] as number) + (positions[bestIndex + 3] as number)) / 2,
-      0,
-      ((positions[bestIndex + 2] as number) + (positions[bestIndex + 5] as number)) / 2,
-    ];
+    // The candidates are the longest segments, because a long segment sits where the
+    // boundary is straight and the reading lands on the middle of the line.
+    const candidates: { x: number; z: number; length: number }[] = [];
+    forEachSegment((x0, z0, x1, z1) => {
+      candidates.push({
+        x: (x0 + x1) / 2,
+        z: (z0 + z1) / 2,
+        length: Math.hypot(x1 - x0, z1 - z0),
+      });
+    });
+    candidates.sort((a, b) => b.length - a.length);
 
     // The galactocentric radius is the distance from the model centre in the plane.
     const radiusOf = (x: number, z: number): number =>
       Math.hypot(x - centre[0], z - centre[2]);
-    const cursorRadius = radiusOf(onBoundary[0], onBoundary[2]);
-    let away: [number, number, number] = [onBoundary[0], 0, onBoundary[2]];
-    let awayClearance = 0;
-    for (let step = 0; step < 72; step += 1) {
-      const angle = (2 * Math.PI * step) / 72;
-      for (const range of [1200, 1600, 2000, 2400]) {
-        const x = onBoundary[0] + range * Math.cos(angle);
-        const z = onBoundary[2] + range * Math.sin(angle);
-        if (Math.abs(radiusOf(x, z) - cursorRadius) > 400) continue;
-        const clearance = gapTo(x, z);
-        if (clearance > awayClearance) {
-          awayClearance = clearance;
-          away = [x, 0, z];
+    let onBoundary: [number, number, number] | null = null;
+    let away: [number, number, number] | null = null;
+    for (const candidate of candidates.slice(0, 200)) {
+      const cursorRadius = radiusOf(candidate.x, candidate.z);
+      let clearest = 0;
+      let best: [number, number, number] | null = null;
+      for (let step = 0; step < 72; step += 1) {
+        const angle = (2 * Math.PI * step) / 72;
+        for (const range of [1200, 1600, 2000, 2400]) {
+          const x = candidate.x + range * Math.cos(angle);
+          const z = candidate.z + range * Math.sin(angle);
+          if (Math.abs(radiusOf(x, z) - cursorRadius) > 400) continue;
+          const clearance = nearestVertex(x, z);
+          if (clearance > clearest) {
+            clearest = clearance;
+            best = [x, 0, z];
+          }
         }
       }
+      // The reading needs a point at least 1,000 light years from every chain. The
+      // margin covers the step from the nearest vertex to the nearest segment.
+      if (clearest >= 1200 && best !== null) {
+        onBoundary = [candidate.x, 0, candidate.z];
+        away = best;
+        break;
+      }
     }
+    if (onBoundary === null || away === null) return null;
 
     return {
       onBoundary,
       away,
       onBoundaryGap: gapTo(onBoundary[0], onBoundary[2]),
-      awayClearance,
+      awayClearance: gapTo(away[0], away[2]),
     };
   }, GALACTIC_CENTRE);
 
@@ -110,9 +185,9 @@ function shaderSource(name: string): string {
 }
 
 /**
- * The brightest of the 3 by 3 pixels at a CSS pixel. A line one device pixel wide can
- * fall on either side of a pixel centre, so the reading takes the pixel the line
- * lands on rather than the one the maths names.
+ * The brightest of the 3 by 3 pixels at a CSS pixel. The core of the line is 2 CSS
+ * pixels wide and can fall on either side of a pixel centre, so the reading takes the
+ * pixel the line lands on rather than the one the maths names.
  */
 async function brightestNear(
   page: Page,
@@ -135,18 +210,52 @@ async function brightestNear(
   }, point);
 }
 
-/**
- * The frame as a PNG data URL. The reading takes the canvas alone. Do not go back to an
- * element screenshot of `#map`: that captures the page clipped to the canvas box, so it
- * also carries the label overlay above it. The labels stay at close zoom while the
- * boundary lines fade out, and these comparisons are about the lines.
- */
-async function canvasImage(page: Page): Promise<string> {
+/** The luminance of every pixel of a rectangle, row by row, the top row first. */
+async function luminanceRect(
+  page: Page,
+  rect: { x: number; y: number; width: number; height: number },
+): Promise<number[]> {
+  return page.evaluate((where) => {
+    const map = window.__galaxyMap;
+    if (map?.readRect === undefined) return [];
+    const bytes = map.readRect(where.x, where.y, where.width, where.height);
+    const values: number[] = [];
+    for (let index = 0; index < bytes.length; index += 4) {
+      values.push(
+        (0.2126 * (bytes[index] as number) +
+          0.7152 * (bytes[index + 1] as number) +
+          0.0722 * (bytes[index + 2] as number)) /
+          255,
+      );
+    }
+    return values;
+  }, rect);
+}
+
+/** How many device pixels the drawing buffer holds per CSS pixel. */
+async function devicePixelRatio(page: Page): Promise<number> {
   return page.evaluate(() => {
+    const size = window.__galaxyMap?.drawingBufferSize?.();
+    const canvas = document.getElementById('map');
+    if (size === undefined || !(canvas instanceof HTMLCanvasElement)) return 1;
+    return size[0] / Math.max(1, canvas.clientWidth);
+  });
+}
+
+/**
+ * A digest of the frame. The reading takes the canvas alone. Do not go back to an
+ * element screenshot of `#map`: that captures the page clipped to the canvas box, so it
+ * also carries the label overlay above it, and these comparisons are about the lines.
+ * The comparison is of the digest and not of the image, so a failure prints a line and
+ * not a megabyte of base64.
+ */
+async function canvasDigest(page: Page): Promise<string> {
+  const image = await page.evaluate(() => {
     const canvas = document.getElementById('map');
     if (!(canvas instanceof HTMLCanvasElement)) return '';
     return canvas.toDataURL('image/png');
   });
+  return createHash('sha256').update(image).digest('hex');
 }
 
 /** Switches passes and draws a frame. */
@@ -177,9 +286,38 @@ async function look(
   );
 }
 
+/** Takes a whole view a unit test chose, and draws a frame. */
+async function lookFrom(page: Page, view: ChosenView): Promise<void> {
+  await page.evaluate((next) => {
+    window.__galaxyMap?.setView?.({
+      cursor: next.cursor as [number, number, number],
+      distance: next.distance,
+      yaw: next.yaw,
+      pitch: next.pitch,
+    });
+    window.__galaxyMap?.drawNow?.();
+  }, view);
+}
+
+/** The shortest distance from a point to a line piece, in pixels. */
+function gapToSegment(
+  point: { x: number; y: number },
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const span = dx * dx + dy * dy;
+  let part =
+    span === 0 ? 0 : ((point.x - from.x) * dx + (point.y - from.y) * dy) / span;
+  if (part < 0) part = 0;
+  if (part > 1) part = 1;
+  return Math.hypot(point.x - (from.x + part * dx), point.y - (from.y + part * dy));
+}
+
 test('the region shaders compile', async ({ page }) => {
   await openMap(page);
-  const error = await page.evaluate(
+  const ribbon = await page.evaluate(
     (sources) => {
       const compile = window.__galaxyMap?.compileTestProgram;
       if (compile === undefined) return 'the page has no compile hook';
@@ -187,7 +325,20 @@ test('the region shaders compile', async ({ page }) => {
     },
     { vertex: shaderSource('regions.vert'), fragment: shaderSource('regions.frag') },
   );
-  expect(error).toBeNull();
+  expect(ribbon).toBeNull();
+
+  const composite = await page.evaluate(
+    (sources) => {
+      const compile = window.__galaxyMap?.compileTestProgram;
+      if (compile === undefined) return 'the page has no compile hook';
+      return compile(sources.vertex, sources.fragment);
+    },
+    {
+      vertex: shaderSource('fullscreen.vert'),
+      fragment: shaderSource('region-composite.frag'),
+    },
+  );
+  expect(composite).toBeNull();
 });
 
 test('a boundary is visible at medium zoom', async ({ page }) => {
@@ -227,22 +378,177 @@ test('nothing at the far view', async ({ page }) => {
   await page.evaluate(() => {
     window.__galaxyMap?.drawNow?.();
   });
-  const withOverlay = await canvasImage(page);
+  const withOverlay = await canvasDigest(page);
   await setPasses(page, { regions: false });
-  const withoutOverlay = await canvasImage(page);
+  const withoutOverlay = await canvasDigest(page);
 
   expect(withOverlay).toBe(withoutOverlay);
 });
 
-test('nothing at the closest zoom', async ({ page }) => {
+test('the boundary still draws at the closest zoom', async ({ page }) => {
   await openMap(page);
   const sample = await boundarySample(page);
-  await look(page, sample.onBoundary, CLOSE_DISTANCE);
-  const withOverlay = await canvasImage(page);
-  await setPasses(page, { regions: false });
-  const withoutOverlay = await canvasImage(page);
 
-  expect(withOverlay).toBe(withoutOverlay);
+  for (const distance of CLOSE_DISTANCES) {
+    await look(page, sample.onBoundary, distance);
+    await setPasses(page, { regions: true });
+    const withOverlay = await canvasDigest(page);
+    await setPasses(page, { regions: false });
+    const withoutOverlay = await canvasDigest(page);
+
+    // Phase 2 removed the lines below 3,000 light years. The smoothed boundary does
+    // not read as a staircase, so they draw here now.
+    expect(withOverlay, `at ${distance} light years`).not.toBe(withoutOverlay);
+  }
+});
+
+test('the line is four CSS pixels wide and two-toned', async ({ page }) => {
+  await openMap(page);
+  await lookFrom(page, VERTICAL_CROSSING.view);
+  const ratio = await devicePixelRatio(page);
+
+  // The chain stands within 0.03 degrees of vertical at the centre of the frame, so
+  // one row of pixels across the centre cuts it square.
+  const centre = await projectPoint(page, VERTICAL_CROSSING.point);
+  const row = {
+    x: Math.round(centre.x) - 20,
+    y: Math.round(centre.y),
+    width: 40,
+    height: 1,
+  };
+  const withOverlay = await luminanceRect(page, row);
+  await setPasses(page, { regions: false });
+  const withoutOverlay = await luminanceRect(page, row);
+
+  const changed = withOverlay.map(
+    (value, index) => Math.abs(value - (withoutOverlay[index] as number)) > 0.001,
+  );
+  const runs: { start: number; end: number }[] = [];
+  for (let index = 0; index < changed.length; index += 1) {
+    if (changed[index] !== true) continue;
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.end === index - 1) last.end = index;
+    else runs.push({ start: index, end: index });
+  }
+  console.log('the width reading', {
+    ratio,
+    runs,
+    withOverlay: withOverlay.map((value) => Number(value.toFixed(3))),
+    withoutOverlay: withoutOverlay.map((value) => Number(value.toFixed(3))),
+  });
+
+  expect(runs).toHaveLength(1);
+  const run = runs[0] as { start: number; end: number };
+  const widthCss = (run.end - run.start + 1) / ratio;
+  expect(Math.abs(widthCss - 4)).toBeLessThanOrEqual(1);
+
+  const middle = Math.round((run.start + run.end) / 2);
+  expect(withOverlay[middle] as number).toBeGreaterThan(
+    withOverlay[run.start] as number,
+  );
+  expect(withOverlay[middle] as number).toBeGreaterThan(withOverlay[run.end] as number);
+
+  // The outline is the darker of the two colours, so both ends of the run are darker
+  // than the frame under them.
+  expect(withOverlay[run.start] as number).toBeLessThan(
+    withoutOverlay[run.start] as number,
+  );
+  expect(withOverlay[run.end] as number).toBeLessThan(
+    withoutOverlay[run.end] as number,
+  );
+});
+
+test('a join is not brighter than the line', async ({ page }) => {
+  await openMap(page);
+  await lookFrom(page, SHARP_CORNER.view);
+
+  const bend = await projectPoint(page, SHARP_CORNER.bend);
+  const bendLine: { x: number; y: number }[] = [];
+  for (const point of SHARP_CORNER.bendLine) {
+    bendLine.push(await projectPoint(page, point));
+  }
+  const straightFrom = await projectPoint(page, SHARP_CORNER.straightFrom);
+  const straightTo = await projectPoint(page, SHARP_CORNER.straightTo);
+
+  // One rectangle holds the bend and the straight run, so both readings come from
+  // one frame and the overlay switch moves once.
+  const left = Math.floor(
+    Math.min(bend.x, straightFrom.x, straightTo.x) - JOIN_RADIUS - 4,
+  );
+  const top = Math.floor(
+    Math.min(bend.y, straightFrom.y, straightTo.y) - JOIN_RADIUS - 4,
+  );
+  const rect = {
+    x: left,
+    y: top,
+    width:
+      Math.ceil(Math.max(bend.x, straightFrom.x, straightTo.x) + JOIN_RADIUS + 4) -
+      left,
+    height:
+      Math.ceil(Math.max(bend.y, straightFrom.y, straightTo.y) + JOIN_RADIUS + 4) - top,
+  };
+  const withOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: false });
+  const withoutOverlay = await luminanceRect(page, rect);
+
+  /** The distance from a point to the drawn line inside the reading window. */
+  const gapToBendLine = (point: { x: number; y: number }): number => {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let index = 0; index + 1 < bendLine.length; index += 1) {
+      const away = gapToSegment(
+        point,
+        bendLine[index] as { x: number; y: number },
+        bendLine[index + 1] as { x: number; y: number },
+      );
+      if (away < nearest) nearest = away;
+    }
+    return nearest;
+  };
+
+  let bendChange = 0;
+  let straightChange = 0;
+  let unchangedInside = 0;
+  let insideCount = 0;
+  for (let row = 0; row < rect.height; row += 1) {
+    for (let column = 0; column < rect.width; column += 1) {
+      const index = row * rect.width + column;
+      const point = { x: rect.x + column + 0.5, y: rect.y + row + 0.5 };
+      // The change is the overlay's own contribution. The overlay draws at less than
+      // full opacity, so an absolute reading would follow the galaxy under it.
+      const change = Math.abs(
+        (withOverlay[index] as number) - (withoutOverlay[index] as number),
+      );
+      const toBend = Math.hypot(point.x - bend.x, point.y - bend.y);
+      if (toBend <= JOIN_RADIUS) {
+        if (change > bendChange) bendChange = change;
+        // A pixel on the middle of the drawn line must be drawn. A quad per segment
+        // with no fill at a join leaves a notch here.
+        if (gapToBendLine(point) <= 0.8) {
+          insideCount += 1;
+          if (change <= 0.001) unchangedInside += 1;
+        }
+        continue;
+      }
+      if (
+        toBend > JOIN_RADIUS * 1.5 &&
+        gapToSegment(point, straightFrom, straightTo) <= 1.2
+      ) {
+        if (change > straightChange) straightChange = change;
+      }
+    }
+  }
+  console.log('the join reading', {
+    turnDegrees: SHARP_CORNER.turnDegrees,
+    bendChange,
+    straightChange,
+    insideCount,
+    unchangedInside,
+  });
+
+  expect(insideCount).toBeGreaterThan(8);
+  expect(unchangedInside).toBe(0);
+  expect(straightChange).toBeGreaterThan(0.05);
+  expect(bendChange).toBeLessThanOrEqual(straightChange);
 });
 
 test('the switch removes both parts', async ({ page }) => {
@@ -250,11 +556,11 @@ test('the switch removes both parts', async ({ page }) => {
   await page.evaluate(() => {
     window.__galaxyMap?.drawNow?.();
   });
-  const withOverlay = await canvasImage(page);
+  const withOverlay = await canvasDigest(page);
   expect(await page.locator('.region-label').count()).toBeGreaterThan(0);
 
   await setPasses(page, { regions: false });
-  const withoutOverlay = await canvasImage(page);
+  const withoutOverlay = await canvasDigest(page);
 
   expect(await page.locator('.region-label').count()).toBe(0);
   expect(withOverlay).not.toBe(withoutOverlay);
@@ -265,9 +571,9 @@ test('the switch is inert where nothing draws', async ({ page }) => {
   await page.evaluate(() => {
     window.__galaxyMap?.drawNow?.();
   });
-  const withOverlay = await canvasImage(page);
+  const withOverlay = await canvasDigest(page);
   await setPasses(page, { regions: false });
-  const withoutOverlay = await canvasImage(page);
+  const withoutOverlay = await canvasDigest(page);
 
   expect(withOverlay).toBe(withoutOverlay);
 });

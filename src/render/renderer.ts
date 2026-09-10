@@ -47,8 +47,8 @@ import {
 } from './point-pass';
 import type { PointPass } from './point-pass';
 import type { Program } from './program';
-import { createRegionPass, createRegionProgram, regionFade } from './region-pass';
-import type { RegionPass } from './region-pass';
+import { createRegionPass, createRegionPrograms, regionFade } from './region-pass';
+import type { RegionPass, RegionPrograms } from './region-pass';
 import {
   createStarPass,
   createStarProgram,
@@ -145,7 +145,7 @@ export function createRenderer(
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
   const starProgram: Program = createStarProgram(gl);
-  const regionProgram: Program = createRegionProgram(gl);
+  const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
@@ -367,6 +367,7 @@ export function createRenderer(
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
+        pixelRatio: width / Math.max(1, canvas.clientWidth),
       });
     }
   };
@@ -397,7 +398,7 @@ export function createRenderer(
     },
     setRegionLines(lines: RegionLines): void {
       regionPass?.dispose();
-      regionPass = createRegionPass(gl, regionProgram, lines);
+      regionPass = createRegionPass(gl, regionPrograms, lines, triangle.vertexArray);
     },
     setStarField(model: GalaxyModel): void {
       starPass?.dispose();
@@ -514,7 +515,8 @@ export function createRenderer(
       glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(starProgram.program);
-      gl.deleteProgram(regionProgram.program);
+      gl.deleteProgram(regionPrograms.ribbon.program);
+      gl.deleteProgram(regionPrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();

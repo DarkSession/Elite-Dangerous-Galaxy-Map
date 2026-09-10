@@ -118,7 +118,8 @@ Draws the galaxy's shape from far away and lets the user move across it.
 
 ## Phase 2: close zoom with decoration stars
 
-Change: `close-zoom-stars-and-regions`. Status: implemented.
+Changes: `close-zoom-stars-and-regions`, then `region-boundaries-and-labels`. Status:
+implemented.
 
 Extends the zoom down to individual stars. Draws stars that are decoration, not real
 systems, and fades them out as the user zooms in.
@@ -171,10 +172,48 @@ systems, and fades them out as the user zooms in.
   - The labels and the boundaries are the 42 codex regions, drawn in a zoom band.
     Nebulae and hand-authored regions stay out.
   - The zoom band runs from 30,000 light years down. Both the boundaries and the labels
-    are absent at 30,000 and full at 20,000. The boundaries fade out again below 3,000
-    and draw nothing at 2,000, where one grid cell covers more than 15 pixels. The
-    labels stay to the closest zoom. The star field fades in over the same kind of
+    are absent at 30,000 and full at 20,000. Both then stay to the closest zoom.
+    `close-zoom-stars-and-regions` faded the boundaries out again below 3,000 light
+    years, because one grid cell covers more than 15 pixels there and the line read as a
+    staircase. `region-boundaries-and-labels` draws a smooth line, which has no such
+    fault, so it removed that fade out. The star field fades in over the same kind of
     band: nothing at 8,000 light years, full at 4,000 and below.
+  - A boundary is one line between two regions. The trace links the 38,563 unit edges of
+    the 49.3494 light year raster into **123 chains**, and it ends a chain at each of the
+    82 nodes where more than two edges meet. Each chain is then smoothed in three
+    stages: two passes of an average along it with the movement of every point capped at
+    0.75 of a grid cell from the node the trace put it on, a vertex reduction, and four
+    capped corner rounding passes. The drawn line stays within one grid cell, 49.3494
+    light years, of the traced boundary, measured both ways at 47.76. It turns 29.7
+    degrees for each 1,000 light years of drawn length against the 1,063 degrees of the
+    traced staircase, and no vertex of it turns by more than 20 degrees, measured at
+    14.2. The rounding is what holds that last bound: the average alone leaves long
+    straight runs meeting at corners of up to 98 degrees. The set holds 68,672 vertices
+    and 68,549 segments, which is 804.75 KiB, and it draws in 123 instanced calls.
+  - A line is a screen-space ribbon of two tones: a 2 CSS pixel light core with a 1 CSS
+    pixel dark outline each side. Each segment writes `1 - distance / halfWidth` into a
+    single-channel coverage buffer with the blend equation set to `MAX`, so a join keeps
+    the smallest distance and is not brighter than the line. One fullscreen step then
+    reads that buffer and writes the core colour and the outline colour.
+  - A label follows the area its region covers on screen. The page samples the frame on a
+    grid of screen points 32 CSS pixels apart, which is about 2,000 samples at 1920x1080,
+    and reads each sample from a coarse region grid of 507 by 507 cells at 197.4 light
+    years, 251 KiB. A region is a candidate when it holds at least 1 percent of the
+    samples that land on the plane. A region that carried a label in the frame before
+    stays a candidate to half that share. The region holding the sample nearest the
+    centre of the frame is named first, and the rest follow by sample count after the
+    count of a region that carried a label before is multiplied by 1.2. A label's anchor
+    is worked out on the galactic plane and then projected: it is the mean of the plane
+    positions of its region's samples. Where the region under that mean is another
+    region, which is the frame that shows a region as two separated patches, the anchor
+    is the plane position of the sample the region itself holds nearest the mean. The
+    plane is what makes the anchor move. The sample grid is fixed in screen space, so
+    anything averaged there changes only when a sample crosses a region edge: it holds
+    still and then steps. An anchor is held from the frame before while its plane point
+    still resolves to the region and still projects inside the frame.
+    The three rules `close-zoom-stars-and-regions` used are gone, because the samples are
+    already on the screen: the bounding box candidate test, the centroid projection and
+    the behind-camera negation.
 - **Open questions.**
   - Do decoration stars get names, for example the sector name under the cursor?
   - Do the volume ramp by density and the point ramp by zone unify into one?
