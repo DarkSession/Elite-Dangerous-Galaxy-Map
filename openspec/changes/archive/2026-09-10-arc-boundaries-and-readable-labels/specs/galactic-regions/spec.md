@@ -1,39 +1,4 @@
-## Purpose
-
-Names the part of the galaxy the view sits in. The 42 galactic codex regions draw
-their boundaries on the galactic plane and carry a text label each, so the user can
-tell the Inner Orion Spur from the Galactic Centre without leaving the map.
-
-## Requirements
-
-### Requirement: The region data comes from the almanac
-
-The map SHALL read the 42 galactic codex regions from
-`@elite-dangerous-almanac/core`, pinned to an exact version. Each region SHALL carry an
-id from 1 to 42, a name, a footprint area, axis-aligned bounds on the galactic plane
-and a centroid on the galactic plane. A plane position SHALL resolve to one region or
-to none, on the grid of 4,096/83 light years the game uses.
-
-The map SHALL depend on two constants of the package: the galaxy origin
-(-49,985, -40,985, -24,105) and the sector edge of 1,280 light years. A unit test SHALL
-assert both, so a release of the package that changes them fails the suite rather than
-the map.
-
-#### Scenario: The region list
-
-- **WHEN** a unit test reads the region list
-- **THEN** it holds 42 regions, their ids run from 1 to 42 without a gap, and every
-  name is a non-empty string
-
-#### Scenario: Known positions resolve
-
-- **WHEN** a unit test resolves the regions at (0, 0, 0) and at (15, -35, 25,895)
-- **THEN** the first is `Inner Orion Spur` and the second is `Galactic Centre`
-
-#### Scenario: The package constants hold
-
-- **WHEN** a unit test reads the galaxy origin and the sector edge from the package
-- **THEN** the origin is (-49,985, -40,985, -24,105) and the edge is 1,280 light years
+## ADDED Requirements
 
 ### Requirement: The boundary set is simplified to arcs
 
@@ -323,6 +288,8 @@ vertex costs 492 bytes over the whole set and removes that offset.
 - **THEN** the receiver gets equal contents and the sender's buffers have length 0, the
   curvature array included
 
+
+## MODIFIED Requirements
 
 ### Requirement: The boundaries draw on the galactic plane in a zoom band
 
@@ -1013,42 +980,40 @@ the viewport they hold at.
 - **THEN** the mean is under 0.5 milliseconds and the worst single frame is under 2
 
 
-### Requirement: The region overlay has a switch
+## REMOVED Requirements
 
-The renderer SHALL expose a `regions` switch beside the switches for the volume, the
-clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
-lines and the labels.
+### Requirement: The boundary set is simplified to straight segments
 
-#### Scenario: The switch removes both parts
+**Reason**: The requirement holds the drawn line to one primitive, a straight segment, and
+guards its quality with a bound on short segments. Both describe the fault this change
+removes. Measured on the real data the straight fit turns by up to 30.6 degrees where the
+traced boundary runs straight, and the `Galactic Centre`, a near-circular region, draws as a
+heptagon. The fit tolerance cannot repair it: below about 80 light years the simplification
+stops cutting across the 49.3494 light year raster and starts tracing it, so at 60 light
+years the worst such turn is 90 degrees and 243 places turn by more than 15, against 14
+today. The primitive is the limit, not the parameter.
 
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
-  switches the regions off and takes a second screenshot
-- **THEN** the page holds no region label after the switch, and the second screenshot
-  differs from the first, because the first draws boundary lines
+**Migration**: The replacement is `The boundary set is simplified to arcs`. The trace, the
+chain linking, the region pair of each chain, the kept-vertex rule, the 200 light year
+departure bound measured both ways, the two-chord traced turn, the precision and recall
+corner rules, the chain-end sharing and the transferability all carry over word for word.
+The fit tolerance stays at 190 light years and the measured departure is unchanged at 185.8
+and 189.8, because an arc bulges towards the traced boundary that its chord was cutting the
+corner off.
 
-#### Scenario: The switch is inert where nothing draws
+Three things change. The primitive gains a signed curvature, so one type carries an arc and
+a straight line. The kept vertices are joined by a tangent-continuous biarc spline, broken
+only where the traced boundary turns by more than 30 degrees. A biarc joint is therefore a
+computed point and is no longer guaranteed to be a traced node; only kept vertices and chain
+ends carry that guarantee, which is what still keeps the map watertight.
 
-- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
-  fade in distance, and takes a screenshot with the regions on and one with them off
-- **THEN** the two image files are byte-identical
-
-### Requirement: The region data carries its attribution
-
-The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
-region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
-region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If the built bundle carries the package's procedural
-naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
-
-#### Scenario: The notice names every source
-
-- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier` and
-  `@elite-dangerous-almanac/core`
-
-#### Scenario: The bundle carries no unlicensed table
-
-- **WHEN** a test runs `pnpm build` and searches the built bundle for the package's
-  procedural naming tables
-- **THEN** either the tables are absent, or `THIRD_PARTY_NOTICES.md` holds the BSD
-  3-Clause text in full
+The bound of at most 20 segments shorter than 500 light years is **retired**. It stands in
+for "the line does not read as faceted", and for an arc spline it measures the opposite of
+what it means: an arc is drawn as a run of short pieces, and shortness is what makes it
+smooth. `The line does not facet` replaces it and measures the property directly — at a
+place the traced boundary does not corner, the turn of the drawn line over a 500 light year
+window each side is at most 10 degrees above the traced turn — and it can fail on the line this change removes, whose
+drawn turn reaches 30.6 degrees where the traced turn is near zero. The bound is relative
+and not a pair of thresholds, because two thresholds leave a band of curvature that a
+correct fit falls into. `The set is small enough to upload once` carries over at its new
+numbers and gains a bound on the primitive count.

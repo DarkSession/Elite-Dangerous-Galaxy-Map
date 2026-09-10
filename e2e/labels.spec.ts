@@ -23,6 +23,9 @@ const CENTRE_TOLERANCE_LY = 200;
 /** How far the drawn position of a label may move over a turn of 0.1 degrees. */
 const MOVE_BOUND_PIXELS = 12;
 
+/** How far a label box must stay from every frame edge, in CSS pixels. */
+const LABEL_MARGIN_PIXELS = 8;
+
 /**
  * Opens a view and waits until the page has drawn it.
  *
@@ -92,6 +95,174 @@ function insideViewport(label: LabelReading, width: number, height: number): boo
     label.top >= 0 &&
     label.left + label.width <= width &&
     label.top + label.height <= height
+  );
+}
+
+/** How far a box sits from the nearest frame edge, in CSS pixels. */
+function edgeClearance(label: LabelReading, width: number, height: number): number {
+  return Math.min(
+    label.left,
+    label.top,
+    width - (label.left + label.width),
+    height - (label.top + label.height),
+  );
+}
+
+/**
+ * How far a pixel may sit from the text colour and still count as text, per channel,
+ * on the 0 to 255 scale. The spec asks for 10 percent in each channel. The 10 percent
+ * is taken of the channel range and not of the text colour itself, because a fraction
+ * of the colour is undefined for a channel that is zero, which a black or a dark text
+ * treatment has.
+ */
+const TEXT_TOLERANCE = 0.1 * 255;
+
+/** The contrast ratio every label holds against the ground it is drawn on. */
+const CONTRAST_BOUND = 3;
+
+/** The contrast of one label, measured from the frame with the label drawn. */
+interface ContrastReading {
+  readonly name: string;
+  readonly ratio: number;
+  readonly textLuminance: number;
+  readonly groundLuminance: number;
+  readonly textPixels: number;
+  readonly groundPixels: number;
+}
+
+/**
+ * Measures the contrast of every label against the ground behind it.
+ *
+ * The frame is read as a screenshot and not through `readRect`, because a label is
+ * text in the document and `readRect` reads the drawing buffer of the canvas alone.
+ * The screenshot holds what the eye sees: the canvas, the text and whatever the style
+ * draws between them.
+ *
+ * The split follows the spec. A text pixel is within 10 percent of the text colour in
+ * each channel, which is the solid core of a glyph and not its antialiased edge. A
+ * ground pixel is a pixel of the box that is neither text nor within 1 CSS pixel of
+ * text, so the antialiased edge falls in neither set. The ratio is
+ * `(L1 + 0.05) / (L2 + 0.05)` over the WCAG relative luminance of the median pixel of
+ * each set, ordered so it is at least 1.
+ */
+async function readLabelContrast(page: Page): Promise<ContrastReading[]> {
+  const labels = await readLabels(page);
+  const shot = (await page.screenshot()).toString('base64');
+  return page.evaluate(
+    async (input) => {
+      const bytes = Uint8Array.from(atob(input.shot), (character) =>
+        character.charCodeAt(0),
+      );
+      const bitmap = await createImageBitmap(
+        new Blob([bytes as BlobPart], { type: 'image/png' }),
+      );
+      const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = surface.getContext('2d');
+      if (context === null) throw new Error('the frame has no 2d context to read');
+      context.drawImage(bitmap, 0, 0);
+      const frame = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      const ratio = bitmap.width / window.innerWidth;
+
+      const element = document.querySelector('.region-label');
+      if (element === null) throw new Error('the page holds no region label');
+      const colour = window.getComputedStyle(element).color;
+      const parts = /rgba?\(([^)]+)\)/.exec(colour)?.[1]?.split(',') ?? [];
+      const text = parts.slice(0, 3).map((part) => Number(part.trim()));
+      if (text.length !== 3) throw new Error(`the text colour reads as ${colour}`);
+
+      /** The WCAG relative luminance of one 8-bit colour. */
+      const luminance = (red: number, green: number, blue: number): number => {
+        const channel = (value: number): number => {
+          const scaled = value / 255;
+          return scaled <= 0.03928
+            ? scaled / 12.92
+            : Math.pow((scaled + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+      };
+
+      /** The middle value of a set of readings. */
+      const median = (values: number[]): number => {
+        const sorted = [...values].sort((one, two) => one - two);
+        const low = sorted[Math.floor((sorted.length - 1) / 2)] ?? 0;
+        const high = sorted[Math.ceil((sorted.length - 1) / 2)] ?? 0;
+        return (low + high) / 2;
+      };
+
+      return input.boxes.map((box) => {
+        const left = Math.max(0, Math.floor(box.left * ratio));
+        const top = Math.max(0, Math.floor(box.top * ratio));
+        const right = Math.min(bitmap.width, Math.ceil((box.left + box.width) * ratio));
+        const bottom = Math.min(
+          bitmap.height,
+          Math.ceil((box.top + box.height) * ratio),
+        );
+        const wide = Math.max(0, right - left);
+        const tall = Math.max(0, bottom - top);
+
+        // The mask marks the text pixels of the box, so the ground can leave out the
+        // pixels within 1 CSS pixel of one.
+        const isText = new Uint8Array(wide * tall);
+        const textLuminances: number[] = [];
+        for (let row = 0; row < tall; row += 1) {
+          for (let column = 0; column < wide; column += 1) {
+            const index = ((top + row) * bitmap.width + left + column) * 4;
+            const red = frame[index] ?? 0;
+            const green = frame[index + 1] ?? 0;
+            const blue = frame[index + 2] ?? 0;
+            if (
+              Math.abs(red - (text[0] ?? 0)) <= input.tolerance &&
+              Math.abs(green - (text[1] ?? 0)) <= input.tolerance &&
+              Math.abs(blue - (text[2] ?? 0)) <= input.tolerance
+            ) {
+              isText[row * wide + column] = 1;
+              textLuminances.push(luminance(red, green, blue));
+            }
+          }
+        }
+
+        // One CSS pixel is `ratio` pixels of the frame, and the reach runs in both
+        // axes, so a diagonal neighbour of a glyph is left out of the ground as well.
+        const reach = Math.max(1, Math.round(ratio));
+        const groundLuminances: number[] = [];
+        for (let row = 0; row < tall; row += 1) {
+          for (let column = 0; column < wide; column += 1) {
+            let near = false;
+            for (let dy = -reach; dy <= reach && !near; dy += 1) {
+              for (let dx = -reach; dx <= reach && !near; dx += 1) {
+                const y = row + dy;
+                const x = column + dx;
+                if (y < 0 || y >= tall || x < 0 || x >= wide) continue;
+                if (isText[y * wide + x] === 1) near = true;
+              }
+            }
+            if (near) continue;
+            const index = ((top + row) * bitmap.width + left + column) * 4;
+            groundLuminances.push(
+              luminance(
+                frame[index] ?? 0,
+                frame[index + 1] ?? 0,
+                frame[index + 2] ?? 0,
+              ),
+            );
+          }
+        }
+
+        const textLuminance = median(textLuminances);
+        const groundLuminance = median(groundLuminances);
+        const light = Math.max(textLuminance, groundLuminance);
+        const dark = Math.min(textLuminance, groundLuminance);
+        return {
+          name: box.name,
+          ratio: (light + 0.05) / (dark + 0.05),
+          textLuminance,
+          groundLuminance,
+          textPixels: textLuminances.length,
+          groundPixels: groundLuminances.length,
+        };
+      });
+    },
+    { shot, boxes: labels, tolerance: TEXT_TOLERANCE },
   );
 }
 
@@ -262,6 +433,74 @@ test.describe('the labels at 1920 by 1080', () => {
   test('no label at the far view', async ({ page }) => {
     await openView(page);
     expect(await readLabels(page)).toEqual([]);
+  });
+
+  test('a label clears the frame edge', async ({ page }) => {
+    await openView(page, CORE_VIEW);
+    const labels = await readLabels(page);
+    expect(labels.length).toBeGreaterThan(0);
+
+    const clearances = labels.map((label) => ({
+      name: label.name,
+      clearance: edgeClearance(label, 1920, 1080),
+    }));
+    const tight = clearances.filter((row) => row.clearance < LABEL_MARGIN_PIXELS);
+    console.log(
+      tight.length,
+      'of',
+      labels.length,
+      'boxes clear the frame edge by less than',
+      LABEL_MARGIN_PIXELS,
+      'CSS pixels:',
+      tight.map((row) => `${row.name} at ${row.clearance.toFixed(1)}`),
+    );
+    for (const row of clearances) {
+      expect(
+        row.clearance,
+        `${row.name} clears the frame edge by ${row.clearance.toFixed(1)} CSS pixels`,
+      ).toBeGreaterThanOrEqual(LABEL_MARGIN_PIXELS);
+    }
+  });
+
+  test('a label over the bright core stays legible', async ({ page }) => {
+    await openView(page, CORE_VIEW);
+    const readings = await readLabelContrast(page);
+    expect(readings.length).toBeGreaterThan(0);
+
+    const worstFirst = [...readings].sort((one, two) => one.ratio - two.ratio);
+    const table = worstFirst
+      .map(
+        (row) =>
+          `${row.name} ${row.ratio.toFixed(2)} to 1, text ${row.textLuminance.toFixed(4)} ` +
+          `over ground ${row.groundLuminance.toFixed(4)}, ${row.textPixels} text pixels ` +
+          `and ${row.groundPixels} ground pixels`,
+      )
+      .join('\n');
+    console.log(`the label contrast at the core, worst first:\n${table}`);
+
+    // A label with no text pixel has no reading at all, so the ratio above it means
+    // nothing. Say so rather than report a number taken from an empty set.
+    for (const row of readings) {
+      expect(row.textPixels, `${row.name} holds no text pixel`).toBeGreaterThan(0);
+      expect(row.groundPixels, `${row.name} holds no ground pixel`).toBeGreaterThan(0);
+    }
+
+    const core = readings.find((row) => row.name === 'Galactic Centre');
+    expect(core, 'the Galactic Centre label is not on the page').toBeDefined();
+    console.log(
+      'the Galactic Centre label holds',
+      (core as ContrastReading).ratio.toFixed(2),
+      'to 1 over the brightest part of the disc',
+    );
+
+    // The whole table goes into the message, so one failure names every label and its
+    // ratio rather than the first one the loop reaches.
+    const below = worstFirst.filter((row) => row.ratio < CONTRAST_BOUND);
+    expect(
+      below.map((row) => row.name),
+      `${below.length} of ${readings.length} labels hold less than ` +
+        `${CONTRAST_BOUND} to 1. The labels, worst first:\n${table}`,
+    ).toEqual([]);
   });
 
   test('a label lies inside its own region', async ({ page }) => {

@@ -13,32 +13,53 @@ import {
   regionLinesTransferables,
 } from './messages';
 import {
+  angleBetween,
   buildRegionData,
   buildCoarseRegionGrid,
   buildRegionLines,
-  chainPoints,
+  chainPointsLy,
   fillRegionGrid,
+  fitChainArcs,
+  keptVerticesLy,
+  nodesOfKeptVertices,
   packRegionLines,
+  pointAlong,
+  polylineLengths,
   REGION_CELL_LY,
+  REGION_CORNER_DEGREES,
   REGION_DEPARTURE_LY,
   REGION_FIT_TOLERANCE_LY,
   REGION_GRID_SIZE,
   simplifyChain,
   traceRegionChains,
+  REGION_TANGENT_ESTIMATE,
+  REGION_TURN_REACH_LY,
   traceRegionLines,
+  tracedTurnAt,
 } from './region-lines';
-import type { RegionGrid, RegionTrace, TracedChain } from './region-lines';
+import type {
+  ChainFit,
+  RegionGrid,
+  RegionTrace,
+  TangentEstimate,
+  TracedChain,
+} from './region-lines';
+import { arcPointAt, arcTangents, arcThrough } from './arc';
+import type { Arc } from './arc';
 import { coarseRegionIdAt, NO_REGION_ID, regionOfId, REGIONS } from './regions';
 import type { RegionClearanceField, RegionLabelGeometry, RegionLines } from './types';
 
 /** The step the departure walk takes along both lines, in light years. */
 const DEPARTURE_STEP_LY = 10;
 
+/** The step the faceting walk takes along the drawn line, in light years. */
+const FACET_STEP_LY = 25;
+
 /**
  * How far the traced turn measure reaches each way along the chain, in light years.
  * The same reach groups traced nodes into places and holds a vertex to a place.
  */
-const TURN_REACH_LY = 500;
+const TURN_REACH_LY = REGION_TURN_REACH_LY;
 
 let grid: RegionGrid;
 let trace: RegionTrace;
@@ -68,14 +89,7 @@ function gridOf(ids: number[][]): RegionGrid {
 
 /** A polyline of one traced chain in light years, as `x` then `z` per node. */
 function tracedPolyline(source: RegionGrid, index: number): Float64Array {
-  const nodes = chainPoints(trace.chains[index] as TracedChain);
-  const out = new Float64Array(nodes.length);
-  for (let read = 0; read < nodes.length; read += 2) {
-    out[read] = (source.origin[0] as number) + (nodes[read] as number) * source.cell;
-    out[read + 1] =
-      (source.origin[1] as number) + (nodes[read + 1] as number) * source.cell;
-  }
-  return out;
+  return chainPointsLy(source, trace.chains[index] as TracedChain);
 }
 
 /** The same nodes rounded to `float32`, which is how the set stores a vertex. */
@@ -83,35 +97,186 @@ function tracedNodes32(source: RegionGrid, index: number): Float32Array {
   return Float32Array.from(tracedPolyline(source, index));
 }
 
-/** A polyline of one drawn chain in light years, as `x` then `z` per point. */
-function drawnPolyline(set: RegionLines, index: number): Float64Array {
-  const first = set.first[index] as number;
-  const last = set.last[index] as number;
-  const out = new Float64Array((last - first + 1) * 2);
-  for (let vertex = first; vertex <= last; vertex += 1) {
-    out[(vertex - first) * 2] = set.positions[vertex * 3] as number;
-    out[(vertex - first) * 2 + 1] = set.positions[vertex * 3 + 2] as number;
+/** Everything one chain carries: its trace, its fit and the two read together. */
+interface ChainRead {
+  /** The traced nodes in light years, as `x` then `z`. */
+  readonly traced: Float64Array;
+  /** The length along the traced chain at each of its nodes. */
+  readonly lengths: Float64Array;
+  /** The arc spline the pack fits to the chain. */
+  readonly fit: ChainFit;
+  /** The traced node each kept vertex sits on. */
+  readonly nodes: Int32Array;
+  /** The length along the traced chain each fitted vertex answers to. */
+  readonly at: Float64Array;
+}
+
+const reads = new Map<number, ChainRead>();
+
+/**
+ * Reads one chain. The fit is the one `packRegionLines` runs, so the flags that say
+ * which vertex is a kept vertex and which is a break belong to the drawn set.
+ *
+ * A joint of a biarc is not a traced node, so it answers to the middle of the span it
+ * lies in. That is what puts a drawn sample at a place along the traced chain.
+ */
+function readChain(index: number): ChainRead {
+  const held = reads.get(index);
+  if (held !== undefined) return held;
+  const chain = trace.chains[index] as TracedChain;
+  const traced = chainPointsLy(grid, chain);
+  const lengths = polylineLengths(traced);
+  const kept = keptVerticesLy(grid, chain);
+  const fit = fitChainArcs(traced, kept);
+  const nodes = nodesOfKeptVertices(traced, kept);
+  const count = fit.points.length / 2;
+  const at = new Float64Array(count);
+  let ordinal = -1;
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    if (fit.kept[vertex] === 0) continue;
+    ordinal += 1;
+    at[vertex] = lengths[nodes[ordinal] as number] as number;
   }
-  return out;
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    if (fit.kept[vertex] === 1) continue;
+    let back = vertex - 1;
+    while (back >= 0 && fit.kept[back] === 0) back -= 1;
+    let ahead = vertex + 1;
+    while (ahead < count && fit.kept[ahead] === 0) ahead += 1;
+    at[vertex] = ((at[back] as number) + (at[ahead] as number)) / 2;
+  }
+  const read: ChainRead = { traced, lengths, fit, nodes, at };
+  reads.set(index, read);
+  return read;
 }
 
 /**
- * The traced node each vertex of a drawn chain sits on. The walk runs forward through
- * the nodes, so it also reads whether the vertices are the nodes in their traced
- * order. It gives null when a vertex is not a node of that chain.
+ * The turn of a fitted chain at one of its vertices, in degrees, read from the fit
+ * in `float64`. The packed set rounds a position to `float32`, which moves a tangent
+ * by about a ten-thousandth of a degree, so a reading of the fit itself is what the
+ * arithmetic of the fit can be held to.
  */
-function nodeOfEveryVertex(
+function fitTurnAt(fit: ChainFit, vertex: number, points = fit.points): number {
+  const before = arcTangents(
+    arcThrough(
+      points[vertex * 2 - 2] as number,
+      points[vertex * 2 - 1] as number,
+      points[vertex * 2] as number,
+      points[vertex * 2 + 1] as number,
+      fit.curvature[vertex - 1] as number,
+    ),
+  );
+  const after = arcTangents(
+    arcThrough(
+      points[vertex * 2] as number,
+      points[vertex * 2 + 1] as number,
+      points[vertex * 2 + 2] as number,
+      points[vertex * 2 + 3] as number,
+      fit.curvature[vertex] as number,
+    ),
+  );
+  return angleBetween(before.endX, before.endZ, after.startX, after.startZ);
+}
+
+/** One primitive of a drawn chain, read from the packed set. */
+function primitiveOf(set: RegionLines, chain: number, primitive: number): Arc {
+  const vertex = (set.first[chain] as number) + primitive;
+  return arcThrough(
+    set.positions[vertex * 3] as number,
+    set.positions[vertex * 3 + 2] as number,
+    set.positions[vertex * 3 + 3] as number,
+    set.positions[vertex * 3 + 5] as number,
+    set.curvature[vertex] as number,
+  );
+}
+
+/**
+ * The turn of the drawn line at a vertex, between the direction the primitive
+ * arriving there runs in and the direction the primitive leaving it runs in.
+ */
+function drawnTurnAt(set: RegionLines, chain: number, vertex: number): number {
+  const before = arcTangents(primitiveOf(set, chain, vertex - 1));
+  const after = arcTangents(primitiveOf(set, chain, vertex));
+  return angleBetween(before.endX, before.endZ, after.startX, after.startZ);
+}
+
+/** One drawn chain, walked with each arc sampled along its sweep. */
+interface DrawnWalk {
+  /** Two values per sample, `x` then `z`, in light years. */
+  readonly points: Float64Array;
+  /** The length along the drawn line at each sample. */
+  readonly lengths: Float64Array;
+  /** The length along the traced chain each sample answers to. */
+  readonly tracedAt: Float64Array;
+}
+
+/**
+ * Walks one drawn chain, sampling each arc along its sweep at about the given step.
+ * A reading at the ends of a primitive alone would miss the whole of the curve.
+ */
+function walkDrawnChain(set: RegionLines, chain: number, step: number): DrawnWalk {
+  const read = readChain(chain);
+  const first = set.first[chain] as number;
+  const last = set.last[chain] as number;
+  const points: number[] = [];
+  const tracedAt: number[] = [];
+  for (let vertex = first; vertex < last; vertex += 1) {
+    const arc = primitiveOf(set, chain, vertex - first);
+    const steps = Math.max(1, Math.ceil(arc.length / step));
+    const from = read.at[vertex - first] as number;
+    const to = read.at[vertex - first + 1] as number;
+    for (let sub = 0; sub < steps; sub += 1) {
+      const fraction = sub / steps;
+      const point = arcPointAt(arc, fraction);
+      points.push(point[0], point[1]);
+      tracedAt.push(from + fraction * (to - from));
+    }
+  }
+  points.push(set.positions[last * 3] as number, set.positions[last * 3 + 2] as number);
+  tracedAt.push(read.at[last - first] as number);
+  const walked = Float64Array.from(points);
+  return {
+    points: walked,
+    lengths: polylineLengths(walked),
+    tracedAt: Float64Array.from(tracedAt),
+  };
+}
+
+/**
+ * The two-chord turn of a walked line at one of its samples, in degrees. It is the
+ * same measure the traced turn uses, read on the drawn line.
+ */
+function walkedTurnAt(walk: DrawnWalk, sample: number, reach: number): number | null {
+  const at = walk.lengths[sample] as number;
+  const end = walk.lengths[walk.lengths.length - 1] as number;
+  if (at - reach < 0 || at + reach > end) return null;
+  const back = pointAlong(walk.points, walk.lengths, at - reach);
+  const ahead = pointAlong(walk.points, walk.lengths, at + reach);
+  const x = walk.points[sample * 2] as number;
+  const z = walk.points[sample * 2 + 1] as number;
+  return angleBetween(x - back[0], z - back[1], ahead[0] - x, ahead[1] - z);
+}
+
+/**
+ * The traced node each kept vertex of a drawn chain sits on. The walk runs forward
+ * through the nodes, so it also reads whether the kept vertices are the nodes in their
+ * traced order. It gives null when a kept vertex is not a node of that chain. A joint
+ * of a biarc is a computed point, not a traced node, and is left out.
+ */
+function nodeOfEveryKeptVertex(
   source: RegionGrid,
   set: RegionLines,
   index: number,
 ): number[] | null {
   const nodes = tracedNodes32(source, index);
-  const drawn = drawnPolyline(set, index);
+  const read = readChain(index);
+  const first = set.first[index] as number;
   const out: number[] = [];
   let node = 0;
-  for (let vertex = 0; vertex * 2 < drawn.length; vertex += 1) {
-    const x = drawn[vertex * 2] as number;
-    const z = drawn[vertex * 2 + 1] as number;
+  for (let vertex = 0; vertex < read.fit.kept.length; vertex += 1) {
+    if (read.fit.kept[vertex] === 0) continue;
+    const x = set.positions[(first + vertex) * 3] as number;
+    const z = set.positions[(first + vertex) * 3 + 2] as number;
     while (
       node * 2 < nodes.length &&
       ((nodes[node * 2] as number) !== x || (nodes[node * 2 + 1] as number) !== z)
@@ -123,6 +288,146 @@ function nodeOfEveryVertex(
     node += 1;
   }
   return out;
+}
+
+/** One sample of a drawn chain, with the turn each line holds at that place. */
+interface Facet {
+  /** The two-chord turn of the drawn line over the reach each side, in degrees. */
+  readonly drawn: number;
+  /** The largest traced turn at the traced nodes within the reach along the chain. */
+  readonly traced: number;
+}
+
+/**
+ * Reads the turn of the drawn line and the turn of the traced boundary at every
+ * sample of one walked chain.
+ *
+ * The drawn turn is windowed and not read at a break alone, or the rule it serves
+ * would be true by construction: a break needs a traced turn over the corner test,
+ * and inside a run the drawn turn is zero.
+ *
+ * The traced turn is the largest at the traced nodes within the reach along the
+ * chain, because the drawn line is not the traced line: it may lie up to the
+ * departure bound away from it, and a break may sit a cell from the traced node it
+ * answers to.
+ */
+function facetsOf(chain: number, walk: DrawnWalk): Facet[] {
+  const read = readChain(chain);
+  const turns: (number | null)[] = [];
+  for (let node = 0; node < read.lengths.length; node += 1) {
+    turns.push(tracedTurnAt(read.traced, read.lengths, node, TURN_REACH_LY));
+  }
+  const out: Facet[] = [];
+  let low = 0;
+  let high = 0;
+  for (let sample = 0; sample * 2 < walk.points.length; sample += 1) {
+    const drawn = walkedTurnAt(walk, sample, TURN_REACH_LY);
+    if (drawn === null) continue;
+    const at = walk.tracedAt[sample] as number;
+    while (low < turns.length && (read.lengths[low] as number) < at - TURN_REACH_LY) {
+      low += 1;
+    }
+    while (
+      high < turns.length &&
+      (read.lengths[high] as number) <= at + TURN_REACH_LY
+    ) {
+      high += 1;
+    }
+    let traced = 0;
+    for (let node = low; node < high; node += 1) {
+      const turn = turns[node];
+      if (turn !== null && turn > traced) traced = turn;
+    }
+    out.push({ drawn, traced });
+  }
+  return out;
+}
+
+/** How far the drawn line turns above the traced boundary, over the samples of a set. */
+interface FacetReading {
+  /** How many samples turn by more than 10 degrees. */
+  readonly samples: number;
+  /** How many of those turn by more than 10 degrees above the traced turn. */
+  readonly over: number;
+  /** The largest excess of the drawn turn over the traced turn, in degrees. */
+  readonly worst: number;
+}
+
+/**
+ * Reads the faceting rule over a whole set.
+ *
+ * The rule holds where the traced boundary does not already turn: a sample whose
+ * windowed traced turn passes the corner test sits at a corner, and the corner counts
+ * govern a corner. A raster rounds a right angle over a cell or two, so the window
+ * reads 78.9 degrees where the drawn line keeps the true 91.
+ *
+ * The exclusion and the corner test go together and neither replaces the other.
+ * The corner test removes the fault from the line; the exclusion removes a corner from
+ * of the measure. At a corner test of 20 the exclusion alone would have forgiven the
+ * chain 67 kink, whose window reads 23.8, and the rule would have passed at 1.9
+ * degrees below the traced turn while the drawn line kinked 50.6 degrees.
+ */
+function readFacets(walkOf: (chain: number) => DrawnWalk): FacetReading {
+  let samples = 0;
+  let over = 0;
+  let worst = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < lines.chainCount; index += 1) {
+    for (const facet of facetsOf(index, walkOf(index))) {
+      if (facet.drawn <= 10) continue;
+      if (facet.traced > REGION_CORNER_DEGREES) continue;
+      samples += 1;
+      const excess = facet.drawn - facet.traced;
+      if (excess > worst) worst = excess;
+      if (excess > 10) over += 1;
+    }
+  }
+  return { samples, over, worst };
+}
+
+/**
+ * The straight fit this change replaces, as a walked chain: the kept vertices joined
+ * by chords, with no arc and no run. It is the line the faceting rule has to be able
+ * to fail on.
+ */
+function straightWalk(chain: number, step = FACET_STEP_LY): DrawnWalk {
+  const read = readChain(chain);
+  const kept = keptVerticesLy(grid, trace.chains[chain] as TracedChain);
+  const count = kept.length / 2;
+  const at = new Float64Array(count);
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    at[vertex] = read.lengths[read.nodes[vertex] as number] as number;
+  }
+  const points: number[] = [];
+  const tracedAt: number[] = [];
+  for (let vertex = 0; vertex + 1 < count; vertex += 1) {
+    const span = Math.hypot(
+      (kept[vertex * 2 + 2] as number) - (kept[vertex * 2] as number),
+      (kept[vertex * 2 + 3] as number) - (kept[vertex * 2 + 1] as number),
+    );
+    const steps = Math.max(1, Math.ceil(span / step));
+    for (let sub = 0; sub < steps; sub += 1) {
+      const fraction = sub / steps;
+      points.push(
+        (kept[vertex * 2] as number) +
+          fraction * ((kept[vertex * 2 + 2] as number) - (kept[vertex * 2] as number)),
+        (kept[vertex * 2 + 1] as number) +
+          fraction *
+            ((kept[vertex * 2 + 3] as number) - (kept[vertex * 2 + 1] as number)),
+      );
+      tracedAt.push(
+        (at[vertex] as number) +
+          fraction * ((at[vertex + 1] as number) - (at[vertex] as number)),
+      );
+    }
+  }
+  points.push(kept[(count - 1) * 2] as number, kept[(count - 1) * 2 + 1] as number);
+  tracedAt.push(at[count - 1] as number);
+  const walked = Float64Array.from(points);
+  return {
+    points: walked,
+    lengths: polylineLengths(walked),
+    tracedAt: Float64Array.from(tracedAt),
+  };
 }
 
 /** A uniform grid over the segments of one polyline, so a nearest query is local. */
@@ -271,82 +576,6 @@ function turnAt(polyline: Float64Array, vertex: number): number {
   return angleBetween(ax, az, bx, bz);
 }
 
-/** The angle between two directions, in degrees, without a sign. */
-function angleBetween(ax: number, az: number, bx: number, bz: number): number {
-  const spanA = Math.hypot(ax, az);
-  const spanB = Math.hypot(bx, bz);
-  if (spanA === 0 || spanB === 0) return 0;
-  const cosine = Math.min(1, Math.max(-1, (ax * bx + az * bz) / (spanA * spanB)));
-  return (Math.acos(cosine) * 180) / Math.PI;
-}
-
-/** The length along a polyline at every one of its points, in light years. */
-function arcLengths(points: Float64Array): Float64Array {
-  const count = points.length / 2;
-  const out = new Float64Array(count);
-  for (let index = 1; index < count; index += 1) {
-    out[index] =
-      (out[index - 1] as number) +
-      Math.hypot(
-        (points[index * 2] as number) - (points[index * 2 - 2] as number),
-        (points[index * 2 + 1] as number) - (points[index * 2 - 1] as number),
-      );
-  }
-  return out;
-}
-
-/** The point at a length along a polyline, as `x` then `z`. */
-function pointAtArc(
-  points: Float64Array,
-  lengths: Float64Array,
-  at: number,
-): [number, number] {
-  const count = lengths.length;
-  let low = 0;
-  let high = count - 1;
-  while (high - low > 1) {
-    const middle = (low + high) >> 1;
-    if ((lengths[middle] as number) <= at) low = middle;
-    else high = middle;
-  }
-  const span = (lengths[high] as number) - (lengths[low] as number);
-  const share = span === 0 ? 0 : (at - (lengths[low] as number)) / span;
-  return [
-    (points[low * 2] as number) +
-      share * ((points[high * 2] as number) - (points[low * 2] as number)),
-    (points[low * 2 + 1] as number) +
-      share * ((points[high * 2 + 1] as number) - (points[low * 2 + 1] as number)),
-  ];
-}
-
-/**
- * The turn of a traced chain at one of its nodes, in degrees.
- *
- * It is the angle between the chord from the traced point `reach` light years back
- * along the chain to that node, and the chord from that node to the traced point
- * `reach` light years forward. Where a chain end is nearer than the reach the node has
- * no value, and the caller leaves it out rather than measuring it over a shorter reach.
- *
- * The two chords are what the measure needs. The traced line is a raster staircase that
- * turns about 1,062 degrees for each 1,000 light years, so an accumulated turn or the
- * largest turn at one node reads a corner in every window of the trace.
- */
-function tracedTurnAt(
-  points: Float64Array,
-  lengths: Float64Array,
-  node: number,
-  reach: number,
-): number | null {
-  const at = lengths[node] as number;
-  const end = lengths[lengths.length - 1] as number;
-  if (at - reach < 0 || at + reach > end) return null;
-  const back = pointAtArc(points, lengths, at - reach);
-  const ahead = pointAtArc(points, lengths, at + reach);
-  const x = points[node * 2] as number;
-  const z = points[node * 2 + 1] as number;
-  return angleBetween(x - back[0], z - back[1], ahead[0] - x, ahead[1] - z);
-}
-
 /** One place of the traced boundary where it turns, as the nodes that make it up. */
 interface TurnPlace {
   readonly chain: number;
@@ -362,7 +591,7 @@ function turnPlaces(bound: number): TurnPlace[] {
   const places: TurnPlace[] = [];
   for (let index = 0; index < trace.chains.length; index += 1) {
     const points = tracedPolyline(grid, index);
-    const lengths = arcLengths(points);
+    const lengths = polylineLengths(points);
     let current: number[] | null = null;
     let last = 0;
     for (let node = 0; node < lengths.length; node += 1) {
@@ -548,7 +777,7 @@ describe('the traced turn measure', () => {
       points.push(at + 50, at, at + 50, at + 50);
     }
     const chain = Float64Array.from(points);
-    const lengths = arcLengths(chain);
+    const lengths = polylineLengths(chain);
     const middle = 60;
 
     expect(tracedTurnAt(chain, lengths, middle, TURN_REACH_LY)).toBeCloseTo(0, 4);
@@ -565,16 +794,331 @@ describe('the traced turn measure', () => {
 
   test('has no value where a chain end is nearer than the reach', () => {
     const chain = Float64Array.from([0, 0, 300, 0, 600, 0, 900, 0]);
-    const lengths = arcLengths(chain);
+    const lengths = polylineLengths(chain);
     expect(tracedTurnAt(chain, lengths, 1, TURN_REACH_LY)).toBeNull();
     expect(tracedTurnAt(chain, lengths, 2, TURN_REACH_LY)).toBeNull();
   });
 });
 
-describe('the boundary set', () => {
-  test('every vertex is a traced node', () => {
+describe('the arc fit', () => {
+  /**
+   * A traced chain that runs 3,000 light years east, turns a right angle, and runs
+   * 3,000 light years north, at one node every 50 light years. The kept vertices are
+   * given rather than simplified, so the run on each side of the corner holds three
+   * spans and the tangent at the corner comes from the estimate and not from one
+   * chord.
+   */
+  function cornerChain(): { traced: Float64Array; kept: Float64Array } {
+    const nodes: number[] = [];
+    for (let at = 0; at <= 3000; at += 50) nodes.push(at, 0);
+    for (let at = 50; at <= 3000; at += 50) nodes.push(3000, at);
+    const kept: number[] = [];
+    for (let at = 0; at <= 3000; at += 1000) kept.push(at, 0);
+    for (let at = 1000; at <= 3000; at += 1000) kept.push(3000, at);
+    return { traced: Float64Array.from(nodes), kept: Float64Array.from(kept) };
+  }
+
+  test('the tangent at a break is one-sided', () => {
+    const { traced, kept } = cornerChain();
+    const fit = fitChainArcs(traced, kept);
+    const count = fit.points.length / 2;
+
+    // The corner is the kept vertex at (3000, 0). Its traced turn is 90 degrees, so
+    // the fit breaks there.
+    let corner = -1;
+    for (let vertex = 0; vertex < count; vertex += 1) {
+      if ((fit.points[vertex * 2] as number) !== 3000) continue;
+      if ((fit.points[vertex * 2 + 1] as number) !== 0) continue;
+      corner = vertex;
+    }
+    expect(corner).toBeGreaterThan(0);
+    expect(fit.breaks[corner]).toBe(1);
+
+    const arriving = arcTangents(
+      arcThrough(
+        fit.points[corner * 2 - 2] as number,
+        fit.points[corner * 2 - 1] as number,
+        fit.points[corner * 2] as number,
+        fit.points[corner * 2 + 1] as number,
+        fit.curvature[corner - 1] as number,
+      ),
+    );
+    const leaving = arcTangents(
+      arcThrough(
+        fit.points[corner * 2] as number,
+        fit.points[corner * 2 + 1] as number,
+        fit.points[corner * 2 + 2] as number,
+        fit.points[corner * 2 + 3] as number,
+        fit.curvature[corner] as number,
+      ),
+    );
+    // The run before the corner runs east and the run after it runs north.
+    expect(
+      angleBetween(arriving.endX, arriving.endZ, leaving.startX, leaving.startZ),
+    ).toBeCloseTo(90, 6);
+
+    // A two-sided estimate at the corner reads the difference of the kept vertices on
+    // each side of it, which is the diagonal. It sits 45 degrees from each one-sided
+    // tangent, and it would hand the same direction to both runs, so the drawn line
+    // would run through the corner and turn by nothing at all.
+    const diagonal = [Math.SQRT1_2, Math.SQRT1_2];
+    expect(
+      angleBetween(
+        arriving.endX,
+        arriving.endZ,
+        diagonal[0] as number,
+        diagonal[1] as number,
+      ),
+    ).toBeCloseTo(45, 6);
+    expect(
+      angleBetween(
+        leaving.startX,
+        leaving.startZ,
+        diagonal[0] as number,
+        diagonal[1] as number,
+      ),
+    ).toBeCloseTo(45, 6);
+  });
+
+  test('a break is a chain end or a corner, and the runs cover the chain', () => {
+    let breaks = 0;
+    let runs = 0;
     for (let index = 0; index < lines.chainCount; index += 1) {
-      const nodes = nodeOfEveryVertex(grid, lines, index);
+      const read = readChain(index);
+      const count = read.fit.points.length / 2;
+      const keptCount = read.nodes.length;
+      let ordinal = -1;
+      const breakAt: number[] = [];
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        if (read.fit.kept[vertex] === 0) {
+          // A joint of a biarc lies inside a run and is never a break.
+          expect(read.fit.breaks[vertex]).toBe(0);
+          continue;
+        }
+        ordinal += 1;
+        if (read.fit.breaks[vertex] === 0) continue;
+        breaks += 1;
+        breakAt.push(ordinal);
+        if (ordinal === 0 || ordinal === keptCount - 1) continue;
+        // Every other break is a kept vertex whose traced turn passes the corner test.
+        const turn = tracedTurnAt(
+          read.traced,
+          read.lengths,
+          read.nodes[ordinal] as number,
+          TURN_REACH_LY,
+        );
+        expect(turn).not.toBeNull();
+        expect(turn as number).toBeGreaterThan(REGION_CORNER_DEGREES);
+      }
+      // The chain ends are breaks, and the runs between the breaks cover every span
+      // of the chain exactly once.
+      expect(breakAt[0]).toBe(0);
+      expect(breakAt[breakAt.length - 1]).toBe(keptCount - 1);
+      let covered = 0;
+      for (let at = 0; at + 1 < breakAt.length; at += 1) {
+        covered += (breakAt[at + 1] as number) - (breakAt[at] as number);
+        runs += 1;
+      }
+      expect(covered).toBe(keptCount - 1);
+    }
+    console.log('the runs of the fit', { breaks, runs });
+    expect(runs).toBeGreaterThan(0);
+  });
+
+  test('a biarc interpolates its kept vertices and meets its tangents', () => {
+    let worstGap = 0;
+    let worstAngle = 0;
+    let joints = 0;
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const read = readChain(index);
+      const kept = keptVerticesLy(grid, trace.chains[index] as TracedChain);
+      const count = read.fit.points.length / 2;
+      let ordinal = -1;
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        if (read.fit.kept[vertex] === 1) {
+          ordinal += 1;
+          worstGap = Math.max(
+            worstGap,
+            Math.hypot(
+              (read.fit.points[vertex * 2] as number) - (kept[ordinal * 2] as number),
+              (read.fit.points[vertex * 2 + 1] as number) -
+                (kept[ordinal * 2 + 1] as number),
+            ),
+          );
+        } else {
+          joints += 1;
+        }
+        // The two primitives that meet inside a run were fitted to one prescribed
+        // tangent each side, so they hold the same direction where they meet.
+        if (vertex === 0 || vertex + 1 >= count) continue;
+        if (read.fit.breaks[vertex] === 1) continue;
+        worstAngle = Math.max(worstAngle, fitTurnAt(read.fit, vertex));
+      }
+    }
+    console.log('the biarc fit', { joints, worstGap, worstAngle });
+    expect(joints).toBeGreaterThan(0);
+    expect(worstGap).toBeLessThanOrEqual(1e-9);
+    // 1e-6 radians, which is what the fit is asked to hold at a prescribed tangent.
+    expect((worstAngle * Math.PI) / 180).toBeLessThanOrEqual(1e-6);
+  });
+
+  test('the spline is tangent-continuous inside a run', () => {
+    let drawn = 0;
+    let fitted = 0;
+    let moved = 0;
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const read = readChain(index);
+      const count = read.fit.points.length / 2;
+      for (let vertex = 1; vertex + 1 < count; vertex += 1) {
+        if (read.fit.breaks[vertex] === 1) continue;
+        drawn = Math.max(drawn, drawnTurnAt(lines, index, vertex));
+        fitted = Math.max(fitted, fitTurnAt(read.fit, vertex));
+
+        // The same reading with this joint moved one light year across the line.
+        if (read.fit.kept[vertex] === 1) continue;
+        const leaving = arcTangents(
+          arcThrough(
+            read.fit.points[vertex * 2] as number,
+            read.fit.points[vertex * 2 + 1] as number,
+            read.fit.points[vertex * 2 + 2] as number,
+            read.fit.points[vertex * 2 + 3] as number,
+            read.fit.curvature[vertex] as number,
+          ),
+        );
+        const shifted = Float64Array.from(read.fit.points);
+        shifted[vertex * 2] = (shifted[vertex * 2] as number) + leaving.startZ;
+        shifted[vertex * 2 + 1] = (shifted[vertex * 2 + 1] as number) - leaving.startX;
+        moved = Math.max(moved, fitTurnAt(read.fit, vertex, shifted));
+      }
+    }
+    console.log('the turn inside a run', { drawn, fitted, moved });
+    expect(drawn).toBeLessThanOrEqual(0.5);
+    expect(fitted).toBeLessThanOrEqual(0.5);
+    // The measure sees a joint moved by one light year: it reads 0.407 degrees
+    // against the 1.7e-6 degrees the fit leaves. The move does not cross the 0.5
+    // degree bound of its own, because the median primitive is 2,029 light years long
+    // and one light year across such a primitive turns the tangent by very little.
+    expect(moved).toBeGreaterThan(0.1);
+    expect(moved / Math.max(fitted, 1e-12)).toBeGreaterThan(1000);
+  });
+
+  test('a straight run stays straight', () => {
+    let runs = 0;
+    let primitives = 0;
+    let straight = 0;
+    let tightest = Number.POSITIVE_INFINITY;
+    const loose: number[] = [];
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const read = readChain(index);
+      const count = read.fit.points.length / 2;
+      let from = -1;
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        if (read.fit.breaks[vertex] === 0) continue;
+        if (from >= 0) {
+          // The largest traced turn anywhere along the run.
+          let worst = 0;
+          let ordinal = -1;
+          for (let read2 = 0; read2 <= vertex; read2 += 1) {
+            if (read.fit.kept[read2] === 1) ordinal += 1;
+          }
+          let fromOrdinal = -1;
+          for (let read2 = 0; read2 <= from; read2 += 1) {
+            if (read.fit.kept[read2] === 1) fromOrdinal += 1;
+          }
+          const firstNode = read.nodes[fromOrdinal] as number;
+          const lastNode = read.nodes[ordinal] as number;
+          for (let node = firstNode; node <= lastNode; node += 1) {
+            const turn = tracedTurnAt(read.traced, read.lengths, node, TURN_REACH_LY);
+            if (turn !== null && turn > worst) worst = turn;
+          }
+          if (worst <= 5) {
+            runs += 1;
+            for (let inside = from; inside < vertex; inside += 1) {
+              primitives += 1;
+              const curvature = lines.curvature[
+                (lines.first[index] as number) + inside
+              ] as number;
+              if (curvature === 0) {
+                straight += 1;
+                continue;
+              }
+              const radius = 1 / Math.abs(curvature);
+              tightest = Math.min(tightest, radius);
+              if (radius < 100000) loose.push(radius);
+            }
+          }
+        }
+        from = vertex;
+      }
+    }
+    console.log('the runs whose trace never turns', {
+      runs,
+      primitives,
+      straight,
+      tightest,
+    });
+    // The raster staircase turns by more than 5 degrees over the 500 light year
+    // window almost everywhere, so one run of the whole set qualifies. It is a
+    // straight primitive, which is what the rule asks for.
+    //
+    // The test reads every primitive rather than the smallest radius over them. A
+    // smallest radius starts at infinity, so a bound on it alone passes when the loop
+    // finds nothing, and the reading of infinity above says that is what happens here.
+    expect(runs).toBeGreaterThan(0);
+    expect(primitives).toBeGreaterThan(0);
+    expect(loose).toEqual([]);
+  });
+
+  test('the tangent estimate inside a run is the one the measurements chose', () => {
+    const rows: {
+      estimate: TangentEstimate;
+      drawnToTraced: number;
+      tracedToDrawn: number;
+      worstOnStraight: number;
+    }[] = [];
+    for (const estimate of ['central', 'traced'] as const) {
+      const set = packRegionLines(grid, trace, REGION_FIT_TOLERANCE_LY, estimate);
+      let drawnToTraced = 0;
+      let tracedToDrawn = 0;
+      let worstOnStraight = 0;
+      for (let index = 0; index < set.chainCount; index += 1) {
+        const traced = tracedPolyline(grid, index);
+        const drawn = walkDrawnChain(set, index, DEPARTURE_STEP_LY);
+        drawnToTraced = Math.max(
+          drawnToTraced,
+          walkedGap(drawn.points, indexSegments(traced), DEPARTURE_STEP_LY),
+        );
+        tracedToDrawn = Math.max(
+          tracedToDrawn,
+          walkedGap(traced, indexSegments(drawn.points), DEPARTURE_STEP_LY),
+        );
+        const facets = facetsOf(index, walkDrawnChain(set, index, FACET_STEP_LY));
+        for (const facet of facets) {
+          // Where the traced boundary runs straight, which is the measure an
+          // estimate inside a run can move.
+          if (facet.traced > 5) continue;
+          worstOnStraight = Math.max(worstOnStraight, facet.drawn);
+        }
+      }
+      rows.push({ estimate, drawnToTraced, tracedToDrawn, worstOnStraight });
+    }
+    console.log('the two tangent estimates', rows);
+    const central = rows[0] as (typeof rows)[number];
+    const traced = rows[1] as (typeof rows)[number];
+    expect(REGION_TANGENT_ESTIMATE).toBe('central');
+    // The chosen estimate is no worse on either measure it can move.
+    expect(central.drawnToTraced).toBeLessThanOrEqual(traced.drawnToTraced);
+    expect(central.tracedToDrawn).toBeLessThanOrEqual(traced.tracedToDrawn);
+    expect(central.worstOnStraight).toBeLessThanOrEqual(traced.worstOnStraight);
+    expect(central.drawnToTraced).toBeLessThanOrEqual(REGION_DEPARTURE_LY);
+    expect(central.tracedToDrawn).toBeLessThanOrEqual(REGION_DEPARTURE_LY);
+  }, 120000);
+});
+
+describe('the boundary set', () => {
+  test('every kept vertex is a traced node', () => {
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const nodes = nodeOfEveryKeptVertex(grid, lines, index);
       expect(nodes).not.toBeNull();
       const found = nodes as number[];
       const nodeCount = (trace.chains[index] as TracedChain).nodes.length / 2;
@@ -583,47 +1127,50 @@ describe('the boundary set', () => {
     }
   });
 
-  test('the simplified line stays inside the departure bound', () => {
+  test('the drawn line stays inside the departure bound', () => {
     let drawnToTraced = 0;
     let tracedToDrawn = 0;
     for (let index = 0; index < trace.chains.length; index += 1) {
       const traced = tracedPolyline(grid, index);
-      const drawn = drawnPolyline(lines, index);
+      // The drawn line is walked with each arc sampled along its sweep, so the
+      // reading covers the curve and not only the ends of a primitive.
+      const drawn = walkDrawnChain(lines, index, DEPARTURE_STEP_LY);
       drawnToTraced = Math.max(
         drawnToTraced,
-        walkedGap(drawn, indexSegments(traced), DEPARTURE_STEP_LY),
+        walkedGap(drawn.points, indexSegments(traced), DEPARTURE_STEP_LY),
       );
       tracedToDrawn = Math.max(
         tracedToDrawn,
-        walkedGap(traced, indexSegments(drawn), DEPARTURE_STEP_LY),
+        walkedGap(traced, indexSegments(drawn.points), DEPARTURE_STEP_LY),
       );
     }
-    console.log('the departure of the simplified line', {
-      drawnToTraced,
-      tracedToDrawn,
-    });
+    console.log('the departure of the drawn line', { drawnToTraced, tracedToDrawn });
     expect(drawnToTraced).toBeLessThanOrEqual(REGION_DEPARTURE_LY);
     expect(tracedToDrawn).toBeLessThanOrEqual(REGION_DEPARTURE_LY);
   }, 300000);
 
-  test('the line invents few corners', () => {
+  test('the line keeps real corners and invents few', () => {
     let over20 = 0;
     let honest = 0;
     let worstInvented = 0;
     let worstTurn = 0;
     for (let index = 0; index < lines.chainCount; index += 1) {
-      const drawn = drawnPolyline(lines, index);
-      const nodes = nodeOfEveryVertex(grid, lines, index) as number[];
-      const points = tracedPolyline(grid, index);
-      const lengths = arcLengths(points);
-      for (let vertex = 1; vertex * 2 + 3 < drawn.length; vertex += 1) {
-        const turn = turnAt(drawn, vertex);
+      const read = readChain(index);
+      const count = read.fit.points.length / 2;
+      let ordinal = -1;
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        if (read.fit.kept[vertex] === 1) ordinal += 1;
+        if (vertex === 0 || vertex + 1 >= count) continue;
+        if (read.fit.breaks[vertex] === 0) continue;
+        // The turn of the drawn line is read at a break, between the tangent of the
+        // primitive arriving and the tangent of the one leaving.
+        const turn = drawnTurnAt(lines, index, vertex);
         if (turn > worstTurn) worstTurn = turn;
         if (turn <= 20) continue;
         const traced = tracedTurnAt(
-          points,
-          lengths,
-          nodes[vertex] as number,
+          read.traced,
+          read.lengths,
+          read.nodes[ordinal] as number,
           TURN_REACH_LY,
         );
         if (traced === null) continue;
@@ -648,15 +1195,15 @@ describe('the boundary set', () => {
     const places = turnPlaces(60);
     let covered = 0;
     for (const place of places) {
-      const drawn = drawnPolyline(lines, place.chain);
-      const nodes = nodeOfEveryVertex(grid, lines, place.chain) as number[];
-      const lengths = arcLengths(tracedPolyline(grid, place.chain));
+      const read = readChain(place.chain);
+      const count = read.fit.points.length / 2;
       let holds = false;
-      for (let vertex = 1; vertex * 2 + 3 < drawn.length; vertex += 1) {
-        if (turnAt(drawn, vertex) <= 40) continue;
-        const at = lengths[nodes[vertex] as number] as number;
+      for (let vertex = 1; vertex + 1 < count; vertex += 1) {
+        if (read.fit.breaks[vertex] === 0) continue;
+        if (drawnTurnAt(lines, place.chain, vertex) <= 40) continue;
+        const at = read.at[vertex] as number;
         for (const node of place.nodes) {
-          if (Math.abs(at - (lengths[node] as number)) <= TURN_REACH_LY) {
+          if (Math.abs(at - (read.lengths[node] as number)) <= TURN_REACH_LY) {
             holds = true;
             break;
           }
@@ -675,40 +1222,77 @@ describe('the boundary set', () => {
     expect(share).toBeGreaterThanOrEqual(0.75);
   }, 120000);
 
-  test('the set does not fragment', () => {
-    let short = 0;
-    let segments = 0;
-    let longest = 0;
-    for (let index = 0; index < lines.chainCount; index += 1) {
-      const drawn = drawnPolyline(lines, index);
-      for (let read = 0; read + 3 < drawn.length; read += 2) {
-        const span = Math.hypot(
-          (drawn[read + 2] as number) - (drawn[read] as number),
-          (drawn[read + 3] as number) - (drawn[read + 1] as number),
-        );
-        segments += 1;
-        if (span < 500) short += 1;
-        if (span > longest) longest = span;
-      }
-    }
-    console.log('the segments of the set', { segments, short, longest });
-    expect(short).toBeLessThanOrEqual(20);
-  });
+  test('the line does not facet', () => {
+    const drawn = readFacets((chain) => walkDrawnChain(lines, chain, FACET_STEP_LY));
+    // The line this change replaces, measured against the same rule. The rule has to
+    // be able to fail, and this is the measurement of that rather than a claim.
+    const straight = readFacets((chain) => straightWalk(chain, FACET_STEP_LY));
+    console.log('the turn of the drawn line against the traced turn', {
+      drawn,
+      straight,
+    });
+    expect(drawn.over).toBe(0);
+    expect(drawn.worst).toBeLessThanOrEqual(10);
+    expect(straight.over).toBeGreaterThan(0);
+    expect(straight.worst).toBeGreaterThan(10);
+  }, 120000);
 
   test('the set is small enough to upload once', () => {
-    console.log(
-      'the boundary set holds',
-      lines.vertexCount,
-      'vertices in',
-      lines.positions.byteLength / 1024,
-      'KiB over',
-      lines.chainCount,
-      'chains',
-    );
+    const primitives = lines.vertexCount - lines.chainCount;
+    let straight = 0;
+    let counted = 0;
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const first = lines.first[index] as number;
+      const last = lines.last[index] as number;
+      // A chain of `n` vertices holds `n - 1` primitives, because a vertex two
+      // primitives share is stored once.
+      counted += last - first;
+      for (let vertex = first; vertex < last; vertex += 1) {
+        if ((lines.curvature[vertex] as number) === 0) straight += 1;
+      }
+      // The last vertex of a chain starts no primitive.
+      expect(lines.curvature[last]).toBe(0);
+    }
+    expect(counted).toBe(primitives);
+
+    // A primitive is the minor arc through its two ends. Nothing in `arc.ts` holds the
+    // fit to that, so the built set is measured here: a sweep past 180 degrees would
+    // reconstruct the other arc of the circle and draw a different curve.
+    let widestSweep = 0;
+    for (let index = 0; index < lines.chainCount; index += 1) {
+      const first = lines.first[index] as number;
+      const last = lines.last[index] as number;
+      for (let vertex = first; vertex < last; vertex += 1) {
+        const arc = arcThrough(
+          lines.positions[vertex * 3] as number,
+          lines.positions[vertex * 3 + 2] as number,
+          lines.positions[vertex * 3 + 3] as number,
+          lines.positions[vertex * 3 + 5] as number,
+          lines.curvature[vertex] as number,
+        );
+        widestSweep = Math.max(widestSweep, Math.abs(arc.sweep));
+      }
+    }
+    console.log('the widest sweep in degrees', (widestSweep * 180) / Math.PI);
+    expect((widestSweep * 180) / Math.PI).toBeLessThan(180);
+
+    console.log('the boundary set holds', {
+      chains: lines.chainCount,
+      vertices: lines.vertexCount,
+      primitives,
+      straight,
+      arcs: primitives - straight,
+      kib: (lines.positions.byteLength + lines.curvature.byteLength) / 1024,
+    });
     expect(lines.vertexCount).toBeGreaterThanOrEqual(300);
     expect(lines.vertexCount).toBeLessThanOrEqual(2000);
+    expect(primitives).toBeGreaterThanOrEqual(300);
+    expect(primitives).toBeLessThanOrEqual(2000);
     expect(lines.positions.length).toBe(lines.vertexCount * 3);
-    expect(lines.positions.byteLength).toBeLessThanOrEqual(23.4 * 1024);
+    expect(lines.curvature.length).toBe(lines.vertexCount);
+    expect(lines.positions.byteLength + lines.curvature.byteLength).toBeLessThanOrEqual(
+      31.2 * 1024,
+    );
     expect(lines.first.length).toBe(lines.chainCount);
     expect(lines.last.length).toBe(lines.chainCount);
   });
@@ -778,6 +1362,9 @@ describe('the boundary set', () => {
     expect(new Uint8Array(again.positions.buffer)).toEqual(
       new Uint8Array(lines.positions.buffer),
     );
+    expect(new Uint8Array(again.curvature.buffer)).toEqual(
+      new Uint8Array(lines.curvature.buffer),
+    );
     expect(new Uint8Array(again.first.buffer)).toEqual(
       new Uint8Array(lines.first.buffer),
     );
@@ -793,6 +1380,7 @@ describe('the boundary set', () => {
     const small = fillRegionGrid(galaxyModel.bounds, 64);
     const set = traceRegionLines(small);
     const firstVertex = set.positions[0] as number;
+    const curvature = Array.from(set.curvature);
     const ends = Array.from(set.last);
     const pairs = Array.from(set.pairs);
     const channel = new MessageChannel();
@@ -806,9 +1394,11 @@ describe('the boundary set', () => {
     expect(received.chainCount).toBe(set.chainCount);
     expect(received.vertexCount).toBe(set.vertexCount);
     expect(received.positions[0]).toBe(firstVertex);
+    expect(Array.from(received.curvature)).toEqual(curvature);
     expect(Array.from(received.last)).toEqual(ends);
     expect(Array.from(received.pairs)).toEqual(pairs);
     expect(set.positions.buffer.byteLength).toBe(0);
+    expect(set.curvature.buffer.byteLength).toBe(0);
     expect(set.first.buffer.byteLength).toBe(0);
     expect(set.last.buffer.byteLength).toBe(0);
     expect(set.pairs.buffer.byteLength).toBe(0);

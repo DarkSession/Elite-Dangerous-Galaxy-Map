@@ -38,6 +38,13 @@ export interface GalaxyMapGlobal {
   /** The boundary vertices the page drew, as `x`, `y`, `z` per vertex. */
   regionLinePositions?: () => Float32Array;
   /**
+   * The signed curvature of every boundary vertex, in reciprocal light years, indexed
+   * as the vertices are. The value at a vertex belongs to the primitive that starts
+   * there, and zero is a straight primitive. A reader needs it to measure to the drawn
+   * line, because a primitive is an arc and its chord is not what the page draws.
+   */
+  regionLineCurvature?: () => Float32Array;
+  /**
    * The first and the last vertex index of every chain, so a reader can walk the
    * chains of the boundary set rather than read the vertices as loose pairs.
    */

@@ -69,6 +69,7 @@ export function surfaceDetailTransferables(detail: SurfaceDetail): Transferable[
 export function regionLinesTransferables(lines: RegionLines): Transferable[] {
   return [
     lines.positions.buffer as ArrayBuffer,
+    lines.curvature.buffer as ArrayBuffer,
     lines.first.buffer as ArrayBuffer,
     lines.last.buffer as ArrayBuffer,
     lines.pairs.buffer as ArrayBuffer,

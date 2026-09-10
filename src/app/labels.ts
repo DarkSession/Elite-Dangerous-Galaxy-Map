@@ -5,8 +5,8 @@
 // of the region's boundaries. When that centre cannot hold the box inside the frame,
 // the anchor slides along the straight plane segment from the centre toward the plane
 // point under the middle of the frame, and stops at the first point whose floor-scale
-// box lies inside the frame. The anchor is a function of the camera alone, so the
-// placement carries no state between frames.
+// box lies inside the viewport inset by the label margin. The anchor is a function of
+// the camera alone, so the placement carries no state between frames.
 import { cameraPosition, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
@@ -32,6 +32,21 @@ export const LABEL_FLOOR_SCALE = 0.7;
 
 /** The largest scale a label draws at. */
 export const LABEL_FULL_SCALE = 1;
+
+/**
+ * How far a label box stays from every frame edge, in CSS pixels.
+ *
+ * Both feasibility tests take the viewport inset by this margin: the slide, which
+ * tests the box at the floor scale, and the search of the scale, which then grows the
+ * box by up to 1.43 times in width. Without the margin the slide stops at the first
+ * point where the box merely clears the edge, and a label that never slides grows
+ * until its box is flush with the edge. A box flush with the edge reads as clipped
+ * although it is inside.
+ *
+ * The margin is not a clamp. The box stays centred on its anchor and the anchor stays
+ * on the segment, so no box moves across a region boundary.
+ */
+export const LABEL_MARGIN_CSS = 8;
 
 /**
  * How near the search of the scale runs, in CSS pixels of box width. One pixel of a
@@ -93,7 +108,7 @@ export const LABEL_DRAWN = 0;
 export const LABEL_BELOW_PLANE = 1;
 /** No part of the region projects inside the viewport. */
 export const LABEL_OFF_SCREEN = 2;
-/** No point of the segment holds the floor-scale box inside the viewport. */
+/** No point of the segment holds the floor-scale box inside the inset viewport. */
 export const LABEL_NO_ANCHOR = 3;
 /** The anchor reads back as another region. */
 export const LABEL_OTHER_REGION = 4;
@@ -120,7 +135,7 @@ export function labelFade(distance: number): number {
  * homography apart. Building it once for the frame makes a projection nine
  * multiplications, and it makes the reverse read and the light years under a pixel
  * exact rather than a difference of two samples. `project` builds the view-projection
- * matrix on every call, which a frame that projects 562 vertices cannot pay for.
+ * matrix on every call, which a frame that projects 716 vertices cannot pay for.
  */
 export interface PlaneMap {
   /** Screen from plane, row by row: `(u t, v t, t) = forward (x, z, 1)`. */
@@ -284,8 +299,12 @@ function segmentMeetsViewport(
   );
 }
 
-/** True when a box centred on a screen point lies wholly inside the viewport. */
-function boxInsideViewport(
+/**
+ * True when a box centred on a screen point lies wholly inside the viewport inset by
+ * the label margin. This is the feasibility test of the slide and of the search of the
+ * scale, so both steps hold the same margin.
+ */
+function boxInsideInsetViewport(
   u: number,
   v: number,
   size: LabelSize,
@@ -294,10 +313,10 @@ function boxInsideViewport(
   const halfWidth = size.width / 2;
   const halfHeight = size.height / 2;
   return (
-    u - halfWidth >= 0 &&
-    v - halfHeight >= 0 &&
-    u + halfWidth <= viewport.width &&
-    v + halfHeight <= viewport.height
+    u - halfWidth >= LABEL_MARGIN_CSS &&
+    v - halfHeight >= LABEL_MARGIN_CSS &&
+    u + halfWidth <= viewport.width - LABEL_MARGIN_CSS &&
+    v + halfHeight <= viewport.height - LABEL_MARGIN_CSS
   );
 }
 
@@ -412,15 +431,15 @@ const frameAnchor = new Float64Array(2);
 /**
  * Marks every region any part of which projects inside the viewport.
  *
- * The test covers the region's own boundary segments, its centre, and the regions that
+ * The test covers the region's own boundary primitives, its centre, and the regions that
  * hold the plane points under the middle and the four corners of the frame. The last
  * of those is not decoration: a camera looking almost straight down inside a large
  * region sees about 577 light years with no boundary and no centre in the frame.
  *
  * The vertices are projected **once for the frame** into the buffers and every region
- * indexes into them. Each of the 439 segments belongs to two regions, so a region that
- * projected its own segments would make about 1,756 endpoint projections instead of
- * 562.
+ * indexes into them. Each of the 593 primitives belongs to two regions, so a region that
+ * projected its own primitives would make about 2,372 endpoint projections instead of
+ * 716.
  *
  * A segment with an end behind the camera is clipped against the camera plane before
  * it is tested. The projection returns a mirrored position for such a point, so an
@@ -626,8 +645,8 @@ export function requiredClearance(
  *
  * The anchor is a function of the camera alone. It is the point of the plane segment
  * from the region's centre to the plane point under the middle of the frame nearest
- * the centre whose floor-scale box lies inside the viewport, it must read back as its
- * own region on the coarse grid, and the clearance there must hold the box at some
+ * the centre whose floor-scale box lies inside the inset viewport, it must read back as
+ * its own region on the coarse grid, and the clearance there must hold the box at some
  * scale down to the floor. There is no cap on the count and no order between labels:
  * regions do not overlap on the plane and the plane projects one to one, so two boxes
  * that each lie inside their own region cannot overlap each other.
@@ -695,7 +714,7 @@ export function placeLabels(
       const z = centreZ + (wantedZ - centreZ) * at;
       work.projections += 1;
       if (toScreen(map, x, z, framePoint) <= 0) return false;
-      return boxInsideViewport(framePoint[0], framePoint[1], floorSize, viewport);
+      return boxInsideInsetViewport(framePoint[0], framePoint[1], floorSize, viewport);
     };
     let at = 0;
     if (!fits(0)) {
@@ -754,10 +773,12 @@ export function placeLabels(
     const clearance = labelClearanceAt(geometry, region.id, anchorX, anchorZ);
 
     // Step 4. The size. The box holds the clearance at the anchor and lies inside the
-    // viewport, and both are monotone in the scale, so the search is a bisection.
+    // inset viewport, and both are monotone in the scale, so the search is a bisection.
+    // The margin belongs here as well as in the slide, because this step grows the box
+    // the slide tested by up to 1.43 times in width.
     const holds = (scale: number): boolean => {
       const size = measure(region.name, scale);
-      if (!boxInsideViewport(anchorU, anchorV, size, viewport)) return false;
+      if (!boxInsideInsetViewport(anchorU, anchorV, size, viewport)) return false;
       const needed = requiredClearance(
         map,
         geometry,

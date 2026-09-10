@@ -2,14 +2,24 @@
 // runs after the tone map, over the finished frame, so it is an overlay and not a
 // scene pass: no look constant of the far view changes it, and it changes none of them.
 //
-// The line is a two-tone ribbon and it draws in two steps. The first step expands each
-// segment into a screen-space quad and writes its coverage into a single-channel
-// buffer with the MAX blend equation, so a join keeps the smallest distance rather
-// than blending twice. The second step reads that buffer once and writes the core
-// colour and the outline colour over the frame.
+// The line is a two-tone ribbon and it draws in two steps. The first step cuts each
+// primitive into sub-chords, expands every sub-chord into a screen-space quad and
+// writes its coverage into a single-channel buffer with the MAX blend equation, so a
+// join keeps the smallest distance rather than blending twice. The second step reads
+// that buffer once and writes the core colour and the outline colour over the frame.
+//
+// A primitive is an arc with a signed curvature, and a curvature of zero is a straight
+// line. The sub-chords are what put a curve on the screen: the fragment shader
+// measures distance in screen pixels, which holds the line to 4 CSS pixels at any
+// obliquity, and a circle on the plane projects to a conic that no cheap distance
+// field answers. So the pass keeps the fragment shader as it is and cuts the curve up
+// here.
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
+import { NEAR_PLANE } from '../camera/projection';
+import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
+import { arcThrough } from '../scene-data/arc';
 import type { RegionLines } from '../scene-data/types';
 import vertexSource from './shaders/regions.vert?raw';
 import fragmentSource from './shaders/regions.frag?raw';
@@ -45,11 +55,134 @@ export const REGION_FADE_IN_FAR = 30000;
 /** The zoom distance at and below which the overlay draws in full, in light years. */
 export const REGION_FADE_IN_NEAR = 20000;
 
+/**
+ * How far a sub-chord may sit from the arc it cuts across, in CSS pixels.
+ *
+ * The value comes from a sweep of 0.5, 0.25 and 0.125 read in the browser, on the run
+ * the no-facet test walks: a curve of 5,913 light years radius at a zoom of 8,000, whose
+ * drawn direction the test fits over a window of 12 CSS pixels.
+ *
+ * **What the reading is made of.** The arc itself turns **1.492 degrees** over one
+ * window, because a circle of radius R turns `window / R`. That is the floor and no
+ * sagitta reaches below it. The measure carries about **0.5 degrees** of its own,
+ * because it takes the drawn line's position from a weighted centroid and a fraction of
+ * a pixel of error over a 12 pixel baseline is a fraction of a degree. The rest is the
+ * sub-chord expansion, and it is what this constant buys: **0.31 degrees at 0.5, and
+ * nothing measurable at 0.25 or below**.
+ *
+ * The reading is 2.283 degrees at 0.5, 1.977 at 0.25 and 2.192 at 0.125, against the
+ * bound of 3 the drawn scenario holds. It stops falling at 0.25: the rise at 0.125 sits
+ * inside the measure's own noise, so the tighter value adds no smoothness the frame can
+ * show and costs 41 percent more sub-chords, 127 against 90, and 41 percent more
+ * instances, 40,663 against 28,842. The frame budget reads the same at all three, 1.54
+ * ms against 16.7, so the cost is not what decides it.
+ */
+export const REGION_SUB_SEGMENT_SAGITTA_CSS = 0.25;
+
+/**
+ * The largest number of sub-chords one primitive takes. It bounds the work of a frame
+ * and it is never reached inside the zoom band: measured over the built set from 500
+ * to 30,000 light years at 1920x1080, the worst chain asks for 90.
+ */
+export const REGION_MAX_SUB_SEGMENTS = 256;
+
 /** The four corners of the ribbon quad, as a triangle strip. */
 const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
 
 /** How many bytes one vertex of the boundary set takes. */
 const VERTEX_BYTES = 12;
+
+/** How many bytes one curvature of the boundary set takes. */
+const CURVATURE_BYTES = 4;
+
+/** The sweep and the radius of one arc, which is all the sub-chord count reads. */
+export interface RegionArc {
+  /** The angle the arc turns through, in radians. It carries the sign of the curvature. */
+  readonly sweep: number;
+  /** The radius, in light years. */
+  readonly radius: number;
+}
+
+/**
+ * The arcs of every chain of a boundary set, straight primitives left out.
+ *
+ * A straight primitive has no sagitta at any sub-chord count, so it asks for nothing
+ * and the count reads the arcs alone.
+ */
+export function regionChainArcs(lines: RegionLines): RegionArc[][] {
+  const chains: RegionArc[][] = [];
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    const first = lines.first[chain] as number;
+    const last = lines.last[chain] as number;
+    const arcs: RegionArc[] = [];
+    for (let vertex = first; vertex < last; vertex += 1) {
+      const curvature = lines.curvature[vertex] as number;
+      if (curvature === 0) continue;
+      const arc = arcThrough(
+        lines.positions[vertex * 3] as number,
+        lines.positions[vertex * 3 + 2] as number,
+        lines.positions[(vertex + 1) * 3] as number,
+        lines.positions[(vertex + 1) * 3 + 2] as number,
+        curvature,
+      );
+      arcs.push({ sweep: arc.sweep, radius: arc.radius });
+    }
+    chains.push(arcs);
+  }
+  return chains;
+}
+
+/**
+ * The smallest number of light years one CSS pixel covers anywhere in a frame.
+ *
+ * A point of the galactic plane is never nearer the camera than the camera's own
+ * height above the plane, and the point of the frame that sits at the widest angle
+ * from the view axis is a corner. So the smallest depth along that axis is the height
+ * times the cosine of the corner angle, and the scale follows from the focal length in
+ * CSS pixels. The height takes the near plane as its floor, because a camera on the
+ * plane itself asks for a scale of zero.
+ */
+export function smallestLightYearsPerPixel(
+  cameraHeightLy: number,
+  widthCss: number,
+  heightCss: number,
+): number {
+  const tanUp = Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360);
+  const tanAcross = (tanUp * widthCss) / heightCss;
+  const focal = heightCss / (2 * tanUp);
+  const widest = Math.sqrt(1 + tanAcross * tanAcross + tanUp * tanUp);
+  return Math.max(NEAR_PLANE, Math.abs(cameraHeightLy)) / (focal * widest);
+}
+
+/**
+ * How many sub-chords one primitive of a chain takes at a zoom.
+ *
+ * The count comes from the **sagitta** and not from the turn. The sagitta of a
+ * sub-chord over a sub-angle is `R (1 - cos(sub / 2))`, so at a fixed sub-angle it
+ * grows with the radius: a wide gentle arc facets before a tight one does. The count
+ * is the smallest whose sagitta, in CSS pixels, stays under the bound.
+ *
+ * One number covers a whole draw call, which is one chain, because the expansion runs
+ * on the attribute divisor. So the count answers for the worst arc of that chain at
+ * the zoom of this frame, and a chain of tight local arcs does not pay for a 25,000
+ * light year curve in another chain.
+ */
+export function regionSubSegments(
+  arcs: readonly RegionArc[],
+  lightYearsPerPixel: number,
+): number {
+  const budget = REGION_SUB_SEGMENT_SAGITTA_CSS * lightYearsPerPixel;
+  let count = 1;
+  for (const arc of arcs) {
+    // A budget of two radii or more holds the whole circle, so one sub-chord does.
+    if (budget >= 2 * arc.radius) continue;
+    const subAngle = Math.acos(Math.min(1, Math.max(-1, 1 - budget / arc.radius)));
+    if (subAngle <= 0) return REGION_MAX_SUB_SEGMENTS;
+    const wanted = Math.ceil(Math.abs(arc.sweep) / (2 * subAngle));
+    if (wanted > count) count = wanted;
+  }
+  return Math.min(REGION_MAX_SUB_SEGMENTS, Math.max(1, count));
+}
 
 function smoothstep(low: number, high: number, value: number): number {
   const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
@@ -80,6 +213,12 @@ export interface RegionPassFrame {
   readonly fade: number;
   /** How many device pixels one CSS pixel holds. */
   readonly pixelRatio: number;
+  /**
+   * The smallest number of light years one CSS pixel covers anywhere in the frame.
+   * The sub-chord count of every chain reads it, so a curve holds its sagitta under
+   * a quarter of a CSS pixel wherever it is drawn.
+   */
+  readonly lightYearsPerPixel: number;
 }
 
 /** The region overlay pass. */
@@ -108,6 +247,7 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       'uChunkOffset',
       'uTargetSize',
       'uHalfWidth',
+      'uSubCount',
     ]),
     composite: createProgram(
       gl,
@@ -211,15 +351,22 @@ export function createRegionPass(
 ): RegionPass {
   const vertexArray = gl.createVertexArray();
   const positionBuffer = gl.createBuffer();
+  const curvatureBuffer = gl.createBuffer();
   const cornerBuffer = gl.createBuffer();
-  if (vertexArray === null || positionBuffer === null || cornerBuffer === null) {
+  if (
+    vertexArray === null ||
+    positionBuffer === null ||
+    curvatureBuffer === null ||
+    cornerBuffer === null
+  ) {
     throw new Error('The context gave no buffer for the region boundaries.');
   }
 
   gl.bindVertexArray(vertexArray);
 
-  // The corner steps once per vertex of the quad. The two endpoints step once per
-  // segment, and the draw loop points them at the chain it is about to draw.
+  // The corner steps once per vertex of the quad, so its divisor stays 0. The two
+  // endpoints and the curvature step once per primitive, and the draw loop points them
+  // at the chain it is about to draw and sets their divisor to its sub-chord count.
   gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, RIBBON_CORNERS, gl.STATIC_DRAW);
   gl.enableVertexAttribArray(2);
@@ -229,12 +376,18 @@ export function createRegionPass(
   gl.bufferData(gl.ARRAY_BUFFER, toWorldPositions(lines.positions), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0);
   gl.enableVertexAttribArray(1);
-  gl.vertexAttribDivisor(0, 1);
-  gl.vertexAttribDivisor(1, 1);
+
+  // The curvature is one value per vertex, indexed as the vertices are, so it binds at
+  // the same per-chain offset as the positions. The world frame the card reads negates
+  // `z`, and the shader turns the other way for it, so the value travels unchanged.
+  gl.bindBuffer(gl.ARRAY_BUFFER, curvatureBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, lines.curvature, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(3);
 
   gl.bindVertexArray(null);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
+  const chainArcs = regionChainArcs(lines);
   const coverage = createCoverageTarget(gl);
 
   return {
@@ -273,13 +426,20 @@ export function createRegionPass(
       gl.uniform1f(ribbon.uniforms['uHalfWidth'] ?? null, halfWidth);
 
       gl.bindVertexArray(vertexArray);
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      // One instanced call per chain. A segment reads the shared vertex array at two
-      // offsets one vertex apart, so the endpoints need no second buffer.
+      // One instanced call per chain. A primitive reads the shared vertex array at two
+      // offsets one vertex apart, so the endpoints need no second buffer. The divisor
+      // holds a primitive's three attributes over the sub-chords it takes, and the
+      // shader reads the sub-index from `gl_InstanceID`.
       for (let chain = 0; chain < lines.chainCount; chain += 1) {
         const first = lines.first[chain] as number;
         const segments = (lines.last[chain] as number) - first;
         if (segments < 1) continue;
+        const sub = regionSubSegments(
+          chainArcs[chain] as RegionArc[],
+          frame.lightYearsPerPixel,
+        );
+        gl.uniform1i(ribbon.uniforms['uSubCount'] ?? null, sub);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.vertexAttribPointer(
           0,
           3,
@@ -296,7 +456,19 @@ export function createRegionPass(
           VERTEX_BYTES,
           (first + 1) * VERTEX_BYTES,
         );
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, segments);
+        gl.bindBuffer(gl.ARRAY_BUFFER, curvatureBuffer);
+        gl.vertexAttribPointer(
+          3,
+          1,
+          gl.FLOAT,
+          false,
+          CURVATURE_BYTES,
+          first * CURVATURE_BYTES,
+        );
+        gl.vertexAttribDivisor(0, sub);
+        gl.vertexAttribDivisor(1, sub);
+        gl.vertexAttribDivisor(3, sub);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, segments * sub);
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       gl.bindVertexArray(null);
@@ -344,6 +516,7 @@ export function createRegionPass(
     dispose(): void {
       coverage.dispose();
       gl.deleteBuffer(positionBuffer);
+      gl.deleteBuffer(curvatureBuffer);
       gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
     },

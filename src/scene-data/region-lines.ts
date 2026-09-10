@@ -7,6 +7,7 @@ import {
   CODEX_REGION_MAP_LY_PER_CELL,
   findCodexRegionAt,
 } from '@elite-dangerous-almanac/core/astro/codex-region-lookup';
+import { arcCurvature } from './arc';
 import { galaxyModel } from '../galaxy-model/model';
 import type { Range } from '../galaxy-model/types';
 import { buildClearanceField, buildRegionLabelGeometry } from './clearance';
@@ -303,6 +304,399 @@ export function simplifyChain(points: Float64Array, tolerance: number): Float64A
   return out;
 }
 
+/** How far the traced turn measure reaches each way along a chain, in light years. */
+export const REGION_TURN_REACH_LY = 500;
+
+/**
+ * The traced turn above which a kept vertex is a corner, in degrees.
+ *
+ * A corner breaks the spline, so the drawn line turns there and nowhere else. The
+ * test is the two-chord traced turn below, which tells a corner the region map has
+ * from a wobble of the raster.
+ *
+ * **The number sits in an empty band.** Measured over the whole set, no kept vertex
+ * holds a traced turn between **22.93 and 39.59 degrees**, so a test of 25, 30 or 35
+ * gives the same 472 breaks, 716 vertices and 593 primitives. The result does not
+ * depend on the exact number, which is the only honest way to pick one. At 30 the
+ * test sits 7.1 degrees above the highest wobble the raster produces and 9.6 below
+ * the lowest real corner.
+ *
+ * **A test of 20 lets the raster through.** On chain 67 the traced turn alternates 11.1, 21.6,
+ * 22.9 and 11.7 at neighbouring nodes of a smooth bend near the galactic centre. The
+ * kept vertex at 22.9 becomes a corner, both of its runs fall to one span, and the
+ * drawn line kinks **50.6 degrees** where the traced boundary turns 23.8 over the
+ * window. Above 22.93 that place is a run, and the drawn line bends 28.1 degrees
+ * through it.
+ *
+ * **The ceiling is the departure bound, not the corner counts.** Recall holds all 221
+ * of its places up to a test of 60, because a recall place turns by more than 60 and
+ * stays a corner. A test of 70 rounds a real corner into a run and leaves the 200
+ * light year departure bound at 297.4 and 334.7.
+ */
+export const REGION_CORNER_DEGREES = 30;
+
+/**
+ * How far the tangent estimate reads each way along the traced chain, in light years.
+ *
+ * It is a few hundred, so the estimate averages the raster staircase rather than
+ * inheriting the half-cell error of the two kept vertices next to it.
+ */
+export const REGION_TANGENT_REACH_LY = 300;
+
+/**
+ * Which estimate the fit takes for the tangent at a kept vertex inside a run.
+ *
+ * `central` takes the difference of the two kept vertices next to it. `traced` reads
+ * the traced nodes `REGION_TANGENT_REACH_LY` each way, so it averages the raster
+ * rather than inheriting the half-cell error of two of its nodes.
+ *
+ * Measured over the whole set, `central` wins on both measures an estimate inside a
+ * run can move. The departure is 185.8 and 189.8 light years against 283.9 and 320.4,
+ * and the second pair is outside the 200 light year bound. The worst windowed drawn
+ * turn where the traced boundary runs straight is 2.4 degrees against 4.6. Neither
+ * measure is corner recall, which the one-sided tangent at a break decides.
+ */
+export type TangentEstimate = 'traced' | 'central';
+
+/** The estimate the build takes. The measurement above chose it. */
+export const REGION_TANGENT_ESTIMATE: TangentEstimate = 'central';
+
+/** The angle between two directions, in degrees, without a sign. */
+export function angleBetween(ax: number, az: number, bx: number, bz: number): number {
+  const spanA = Math.hypot(ax, az);
+  const spanB = Math.hypot(bx, bz);
+  if (spanA === 0 || spanB === 0) return 0;
+  const cosine = Math.min(1, Math.max(-1, (ax * bx + az * bz) / (spanA * spanB)));
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+/** The length along a polyline at every one of its points, in light years. */
+export function polylineLengths(points: Float64Array): Float64Array {
+  const count = points.length / 2;
+  const out = new Float64Array(count);
+  for (let index = 1; index < count; index += 1) {
+    out[index] =
+      (out[index - 1] as number) +
+      Math.hypot(
+        (points[index * 2] as number) - (points[index * 2 - 2] as number),
+        (points[index * 2 + 1] as number) - (points[index * 2 - 1] as number),
+      );
+  }
+  return out;
+}
+
+/** The point at a length along a polyline, as `x` then `z`. */
+export function pointAlong(
+  points: Float64Array,
+  lengths: Float64Array,
+  at: number,
+): [number, number] {
+  let low = 0;
+  let high = lengths.length - 1;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if ((lengths[middle] as number) <= at) low = middle;
+    else high = middle;
+  }
+  const span = (lengths[high] as number) - (lengths[low] as number);
+  const share = span === 0 ? 0 : (at - (lengths[low] as number)) / span;
+  return [
+    (points[low * 2] as number) +
+      share * ((points[high * 2] as number) - (points[low * 2] as number)),
+    (points[low * 2 + 1] as number) +
+      share * ((points[high * 2 + 1] as number) - (points[low * 2 + 1] as number)),
+  ];
+}
+
+/**
+ * The turn of a traced chain at one of its nodes, in degrees.
+ *
+ * It is the angle between the chord from the traced point `reach` light years back
+ * along the chain to that node, and the chord from that node to the traced point
+ * `reach` forward. Where a chain end is nearer than the reach the node has no value,
+ * and the caller leaves it out rather than measuring it over a shorter reach.
+ *
+ * The two chords are what the measure needs. The traced line is a raster staircase
+ * that turns about 1,062 degrees for each 1,000 light years, so an accumulated turn
+ * or the turn at one node alone reads a corner in every window of the trace.
+ */
+export function tracedTurnAt(
+  points: Float64Array,
+  lengths: Float64Array,
+  node: number,
+  reach: number = REGION_TURN_REACH_LY,
+): number | null {
+  const at = lengths[node] as number;
+  const end = lengths[lengths.length - 1] as number;
+  if (at - reach < 0 || at + reach > end) return null;
+  const back = pointAlong(points, lengths, at - reach);
+  const ahead = pointAlong(points, lengths, at + reach);
+  const x = points[node * 2] as number;
+  const z = points[node * 2 + 1] as number;
+  return angleBetween(x - back[0], z - back[1], ahead[0] - x, ahead[1] - z);
+}
+
+/**
+ * The traced node each kept vertex sits on. Every kept vertex is a node of the chain
+ * it came from, and the simplification keeps them in their traced order, so one
+ * forward walk answers for the whole chain.
+ */
+export function nodesOfKeptVertices(
+  traced: Float64Array,
+  kept: Float64Array,
+): Int32Array {
+  const count = traced.length / 2;
+  const out = new Int32Array(kept.length / 2);
+  let node = 0;
+  for (let vertex = 0; vertex * 2 < kept.length; vertex += 1) {
+    const x = kept[vertex * 2] as number;
+    const z = kept[vertex * 2 + 1] as number;
+    while (
+      node < count &&
+      ((traced[node * 2] as number) !== x || (traced[node * 2 + 1] as number) !== z)
+    ) {
+      node += 1;
+    }
+    out[vertex] = Math.min(node, count - 1);
+    node += 1;
+  }
+  return out;
+}
+
+/** The arc spline fitted to one simplified chain. */
+export interface ChainFit {
+  /** Two `float64` per vertex, `x` then `z`, in light years. */
+  readonly points: Float64Array;
+  /**
+   * One signed curvature per vertex, in reciprocal light years. The value at a vertex
+   * belongs to the primitive that starts there, and the value at the last vertex is
+   * zero because it starts none.
+   */
+  readonly curvature: Float64Array;
+  /** 1 at a kept vertex of the simplification, 0 at a joint of a biarc. */
+  readonly kept: Uint8Array;
+  /** 1 at a break, which is a chain end or a corner. The line may turn there. */
+  readonly breaks: Uint8Array;
+}
+
+/**
+ * The tangent length of the biarc that joins two points with two prescribed tangents.
+ *
+ * The two arcs meet at the middle of the segment from `p0 + d t0` to `p1 - d t1`, and
+ * they meet tangentially when that segment is `2 d` long. That condition is a
+ * quadratic in `d`, and its root with the minus sign is the positive one whenever the
+ * two tangents are not the same direction. Where they are, the quadratic falls to a
+ * linear equation and the fit takes that root instead.
+ */
+function biarcTangentLength(
+  p0x: number,
+  p0z: number,
+  t0x: number,
+  t0z: number,
+  p1x: number,
+  p1z: number,
+  t1x: number,
+  t1z: number,
+): number | null {
+  const vx = p1x - p0x;
+  const vz = p1z - p0z;
+  const a = 2 * (t0x * t1x + t0z * t1z - 1);
+  const b = -2 * (vx * (t0x + t1x) + vz * (t0z + t1z));
+  const c = vx * vx + vz * vz;
+  let d: number;
+  if (Math.abs(a) < 1e-12) {
+    if (Math.abs(b) < 1e-12) return null;
+    d = -c / b;
+  } else {
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) return null;
+    d = (-b - Math.sqrt(discriminant)) / (2 * a);
+  }
+  if (!Number.isFinite(d) || d <= 0) return null;
+  return d;
+}
+
+/**
+ * Fits an arc spline to the kept vertices of one simplified chain.
+ *
+ * A **run** is a stretch of the chain between two breaks, where a break is a chain end
+ * or a kept vertex at which the traced boundary turns by more than
+ * `REGION_CORNER_DEGREES`. Inside a run each span of two kept vertices takes a biarc:
+ * two circular arcs that meet tangentially at a joint, so the line has no turn
+ * anywhere inside the run. A run of one span takes one straight primitive, because a
+ * break fixes the tangent at each of its ends and the biarc degenerates to the chord.
+ *
+ * The tangent at a break is one-sided: it comes from inside the run alone, and the run
+ * on the other side takes its own. A two-sided estimate there would average across the
+ * corner and round it, which is the fault the earlier smoothing pipeline had.
+ *
+ * Both lines are in light years, and the kept vertices are nodes of the traced one.
+ */
+export function fitChainArcs(
+  traced: Float64Array,
+  kept: Float64Array,
+  estimate: TangentEstimate = REGION_TANGENT_ESTIMATE,
+): ChainFit {
+  const count = kept.length / 2;
+  const keptX = (index: number): number => kept[index * 2] as number;
+  const keptZ = (index: number): number => kept[index * 2 + 1] as number;
+
+  const lengths = polylineLengths(traced);
+  const nodes = nodesOfKeptVertices(traced, kept);
+
+  // A break is a chain end or a corner. A vertex within a reach of a chain end has no
+  // traced turn, and it is not a break: the chain end beside it already is one.
+  const isBreak = new Uint8Array(count);
+  isBreak[0] = 1;
+  isBreak[count - 1] = 1;
+  for (let vertex = 1; vertex < count - 1; vertex += 1) {
+    const turn = tracedTurnAt(traced, lengths, nodes[vertex] as number);
+    if (turn !== null && turn > REGION_CORNER_DEGREES) isBreak[vertex] = 1;
+  }
+
+  /**
+   * The direction the line runs in at a kept vertex, inside the run `from` to `to`.
+   * At either end of the run the estimate reads one side only.
+   */
+  const tangentAt = (vertex: number, from: number, to: number): [number, number] => {
+    let ax: number;
+    let az: number;
+    let bx: number;
+    let bz: number;
+    if (estimate === 'central') {
+      const low = vertex > from ? vertex - 1 : vertex;
+      const high = vertex < to ? vertex + 1 : vertex;
+      ax = keptX(low);
+      az = keptZ(low);
+      bx = keptX(high);
+      bz = keptZ(high);
+    } else {
+      const at = lengths[nodes[vertex] as number] as number;
+      // The reach stays inside the run, so it never reads across a corner.
+      const back =
+        vertex > from
+          ? Math.min(
+              REGION_TANGENT_REACH_LY,
+              at - (lengths[nodes[from] as number] as number),
+            )
+          : 0;
+      const ahead =
+        vertex < to
+          ? Math.min(
+              REGION_TANGENT_REACH_LY,
+              (lengths[nodes[to] as number] as number) - at,
+            )
+          : 0;
+      const low = pointAlong(traced, lengths, at - back);
+      const high = pointAlong(traced, lengths, at + ahead);
+      ax = low[0];
+      az = low[1];
+      bx = high[0];
+      bz = high[1];
+    }
+    const dx = bx - ax;
+    const dz = bz - az;
+    const span = Math.hypot(dx, dz);
+    if (span > 0) return [dx / span, dz / span];
+    // Two readings at the same point. The chord of the span answers instead.
+    const chordX = keptX(Math.min(vertex + 1, to)) - keptX(Math.max(vertex - 1, from));
+    const chordZ = keptZ(Math.min(vertex + 1, to)) - keptZ(Math.max(vertex - 1, from));
+    const chord = Math.hypot(chordX, chordZ);
+    return chord > 0 ? [chordX / chord, chordZ / chord] : [1, 0];
+  };
+
+  const outX: number[] = [];
+  const outZ: number[] = [];
+  const outCurvature: number[] = [];
+  const outKept: number[] = [];
+  const outBreak: number[] = [];
+
+  /** Writes one vertex and the curvature of the primitive that starts there. */
+  const write = (
+    x: number,
+    z: number,
+    curvature: number,
+    vertexIsKept: boolean,
+    vertexIsBreak: boolean,
+  ): void => {
+    outX.push(x);
+    outZ.push(z);
+    outCurvature.push(curvature);
+    outKept.push(vertexIsKept ? 1 : 0);
+    outBreak.push(vertexIsBreak ? 1 : 0);
+  };
+
+  let from = 0;
+  for (let to = 1; to < count; to += 1) {
+    if (isBreak[to] === 0) continue;
+    if (to - from === 1) {
+      // A run of one span. Both tangents are fixed by the break at each end.
+      write(keptX(from), keptZ(from), 0, true, isBreak[from] === 1);
+    } else {
+      for (let span = from; span < to; span += 1) {
+        const [t0x, t0z] = tangentAt(span, from, to);
+        const [t1x, t1z] = tangentAt(span + 1, from, to);
+        const startX = keptX(span);
+        const startZ = keptZ(span);
+        const endX = keptX(span + 1);
+        const endZ = keptZ(span + 1);
+        const reach = biarcTangentLength(
+          startX,
+          startZ,
+          t0x,
+          t0z,
+          endX,
+          endZ,
+          t1x,
+          t1z,
+        );
+        if (reach === null) {
+          // The two tangents cannot be joined by a biarc. The chord holds the span.
+          write(startX, startZ, 0, true, isBreak[span] === 1);
+          continue;
+        }
+        const jointX = (startX + reach * t0x + endX - reach * t1x) / 2;
+        const jointZ = (startZ + reach * t0z + endZ - reach * t1z) / 2;
+        // The two arcs meet along the segment the joint sits at the middle of.
+        const alongX = endX - reach * t1x - (startX + reach * t0x);
+        const alongZ = endZ - reach * t1z - (startZ + reach * t0z);
+        const along = Math.hypot(alongX, alongZ);
+        const jointTangentX = along === 0 ? t0x : alongX / along;
+        const jointTangentZ = along === 0 ? t0z : alongZ / along;
+        write(
+          startX,
+          startZ,
+          arcCurvature(startX, startZ, t0x, t0z, jointX, jointZ),
+          true,
+          isBreak[span] === 1,
+        );
+        write(
+          jointX,
+          jointZ,
+          arcCurvature(jointX, jointZ, jointTangentX, jointTangentZ, endX, endZ),
+          false,
+          false,
+        );
+      }
+    }
+    from = to;
+  }
+  // The last vertex of the chain starts no primitive.
+  write(keptX(count - 1), keptZ(count - 1), 0, true, true);
+
+  const points = new Float64Array(outX.length * 2);
+  for (let vertex = 0; vertex < outX.length; vertex += 1) {
+    points[vertex * 2] = outX[vertex] as number;
+    points[vertex * 2 + 1] = outZ[vertex] as number;
+  }
+  return {
+    points,
+    curvature: Float64Array.from(outCurvature),
+    kept: Uint8Array.from(outKept),
+    breaks: Uint8Array.from(outBreak),
+  };
+}
+
 /**
  * The two region ids on the sides of a chain, as the smaller id then the larger one.
  *
@@ -338,35 +732,79 @@ export function chainPoints(chain: TracedChain): Float64Array {
 }
 
 /**
- * Packs the simplified chains of a trace into the boundary set the renderer reads.
- * The tolerance is in light years, and the pack converts it to cells of the grid.
+ * The kept vertices of one chain in light years, as `x` then `z`.
+ *
+ * The simplification runs in cells, as it always has, and the fit runs in light years,
+ * because its reach and its corner test are both in light years. A kept vertex is a
+ * lattice node either way, so the two agree on the point exactly.
+ */
+export function keptVerticesLy(
+  grid: RegionGrid,
+  chain: TracedChain,
+  toleranceLy: number = REGION_FIT_TOLERANCE_LY,
+): Float64Array {
+  const simplified = simplifyChain(chainPoints(chain), toleranceLy / grid.cell);
+  const out = new Float64Array(simplified.length);
+  const xLow = grid.origin[0] as number;
+  const zLow = grid.origin[1] as number;
+  for (let read = 0; read < simplified.length; read += 2) {
+    out[read] = xLow + (simplified[read] as number) * grid.cell;
+    out[read + 1] = zLow + (simplified[read + 1] as number) * grid.cell;
+  }
+  return out;
+}
+
+/** The nodes of a traced chain as a point list in light years, `x` then `z`. */
+export function chainPointsLy(grid: RegionGrid, chain: TracedChain): Float64Array {
+  const nodes = chain.nodes;
+  const out = new Float64Array(nodes.length);
+  const xLow = grid.origin[0] as number;
+  const zLow = grid.origin[1] as number;
+  for (let read = 0; read < nodes.length; read += 2) {
+    out[read] = xLow + (nodes[read] as number) * grid.cell;
+    out[read + 1] = zLow + (nodes[read + 1] as number) * grid.cell;
+  }
+  return out;
+}
+
+/**
+ * Packs the fitted chains of a trace into the boundary set the renderer draws.
+ *
+ * The set holds the vertices of every chain in one array with the index range of each
+ * chain, and one curvature per vertex, so a vertex two primitives share is stored
+ * once. The tolerance is in light years.
  */
 export function packRegionLines(
   grid: RegionGrid,
   trace: RegionTrace,
   toleranceLy: number = REGION_FIT_TOLERANCE_LY,
+  estimate: TangentEstimate = REGION_TANGENT_ESTIMATE,
 ): RegionLines {
-  const simplified = trace.chains.map((chain) =>
-    simplifyChain(chainPoints(chain), toleranceLy / grid.cell),
+  const fits = trace.chains.map((chain) =>
+    fitChainArcs(
+      chainPointsLy(grid, chain),
+      keptVerticesLy(grid, chain, toleranceLy),
+      estimate,
+    ),
   );
-  let vertexCount = 0;
-  for (const chain of simplified) vertexCount += chain.length / 2;
 
-  const cell = grid.cell;
-  const xLow = grid.origin[0] as number;
-  const zLow = grid.origin[1] as number;
+  let vertexCount = 0;
+  for (const fit of fits) vertexCount += fit.points.length / 2;
+
   const positions = new Float32Array(vertexCount * 3);
-  const first = new Uint32Array(simplified.length);
-  const last = new Uint32Array(simplified.length);
-  const pairs = new Uint8Array(simplified.length * 2);
+  const curvature = new Float32Array(vertexCount);
+  const first = new Uint32Array(fits.length);
+  const last = new Uint32Array(fits.length);
+  const pairs = new Uint8Array(fits.length * 2);
   let vertex = 0;
-  for (let index = 0; index < simplified.length; index += 1) {
-    const chain = simplified[index] as Float64Array;
+  for (let index = 0; index < fits.length; index += 1) {
+    const fit = fits[index] as ChainFit;
     first[index] = vertex;
-    for (let read = 0; read < chain.length; read += 2) {
-      positions[vertex * 3] = xLow + (chain[read] as number) * cell;
+    for (let read = 0; read * 2 < fit.points.length; read += 1) {
+      positions[vertex * 3] = fit.points[read * 2] as number;
       positions[vertex * 3 + 1] = 0;
-      positions[vertex * 3 + 2] = zLow + (chain[read + 1] as number) * cell;
+      positions[vertex * 3 + 2] = fit.points[read * 2 + 1] as number;
+      curvature[vertex] = fit.curvature[read] as number;
       vertex += 1;
     }
     last[index] = vertex - 1;
@@ -375,7 +813,15 @@ export function packRegionLines(
     pairs[index * 2 + 1] = pair[1];
   }
 
-  return { chainCount: simplified.length, vertexCount, positions, first, last, pairs };
+  return {
+    chainCount: fits.length,
+    vertexCount,
+    positions,
+    curvature,
+    first,
+    last,
+    pairs,
+  };
 }
 
 /** Traces the grid and gives the simplified boundary set. */

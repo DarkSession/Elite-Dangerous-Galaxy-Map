@@ -119,7 +119,8 @@ Draws the galaxy's shape from far away and lets the user move across it.
 ## Phase 2: close zoom with decoration stars
 
 Changes: `close-zoom-stars-and-regions`, then `region-boundaries-and-labels`, then
-`simplified-boundaries-and-centred-labels`. Status: implemented.
+`simplified-boundaries-and-centred-labels`, then `arc-boundaries-and-readable-labels`.
+Status: implemented.
 
 Extends the zoom down to individual stars. Draws stars that are decoration, not real
 systems, and fades them out as the user zooms in.
@@ -175,36 +176,78 @@ systems, and fades them out as the user zooms in.
     are absent at 30,000 and full at 20,000. Both then stay to the closest zoom.
     `close-zoom-stars-and-regions` faded the boundaries out again below 3,000 light
     years, because one grid cell covers more than 15 pixels there and the line read as a
-    staircase. `region-boundaries-and-labels` removed that fade out. The line now holds
-    few vertices and invents no corners, so it does not read as a staircase either. The
-    star field fades in over the same kind of band: nothing at 8,000 light years, full at
-    4,000 and below.
+    staircase. `region-boundaries-and-labels` removed that fade out. The line holds few
+    vertices, invents no corners and now curves where the boundary curves, so it does not
+    read as a staircase either. The star field fades in over the same kind of band:
+    nothing at 8,000 light years, full at 4,000 and below.
   - A boundary is one line between two regions. The trace links the 38,563 unit edges of
     the 49.3494 light year raster into **123 chains**, and it ends a chain at each of the
     82 nodes where more than two edges meet. `simplified-boundaries-and-centred-labels`
     replaced the three smoothing stages with one simplification. It keeps a traced node
     only where dropping it would move the line further than 190 light years from the
-    trace, measured to the segment and not to the infinite line. The drawn line stays
-    within the asserted bound of 200 light years, measured both ways at a 10 light year
-    step: 185.9 light years drawn to traced and 189.8 traced to drawn. The fit tolerance
-    sits below the bound on purpose, so a change of tie-break cannot fail the test for no
-    real reason.
-  - The line keeps the corners the region map has. Of the 235 vertices that turn by more
-    than 20 degrees, **227 sit at a traced node that also turns** by more than 20 degrees,
-    and the worst invented turn is 30.6 degrees. Every one of the 221 places where the
-    traced boundary turns by more than 60 degrees carries a vertex that turns by more than
-    40 degrees. The largest turn in the set is 109.0 degrees. The turn budgets the
-    smoothing held are gone, because they bought smoothness by removing real corners.
-  - Every vertex is a traced node, so two chains that meet at a lattice node share that
-    point exactly and no corner store is needed. The set holds **562 vertices** and **439
-    segments**, which is 6.586 KiB, and it draws in 123 instanced calls. The departure
-    bound travels on the worker message, because it is declared beside the 199 KiB region
-    lookup.
+    trace, measured to the segment and not to the infinite line. The fit tolerance sits
+    below the asserted bound of 200 light years on purpose, so a change of tie-break
+    cannot fail the test for no real reason.
+  - `arc-boundaries-and-readable-labels` replaced the straight segment with an **arc**. A
+    primitive carries a start point, an end point and a signed curvature, and a curvature
+    of zero is a straight line, so one primitive type carries both. Inside a run the kept
+    vertices are joined by a biarc spline: two circular arcs that meet tangentially, so
+    the drawn line turns only where the traced boundary turns. A run ends at a chain end
+    or at a kept vertex whose two-chord traced turn is more than 30 degrees, and the
+    tangent at such a break is one-sided so the corner is not averaged away.
+  - The corner test rose from 20 degrees to 30. No kept vertex holds a traced turn between
+    **22.93 and 39.59 degrees**, so 25, 30 and 35 give the identical fit. The four breaks
+    below that band read 20.2 to 22.9 degrees and are raster jitter; the worst of them
+    made the line kink 50.6 degrees on a smooth bend near the galactic centre. The
+    departure bound sets the ceiling: at 70 degrees the fit rounds a real corner and the
+    departure leaves the bound at 297.4 and 334.7 light years.
+  - The fit tolerance stays at 190 light years and the arc costs no accuracy, because an
+    arc bulges towards the traced boundary that a chord was cutting the corner off. The
+    drawn line stays within the bound of 200 light years, measured both ways at a 10 light
+    year step with each arc sampled along its sweep: **185.8** light years drawn to traced
+    and **189.8** traced to drawn.
+  - The line keeps the corners the region map has and invents none. Of the breaks that
+    turn by more than 20 degrees, **225 of 225** sit at a traced node that also turns by
+    more than 20 degrees, which is a precision of 100 percent against the straight fit's
+    96.6. Every one of the **221** places where the traced boundary turns by more than 60
+    degrees carries a break that turns by more than 40, which both fits hold. The largest
+    turn in the set is 109.0 degrees.
+  - The bound on short segments is retired, because an arc is drawn as short pieces on
+    purpose. A relative windowed rule replaces it: where the drawn line turns by more than
+    10 degrees over a 500 light year window, it turns by at most 10 degrees more than the
+    traced boundary at the same place, and the rule stops where the traced turn passes the
+    corner test. The arc fit puts **0 samples** over that bound and its worst excess is
+    4.36 degrees. The straight fit, measured by the same test, puts 20 samples over and
+    reaches 26.8.
+  - The tangent inside a run is the central difference of the two neighbouring kept
+    vertices. The design expected the traced-node estimate to win and the measurement
+    overturned it: that estimate breaks the departure bound at 283.9 and 320.4 light
+    years, because a tangent read over a few hundred light years of raster points away
+    from the local chord and the arc then bulges off the line. The wrong prediction is
+    recorded here so it is not repeated.
+  - Every kept vertex is a traced node, so two chains that meet at a lattice node share
+    that point exactly and no corner store is needed. A biarc joint is a computed point
+    inside one run, so it carries no such guarantee and needs none. The set holds **716
+    vertices** and **593 primitives**, 285 of them straight and 308 arcs, which is 11.188
+    KiB, and it draws in 123 instanced calls. Two builds are byte-identical. The straight
+    fit it replaces held 562 vertices, 439 primitives and 6.6 KiB. The curvature is one
+    `float32` per vertex, indexed as the vertices are, so the renderer binds it at the
+    same per-chain offset as the positions. The departure bound travels on the worker
+    message, because it is declared beside the 199 KiB region lookup.
   - A line is a screen-space ribbon of two tones: a 2 CSS pixel light core with a 1 CSS
-    pixel dark outline each side. Each segment writes `1 - distance / halfWidth` into a
+    pixel dark outline each side. Each primitive writes `1 - distance / halfWidth` into a
     single-channel coverage buffer with the blend equation set to `MAX`, so a join keeps
     the smallest distance and is not brighter than the line. One fullscreen step then
     reads that buffer and writes the core colour and the outline colour.
+  - The vertex shader expands an arc into sub-chords and `regions.frag` is unchanged. The
+    fragment shader measures distance in screen pixels, and a circle on the plane projects
+    to a conic, so an arc distance field there needs a quartic solve. The sub-chord count
+    is one number per draw call, which is one chain, and it is the smallest count whose
+    sagitta stays under a quarter of a CSS pixel. The drawn direction then changes by
+    **1.977 degrees** between neighbouring windows against a bound of 3, of which 1.492 is
+    the arc geometry and about 0.5 is the measure itself. The set draws at most **28,842
+    instances** a frame, in 1.538 milliseconds against a budget of 16.7 at 1920x1080, and
+    the page chunk holds at 117.26 kB against the limit of 130,000 bytes.
   - A label sits on the centre of its region. The centre is the point of the region
     furthest from any boundary, which always lies inside the region. The centroid does
     not. The worker takes it from one exact Euclidean distance transform over the same
@@ -216,7 +259,7 @@ systems, and fades them out as the user zooms in.
   - The placement runs four steps for each region, every frame, and holds no state between
     frames. First, a region is a candidate when any part of it projects inside the
     viewport: its own boundary segments, its centre, or the regions under the middle and
-    the four corners of the frame. The frame projects the 562 vertices once and every
+    the four corners of the frame. The frame projects the 716 vertices once and every
     region indexes into them. Second, the anchor is the point nearest the centre, on the
     straight plane segment from the centre to the plane point under the middle of the
     frame, whose floor-scale box lies inside the viewport. A bisection finds it, and the
@@ -240,13 +283,33 @@ systems, and fades them out as the user zooms in.
     The behind-camera rule is back: `close-zoom-stars-and-regions` deleted it because the
     samples were already on the screen, and this placement projects world points again. A
     point that is not in front of the camera never satisfies the on-screen condition.
+  - The slide's feasibility test and the scale search both take the viewport inset by a
+    label margin of **8 CSS pixels**. Both take it, because the slide tests the
+    floor-scale box and the search then grows that box by up to 1.43 times. Before the
+    margin, 2 of the 20 boxes sat against a frame edge, at 0.0 and 0.2 CSS pixels, while
+    the other 18 cleared by 90.5 or more. After it, 0 of 20 do, and the margin removes no
+    label and lowers no scale.
+  - A label holds a contrast ratio of at least 3 to 1 against the ground it is drawn on,
+    read from the drawn pixels as the median text pixel against the median ground pixel.
+    The style carries a translucent black plate at 0.45 opacity behind the text. Before
+    it, 6 of the 20 labels held less than 3 to 1 and `GALACTIC CENTRE` read **1.20**.
+    After it, all 20 hold and `GALACTIC CENTRE` reads **3.41**. A colour change alone
+    cannot reach the bound: the 20 grounds run from 0.0085 to 0.6142, and no single text
+    luminance clears a factor of three against both ends.
   - At `#c=15,0,25895&d=20000&p=35&y=0` the placement draws **14 labels** at 1280x720 and
-    **20** at 1920x1080. In the browser it takes a mean of 0.04 to 0.07 milliseconds a
+    **20** at 1920x1080. In the browser it takes a mean of 0.035 to 0.072 milliseconds a
     frame over 300 frames, against a budget of 0.5, and a worst frame of 0.4 or less
-    against 2.
+    against 2. The `Galactic Centre` label draws at a scale of 0.761 and 1.000.
 - **Open questions.**
   - Do decoration stars get names, for example the sector name under the cursor?
   - Do the volume ramp by density and the point ramp by zone unify into one?
+  - Does the boundary hide at close zoom? The measurement says there is nothing to hide: a
+    frame at 500 light years holds 0.19 of a primitive, so a boundary in view is one line
+    with both ends off the screen. It is a composition call about clutter, and it retires
+    three tests that pass today.
+  - Do the arcs get fitted by least squares over the raster, instead of interpolating the
+    kept vertices? That fit would beat the half-cell raster error the current one
+    inherits, and it would likely need fewer primitives.
 
 ## Phase 2.1: the level of detail fades
 

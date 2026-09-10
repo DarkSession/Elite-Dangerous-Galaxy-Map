@@ -10,6 +10,8 @@ import {
   LABEL_BELOW_PLANE,
   LABEL_DRAWN,
   LABEL_FLOOR_SCALE,
+  LABEL_FULL_SCALE,
+  LABEL_MARGIN_CSS,
   LABEL_NO_ANCHOR,
   LABEL_NO_ROOM,
   LABEL_OFF_SCREEN,
@@ -233,7 +235,15 @@ function linesOf(
     pairs[index * 2] = chain.pair[0];
     pairs[index * 2 + 1] = chain.pair[1];
   }
-  return { chainCount: chains.length, vertexCount, positions, first, last, pairs };
+  return {
+    chainCount: chains.length,
+    vertexCount,
+    positions,
+    curvature: new Float32Array(Math.max(1, vertexCount)),
+    first,
+    last,
+    pairs,
+  };
 }
 
 /** The five points of a label box, as the browser scenario reads them. */
@@ -1151,6 +1161,86 @@ describe('the anchor', () => {
       expect(worst).toBeLessThan(12);
     }
   }, 300000);
+});
+
+describe('the label margin', () => {
+  test('holds every box clear of the frame edge at the label view', () => {
+    const source = sourceOfRegions();
+    for (const viewport of [VIEWPORT, WIDE]) {
+      const placement = placeLabels(
+        LABEL_VIEW,
+        viewport,
+        source,
+        measure,
+        REGIONS,
+        null,
+      );
+      expect(placement.labels.length).toBeGreaterThan(0);
+      let nearest = Number.POSITIVE_INFINITY;
+      for (const label of placement.labels) {
+        const clearance = Math.min(
+          label.left,
+          label.top,
+          viewport.width - (label.left + label.width),
+          viewport.height - (label.top + label.height),
+        );
+        expect(
+          clearance,
+          `${label.name} clears the frame edge by ${clearance.toFixed(1)} CSS pixels`,
+        ).toBeGreaterThanOrEqual(LABEL_MARGIN_CSS);
+        if (clearance < nearest) nearest = clearance;
+      }
+      console.log(
+        `${viewport.width}x${viewport.height}: the nearest of`,
+        placement.labels.length,
+        'boxes clears the frame edge by',
+        nearest.toFixed(1),
+        'CSS pixels',
+      );
+    }
+  }, 120000);
+
+  test('holds the margin for a label that never slides', () => {
+    // The centre projects near the left edge, where the floor-scale box lies inside
+    // the inset viewport and the full-size box does not. The slide does not start, so
+    // the search of the scale is the only step that can hold the margin.
+    const view: View = { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 };
+    const map = planeMap(view, VIEWPORT);
+    const name = 'One Region';
+    const near = LABEL_MARGIN_CSS + smallBox(name, LABEL_FLOOR_SCALE).width / 2 + 1;
+    const centre = planeUnder(map, near, VIEWPORT.height / 2) as [number, number];
+    const source = labelSource(
+      gridOf(() => 1),
+      geometryOf(
+        { 1: centre },
+        { 1: 9000 },
+        fieldOf(() => 9000),
+      ),
+      linesOf([]),
+    );
+    const placement = placeLabels(
+      view,
+      VIEWPORT,
+      source,
+      smallBox,
+      [regionOf(1, name)],
+      null,
+    );
+    const label = placement.labels[0] as PlacedLabel;
+    expect(label).toBeDefined();
+    // The anchor is the centre, so the box did not slide away from the edge. The
+    // geometry holds the centre as a `float32`, so the reading is that value and not
+    // the plane point the test worked out.
+    expect(label.plane.x).toBe(source.geometry.centres[0]);
+    expect(label.plane.z).toBe(source.geometry.centres[1]);
+    // The full-size box breaches the margin, so the search took a smaller scale.
+    expect(near - smallBox(name, LABEL_FULL_SCALE).width / 2).toBeLessThan(
+      LABEL_MARGIN_CSS,
+    );
+    expect(label.scale).toBeLessThan(LABEL_FULL_SCALE);
+    expect(label.scale).toBeGreaterThanOrEqual(LABEL_FLOOR_SCALE);
+    expect(label.left).toBeGreaterThanOrEqual(LABEL_MARGIN_CSS);
+  });
 });
 
 describe('the drawn size', () => {

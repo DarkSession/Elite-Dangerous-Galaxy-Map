@@ -66,10 +66,10 @@ export interface SurfaceDetail {
 }
 
 /**
- * The boundaries of the galactic codex regions, as chains of line segments on the
- * galactic plane. A chain runs from one junction of three or more regions to the
- * next, so it separates one pair of regions from end to end. A vertex that two
- * segments share is stored once.
+ * The boundaries of the galactic codex regions, as chains of arcs on the galactic
+ * plane. A chain runs from one junction of three or more regions to the next, so it
+ * separates one pair of regions from end to end. A vertex that two primitives share
+ * is stored once, so a chain of `n` vertices holds `n - 1` primitives.
  */
 export interface RegionLines {
   /** The number of chains. */
@@ -78,6 +78,18 @@ export interface RegionLines {
   readonly vertexCount: number;
   /** Three `float32` game coordinates per vertex. */
   readonly positions: Float32Array;
+  /**
+   * One `float32` signed curvature per vertex, in reciprocal light years, indexed
+   * exactly as the vertices are. The value at a vertex belongs to the primitive that
+   * starts there, and a curvature of zero is a straight primitive. The value at the
+   * last vertex of a chain starts no primitive and is zero.
+   *
+   * One value per vertex, and not one per primitive, because the chain index array
+   * counts vertices: the renderer binds the positions of a chain at `first x 12`
+   * bytes, and a per-primitive array would need a second per-chain offset. The last
+   * value of each chain costs 4 bytes and removes that offset.
+   */
+  readonly curvature: Float32Array;
   /** The index of the first vertex of each chain. */
   readonly first: Uint32Array;
   /** The index of the last vertex of each chain. */

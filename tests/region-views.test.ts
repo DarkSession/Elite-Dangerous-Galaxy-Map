@@ -1,10 +1,33 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import { project } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
-import { buildRegionLines } from '../src/scene-data/region-lines';
+import { arcThrough, arcTangents } from '../src/scene-data/arc';
+import {
+  buildRegionLines,
+  chainPointsLy,
+  fillRegionGrid,
+  fitChainArcs,
+  keptVerticesLy,
+  packRegionLines,
+  traceRegionChains,
+} from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
-import { LONG_SEGMENT, SHARP_CORNER, VERTICAL_CROSSING } from '../e2e/region-views';
-import { findLongSegment, findSharpCorner, findVerticalCrossing } from './region-views';
+import {
+  BIARC_JOINT,
+  CURVED_RUN,
+  LONG_SEGMENT,
+  SHARP_CORNER,
+  VERTICAL_CROSSING,
+} from '../e2e/region-views';
+import {
+  findBiarcJoint,
+  findCurvedRun,
+  findLongSegment,
+  findSharpCorner,
+  findVerticalCrossing,
+  jointsOfRun,
+  runsOf,
+} from './region-views';
 
 let lines: RegionLines;
 
@@ -32,17 +55,65 @@ function vertexAt(vertex: number): [number, number, number] {
   ];
 }
 
-/** The distance from a plane point to the segment between two vertices. */
-function gapToSegment(point: Point, from: number, to: number): number {
-  const a = vertexAt(from);
-  const b = vertexAt(to);
-  const dx = b[0] - a[0];
-  const dz = b[2] - a[2];
-  const square = dx * dx + dz * dz;
-  let t = square === 0 ? 0 : ((point[0] - a[0]) * dx + (point[2] - a[2]) * dz) / square;
-  if (t < 0) t = 0;
-  if (t > 1) t = 1;
-  return Math.hypot(point[0] - (a[0] + t * dx), point[2] - (a[2] + t * dz));
+/** The arc of one primitive, as the vertex it starts at. */
+function arcOf(primitive: number) {
+  const a = vertexAt(primitive);
+  const b = vertexAt(primitive + 1);
+  return arcThrough(a[0], a[2], b[0], b[2], lines.curvature[primitive] as number);
+}
+
+/**
+ * The distance from a plane point to one drawn primitive, in light years.
+ *
+ * A primitive is an arc, and a chord measure would call a point on the middle of a
+ * curve up to 60.6 light years away. A straight primitive takes its chord; an arc takes
+ * the reading off its circle, where a point inside the swept angle is as far away as
+ * the two radii differ.
+ */
+function gapToPrimitive(point: Point, primitive: number): number {
+  const arc = arcOf(primitive);
+  const start: [number, number] = [arc.startX, arc.startZ];
+  const end: [number, number] = [arc.endX, arc.endZ];
+  const toEnds = Math.min(
+    Math.hypot(point[0] - start[0], point[2] - start[1]),
+    Math.hypot(point[0] - end[0], point[2] - end[1]),
+  );
+  if (arc.sweep === 0) {
+    const dx = end[0] - start[0];
+    const dz = end[1] - start[1];
+    const square = dx * dx + dz * dz;
+    let t =
+      square === 0
+        ? 0
+        : ((point[0] - start[0]) * dx + (point[2] - start[1]) * dz) / square;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return Math.hypot(point[0] - (start[0] + t * dx), point[2] - (start[1] + t * dz));
+  }
+  const tangents = arcTangents(arc);
+  const centre: [number, number] = [
+    arc.startX - tangents.startZ / arc.curvature,
+    arc.startZ + tangents.startX / arc.curvature,
+  ];
+  const away = Math.hypot(point[0] - centre[0], point[2] - centre[1]);
+  const atStart = Math.atan2(start[1] - centre[1], start[0] - centre[0]);
+  const atPoint = Math.atan2(point[2] - centre[1], point[0] - centre[0]);
+  let turned = atPoint - atStart;
+  while (turned > Math.PI) turned -= 2 * Math.PI;
+  while (turned < -Math.PI) turned += 2 * Math.PI;
+  const inside =
+    arc.sweep > 0
+      ? turned >= 0 && turned <= arc.sweep
+      : turned <= 0 && turned >= arc.sweep;
+  return inside ? Math.abs(away - arc.radius) : toEnds;
+}
+
+/** The turn of the drawn line at a vertex, in degrees. */
+function drawnTurnAt(vertex: number): number {
+  const arriving = arcTangents(arcOf(vertex - 1));
+  const leaving = arcTangents(arcOf(vertex));
+  const cosine = arriving.endX * leaving.startX + arriving.endZ * leaving.startZ;
+  return (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
 }
 
 /** Half the diagonal of a frame, in light years at the cursor. */
@@ -102,18 +173,14 @@ describe('the view where a chain crosses the frame', () => {
     expect(centre.y).toBeCloseTo(VERTICAL_CROSSING.viewport.height / 2, 4);
 
     // The centre of the frame is a point of the drawn line and not merely of the run's
-    // chord, which a set of long straight segments makes worth reading back.
+    // chord. A primitive is an arc, so the reading measures to the arc.
     expect(
-      gapToSegment(
-        VERTICAL_CROSSING.point,
-        VERTICAL_CROSSING.to - 1,
-        VERTICAL_CROSSING.to,
-      ),
+      gapToPrimitive(VERTICAL_CROSSING.point, VERTICAL_CROSSING.to - 1),
     ).toBeLessThan(1e-6);
   });
 
   test('carries no other part of the boundary near the reading', () => {
-    // The reading takes a row 40 CSS pixels wide. The nearest other segment is far
+    // The reading takes a row 40 CSS pixels wide. The nearest other primitive is far
     // outside it.
     const pixels = VERTICAL_CROSSING.clearanceLy / VERTICAL_CROSSING.lightYearsPerPixel;
     expect(pixels).toBeGreaterThan(60);
@@ -152,7 +219,7 @@ describe('the view at a bend of a chain', () => {
     expect(SHARP_CORNER.reachPixels).toBe(JOIN_RADIUS_PIXELS);
   });
 
-  test('names the two segments of the boundary set that meet at the bend', () => {
+  test('names the two primitives of the boundary set that meet at the bend', () => {
     const vertex = SHARP_CORNER.vertex;
     expect(lines.first[SHARP_CORNER.chain] as number).toBeLessThan(vertex);
     expect(lines.last[SHARP_CORNER.chain] as number).toBeGreaterThan(vertex);
@@ -160,26 +227,26 @@ describe('the view at a bend of a chain', () => {
     expect(lines.positions[vertex * 3 + 2] as number).toBe(SHARP_CORNER.bend[2]);
 
     // The bend line is the drawn line and not a chord of it: the middle point is the
-    // vertex itself, and the two ends lie on the two segments that meet there, one on
-    // each. The line is straight between its vertices, so three points hold the whole
-    // reading and a walk of neighbouring vertices is no longer the measure.
+    // vertex itself, and the two ends lie on the two primitives that meet there, one on
+    // each. The reach is 24 CSS pixels, over which an arc of this set bows away from
+    // its chord by under a tenth of a pixel, so three points hold the whole reading.
     expect(SHARP_CORNER.bendLine).toHaveLength(3);
     const back = SHARP_CORNER.bendLine[0] as Point;
     const middle = SHARP_CORNER.bendLine[1] as Point;
     const forward = SHARP_CORNER.bendLine[2] as Point;
     expect(middle).toEqual(SHARP_CORNER.bend);
-    expect(gapToSegment(back, vertex - 1, vertex)).toBeLessThan(1e-6);
-    expect(gapToSegment(forward, vertex, vertex + 1)).toBeLessThan(1e-6);
+    expect(gapToPrimitive(back, vertex - 1)).toBeLessThan(1e-6);
+    expect(gapToPrimitive(forward, vertex)).toBeLessThan(1e-6);
 
-    // Both segments run past the reading, so neither ends inside the frame.
+    // Both primitives run past the reading, so neither ends inside the frame.
     const perPixel = SHARP_CORNER.lightYearsPerPixel;
     const frame = frameReachLy(
       SHARP_CORNER.viewport.width,
       SHARP_CORNER.viewport.height,
       perPixel,
     );
-    expect(planeGap(SHARP_CORNER.bend, vertexAt(vertex - 1))).toBeGreaterThan(frame);
-    expect(planeGap(SHARP_CORNER.bend, vertexAt(vertex + 1))).toBeGreaterThan(frame);
+    expect(arcOf(vertex - 1).length).toBeGreaterThan(frame);
+    expect(arcOf(vertex).length).toBeGreaterThan(frame);
   });
 
   test('holds a straight run of the same chain inside the frame', () => {
@@ -187,12 +254,12 @@ describe('the view at a bend of a chain', () => {
     const run = planeGap(SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo);
     expect(run / perPixel).toBeGreaterThan(30);
 
-    // The run is a part of one of the two segments, so the browser reads the drawn
+    // The run is a part of one of the two primitives, so the browser reads the drawn
     // line and not a chord across a turn.
     const vertex = SHARP_CORNER.vertex;
     for (const end of [SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo]) {
-      const onBack = gapToSegment(end, vertex - 1, vertex);
-      const onForward = gapToSegment(end, vertex, vertex + 1);
+      const onBack = gapToPrimitive(end, vertex - 1);
+      const onForward = gapToPrimitive(end, vertex);
       expect(Math.min(onBack, onForward)).toBeLessThan(1e-6);
     }
 
@@ -225,7 +292,7 @@ describe('the view where a long segment crosses the frame', () => {
     expect(findLongSegment(lines, LONG_SEGMENT.viewport)).toEqual(LONG_SEGMENT);
   });
 
-  test('takes one segment of the set that is longer than 10,000 light years', () => {
+  test('takes one straight primitive longer than 10,000 light years', () => {
     expect(lines.first[LONG_SEGMENT.chain] as number).toBeLessThanOrEqual(
       LONG_SEGMENT.from,
     );
@@ -239,6 +306,10 @@ describe('the view where a long segment crosses the frame', () => {
     const length = planeGap(LONG_SEGMENT.ends[0], LONG_SEGMENT.ends[1]);
     expect(length).toBeGreaterThan(LONG_SEGMENT_LY);
     expect(LONG_SEGMENT.segmentLy).toBeCloseTo(length, 6);
+
+    // The primitive is straight, so it lies flat across the whole frame. A curve of
+    // this length could not.
+    expect(lines.curvature[LONG_SEGMENT.from] as number).toBe(0);
   });
 
   test('reads at the closest zoom, with the cursor on the line', () => {
@@ -250,9 +321,7 @@ describe('the view where a long segment crosses the frame', () => {
     );
     expect(centre.x).toBeCloseTo(LONG_SEGMENT.viewport.width / 2, 4);
     expect(centre.y).toBeCloseTo(LONG_SEGMENT.viewport.height / 2, 4);
-    expect(
-      gapToSegment(LONG_SEGMENT.point, LONG_SEGMENT.from, LONG_SEGMENT.to),
-    ).toBeLessThan(1e-6);
+    expect(gapToPrimitive(LONG_SEGMENT.point, LONG_SEGMENT.from)).toBeLessThan(1e-6);
   });
 
   test('crosses the whole frame with both ends outside it', () => {
@@ -308,5 +377,227 @@ describe('the view where a long segment crosses the frame', () => {
       LONG_SEGMENT.lightYearsPerPixel,
     );
     expect(LONG_SEGMENT.clearanceLy).toBeGreaterThan(frame);
+  });
+});
+
+describe('the joints of the boundary set', () => {
+  test('reads the joints the fit recorded', () => {
+    // The packed set carries no record of which vertex is a kept vertex and which is a
+    // joint, so the search derives it: a break is a vertex where the drawn line turns,
+    // and inside a run the fit lays out a kept vertex, a joint, a kept vertex, and so
+    // on. This checks that derivation against what the fit itself recorded.
+    const grid = fillRegionGrid();
+    const trace = traceRegionChains(grid);
+    const built = packRegionLines(grid, trace);
+    const fits = trace.chains.map((chain) =>
+      fitChainArcs(chainPointsLy(grid, chain), keptVerticesLy(grid, chain)),
+    );
+
+    const derived = new Set<number>();
+    for (const run of runsOf(built)) {
+      // A run holds one straight primitive or an odd number of vertices, because each
+      // span of it takes two arcs that meet at a joint.
+      const vertices = run.to - run.from + 1;
+      expect(vertices === 2 || vertices % 2 === 1).toBe(true);
+      for (const vertex of jointsOfRun(run)) derived.add(vertex);
+    }
+
+    const recorded = new Set<number>();
+    for (let chain = 0; chain < built.chainCount; chain += 1) {
+      const first = built.first[chain] as number;
+      const fit = fits[chain] as { kept: Uint8Array };
+      for (let offset = 0; offset < fit.kept.length; offset += 1) {
+        if (fit.kept[offset] === 0) recorded.add(first + offset);
+      }
+    }
+
+    expect(recorded.size).toBeGreaterThan(0);
+    expect([...derived].sort((a, b) => a - b)).toEqual(
+      [...recorded].sort((a, b) => a - b),
+    );
+  }, 120000);
+});
+
+describe('the view at the joint of a biarc', () => {
+  test('is what the search of the boundary set gives', () => {
+    expect(findBiarcJoint(lines, BIARC_JOINT.viewport)).toEqual(BIARC_JOINT);
+  });
+
+  test('joins two arcs tangentially', () => {
+    const vertex = BIARC_JOINT.vertex;
+    // Both primitives are arcs, and the drawn line runs through the joint without a
+    // turn. This is the join the set holds most of and the straight fit never had.
+    expect(lines.curvature[vertex - 1] as number).not.toBe(0);
+    expect(lines.curvature[vertex] as number).not.toBe(0);
+    expect(BIARC_JOINT.curvatures[0]).toBeCloseTo(
+      lines.curvature[vertex - 1] as number,
+      12,
+    );
+    expect(BIARC_JOINT.curvatures[1]).toBeCloseTo(
+      lines.curvature[vertex] as number,
+      12,
+    );
+    expect(drawnTurnAt(vertex)).toBeLessThan(0.5);
+    expect(BIARC_JOINT.turnDegrees).toBeCloseTo(drawnTurnAt(vertex), 6);
+
+    // The two arcs really differ, so the joint is a joint and not a straight carry on.
+    expect(BIARC_JOINT.curvatures[0]).not.toBeCloseTo(BIARC_JOINT.curvatures[1], 9);
+  });
+
+  test('names a vertex of the boundary set with the joint on it', () => {
+    const vertex = BIARC_JOINT.vertex;
+    expect(lines.first[BIARC_JOINT.chain] as number).toBeLessThan(vertex);
+    expect(lines.last[BIARC_JOINT.chain] as number).toBeGreaterThan(vertex);
+    expect(lines.positions[vertex * 3] as number).toBe(BIARC_JOINT.joint[0]);
+    expect(lines.positions[vertex * 3 + 2] as number).toBe(BIARC_JOINT.joint[2]);
+
+    // The joint line is the drawn line: the middle point is the joint itself and the
+    // two ends lie on the two arcs, one on each.
+    expect(BIARC_JOINT.jointLine).toHaveLength(3);
+    const back = BIARC_JOINT.jointLine[0] as Point;
+    const middle = BIARC_JOINT.jointLine[1] as Point;
+    const forward = BIARC_JOINT.jointLine[2] as Point;
+    expect(middle).toEqual(BIARC_JOINT.joint);
+    expect(gapToPrimitive(back, vertex - 1)).toBeLessThan(1e-6);
+    expect(gapToPrimitive(forward, vertex)).toBeLessThan(1e-6);
+
+    // The reading reaches 8 CSS pixels on each side, and both ends of the line sit
+    // outside that reach.
+    const perPixel = BIARC_JOINT.lightYearsPerPixel;
+    expect(planeGap(BIARC_JOINT.joint, back) / perPixel).toBeGreaterThanOrEqual(
+      BIARC_JOINT.reachPixels,
+    );
+    expect(planeGap(BIARC_JOINT.joint, forward) / perPixel).toBeGreaterThanOrEqual(
+      BIARC_JOINT.reachPixels,
+    );
+    expect(BIARC_JOINT.reachPixels).toBe(JOIN_RADIUS_PIXELS);
+
+    // Neither arc ends inside the frame, so the reading holds the two of them alone.
+    const frame = frameReachLy(
+      BIARC_JOINT.viewport.width,
+      BIARC_JOINT.viewport.height,
+      perPixel,
+    );
+    expect(arcOf(vertex - 1).length).toBeGreaterThan(frame);
+    expect(arcOf(vertex).length).toBeGreaterThan(frame);
+  });
+
+  test('holds a straight run of the same chain inside the frame', () => {
+    const perPixel = BIARC_JOINT.lightYearsPerPixel;
+    const run = planeGap(BIARC_JOINT.straightFrom, BIARC_JOINT.straightTo);
+    expect(run / perPixel).toBeGreaterThan(30);
+
+    const vertex = BIARC_JOINT.vertex;
+    for (const end of [BIARC_JOINT.straightFrom, BIARC_JOINT.straightTo]) {
+      const onBack = gapToPrimitive(end, vertex - 1);
+      const onForward = gapToPrimitive(end, vertex);
+      expect(Math.min(onBack, onForward)).toBeLessThan(1e-6);
+
+      // The run sits outside the reading window and inside the frame.
+      expect(planeGap(BIARC_JOINT.joint, end) / perPixel).toBeGreaterThan(
+        JOIN_RADIUS_PIXELS * 2,
+      );
+      const screen = project(BIARC_JOINT.view as View, end, BIARC_JOINT.viewport);
+      expect(screen.inFront).toBe(true);
+      expect(screen.x).toBeGreaterThan(20);
+      expect(screen.x).toBeLessThan(BIARC_JOINT.viewport.width - 20);
+      expect(screen.y).toBeGreaterThan(20);
+      expect(screen.y).toBeLessThan(BIARC_JOINT.viewport.height - 20);
+    }
+  });
+
+  test('carries no other part of the boundary anywhere in the frame', () => {
+    const frame = frameReachLy(
+      BIARC_JOINT.viewport.width,
+      BIARC_JOINT.viewport.height,
+      BIARC_JOINT.lightYearsPerPixel,
+    );
+    expect(BIARC_JOINT.clearanceLy).toBeGreaterThan(frame);
+  });
+});
+
+describe('the view on a run that curves', () => {
+  test('is what the search of the boundary set gives', () => {
+    expect(findCurvedRun(lines, CURVED_RUN.viewport)).toEqual(CURVED_RUN);
+  });
+
+  test('takes one run of one chain that curves through more than 60 degrees', () => {
+    expect(lines.first[CURVED_RUN.chain] as number).toBeLessThanOrEqual(
+      CURVED_RUN.from,
+    );
+    expect(lines.last[CURVED_RUN.chain] as number).toBeGreaterThanOrEqual(
+      CURVED_RUN.to,
+    );
+
+    let turn = 0;
+    for (let primitive = CURVED_RUN.from; primitive < CURVED_RUN.to; primitive += 1) {
+      turn += Math.abs(arcOf(primitive).sweep);
+    }
+    expect((turn * 180) / Math.PI).toBeGreaterThan(60);
+    expect(CURVED_RUN.turnDegrees).toBeCloseTo((turn * 180) / Math.PI, 6);
+
+    // The run holds no break, so the drawn line runs through it with no turn of its
+    // own anywhere inside it.
+    for (let vertex = CURVED_RUN.from + 1; vertex < CURVED_RUN.to; vertex += 1) {
+      expect(drawnTurnAt(vertex)).toBeLessThan(0.5);
+    }
+  });
+
+  test('reads at 8,000 light years with the drawn line across the frame', () => {
+    expect(CURVED_RUN.view.distance).toBe(8000);
+    expect(CURVED_RUN.windowPixels).toBe(12);
+
+    // The walk reads neighbouring windows, so the samples are one window apart and
+    // every one of them is inside the frame with room for its window.
+    const perPixel = CURVED_RUN.lightYearsPerPixel;
+    expect(CURVED_RUN.line.length).toBeGreaterThan(8);
+    for (let index = 1; index < CURVED_RUN.line.length; index += 1) {
+      const step = planeGap(
+        CURVED_RUN.line[index - 1] as Point,
+        CURVED_RUN.line[index] as Point,
+      );
+      expect(step / perPixel).toBeLessThanOrEqual(CURVED_RUN.windowPixels + 1);
+    }
+    for (const point of CURVED_RUN.line) {
+      const screen = project(CURVED_RUN.view as View, point, CURVED_RUN.viewport);
+      expect(screen.inFront).toBe(true);
+      expect(screen.x).toBeGreaterThan(CURVED_RUN.windowPixels);
+      expect(screen.x).toBeLessThan(
+        CURVED_RUN.viewport.width - CURVED_RUN.windowPixels,
+      );
+      expect(screen.y).toBeGreaterThan(CURVED_RUN.windowPixels);
+      expect(screen.y).toBeLessThan(
+        CURVED_RUN.viewport.height - CURVED_RUN.windowPixels,
+      );
+    }
+  });
+
+  test('walks a drawn line that curves and never turns 3 degrees in a window', () => {
+    // The drawn line the frame holds curves through most of the run, so the reading
+    // walks a curve and not the straight end of one.
+    expect(CURVED_RUN.visibleTurnDegrees).toBeGreaterThan(20);
+    // Every window turns well under the bound the browser holds it to, and the widest
+    // radius of the run is what makes that true: a circle of radius R turns
+    // `window / R` over one window.
+    expect(CURVED_RUN.turnPerWindowDegrees).toBeLessThan(3);
+    const perWindow =
+      ((CURVED_RUN.windowPixels * CURVED_RUN.lightYearsPerPixel) /
+        CURVED_RUN.widestRadiusLy) *
+      (180 / Math.PI);
+    expect(perWindow).toBeLessThan(3);
+
+    // Every point of the line lies on the drawn line of the run.
+    for (const point of CURVED_RUN.line) {
+      let nearest = Number.POSITIVE_INFINITY;
+      for (let primitive = CURVED_RUN.from; primitive < CURVED_RUN.to; primitive += 1) {
+        nearest = Math.min(nearest, gapToPrimitive(point, primitive));
+      }
+      expect(nearest).toBeLessThan(1e-6);
+    }
+  });
+
+  test('carries no other part of the boundary inside a window of the line', () => {
+    const pixels = CURVED_RUN.clearanceLy / CURVED_RUN.lightYearsPerPixel;
+    expect(pixels).toBeGreaterThan(2 * CURVED_RUN.windowPixels);
   });
 });

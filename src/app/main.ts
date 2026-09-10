@@ -156,6 +156,7 @@ async function start(target: HTMLCanvasElement): Promise<void> {
       clearanceLy: scene.regionGeometry.clearances[region.id - 1] ?? 0,
     }));
   global.regionLinePositions = () => scene.regionLines.positions;
+  global.regionLineCurvature = () => scene.regionLines.curvature;
   global.regionLineChains = () => ({
     first: scene.regionLines.first,
     last: scene.regionLines.last,

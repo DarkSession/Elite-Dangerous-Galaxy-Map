@@ -47,7 +47,12 @@ import {
 } from './point-pass';
 import type { PointPass } from './point-pass';
 import type { Program } from './program';
-import { createRegionPass, createRegionPrograms, regionFade } from './region-pass';
+import {
+  createRegionPass,
+  createRegionPrograms,
+  regionFade,
+  smallestLightYearsPerPixel,
+} from './region-pass';
 import type { RegionPass, RegionPrograms } from './region-pass';
 import {
   createStarPass,
@@ -363,11 +368,20 @@ export function createRenderer(
     // view is the frame it was before the overlay existed.
     const regions = regionFade(view.distance);
     if (passes.regions && regionPass !== null && regions > 0) {
+      const frame = viewport();
       regionPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio: width / Math.max(1, canvas.clientWidth),
+        // The camera's height above the galactic plane sets how many light years a
+        // CSS pixel covers at its closest, and the sub-chord count of every chain
+        // reads that.
+        lightYearsPerPixel: smallestLightYearsPerPixel(
+          camera[1],
+          frame.width,
+          frame.height,
+        ),
       });
     }
   };

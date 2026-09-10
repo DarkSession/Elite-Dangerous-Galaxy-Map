@@ -12,6 +12,8 @@ function makeScene(): SceneData {
   const cloudRadii = new Float32Array([1500]);
   const cloudRatios = new Float32Array([0.25]);
   const chain = new Float32Array([0, 0, 0, 0, 0, 100]);
+  // A curvature a `float32` holds exactly, so the reading needs no tolerance.
+  const chainCurvature = new Float32Array([0.001953125, 0]);
   const regionIds = new Uint8Array([1, 2, 3, 4]);
   const centres = new Float32Array([50, 50]);
   const clearances = new Uint16Array([40]);
@@ -45,6 +47,7 @@ function makeScene(): SceneData {
       chainCount: 1,
       vertexCount: 2,
       positions: chain,
+      curvature: chainCurvature,
       first: new Uint32Array([0]),
       last: new Uint32Array([1]),
       pairs: new Uint8Array([1, 2]),
@@ -90,6 +93,7 @@ describe('scene data', () => {
     expect(Array.from(received.detail.data)).toEqual([120, 128, 136, 200]);
     expect(received.detail.scale).toBe(3);
     expect(Array.from(received.regionLines.positions)).toEqual([0, 0, 0, 0, 0, 100]);
+    expect(Array.from(received.regionLines.curvature)).toEqual([0.001953125, 0]);
     expect(received.regionLines.chainCount).toBe(1);
     expect(Array.from(received.regionLines.first)).toEqual([0]);
     expect(Array.from(received.regionLines.last)).toEqual([1]);
@@ -109,6 +113,7 @@ describe('scene data', () => {
     expect(scene.volume.data.buffer.byteLength).toBe(0);
     expect(scene.detail.data.buffer.byteLength).toBe(0);
     expect(scene.regionLines.positions.buffer.byteLength).toBe(0);
+    expect(scene.regionLines.curvature.buffer.byteLength).toBe(0);
     expect(scene.regionLines.first.buffer.byteLength).toBe(0);
     expect(scene.regionLines.last.buffer.byteLength).toBe(0);
     expect(scene.regionGrid.ids.buffer.byteLength).toBe(0);
