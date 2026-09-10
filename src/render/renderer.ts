@@ -4,10 +4,14 @@ import { cameraPosition, projectionMatrix, viewMatrix } from '../camera/projecti
 import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
+import type { GalaxyModel } from '../galaxy-model/model';
+import { createStarField } from '../scene-data/star-field';
+import type { StarField } from '../scene-data/star-field';
 import type {
   CloudSet,
   DensityVolume,
   PointCloud,
+  RegionLines,
   SurfaceDetail,
 } from '../scene-data/types';
 import {
@@ -35,9 +39,24 @@ import {
   DEFAULT_GLOW_WEIGHT,
 } from './glow-pass';
 import type { GlowPass } from './glow-pass';
-import { createPointPass, createPointProgram, POINT_RADIUS_LY } from './point-pass';
+import {
+  createPointPass,
+  createPointProgram,
+  DEFAULT_POINT_BRIGHTNESS,
+  POINT_RADIUS_LY,
+} from './point-pass';
 import type { PointPass } from './point-pass';
 import type { Program } from './program';
+import { createRegionPass, createRegionPrograms, regionFade } from './region-pass';
+import type { RegionPass, RegionPrograms } from './region-pass';
+import {
+  createStarPass,
+  createStarProgram,
+  handoverRadii,
+  STAR_LIGHT,
+  starWeight,
+} from './star-pass';
+import type { StarPass } from './star-pass';
 import {
   createVolumePass,
   createVolumeProgram,
@@ -49,18 +68,14 @@ import type { VolumePass } from './volume-pass';
 /** The largest device pixel ratio the canvas follows. */
 export const MAX_DEVICE_PIXEL_RATIO = 2;
 
-/**
- * The brightness of one point cloud sample. The points carry a large share of the
- * light in the disc, which is what gives the disc its grain.
- */
-export const DEFAULT_POINT_BRIGHTNESS = 60;
-
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
   clouds: boolean;
   points: boolean;
+  stars: boolean;
   glow: boolean;
+  regions: boolean;
 }
 
 /** How bright the map draws. */
@@ -87,6 +102,17 @@ export interface Renderer {
   setCloudSet(set: CloudSet): void;
   /** Uploads the surface detail grid. Call it in its own animation frame. */
   setDetail(detail: SurfaceDetail): void;
+  /**
+   * Starts the star field over a galaxy model. The model must carry the detail grid,
+   * because the counts and the light both read the detailed density.
+   */
+  setStarField(model: GalaxyModel): void;
+  /** Uploads the region boundary set. Call it in its own animation frame. */
+  setRegionLines(lines: RegionLines): void;
+  /** How many vertices the last frame's star draw issued. */
+  starVertexCount(): number;
+  /** The sum of the drawn counts over the last frame's boxels. */
+  starDrawnCount(): number;
   /** Draws one frame. */
   render(view: View): void;
   /** Draws frames and returns the mean draw-to-finish time in milliseconds. */
@@ -118,6 +144,8 @@ export function createRenderer(
   const float = gl.getExtension('EXT_color_buffer_float') !== null;
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
+  const starProgram: Program = createStarProgram(gl);
+  const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
@@ -129,6 +157,11 @@ export function createRenderer(
   const glowPass: GlowPass = createGlowPass(gl, triangle.vertexArray, float);
 
   let pointPass: PointPass | null = null;
+  let starPass: StarPass | null = null;
+  let starField: StarField | null = null;
+  let starVertices = 0;
+  let starStars = 0;
+  let regionPass: RegionPass | null = null;
   let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -138,7 +171,9 @@ export function createRenderer(
     volume: true,
     clouds: true,
     points: true,
+    stars: true,
     glow: true,
+    regions: true,
   };
   const look: LookSettings = {
     emission: DEFAULT_EMISSION,
@@ -280,14 +315,40 @@ export function createRenderer(
       gl.disable(gl.BLEND);
     }
 
+    // The star field takes the near field over from the point cloud below a zoom
+    // distance of 8,000 light years. The two carry one weight between them, so their
+    // shares sum to 1 at every range and the total light does not change.
+    const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+    const handover = handoverRadii(view.distance);
+    const drawsStars = passes.stars && starPass !== null && starField !== null;
+    const weight = drawsStars ? starWeight(view.distance) : 0;
+    starVertices = 0;
+    starStars = 0;
+
     if (passes.points && pointPass !== null) {
-      const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
       pointPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         pointScale: focal * POINT_RADIUS_LY,
         brightness: look.pointBrightness,
+        handoverWeight: weight,
+        handover,
       });
+    }
+
+    // A weight of 0 draws nothing, so above 8,000 light years the frame is the one the
+    // far view drew before the star field existed.
+    if (drawsStars && weight > 0 && starPass !== null && starField !== null) {
+      const table = starField.update(camera, view.distance);
+      starPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        focal,
+        weight,
+        handover,
+        table,
+      });
+      starVertices = starPass.vertexCount;
+      starStars = table.drawnStars;
     }
 
     // The tone map writes the frame the user sees.
@@ -296,6 +357,19 @@ export function createRenderer(
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.tonemap(sceneTarget.texture, look.exposure);
+
+    // The region boundaries are an overlay, not scene light. They draw over the
+    // finished frame with alpha blending. A fade of 0 draws nothing at all, so the far
+    // view is the frame it was before the overlay existed.
+    const regions = regionFade(view.distance);
+    if (passes.regions && regionPass !== null && regions > 0) {
+      regionPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        chunkOffset: [-camera[0], -camera[1], camera[2]],
+        fade: regions,
+        pixelRatio: width / Math.max(1, canvas.clientWidth),
+      });
+    }
   };
 
   return {
@@ -322,6 +396,21 @@ export function createRenderer(
       detailTexture?.dispose();
       detailTexture = createDetailTexture(gl, detail);
     },
+    setRegionLines(lines: RegionLines): void {
+      regionPass?.dispose();
+      regionPass = createRegionPass(gl, regionPrograms, lines, triangle.vertexArray);
+    },
+    setStarField(model: GalaxyModel): void {
+      starPass?.dispose();
+      starField = createStarField(model, { starLight: STAR_LIGHT });
+      starPass = createStarPass(gl, starProgram);
+    },
+    starVertexCount(): number {
+      return starVertices;
+    },
+    starDrawnCount(): number {
+      return starStars;
+    },
     render(view: View): void {
       drawFrame(view);
     },
@@ -343,6 +432,8 @@ export function createRenderer(
       if (next.volume !== undefined) passes.volume = next.volume;
       if (next.clouds !== undefined) passes.clouds = next.clouds;
       if (next.points !== undefined) passes.points = next.points;
+      if (next.stars !== undefined) passes.stars = next.stars;
+      if (next.regions !== undefined) passes.regions = next.regions;
       if (next.glow !== undefined) passes.glow = next.glow;
     },
     look,
@@ -415,12 +506,17 @@ export function createRenderer(
     },
     dispose(): void {
       pointPass?.dispose();
+      starPass?.dispose();
+      regionPass?.dispose();
       cloudPass?.dispose();
       volumePass?.dispose();
       detailTexture?.dispose();
       shapeTexture.dispose();
       glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
+      gl.deleteProgram(starProgram.program);
+      gl.deleteProgram(regionPrograms.ribbon.program);
+      gl.deleteProgram(regionPrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();

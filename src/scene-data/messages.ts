@@ -1,8 +1,10 @@
 // The messages the scene-data workers exchange with the main thread.
 import type {
   CloudSet,
+  CoarseRegionGrid,
   DensityVolume,
   PointCloud,
+  RegionLines,
   SceneData,
   SurfaceDetail,
 } from './types';
@@ -25,6 +27,12 @@ export interface PointCloudResponse {
 
 /** What the volume worker sends back. */
 export type VolumeResponse = DensityVolume;
+
+/** What the region worker sends back: the boundary set and the coarse region grid. */
+export interface RegionLinesResponse {
+  readonly lines: RegionLines;
+  readonly grid: CoarseRegionGrid;
+}
 
 /** The buffers a point cloud message moves instead of copying. */
 export function pointCloudTransferables(cloud: PointCloud): Transferable[] {
@@ -51,6 +59,30 @@ export function surfaceDetailTransferables(detail: SurfaceDetail): Transferable[
   return [detail.data.buffer as ArrayBuffer];
 }
 
+/** The buffers a region line message moves instead of copying. */
+export function regionLinesTransferables(lines: RegionLines): Transferable[] {
+  return [
+    lines.positions.buffer as ArrayBuffer,
+    lines.first.buffer as ArrayBuffer,
+    lines.last.buffer as ArrayBuffer,
+  ];
+}
+
+/** The buffer a coarse region grid message moves instead of copying. */
+export function coarseRegionGridTransferables(grid: CoarseRegionGrid): Transferable[] {
+  return [grid.ids.buffer as ArrayBuffer];
+}
+
+/** The buffers a whole region worker message moves instead of copying. */
+export function regionResponseTransferables(
+  response: RegionLinesResponse,
+): Transferable[] {
+  return [
+    ...regionLinesTransferables(response.lines),
+    ...coarseRegionGridTransferables(response.grid),
+  ];
+}
+
 /** Every buffer a whole scene-data object holds. */
 export function sceneDataTransferables(scene: SceneData): Transferable[] {
   return [
@@ -58,5 +90,7 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...cloudSetTransferables(scene.cloudSet),
     ...volumeTransferables(scene.volume),
     ...surfaceDetailTransferables(scene.detail),
+    ...regionLinesTransferables(scene.regionLines),
+    ...coarseRegionGridTransferables(scene.regionGrid),
   ];
 }

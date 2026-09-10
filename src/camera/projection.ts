@@ -148,16 +148,25 @@ export function project(
 }
 
 /**
- * The direction of the ray through a screen pixel, in game coordinates. The vector is
- * not normalised.
+ * The inverse of the view-projection matrix. A sweep that unprojects many pixels of
+ * one frame builds this once and passes it to `rayDirectionFrom`, because inverting
+ * the matrix per pixel is the cost the label sampling has to avoid.
  */
-export function rayDirection(
-  view: View,
+export function inverseViewProjection(view: View, viewport: Viewport): mat4 {
+  const inverse = mat4.create();
+  mat4.invert(inverse, viewProjectionMatrix(view, viewport));
+  return inverse;
+}
+
+/**
+ * The direction of the ray through a screen pixel, in game coordinates, from an
+ * inverse the caller already holds. The vector is not normalised.
+ */
+export function rayDirectionFrom(
+  inverse: mat4,
   pixel: { readonly x: number; readonly y: number },
   viewport: Viewport,
 ): [number, number, number] {
-  const inverse = mat4.create();
-  mat4.invert(inverse, viewProjectionMatrix(view, viewport));
   const ndcX = (pixel.x / viewport.width) * 2 - 1;
   const ndcY = 1 - (pixel.y / viewport.height) * 2;
 
@@ -175,6 +184,36 @@ export function rayDirection(
 }
 
 /**
+ * The direction of the ray through a screen pixel, in game coordinates. The vector is
+ * not normalised. This inverts the view-projection matrix on every call.
+ */
+export function rayDirection(
+  view: View,
+  pixel: { readonly x: number; readonly y: number },
+  viewport: Viewport,
+): [number, number, number] {
+  return rayDirectionFrom(inverseViewProjection(view, viewport), pixel, viewport);
+}
+
+/**
+ * The point where a ray meets the horizontal plane at a height, from an inverse the
+ * caller already holds. Returns null when the ray runs away from the plane.
+ */
+export function planePointFrom(
+  inverse: mat4,
+  origin: readonly [number, number, number],
+  pixel: { readonly x: number; readonly y: number },
+  viewport: Viewport,
+  height: number,
+): [number, number, number] | null {
+  const direction = rayDirectionFrom(inverse, pixel, viewport);
+  if (Math.abs(direction[1]) < 1e-12) return null;
+  const t = (height - origin[1]) / direction[1];
+  if (t <= 0) return null;
+  return [origin[0] + direction[0] * t, height, origin[2] + direction[2] * t];
+}
+
+/**
  * The point where the ray through a screen pixel meets the horizontal plane at a
  * height. Returns null when the ray runs away from the plane.
  */
@@ -184,10 +223,11 @@ export function planePoint(
   viewport: Viewport,
   height: number,
 ): [number, number, number] | null {
-  const origin = cameraPosition(view);
-  const direction = rayDirection(view, pixel, viewport);
-  if (Math.abs(direction[1]) < 1e-12) return null;
-  const t = (height - origin[1]) / direction[1];
-  if (t <= 0) return null;
-  return [origin[0] + direction[0] * t, height, origin[2] + direction[2] * t];
+  return planePointFrom(
+    inverseViewProjection(view, viewport),
+    cameraPosition(view),
+    pixel,
+    viewport,
+    height,
+  );
 }

@@ -19,6 +19,7 @@ pitch 35 degrees and yaw 0.
 - **WHEN** the page loads without a URL fragment
 - **THEN** the view equals the default view
 
+
 ### Requirement: View state in the URL fragment
 The page SHALL read the view from the URL fragment at load and SHALL write it back to
 the fragment when the view changes, at most once per 500 ms. The fragment format SHALL
@@ -32,6 +33,7 @@ degrees.
 #### Scenario: Write to fragment
 - **WHEN** the user zooms to a distance of 30,000 light years
 - **THEN** within 1 second the fragment contains `d=30000`
+
 
 ### Requirement: Cursor moves in the galactic plane
 A right-button drag SHALL move the cursor in the plane at the cursor's height. The
@@ -51,6 +53,7 @@ move the cursor up and down at the same speed.
 - **THEN** the cursor has moved 5,000 light years, within 10 percent, in the screen-up
   direction
 
+
 ### Requirement: Cursor stays inside the galaxy
 The cursor SHALL be clamped on every axis to the `x`, `y` and `z` bounds in the model
 parameter file.
@@ -58,6 +61,7 @@ parameter file.
 #### Scenario: Clamp
 - **WHEN** a unit test moves the cursor to (60,000, 0, 0)
 - **THEN** the cursor's `x` equals the model's upper `x` bound
+
 
 ### Requirement: Camera orbits the cursor
 A left-button drag SHALL change yaw by 0.3 degrees per pixel of horizontal movement
@@ -80,9 +84,10 @@ always look at the cursor.
 - **WHEN** a unit test sets any view
 - **THEN** the cursor projects to the centre of the screen within 1 pixel
 
+
 ### Requirement: Zoom with limits
 Each wheel notch SHALL multiply the distance by 1.15 (toward the cursor for a forward
-notch). Distance SHALL be clamped to 2,000 to 120,000 light years.
+notch). Distance SHALL be clamped to 500 to 120,000 light years.
 
 #### Scenario: Zoom in
 - **WHEN** a unit test applies one forward notch at distance 20,000
@@ -90,7 +95,13 @@ notch). Distance SHALL be clamped to 2,000 to 120,000 light years.
 
 #### Scenario: Limits
 - **WHEN** a unit test applies 100 forward notches
-- **THEN** the distance is 2,000
+- **THEN** the distance is 500
+
+#### Scenario: A stored fragment still loads
+- **WHEN** the page loads with `#c=0,0,0&d=2000&p=35&y=0`, a view written before the
+  limit moved
+- **THEN** the distance is 2,000, because the limit only widened the range
+
 
 ### Requirement: Input does not scroll or select the page
 Wheel and drag input on the canvas SHALL NOT scroll the page, select text or open the

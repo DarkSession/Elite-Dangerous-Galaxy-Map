@@ -1,10 +1,10 @@
 # Roadmap
 
-The map is built in four phases. Each phase is one OpenSpec change. This document
+The map is built in the phases below. Each phase is one OpenSpec change. This document
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-08.
+Last updated: 2026-09-09.
 
 ## Facts that hold for every phase
 
@@ -25,8 +25,8 @@ Last updated: 2026-09-08.
   function at the data boundary. Stored positions stay in game coordinates.
 - **Camera-relative drawing.** Every chunk holds positions relative to its own origin.
   The CPU computes `chunkOrigin - cameraPosition` in `float64` each frame. No buffer
-  changes when the camera moves. Phase 1 sets this up with one chunk per pass; phase 2
-  uses it with one chunk per boxel.
+  changes when the camera moves. Phase 1 sets this up with one chunk per pass. Phase 2
+  uses one chunk per boxel, and the star field draws 1,856 of them per frame.
 - **Data and rendering stay separate.** Data producers emit typed arrays and plain
   objects. The renderer knows nothing about where they came from. A lint rule enforces
   the import direction.
@@ -97,7 +97,7 @@ Draws the galaxy's shape from far away and lets the user move across it.
   20,000, 30,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
-  zooms between 2,000 and 120,000 light years. Keys `W A S D` move the cursor in the
+  zooms between 500 and 120,000 light years. Keys `W A S D` move the cursor in the
   plane and `R F` move the cursor off the plane. The view lives in the URL fragment.
 - **Stack.** TypeScript, Vite, WebGL2 with an in-house wrapper, `gl-matrix`, plain DOM
   for the HUD, Vitest, Playwright with a GPU project, pnpm with the 7-day hold.
@@ -118,22 +118,31 @@ Draws the galaxy's shape from far away and lets the user move across it.
 
 ## Phase 2: close zoom with decoration stars
 
-Change: not yet created.
+Changes: `close-zoom-stars-and-regions`, then `region-boundaries-and-labels`. Status:
+implemented.
 
 Extends the zoom down to individual stars. Draws stars that are decoration, not real
 systems, and fades them out as the user zooms in.
 
 - **Constraint.** Public information only. The game's own generation rules are not
   reproduced. Star positions are invented.
-- **Density.** The phase 1 model gives the mass budget at any point. Measured against
-  the game: about 4 systems per solar mass of budget in the disc and about 1 in the
-  densest parts. Counts per boxel come from density times boxel volume times that
-  calibration.
+- **Density.** The phase 1 model gives the mass budget at any point. The calibration is
+  4.8 systems per solar mass of budget at the density of the disc at Sol, and it falls
+  in the logarithm to 1 at the model's peak density. A boxel's count is the detailed
+  density at its centre, times the boxel volume, times that calibration. The ramp
+  reproduces the neighbourhood: 3.798 systems per 1,000 cubic light years at Sol
+  against a measured 3.8, and 15,592 systems within 100 light years against a measured
+  16,000. It does not reproduce two figures at galaxy scale: 1.49 million systems
+  within 500 light years of Sol against a measured 2,000,000, and 9.23e10 over the
+  whole model against the game's 400 billion. The first gap is the model's own vertical
+  fall-off. The second sits in the core, where the calibration falls to 1 and every
+  boxel is capped, so no drawn count changes.
 - **Level of detail.** The game's mass-code hierarchy is an octree: a sector is 1,280
   light years, mass code `h`; each lower code halves the edge down to `a` at 10 light
   years. Each level is a chunk. A boxel's stars come from a hash of its address, so the
-  same boxel always shows the same stars. Per-level alpha driven by camera distance
-  gives the fade.
+  same boxel always shows the same stars. Four classes draw at once, picked by the zoom
+  distance, and the set steps from one group of four to the next. Phase 2.1 turns that
+  step into a fade.
 - **Budget.** Sol's neighbourhood has about 16,000 systems within 100 light years and
   about 2,000,000 within 500. The level-of-detail scheme must keep the drawn count
   bounded. The spec for this phase must state that bound.
@@ -144,8 +153,9 @@ systems, and fades them out as the user zooms in.
   - `astro/galaxy-grid`, `astro/mass-code`, `astro/sector-name`,
     `astro/system-address`: sector and boxel geometry, procedural names both ways.
   - `astro/hand-authored-regions`: named regions as spheres (Pleiades, Coalsack, ...).
-  - `astro/codex-region` (about 9 KiB) and `astro/codex-region-lookup` (about 208 KiB):
-    the 42 codex regions and a 49 light year lookup grid.
+  - `astro/codex-region` (about 9 KiB) and `astro/codex-region-lookup` (199 KiB): the
+    42 codex regions and a 49 light year lookup grid. The lookup grid is worker only,
+    so it stays out of the main bundle.
   - `astro/nebulae-real` (about 16 KiB), `astro/nebulae-procgen` (about 16 KiB),
     `astro/nebulae-planetary` (about 399 KiB): 5,835 nebulae in total, each a name, a
     system and a position.
@@ -153,14 +163,99 @@ systems, and fades them out as the user zooms in.
 - **Licence.** The almanac's code is MIT. Its data carries source-specific terms,
   including Frontier's non-commercial media-usage notice and CC BY-NC 4.0 for some
   derived material. Review `THIRD_PARTY_NOTICES.md` in the package before release.
+- **Answers this phase gives.**
+  - The star counts read the **detailed** density, and so does the light each boxel
+    carries. It is the density the point cloud is placed by, so the two sources carry
+    the same light per unit volume at every density and the handover shows no step. A
+    star field on the corrected density would differ by a factor of 0.52 to 1.76 around
+    the ring at 20,000 light years from the centre.
+  - The labels and the boundaries are the 42 codex regions, drawn in a zoom band.
+    Nebulae and hand-authored regions stay out.
+  - The zoom band runs from 30,000 light years down. Both the boundaries and the labels
+    are absent at 30,000 and full at 20,000. Both then stay to the closest zoom.
+    `close-zoom-stars-and-regions` faded the boundaries out again below 3,000 light
+    years, because one grid cell covers more than 15 pixels there and the line read as a
+    staircase. `region-boundaries-and-labels` draws a smooth line, which has no such
+    fault, so it removed that fade out. The star field fades in over the same kind of
+    band: nothing at 8,000 light years, full at 4,000 and below.
+  - A boundary is one line between two regions. The trace links the 38,563 unit edges of
+    the 49.3494 light year raster into **123 chains**, and it ends a chain at each of the
+    82 nodes where more than two edges meet. Each chain is then smoothed in three
+    stages: two passes of an average along it with the movement of every point capped at
+    0.75 of a grid cell from the node the trace put it on, a vertex reduction, and four
+    capped corner rounding passes. The drawn line stays within one grid cell, 49.3494
+    light years, of the traced boundary, measured both ways at 47.76. It turns 29.7
+    degrees for each 1,000 light years of drawn length against the 1,063 degrees of the
+    traced staircase, and no vertex of it turns by more than 20 degrees, measured at
+    14.2. The rounding is what holds that last bound: the average alone leaves long
+    straight runs meeting at corners of up to 98 degrees. The set holds 68,672 vertices
+    and 68,549 segments, which is 804.75 KiB, and it draws in 123 instanced calls.
+  - A line is a screen-space ribbon of two tones: a 2 CSS pixel light core with a 1 CSS
+    pixel dark outline each side. Each segment writes `1 - distance / halfWidth` into a
+    single-channel coverage buffer with the blend equation set to `MAX`, so a join keeps
+    the smallest distance and is not brighter than the line. One fullscreen step then
+    reads that buffer and writes the core colour and the outline colour.
+  - A label follows the area its region covers on screen. The page samples the frame on a
+    grid of screen points 32 CSS pixels apart, which is about 2,000 samples at 1920x1080,
+    and reads each sample from a coarse region grid of 507 by 507 cells at 197.4 light
+    years, 251 KiB. A region is a candidate when it holds at least 1 percent of the
+    samples that land on the plane. A region that carried a label in the frame before
+    stays a candidate to half that share. The region holding the sample nearest the
+    centre of the frame is named first, and the rest follow by sample count after the
+    count of a region that carried a label before is multiplied by 1.2. A label's anchor
+    is worked out on the galactic plane and then projected: it is the mean of the plane
+    positions of its region's samples. Where the region under that mean is another
+    region, which is the frame that shows a region as two separated patches, the anchor
+    is the plane position of the sample the region itself holds nearest the mean. The
+    plane is what makes the anchor move. The sample grid is fixed in screen space, so
+    anything averaged there changes only when a sample crosses a region edge: it holds
+    still and then steps. An anchor is held from the frame before while its plane point
+    still resolves to the region and still projects inside the frame.
+    The three rules `close-zoom-stars-and-regions` used are gone, because the samples are
+    already on the screen: the bounding box candidate test, the centroid projection and
+    the behind-camera negation.
 - **Open questions.**
   - Do decoration stars get names, for example the sector name under the cursor?
-  - Do nebulae and hand-authored regions get labels, as in the game's map?
   - Do the volume ramp by density and the point ramp by zone unify into one?
-  - Do the star counts per boxel read the detailed surface density or the corrected
-    one? The detailed density is the game's map, so it is the better budget.
-  - The zoom distance at which decoration stars appear and the distance at which
-    they are fully faded.
+
+## Phase 2.1: the level of detail fades
+
+Change: not yet created.
+
+Replaces the step at each level-of-detail threshold with a fade, so stars appear
+gradually as the user zooms in.
+
+- **Problem.** Phase 2 picks four size classes from the zoom distance with
+  `clamp(ceil(log2(distance / 320)), 0, 4)`. The set steps at 640, 1,280, 2,560 and
+  5,120 light years. At a step the finest class halves its edge, the coarsest class
+  goes, and every boxel address changes, so one frame holds a different set of stars
+  from the frame before it.
+- **Scheme.** Take the position inside the class band,
+  `f = s0 - log2(distance / 320)`, which runs from 0 to 1 over one octave of zoom. Draw
+  five classes and weight the two ends by it: class `s0-1` at `f`; class `s0` with its
+  full 512 boxels, its inner 64 at `1 - f`; the three middle classes at 1; class `s0+3`
+  at `1 - f`. At `f = 0` this is the phase 2 set. At `f = 1` it is the next band's set.
+  The step then changes nothing.
+- **Fine end.** The two classes cover the same volume and their weights sum to 1, so
+  the light is held and there is no edge in space.
+- **Coarse end.** Class `s0+3` fades out where the point cloud takes over, so the fade
+  and the radius the field stays fully lit to trade against one another. This is the
+  part that needs work before the phase is proposed.
+- **Cost.** 2,368 boxels against phase 2's 1,856, which is 28 percent more. A cap of
+  200 stars per boxel in place of 256 gives 473,600 sprites, under phase 2's bound of
+  475,136, so the frame budget does not move.
+- **Not a superset.** The coarse set is not a subset of the fine one, because each
+  boxel hashes its own stars. The change is a cross-dissolve between two star sets over
+  one octave, which is about 5 wheel notches. A true superset needs a coarse star to
+  resolve to a fine boxel's star, which costs per-vertex work the sprite count does not
+  allow.
+- **Test.** A browser test steps the zoom distance across each of the four thresholds
+  and reads the mean absolute frame difference. A step must not differ more than a move
+  of the same size away from a threshold.
+- **Open questions.**
+  - The coarse end rule, and the radius the field stays fully lit to.
+  - Whether the cap comes down to 200 or the sprite bound goes up.
+  - Whether the weight is `f` or a smoothstep of `f`.
 
 ## Phase 3: real systems from data
 

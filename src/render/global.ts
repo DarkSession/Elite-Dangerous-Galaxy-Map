@@ -27,8 +27,21 @@ export interface GalaxyMapGlobal {
     volume?: boolean;
     clouds?: boolean;
     points?: boolean;
+    stars?: boolean;
     glow?: boolean;
+    regions?: boolean;
   }) => void;
+  /** How many vertices the last frame's star draw issued. */
+  starVertexCount?: () => number;
+  /** The sum of the drawn counts over the last frame's boxels. */
+  starDrawnCount?: () => number;
+  /** The boundary vertices the page drew, as `x`, `y`, `z` per vertex. */
+  regionLinePositions?: () => Float32Array;
+  /**
+   * The first and the last vertex index of every chain, so a reader can walk the
+   * chains of the boundary set rather than read the vertices as loose pairs.
+   */
+  regionLineChains?: () => { first: Uint32Array; last: Uint32Array };
   /** Projects a game position to a CSS pixel on the canvas. */
   project?: (point: [number, number, number]) => { x: number; y: number };
   /** Reads one pixel of the drawing buffer, in CSS pixels from the top left. */
@@ -46,6 +59,26 @@ export interface GalaxyMapGlobal {
   planePointAt?: (x: number, y: number) => [number, number, number] | null;
   /** Compiles one program. Returns null on success, or the error text. */
   compileTestProgram?: (vertex: string, fragment: string) => string | null;
+  /**
+   * The regions the last label sweep found, with the samples each one holds, most
+   * first. A test reads it to check that every label names a region on the screen.
+   */
+  regionSampleCounts?: () => { id: number; name: string; count: number }[];
+  /** How many samples of the last sweep landed on the plane inside the model bounds. */
+  regionSampleTotal?: () => number;
+  /**
+   * The mean and the worst label sweep time in ms, with the frames they cover, since
+   * the reset.
+   */
+  labelSampling?: () => { frames: number; meanMs: number; worstMs: number };
+  /**
+   * The name of the region under a CSS pixel, read from the coarse region grid at the
+   * plane `y = 0`. A test reads it to work out for itself which regions a frame shows,
+   * rather than reading the counts the label code made.
+   */
+  regionNameAtScreen?: (x: number, y: number) => string | null;
+  /** Starts the label sweep time mean again. */
+  resetLabelSampling?: () => void;
 }
 
 declare global {

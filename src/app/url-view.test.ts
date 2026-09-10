@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createDefaultView } from '../camera/view';
+import { createDefaultView, MIN_DISTANCE } from '../camera/view';
 import {
   createFragmentWriter,
   formatViewFragment,
@@ -23,9 +23,17 @@ describe('the URL fragment', () => {
 
   test('applies the limits to a fragment that is out of range', () => {
     const view = parseViewFragment('#c=600000,0,0&d=1&p=200&y=-30');
-    expect(view.distance).toBe(2000);
+    expect(view.distance).toBe(MIN_DISTANCE);
     expect(view.pitch).toBe(89);
     expect(view.yaw).toBe(330);
+  });
+
+  test('reads a fragment written before the zoom limit moved', () => {
+    const view = parseViewFragment('#c=0,0,0&d=2000&p=35&y=0');
+    expect(view.distance).toBe(2000);
+    expect(view.cursor).toEqual([0, 0, 0]);
+    expect(view.pitch).toBe(35);
+    expect(view.yaw).toBe(0);
   });
 
   test('writes the fragment the parser reads', () => {

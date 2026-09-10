@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import { galaxyModel } from '../galaxy-model/model';
-import { cameraPosition, planePoint, project, toWorld } from './projection';
+import {
+  cameraPosition,
+  inverseViewProjection,
+  planePoint,
+  planePointFrom,
+  project,
+  rayDirection,
+  rayDirectionFrom,
+  toWorld,
+} from './projection';
 import { createDefaultView } from './view';
 import type { View } from './view';
 
@@ -67,5 +76,43 @@ describe('the projection', () => {
     expect(point).not.toBeNull();
     expect(Math.abs((point as number[])[0] as number)).toBeLessThan(1);
     expect(Math.abs((point as number[])[2] as number)).toBeLessThan(1);
+  });
+});
+
+describe('the reused inverse', () => {
+  const view = createDefaultView();
+  const pixels = [
+    { x: 0, y: 0 },
+    { x: viewport.width, y: viewport.height },
+    { x: viewport.width / 2, y: viewport.height / 2 },
+    { x: 137, y: 911 },
+  ];
+
+  // `rayDirection` inverts the matrix on every call and the label sweep cannot pay
+  // that 2,000 times a frame, so the sweep uses `rayDirectionFrom` with one inverse.
+  // This test is what says the two give the same answer.
+  test('gives the same ray as the call that inverts the matrix itself', () => {
+    const inverse = inverseViewProjection(view, viewport);
+    for (const pixel of pixels) {
+      const shared = rayDirectionFrom(inverse, pixel, viewport);
+      const alone = rayDirection(view, pixel, viewport);
+      for (let axis = 0; axis < 3; axis += 1) {
+        expect(shared[axis]).toBe(alone[axis]);
+      }
+    }
+  });
+
+  test('gives the same plane point as the call that inverts the matrix itself', () => {
+    const inverse = inverseViewProjection(view, viewport);
+    const origin = cameraPosition(view);
+    for (const pixel of pixels) {
+      const shared = planePointFrom(inverse, origin, pixel, viewport, 0);
+      const alone = planePoint(view, pixel, viewport, 0);
+      expect(shared === null).toBe(alone === null);
+      if (shared === null || alone === null) continue;
+      for (let axis = 0; axis < 3; axis += 1) {
+        expect(shared[axis]).toBe(alone[axis]);
+      }
+    }
   });
 });

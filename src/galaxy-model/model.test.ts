@@ -147,6 +147,20 @@ describe('the volume, mass and zone values', () => {
     expect(worstMass).toBeLessThan(TOLERANCE);
     expect(worstZone).toBeLessThan(TOLERANCE);
   });
+
+  test('gives the same detailed and corrected mass density without a detail grid', () => {
+    let worst = 0;
+    for (const point of fixture.points) {
+      worst = Math.max(
+        worst,
+        relative(
+          galaxyModel.detailedMassDensity(point.x, point.y, point.z),
+          galaxyModel.massDensity(point.x, point.y, point.z),
+        ),
+      );
+    }
+    expect(worst).toBeLessThan(1e-12);
+  });
 });
 
 describe('the arm centre lines', () => {

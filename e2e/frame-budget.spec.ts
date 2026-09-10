@@ -7,8 +7,11 @@ const BUDGET_MS = 16.7;
 const SOL: [number, number, number] = [0, 0, 0];
 const GALACTIC_CENTRE: [number, number, number] = [15, -35, 25895];
 // The cloud pass draws in full from 12,000 light years, and the sprite layers per
-// pixel peak between 12,000 and 30,000, so both distances are in the list.
-const DISTANCES = [2000, 12000, 20000, 30000, 120000];
+// pixel peak between 12,000 and 30,000, so both distances are in the list. The list
+// also holds the three close views. 4,000 light years is the worst fill of the star
+// field: the star weight is still 1, the coarsest class is the 1,280 light year
+// sector, nearly every boxel is capped and most sprites sit at the 16 pixel clamp.
+const DISTANCES = [500, 1000, 2000, 4000, 12000, 20000, 30000, 120000];
 
 test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 

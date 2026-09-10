@@ -296,7 +296,17 @@ test('the outer haze is blue and its patches are pink', async ({ page }) => {
 test('the bulge has a soft top', async ({ page }) => {
   await openMap(page, SIDE_TOP_VIEW);
   await page.evaluate(() => {
-    window.__galaxyMap?.setPasses?.({ points: false, clouds: false, glow: false });
+    // This view sits at 25,000 light years, inside the band where the region overlay
+    // fades in, and the camera looks along the plane. The boundary lines then cross
+    // the column this test reads, and a 4 CSS pixel line makes a step of its own. The
+    // reading is about the top of the bulge, so the overlay goes off with the other
+    // passes that do not belong to the volume.
+    window.__galaxyMap?.setPasses?.({
+      points: false,
+      clouds: false,
+      glow: false,
+      regions: false,
+    });
     window.__galaxyMap?.drawNow?.();
   });
 
@@ -576,6 +586,31 @@ test('the dither is stable', async ({ page }) => {
   const second = await page.locator('#map').screenshot();
 
   expect(Buffer.compare(first, second)).toBe(0);
+});
+
+test('the added passes leave the far view alone', async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.drawNow?.();
+  });
+  // The reading takes the canvas alone. An element screenshot of `#map` captures the
+  // page clipped to the canvas box, so it would also carry the label overlay.
+  const frameOf = async (): Promise<string> =>
+    page.evaluate(() => {
+      const canvas = document.getElementById('map');
+      if (!(canvas instanceof HTMLCanvasElement)) return '';
+      return canvas.toDataURL('image/png');
+    });
+
+  const withBoth = await frameOf();
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ stars: false, regions: false });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const withoutBoth = await frameOf();
+
+  expect(withBoth.length).toBeGreaterThan(0);
+  expect(withBoth).toBe(withoutBoth);
 });
 
 test('the default view matches the baseline image', async ({ page }) => {

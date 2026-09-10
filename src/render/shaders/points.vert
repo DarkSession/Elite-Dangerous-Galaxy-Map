@@ -10,6 +10,8 @@ uniform mat4 uViewProjection;
 uniform vec3 uChunkOffset;
 uniform float uPointScale;
 uniform float uBrightness;
+uniform float uHandoverWeight;
+uniform vec2 uHandover;
 
 out float vTint;
 out float vBrightness;
@@ -41,6 +43,11 @@ void main() {
   // A spread of brightness over the samples gives the disc its grain. The mean of the
   // spread is one, so the total light does not change.
   float spread = (0.05 + 12.0 * pow(hash(gl_VertexID), 16.0)) / 0.7559;
-  vBrightness = uBrightness * spread * (wanted * wanted) / (size * size);
+  // The star field takes over the near field below a zoom distance of 8,000 light
+  // years. The star shader carries the other part of this fade, so the two sum to 1 at
+  // every range. Above 8,000 the weight is 0, the fade is exactly 1, and a multiply by
+  // 1 leaves the far view's light unchanged.
+  float fade = 1.0 - uHandoverWeight * (1.0 - smoothstep(uHandover.x, uHandover.y, range));
+  vBrightness = uBrightness * spread * (wanted * wanted) / (size * size) * fade;
   gl_Position = uViewProjection * vec4(relative, 1.0);
 }

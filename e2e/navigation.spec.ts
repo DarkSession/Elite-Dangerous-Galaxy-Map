@@ -96,6 +96,15 @@ test('a zoom writes the distance into the fragment', async ({ page }) => {
   expect(page.url()).toContain('d=30000');
 });
 
+test('a stored fragment still loads', async ({ page }) => {
+  // The zoom limit fell from 2,000 to 500 light years. A fragment written before that
+  // must load unchanged, so the page must not re-clamp the distance it reads.
+  await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
+  const view = await page.evaluate(() => window.__galaxyMap?.getView?.() ?? null);
+  expect(view?.distance).toBe(2000);
+  expect(view?.cursor).toEqual([0, 0, 0]);
+});
+
 test('a right drag opens no context menu', async ({ page }) => {
   await openMap(page);
   await page.evaluate(() => {

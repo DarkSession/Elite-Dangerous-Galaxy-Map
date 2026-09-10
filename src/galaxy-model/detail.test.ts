@@ -102,6 +102,16 @@ describe('the detail grid', () => {
     expect(correctedHigh / correctedLow).toBeLessThan(2.5);
   });
 
+  test('moves the mass-code-0 budget at Sol', () => {
+    const budget = model.document.calibration.mc0_budget_msun_per_ly3_per_unit;
+    const detailed = model.detailedMassDensity(0, 0, 0);
+    const corrected = model.massDensity(0, 0, 0);
+    expect(Math.abs(detailed - 7.9125e-4) / 7.9125e-4).toBeLessThan(1e-3);
+    expect(Math.abs(corrected - 7.56e-4) / 7.56e-4).toBeLessThan(1e-3);
+    const product = model.detailedVolumeDensity(0, 0, 0) * budget;
+    expect(Math.abs(detailed - product) / product).toBeLessThan(1e-12);
+  });
+
   test('gives no detail without a grid', () => {
     const plain = createGalaxyModel(parameters);
     expect(plain.detail(0, 0)).toBe(0);
@@ -109,5 +119,6 @@ describe('the detail grid', () => {
       plain.correctedSurfaceDensity(0, 0),
     );
     expect(plain.detailedVolumeDensity(0, 0, 0)).toBe(plain.volumeDensity(0, 0, 0));
+    expect(plain.detailedMassDensity(0, 0, 0)).toBe(plain.massDensity(0, 0, 0));
   });
 });
