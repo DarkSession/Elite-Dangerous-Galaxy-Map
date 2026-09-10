@@ -26,6 +26,7 @@ smaller than 16 KB.
 - **WHEN** a test measures the committed parameter file
 - **THEN** it is smaller than 16,384 bytes
 
+
 ### Requirement: Model loading validates the document
 The model SHALL load from the parameter file. Loading SHALL fail with an error when the
 `format` differs from `galaxy-density-model-v1`, when the number of arms is not 4, when
@@ -39,6 +40,7 @@ outside -127 to 127.
 #### Scenario: Correction grid length mismatch
 - **WHEN** a document declares correction `size: 64` and holds 4,095 values
 - **THEN** loading throws an error
+
 
 ### Requirement: Surface density matches the fixture
 For any point `(x, z)` in light years, the model SHALL return the planar stellar-mass
@@ -60,6 +62,7 @@ fixture to a relative error under 1e-6 at every fixture point.
   and at the centre plus 48,000 light years along `+z`
 - **THEN** the edge value is below 1e-4 of the centre value, and the centre value is
   above 100 times the value at Sol
+
 
 ### Requirement: Vertical profile matches the fixture
 For any height above the mid-plane and any galactocentric radius, the model SHALL return
@@ -83,6 +86,7 @@ SHALL match the fixture's `half_mass_height` entries within 0.01 light year.
 - **WHEN** the test evaluates the profile 1 light year beyond the maximum height
 - **THEN** the value is 0
 
+
 ### Requirement: Volume and mass density match the fixture
 For any point `(x, y, z)` the model SHALL return the volume density in map units per
 light year and the mass-code-0 budget in solar masses per cubic light year. Both SHALL
@@ -92,6 +96,7 @@ match the fixture to a relative error under 1e-6 at every fixture point.
 - **WHEN** the test evaluates both densities at each fixture point
 - **THEN** each value is within 1e-6 relative of the fixture value
 
+
 ### Requirement: Population zone matches the fixture
 For any point `(x, z)` the model SHALL return the population zone value in 0 to 1. It
 SHALL match the fixture to an absolute error under 1e-6 at every fixture point.
@@ -99,6 +104,7 @@ SHALL match the fixture to an absolute error under 1e-6 at every fixture point.
 #### Scenario: Fixture agreement
 - **WHEN** the test evaluates the zone at each fixture point
 - **THEN** each value is within 1e-6 of the fixture value
+
 
 ### Requirement: Arm centre lines are available
 For each arm index 0 to 3 and any radius, the model SHALL return the arm's azimuth, the
@@ -116,6 +122,7 @@ arms SHALL have distinct phases, and the pitch angle SHALL decrease with radius.
 - **THEN** the four phases differ pairwise by more than 1 degree, and the pitch angles
   decrease with radius
 
+
 ### Requirement: Fixture pins the parameter file
 The committed fixture SHALL hold at least 200 points spread over the model bounds,
 including Sol, the galactic centre, Colonia and points beyond the maximum height, and
@@ -132,6 +139,7 @@ script that regenerates them.
 - **THEN** there are at least 200, and they include (0, 0, 0), the model centre,
   (-9530, -910, 19808) and at least one point with `|y - centre_y|` above the maximum
   height
+
 
 ### Requirement: Detail grid refines the corrected surface density
 The repository SHALL hold one greyscale PNG of 1024 x 1024 pixels, 8 bits per pixel,
@@ -168,6 +176,7 @@ relative, or within 1e-6 absolute where the fixture value is below 1.
 - **THEN** the ratio of the largest to the smallest detailed value is above 3, and the
   same ratio of the corrected values is below 2.5
 
+
 ### Requirement: Fixture pins the detail grid
 The committed detail fixture SHALL hold at least 200 plane points, including Sol, the
 galactic centre, Colonia and at least one point outside the model bounds. It SHALL
@@ -183,3 +192,22 @@ repository SHALL NOT hold a script that regenerates them.
 - **WHEN** a test reads the fixture's points
 - **THEN** there are at least 200, and they include (0, 0), (15, 25895), (-9530, 19808)
   and at least one point with `x` or `z` outside the bounds
+
+
+### Requirement: Detailed mass density is available
+For any point `(x, y, z)` the model SHALL return the detailed mass-code-0 budget in
+solar masses per cubic light year: the detailed volume density, which carries the
+correction grid and the detail grid, times the same budget constant the corrected mass
+density uses. Without a detail grid it SHALL equal the corrected mass density.
+
+#### Scenario: Detailed and corrected agree without a grid
+- **WHEN** a unit test builds the model with no detail grid and reads both mass
+  densities at each fixture point
+- **THEN** the two are equal within 1e-12 relative
+
+#### Scenario: The detail grid moves the budget
+- **WHEN** a unit test builds the model with the committed detail grid and reads the
+  detailed mass density at Sol and the corrected one
+- **THEN** the detailed value is 7.9125e-4 within 1e-3 relative, the corrected value is
+  7.5600e-4 within 1e-3 relative, and the detailed value equals the detailed volume
+  density times the model's budget constant within 1e-12 relative

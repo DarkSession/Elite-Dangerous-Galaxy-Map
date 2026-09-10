@@ -28,6 +28,7 @@ names a software renderer.
 - **THEN** the first test fails, because the exposed string names `SwiftShader`, which
   is what current Chromium falls back to, or because the string is missing
 
+
 ### Requirement: WebGL2 is required
 If the browser gives no WebGL2 context, the page SHALL show a message that says WebGL2
 is required and SHALL NOT throw.
@@ -36,10 +37,15 @@ is required and SHALL NOT throw.
 - **WHEN** the page starts in a browser that returns null for a `webgl2` context
 - **THEN** the page shows the message and the console has no uncaught error
 
+
 ### Requirement: Three scene passes and a tone map compose the far view
 
 Each frame SHALL draw the density volume by raymarching, then the cloud sprites, then
-the point cloud as additive point sprites over them. The volume SHALL store density on
+the star field and the point cloud as additive point sprites over them, and SHALL draw
+the region boundary overlay after the tone map. Each point cloud sample SHALL carry the
+handover factor the star field defines, which is 1 at every range when the zoom distance
+is 8,000 light years or more, so the far view draws as it did before the star field
+existed. The volume SHALL store density on
 a logarithmic scale and decode it to linear density. At each step the decoded density
 SHALL be multiplied by the surface detail ratio at the step's plane position. The
 emission SHALL follow the density divided by the peak density of the volume through a
@@ -147,10 +153,18 @@ sprites soften.
 #### Scenario: Bulge has a soft top
 
 - **WHEN** the browser test opens the view `#c=15,0,25895&d=25000&p=5&y=0`, switches
-  the points, the clouds and the glow off, and reads the luminance of every pixel row
-  on the vertical line through the projection of the galactic centre from the plane
-  up to 4,000 light years above it
+  the points, the clouds, the glow and the region overlay off, and reads the luminance
+  of every pixel row on the vertical line through the projection of the galactic centre
+  from the plane up to 4,000 light years above it
 - **THEN** no two adjacent rows differ by more than 0.05
+
+  The reading is about the top of the bulge, so it switches off every pass that is not
+  the volume. The view sits at 25,000 light years, which is inside the band where the
+  region overlay fades in, and the camera looks along the plane, so a boundary line
+  crosses the column the test reads. A 4 CSS pixel line makes a step of 0.14 there
+  against the limit of 0.05, and a half CSS pixel line made one of 0.04. The overlay is
+  not part of the bulge, so it goes off with the other passes rather than the limit
+  going up.
 
 #### Scenario: Background is dark grey
 
@@ -180,6 +194,13 @@ sprites soften.
 - **THEN** the frame matches the committed baseline image with at most 2 percent of
   pixels differing
 
+#### Scenario: The added passes leave the far view alone
+
+- **WHEN** the browser test renders the default view at 1280x720 with the star pass and
+  the region overlay switched on, and again with both switched off
+- **THEN** the two image files are byte-identical
+
+
 ### Requirement: Rendering is camera-relative
 The renderer SHALL subtract the camera position from world positions before any
 `float32` matrix multiplication, with the subtraction done in `float64` on the CPU per
@@ -187,7 +208,7 @@ chunk. The error that remains is that of `float32` arithmetic on the camera-rela
 position, and it grows in proportion to the zoom distance. For any cursor inside the
 model bounds, any yaw and any pitch, two points 1/32 light year apart SHALL map to clip
 positions whose separation is within `1e-2 * distance / 2,000` relative of the exact
-transform, so within 1e-2 at the closest zoom distance of 2,000 light years. The figure
+transform, so within 2.5e-3 at the closest zoom distance of 500 light years. The figure
 is the `float32` limit: at 2,000 light years the separation is 1/64,000 of the
 coordinate, about 2^-16, which leaves 8 of the 24 mantissa bits, so one rounding is
 about 4e-3 of the separation and the measured worst case is 4.6e-3. A transform that
@@ -202,14 +223,15 @@ at the far corner; that difference is what the subtraction buys.
 
 #### Scenario: Bound scales with the distance
 - **WHEN** the unit test repeats the emulation at Sol, the galactic centre, the far
-  corner and the bounds corners, at distances 2,000, 20,000 and 120,000, over a sweep
-  of yaws and pitches
+  corner and the bounds corners, at distances 500, 2,000, 20,000 and 120,000, over a
+  sweep of yaws and pitches
 - **THEN** every relative error is below `1e-2 * distance / 2,000`
 
 #### Scenario: Camera in the matrix is worse
 - **WHEN** the unit test keeps the camera translation inside the `float32` matrix at
   the far corner and distance 2,000
 - **THEN** that error is more than 10 times the camera-relative error
+
 
 ### Requirement: Orientation matches the game
 The map SHALL show the galaxy with `+y` up and with the galactic centre toward the top
@@ -223,6 +245,7 @@ of Sol when the camera looks from Sol toward the centre.
 #### Scenario: Plus x is right
 - **WHEN** a unit test projects Sol and (10,000, 0, 0) with the default view
 - **THEN** the second point's screen `x` is greater than Sol's
+
 
 ### Requirement: Frame budget
 At 1920x1080 on the dev container's GPU, the mean render time over 300 consecutive
@@ -250,6 +273,7 @@ SHALL NOT call `gl.finish()`.
   calls the measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms
 
+
 ### Requirement: Canvas follows the window
 The canvas SHALL fill the viewport and SHALL resize its drawing buffer to the viewport
 size times the device pixel ratio, capped at 2, when the window resizes.
@@ -257,6 +281,7 @@ size times the device pixel ratio, capped at 2, when the window resizes.
 #### Scenario: Resize
 - **WHEN** the browser test resizes the viewport to 800x600 at device pixel ratio 2
 - **THEN** the drawing buffer is 1600x1200
+
 
 ### Requirement: Glow surrounds the disc
 A blurred copy of the volume and cloud passes SHALL be added to the scene before the
@@ -280,6 +305,7 @@ off, beside the switches for the volume, the clouds and the points.
   samples the pixels at (15, 5,965, 25,895) and (15, 11,965, 25,895), which lie
   6,000 and 12,000 light years above the galactic centre
 - **THEN** the first has luminance at most 0.20 and the second at most 0.08
+
 
 ### Requirement: Cloud shapes come from a generated set
 The renderer SHALL build a set of 16 cloud shapes of 64 x 64 texels each, once, from a
@@ -315,6 +341,7 @@ differ from one another, so neighbouring sprites do not repeat.
 #### Scenario: Deterministic
 - **WHEN** a unit test builds the set twice
 - **THEN** the two arrays are byte-identical
+
 
 ### Requirement: Cloud sprites give the haze its chunks
 
@@ -426,6 +453,7 @@ image pins them.
   clouds off and reads it again
 - **THEN** the reading with the clouds on is at most 0.10 above the reading with them
   off
+
 
 ### Requirement: The tone map dithers
 The tone map SHALL add a dither of one 8-bit step, triangular, from a hash of the
