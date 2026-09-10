@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { GALACTIC_CENTRE, openMap, projectPoint } from './helpers';
-import { SHARP_CORNER, VERTICAL_CROSSING } from './region-views';
+import { LONG_SEGMENT, SHARP_CORNER, VERTICAL_CROSSING } from './region-views';
 import type { ChosenView } from './region-views';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -18,9 +18,12 @@ const CLOSE_DISTANCES = [1500, 500];
 /** How many CSS pixels around the corner the join reading takes. */
 const JOIN_RADIUS = 8;
 
+/** How far above and below the line the long-segment reading takes, in CSS pixels. */
+const COLUMN_HALF = 20;
+
 /** Two plane points, one on a boundary and one away from every boundary. */
 interface BoundarySample {
-  /** The midpoint of the longest segment, in game coordinates. */
+  /** The midpoint of one of the 200 longest segments, in game coordinates. */
   readonly onBoundary: [number, number, number];
   /** A point at least 1,000 light years from every chain, in game coordinates. */
   readonly away: [number, number, number];
@@ -78,47 +81,11 @@ async function boundarySample(page: Page): Promise<BoundarySample> {
       return shortest;
     };
 
-    // A grid of the vertices, so the search for a point away from every chain costs a
-    // few cells and not all 68,000 vertices. The chains carry a vertex about every 5
-    // light years, so the distance to the nearest vertex stands in for the distance to
-    // the nearest chain while the search runs. The two points it chooses then get the
-    // exact reading.
-    const CELL = 300;
-    const buckets = new Map<number, number[]>();
-    const keyOf = (x: number, z: number): number =>
-      Math.floor(x / CELL) * 100000 + Math.floor(z / CELL);
-    for (let vertex = 0; vertex * 3 < positions.length; vertex += 1) {
-      const key = keyOf(
-        positions[vertex * 3] as number,
-        positions[vertex * 3 + 2] as number,
-      );
-      const held = buckets.get(key);
-      if (held === undefined) buckets.set(key, [vertex]);
-      else held.push(vertex);
-    }
-    const nearestVertex = (x: number, z: number): number => {
-      const cellX = Math.floor(x / CELL);
-      const cellZ = Math.floor(z / CELL);
-      let shortest = Number.POSITIVE_INFINITY;
-      for (let ring = 0; ring <= 12; ring += 1) {
-        for (let stepZ = -ring; stepZ <= ring; stepZ += 1) {
-          for (let stepX = -ring; stepX <= ring; stepX += 1) {
-            if (Math.max(Math.abs(stepX), Math.abs(stepZ)) !== ring) continue;
-            const held = buckets.get((cellX + stepX) * 100000 + cellZ + stepZ);
-            if (held === undefined) continue;
-            for (const vertex of held) {
-              const away = Math.hypot(
-                x - (positions[vertex * 3] as number),
-                z - (positions[vertex * 3 + 2] as number),
-              );
-              if (away < shortest) shortest = away;
-            }
-          }
-        }
-        if (shortest <= ring * CELL) break;
-      }
-      return shortest;
-    };
+    // The search measures to the nearest **segment** and not to the nearest vertex.
+    // The set holds 439 segments over 562 vertices, and a segment runs up to 14,970
+    // light years, so a point in the middle of one is far from every vertex and right
+    // on the drawn line. `gapTo` walks all 439 segments, which is what the whole search
+    // can afford: 200 candidates by 288 offsets is at most 57,600 readings.
 
     // The candidates are the longest segments, because a long segment sits where the
     // boundary is straight and the reading lands on the middle of the line.
@@ -137,32 +104,28 @@ async function boundarySample(page: Page): Promise<BoundarySample> {
       Math.hypot(x - centre[0], z - centre[2]);
     let onBoundary: [number, number, number] | null = null;
     let away: [number, number, number] | null = null;
+    let clearest = 0;
     for (const candidate of candidates.slice(0, 200)) {
       const cursorRadius = radiusOf(candidate.x, candidate.z);
-      let clearest = 0;
-      let best: [number, number, number] | null = null;
       for (let step = 0; step < 72; step += 1) {
         const angle = (2 * Math.PI * step) / 72;
         for (const range of [1200, 1600, 2000, 2400]) {
           const x = candidate.x + range * Math.cos(angle);
           const z = candidate.z + range * Math.sin(angle);
           if (Math.abs(radiusOf(x, z) - cursorRadius) > 400) continue;
-          const clearance = nearestVertex(x, z);
+          const clearance = gapTo(x, z);
+          // The whole 200 candidates are read and the clearest pair wins, rather than
+          // the first pair that holds. The reading needs a point at least 1,000 light
+          // years from every chain, and the clearest one holds that with the most room.
           if (clearance > clearest) {
             clearest = clearance;
-            best = [x, 0, z];
+            onBoundary = [candidate.x, 0, candidate.z];
+            away = [x, 0, z];
           }
         }
       }
-      // The reading needs a point at least 1,000 light years from every chain. The
-      // margin covers the step from the nearest vertex to the nearest segment.
-      if (clearest >= 1200 && best !== null) {
-        onBoundary = [candidate.x, 0, candidate.z];
-        away = best;
-        break;
-      }
     }
-    if (onBoundary === null || away === null) return null;
+    if (clearest < 1200 || onBoundary === null || away === null) return null;
 
     return {
       onBoundary,
@@ -396,8 +359,8 @@ test('the boundary still draws at the closest zoom', async ({ page }) => {
     await setPasses(page, { regions: false });
     const withoutOverlay = await canvasDigest(page);
 
-    // Phase 2 removed the lines below 3,000 light years. The smoothed boundary does
-    // not read as a staircase, so they draw here now.
+    // Phase 2 removed the lines below 3,000 light years. A line with few vertices and
+    // no invented corners does not read as a staircase, so they draw here now.
     expect(withOverlay, `at ${distance} light years`).not.toBe(withoutOverlay);
   }
 });
@@ -549,6 +512,75 @@ test('a join is not brighter than the line', async ({ page }) => {
   expect(unchangedInside).toBe(0);
   expect(straightChange).toBeGreaterThan(0.05);
   expect(bendChange).toBeLessThanOrEqual(straightChange);
+});
+
+test('a long segment holds its width across the frame', async ({ page }) => {
+  await openMap(page);
+  await lookFrom(page, LONG_SEGMENT.view);
+  const ratio = await devicePixelRatio(page);
+
+  // The segment runs 0.0007 degrees from flat, so it crosses the frame from the left
+  // edge to the right edge and a column of pixels cuts it square. Its two ends sit
+  // more than 7,000 light years outside the frame, so the reading meets the middle of
+  // the segment and never one of its ends.
+  const ends = [
+    await projectPoint(page, LONG_SEGMENT.ends[0]),
+    await projectPoint(page, LONG_SEGMENT.ends[1]),
+  ];
+  const width = LONG_SEGMENT.viewport.width;
+  const yAt = (x: number): number => {
+    const first = ends[0] as { x: number; y: number };
+    const second = ends[1] as { x: number; y: number };
+    const part = (x - first.x) / (second.x - first.x);
+    return first.y + part * (second.y - first.y);
+  };
+
+  const columns = [
+    Math.round(width * 0.05),
+    Math.round(width / 2),
+    Math.round(width * 0.95),
+  ];
+  const readings: { x: number; y: number; height: number }[] = columns.map((x) => ({
+    x,
+    y: Math.round(yAt(x)) - COLUMN_HALF,
+    height: COLUMN_HALF * 2,
+  }));
+
+  const withOverlay: number[][] = [];
+  for (const reading of readings) {
+    withOverlay.push(await luminanceRect(page, { ...reading, width: 1 }));
+  }
+  await setPasses(page, { regions: false });
+  const withoutOverlay: number[][] = [];
+  for (const reading of readings) {
+    withoutOverlay.push(await luminanceRect(page, { ...reading, width: 1 }));
+  }
+
+  const widths: number[] = [];
+  for (let index = 0; index < readings.length; index += 1) {
+    const on = withOverlay[index] as number[];
+    const off = withoutOverlay[index] as number[];
+    const runs: { start: number; end: number }[] = [];
+    for (let row = 0; row < on.length; row += 1) {
+      if (Math.abs((on[row] as number) - (off[row] as number)) <= 0.001) continue;
+      const last = runs[runs.length - 1];
+      if (last !== undefined && last.end === row - 1) last.end = row;
+      else runs.push({ start: row, end: row });
+    }
+    expect(runs, `the column at ${(readings[index] as { x: number }).x}`).toHaveLength(
+      1,
+    );
+    const run = runs[0] as { start: number; end: number };
+    widths.push((run.end - run.start + 1) / ratio);
+  }
+  console.log('the long segment reading', {
+    segmentLy: LONG_SEGMENT.segmentLy,
+    columns,
+    widths,
+  });
+
+  for (const drawn of widths) expect(Math.abs(drawn - 4)).toBeLessThanOrEqual(1);
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
 });
 
 test('the switch removes both parts', async ({ page }) => {

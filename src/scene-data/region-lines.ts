@@ -9,8 +9,9 @@ import {
 } from '@elite-dangerous-almanac/core/astro/codex-region-lookup';
 import { galaxyModel } from '../galaxy-model/model';
 import type { Range } from '../galaxy-model/types';
+import { buildClearanceField, buildRegionLabelGeometry } from './clearance';
 import { NO_REGION_ID } from './regions';
-import type { CoarseRegionGrid, RegionLines } from './types';
+import type { CoarseRegionGrid, RegionLabelGeometry, RegionLines } from './types';
 
 /** The edge of one cell of the region grid, in light years. It is 4,096 / 83. */
 export const REGION_CELL_LY = CODEX_REGION_MAP_LY_PER_CELL;
@@ -19,43 +20,23 @@ export const REGION_CELL_LY = CODEX_REGION_MAP_LY_PER_CELL;
 export const REGION_GRID_SIZE = 2027;
 
 /**
- * How far the drawn line may sit from the traced boundary, in light years. It is one
- * cell, which is the resolution the region data has.
+ * How far the simplified line may sit from the traced boundary, in light years. It is
+ * looser than the 49.3494 light year resolution of the source on purpose. Nothing the
+ * page draws shows where the boundary truly lies, so a departure the viewer cannot
+ * check costs nothing, while the shape the viewer can check gets better.
  */
-export const REGION_DEPARTURE_LY = REGION_CELL_LY;
+export const REGION_DEPARTURE_LY = 200;
 
-/** How many average passes each chain takes. */
-export const REGION_SMOOTH_PASSES = 2;
+/**
+ * The tolerance the simplification fits to, in light years. It sits strictly below the
+ * departure bound, so the asserted bound carries slack: the residual of the fit is its
+ * own tolerance, so a fit at the bound leaves a knife edge that a change of tie-break
+ * pushes over.
+ */
+export const REGION_FIT_TOLERANCE_LY = 190;
 
 /** The largest number of cells per axis the coarse region grid holds. */
 export const COARSE_REGION_GRID_MAX = 512;
-
-/** How many points on each side of a point the average reads. */
-export const REGION_SMOOTH_HALF_WIDTH = 3;
-
-/**
- * How far a point may move from the node the trace put it on, in cells. It sits below
- * the one cell departure bound twice over: the departure is measured polyline to
- * polyline, so the line can bow between two capped points, and the corner rounding
- * below costs about 5.6 light years of departure of its own.
- */
-export const REGION_MOVE_CAP = 0.75;
-
-/**
- * The tolerance the vertex reduction takes, in cells. It sits far below the noise of
- * the raster, so it only drops a point that is nearly on the line through its two
- * neighbours. It does not put the wander back.
- */
-export const REGION_SIMPLIFY_TOLERANCE = 0.1;
-
-/** How many corner rounding passes each chain takes after the average. */
-export const REGION_ROUND_PASSES = 4;
-
-/**
- * How far a rounding cut reaches along a segment, in cells. The cut also never takes
- * more than a quarter of a segment, so a short segment is not cut away.
- */
-export const REGION_ROUND_CAP = 0.3;
 
 /** The region id at the centre of every cell of the grid over the model bounds. */
 export interface RegionGrid {
@@ -257,8 +238,20 @@ export function traceRegionChains(grid: RegionGrid): RegionTrace {
 }
 
 /**
- * Drops the points of a chain that lie within a tolerance of the line that would
- * replace them, by Douglas-Peucker. The points and the tolerance are in cells.
+ * Simplifies a chain to straight segments, by Douglas-Peucker.
+ *
+ * The result keeps a traced node only where dropping it would move the line further
+ * than the tolerance from the trace, and it always keeps the first and the last node.
+ * Every vertex of the result is therefore a node of the chain it came from, so two
+ * chains that end at the same lattice node keep that node and share the point exactly.
+ *
+ * The distance is measured to the **segment** between the two kept nodes, and not to
+ * the infinite line through them. The two differ where a chain doubles back: a node far
+ * past the end of the segment can sit on the line through it, and the line measure then
+ * drops the whole excursion. The segment measure is also the one the departure scenario
+ * checks.
+ *
+ * The points and the tolerance are in cells.
  */
 export function simplifyChain(points: Float64Array, tolerance: number): Float64Array {
   const count = points.length / 2;
@@ -282,12 +275,10 @@ export function simplifyChain(points: Float64Array, tolerance: number): Float64A
     for (let index = first + 1; index < last; index += 1) {
       const px = (points[index * 2] as number) - ax;
       const pz = (points[index * 2 + 1] as number) - az;
-      let gap: number;
-      if (span === 0) {
-        gap = Math.hypot(px, pz);
-      } else {
-        gap = Math.abs(px * dz - pz * dx) / Math.sqrt(span);
-      }
+      let along = span === 0 ? 0 : (px * dx + pz * dz) / span;
+      if (along < 0) along = 0;
+      if (along > 1) along = 1;
+      const gap = Math.hypot(px - along * dx, pz - along * dz);
       if (gap > worst) {
         worst = gap;
         worstAt = index;
@@ -313,92 +304,32 @@ export function simplifyChain(points: Float64Array, tolerance: number): Float64A
 }
 
 /**
- * Averages a chain along its length by one box filter pass, with the two endpoints
- * held fixed. The window shrinks near an end so it stays symmetric about the point it
- * writes, which keeps the pass from pulling the chain toward its ends. The points and
- * the half width are in cells, and the point count does not change.
+ * The two region ids on the sides of a chain, as the smaller id then the larger one.
+ *
+ * Every edge of a chain carries the same pair, because a chain ends wherever three or
+ * more regions meet, so the first edge answers for the whole chain.
  */
-export function averageChain(points: Float64Array, halfWidth: number): Float64Array {
-  const count = points.length / 2;
-  const out = new Float64Array(points.length);
-  if (count === 0) return out;
-  out[0] = points[0] as number;
-  out[1] = points[1] as number;
-  out[points.length - 2] = points[points.length - 2] as number;
-  out[points.length - 1] = points[points.length - 1] as number;
-  for (let index = 1; index < count - 1; index += 1) {
-    const width = Math.min(halfWidth, index, count - 1 - index);
-    let sumX = 0;
-    let sumZ = 0;
-    for (let read = index - width; read <= index + width; read += 1) {
-      sumX += points[read * 2] as number;
-      sumZ += points[read * 2 + 1] as number;
-    }
-    const taken = width * 2 + 1;
-    out[index * 2] = sumX / taken;
-    out[index * 2 + 1] = sumZ / taken;
+export function chainPair(grid: RegionGrid, chain: TracedChain): [number, number] {
+  const size = grid.size;
+  const nodes = chain.nodes;
+  const x0 = nodes[0] as number;
+  const z0 = nodes[1] as number;
+  const x1 = nodes[2] as number;
+  const z1 = nodes[3] as number;
+  let low: number;
+  let high: number;
+  if (x0 === x1) {
+    // A vertical edge sits between the cells (x0 - 1, iz) and (x0, iz).
+    const iz = Math.min(z0, z1);
+    low = grid.ids[iz * size + x0 - 1] as number;
+    high = grid.ids[iz * size + x0] as number;
+  } else {
+    // A horizontal edge sits between the cells (ix, z0 - 1) and (ix, z0).
+    const ix = Math.min(x0, x1);
+    low = grid.ids[(z0 - 1) * size + ix] as number;
+    high = grid.ids[z0 * size + ix] as number;
   }
-  return out;
-}
-
-/**
- * Holds every interior point of a chain within a cap of the point the same index has
- * in a reference chain. The reference is the traced chain and not the pass before, so
- * the cap bounds the whole departure and not the step of one pass.
- */
-export function capChain(
-  points: Float64Array,
-  reference: Float64Array,
-  cap: number,
-): Float64Array {
-  const count = points.length / 2;
-  const out = points.slice();
-  for (let index = 1; index < count - 1; index += 1) {
-    const baseX = reference[index * 2] as number;
-    const baseZ = reference[index * 2 + 1] as number;
-    const dx = (points[index * 2] as number) - baseX;
-    const dz = (points[index * 2 + 1] as number) - baseZ;
-    const away = Math.hypot(dx, dz);
-    if (away <= cap) continue;
-    const scale = cap / away;
-    out[index * 2] = baseX + dx * scale;
-    out[index * 2 + 1] = baseZ + dz * scale;
-  }
-  return out;
-}
-
-/**
- * Rounds the corners of a chain by one pass of Chaikin's corner cut, with the two
- * endpoints held fixed. The cut is capped: a new point sits at most `cap` cells from
- * the corner it cuts, along the segment it lies on, and never further than a quarter of
- * that segment. Without the cap a corner loses a quarter of each of its two segments,
- * and a smoothed chain has long segments, so a single corner could lose many cells. The
- * pass gives two points per segment, so the point count doubles.
- */
-export function roundChain(points: Float64Array, cap: number): Float64Array {
-  const count = points.length / 2;
-  if (count < 2) return points.slice();
-
-  const out = new Float64Array(count * 4);
-  out[0] = points[0] as number;
-  out[1] = points[1] as number;
-  let write = 2;
-  for (let index = 0; index < count - 1; index += 1) {
-    const ax = points[index * 2] as number;
-    const az = points[index * 2 + 1] as number;
-    const dx = (points[index * 2 + 2] as number) - ax;
-    const dz = (points[index * 2 + 3] as number) - az;
-    const length = Math.hypot(dx, dz);
-    const t = length === 0 ? 0 : Math.min(0.25, cap / length);
-    out[write] = ax + t * dx;
-    out[write + 1] = az + t * dz;
-    out[write + 2] = ax + (1 - t) * dx;
-    out[write + 3] = az + (1 - t) * dz;
-    write += 4;
-  }
-  out[write] = points[count * 2 - 2] as number;
-  out[write + 1] = points[count * 2 - 1] as number;
-  return out;
+  return low <= high ? [low, high] : [high, low];
 }
 
 /** The nodes of a traced chain as a point list in cells. */
@@ -407,65 +338,30 @@ export function chainPoints(chain: TracedChain): Float64Array {
 }
 
 /**
- * Smooths a chain by an average along it, with the movement of every point capped,
- * and then reduces the vertex count.
- *
- * Each pass averages the chain and then holds every interior point within
- * `REGION_MOVE_CAP` cells of the node the trace put it on. The cap keeps a real corner
- * a corner, because an average alone rounds a genuine 90 degree turn as readily as it
- * removes the steps of the raster.
- *
- * The reduction then runs, by Douglas-Peucker at `REGION_SIMPLIFY_TOLERANCE`. That
- * tolerance is far below the size of one step of the raster, so it only drops a point
- * that is nearly collinear with its neighbours.
- *
- * The average leaves long straight runs that meet at hard corners, so the last stage
- * rounds those corners over `REGION_ROUND_PASSES` capped Chaikin passes. The first two
- * bounds of the spec measure the turn of the line against its length and cannot see a
- * corner, because a corner has turn with no length.
+ * Packs the simplified chains of a trace into the boundary set the renderer reads.
+ * The tolerance is in light years, and the pack converts it to cells of the grid.
  */
-export function smoothChain(
-  points: Float64Array,
-  passes: number = REGION_SMOOTH_PASSES,
-  roundPasses: number = REGION_ROUND_PASSES,
-): Float64Array {
-  let out = points;
-  for (let pass = 0; pass < passes; pass += 1) {
-    out = capChain(
-      averageChain(out, REGION_SMOOTH_HALF_WIDTH),
-      points,
-      REGION_MOVE_CAP,
-    );
-  }
-  out = simplifyChain(out, REGION_SIMPLIFY_TOLERANCE);
-  for (let pass = 0; pass < roundPasses; pass += 1) {
-    out = roundChain(out, REGION_ROUND_CAP);
-  }
-  return out;
-}
-
-/** Packs the smoothed chains of a trace into the boundary set the renderer reads. */
 export function packRegionLines(
   grid: RegionGrid,
   trace: RegionTrace,
-  passes: number = REGION_SMOOTH_PASSES,
-  roundPasses: number = REGION_ROUND_PASSES,
+  toleranceLy: number = REGION_FIT_TOLERANCE_LY,
 ): RegionLines {
-  const smoothed = trace.chains.map((chain) =>
-    smoothChain(chainPoints(chain), passes, roundPasses),
+  const simplified = trace.chains.map((chain) =>
+    simplifyChain(chainPoints(chain), toleranceLy / grid.cell),
   );
   let vertexCount = 0;
-  for (const chain of smoothed) vertexCount += chain.length / 2;
+  for (const chain of simplified) vertexCount += chain.length / 2;
 
   const cell = grid.cell;
   const xLow = grid.origin[0] as number;
   const zLow = grid.origin[1] as number;
   const positions = new Float32Array(vertexCount * 3);
-  const first = new Uint32Array(smoothed.length);
-  const last = new Uint32Array(smoothed.length);
+  const first = new Uint32Array(simplified.length);
+  const last = new Uint32Array(simplified.length);
+  const pairs = new Uint8Array(simplified.length * 2);
   let vertex = 0;
-  for (let index = 0; index < smoothed.length; index += 1) {
-    const chain = smoothed[index] as Float64Array;
+  for (let index = 0; index < simplified.length; index += 1) {
+    const chain = simplified[index] as Float64Array;
     first[index] = vertex;
     for (let read = 0; read < chain.length; read += 2) {
       positions[vertex * 3] = xLow + (chain[read] as number) * cell;
@@ -474,12 +370,15 @@ export function packRegionLines(
       vertex += 1;
     }
     last[index] = vertex - 1;
+    const pair = chainPair(grid, trace.chains[index] as TracedChain);
+    pairs[index * 2] = pair[0];
+    pairs[index * 2 + 1] = pair[1];
   }
 
-  return { chainCount: smoothed.length, vertexCount, positions, first, last };
+  return { chainCount: simplified.length, vertexCount, positions, first, last, pairs };
 }
 
-/** Traces the grid and gives the smoothed boundary set. */
+/** Traces the grid and gives the simplified boundary set. */
 export function traceRegionLines(grid: RegionGrid): RegionLines {
   return packRegionLines(grid, traceRegionChains(grid));
 }
@@ -515,15 +414,26 @@ export interface RegionData {
   readonly lines: RegionLines;
   /** The coarse region grid the label placement samples. */
   readonly grid: CoarseRegionGrid;
+  /** The label centres, their clearances and the downsampled clearance field. */
+  readonly geometry: RegionLabelGeometry;
 }
 
-/** Fills the grid, traces it and takes the coarse grid from it, in one call. */
+/**
+ * Fills the grid, traces it, and takes the coarse grid and the label geometry from
+ * it, in one call. The departure bound travels on the message, because this module
+ * declares it and imports the 199 KiB region cell lookup.
+ */
 export function buildRegionData(
   bounds: Range = galaxyModel.bounds,
   size: number = REGION_GRID_SIZE,
 ): RegionData {
   const grid = fillRegionGrid(bounds, size);
-  return { lines: traceRegionLines(grid), grid: buildCoarseRegionGrid(grid) };
+  const field = buildClearanceField(grid);
+  return {
+    lines: traceRegionLines(grid),
+    grid: buildCoarseRegionGrid(grid),
+    geometry: buildRegionLabelGeometry(grid, field, REGION_DEPARTURE_LY),
+  };
 }
 
 /** Fills the grid and traces it in one call. */

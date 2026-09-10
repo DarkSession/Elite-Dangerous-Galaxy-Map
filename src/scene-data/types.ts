@@ -82,6 +82,50 @@ export interface RegionLines {
   readonly first: Uint32Array;
   /** The index of the last vertex of each chain. */
   readonly last: Uint32Array;
+  /**
+   * The two region ids each chain separates, as the smaller id then the larger one,
+   * two per chain. The id 0 means no region, which is what the rim of the mapped area
+   * carries. A reader asks with it which boundaries belong to a region.
+   */
+  readonly pairs: Uint8Array;
+}
+
+/**
+ * The clearance field over the galactic plane, downsampled for the page.
+ *
+ * A cell holds the distance from the block it covers to the nearest region boundary,
+ * in light years, rounded down. The value is the smallest of the block, and it sits at
+ * the centre of the block, so a reader knows where to interpolate from and never
+ * believes it has more room than it has.
+ */
+export interface RegionClearanceField {
+  /** How many cells the field holds per axis. */
+  readonly size: number;
+  /** The plane point the value of cell (0, 0) sits at, as `x` then `z`. */
+  readonly origin: readonly [number, number];
+  /** The distance between two neighbouring cell values, in light years. */
+  readonly cell: number;
+  /** One value per cell, `x` fastest, in light years. */
+  readonly values: Uint16Array;
+}
+
+/**
+ * What the label placement needs and the main thread cannot work out: the region
+ * lookup and the module that declares the departure bound both stay in the worker.
+ */
+export interface RegionLabelGeometry {
+  /**
+   * The centre of each region, two `float32` as `x` then `z`, indexed by region id
+   * less one. The centre is the plane point inside the region furthest from any of
+   * its boundaries.
+   */
+  readonly centres: Float32Array;
+  /** The exact clearance at each centre, in light years, indexed by region id less one. */
+  readonly clearances: Uint16Array;
+  /** The clearance field the placement reads away from the centres. */
+  readonly field: RegionClearanceField;
+  /** How far the drawn boundary may sit from the traced one, in light years. */
+  readonly departureLy: number;
 }
 
 /**
@@ -107,4 +151,5 @@ export interface SceneData {
   readonly detail: SurfaceDetail;
   readonly regionLines: RegionLines;
   readonly regionGrid: CoarseRegionGrid;
+  readonly regionGeometry: RegionLabelGeometry;
 }

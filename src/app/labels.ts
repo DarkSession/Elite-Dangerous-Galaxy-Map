@@ -1,61 +1,58 @@
 // Places the region name labels over the canvas. The labels are DOM elements in an
 // overlay, so the browser reads them as text and the test needs no pixel measure.
 //
-// The page asks what the frame shows and reads the regions off it. Each frame it
-// samples the viewport on a grid of screen points, turns each point into a plane point
-// at `y = 0`, and reads the region from the coarse grid the scene data carries. The
-// counts give the candidates, the order and the anchors.
-import {
-  cameraPosition,
-  inverseViewProjection,
-  planePointFrom,
-  project,
-} from '../camera/projection';
+// A label sits on the centre of its region, which is the plane point furthest from any
+// of the region's boundaries. When that centre cannot hold the box inside the frame,
+// the anchor slides along the straight plane segment from the centre toward the plane
+// point under the middle of the frame, and stops at the first point whose floor-scale
+// box lies inside the frame. The anchor is a function of the camera alone, so the
+// placement carries no state between frames.
+import { cameraPosition, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
-import { REGION_FADE_IN_FAR, REGION_FADE_IN_NEAR } from '../render/region-pass';
 import {
-  coarseRegionIdAt,
-  insideCoarseRegionGrid,
-  NO_REGION_ID,
-  REGIONS,
-} from '../scene-data/regions';
+  REGION_FADE_IN_FAR,
+  REGION_FADE_IN_NEAR,
+  REGION_LINE_WIDTH_CSS,
+} from '../render/region-pass';
+import { clearanceAt, CLEARANCE_DOWNSAMPLE } from '../scene-data/clearance';
+import { coarseRegionIdAt, REGIONS } from '../scene-data/regions';
 import type { Region } from '../scene-data/regions';
-import type { CoarseRegionGrid } from '../scene-data/types';
-
-/** How far apart the sample points sit on the screen, in CSS pixels. */
-export const SAMPLE_SPACING = 32;
-
-/** The share of the landed samples a region holds to become a candidate. */
-export const CANDIDATE_SHARE = 0.01;
-
-/**
- * The share a region that carried a label in the frame before holds to stay a
- * candidate. It is half the threshold, so a region on the threshold does not blink.
- */
-export const HELD_SHARE = CANDIDATE_SHARE / 2;
-
-/**
- * How much the sample count of a region that carried a label in the frame before counts
- * for in the order. It is a margin against a swap on a near tie, so a region that now
- * fills the frame still overtakes a region that is leaving it.
- */
-export const CARRIED_BONUS = 1.2;
-
-/** How far from the frame edge an anchor stays, in CSS pixels. */
-export const LABEL_INSET = 48;
-
-/** How many labels the page shows at once. */
-export const MAX_LABELS = 12;
+import type {
+  CoarseRegionGrid,
+  RegionLabelGeometry,
+  RegionLines,
+} from '../scene-data/types';
 
 /** How many region ids a `Uint8Array` of ids can hold. */
 const ID_RANGE = 256;
 
-/** A point on the screen, in CSS pixels from the top left. */
-export interface AnchorPoint {
-  readonly x: number;
-  readonly y: number;
-}
+/** The smallest scale a label draws at. Below it the label is not drawn. */
+export const LABEL_FLOOR_SCALE = 0.7;
+
+/** The largest scale a label draws at. */
+export const LABEL_FULL_SCALE = 1;
+
+/**
+ * How near the search of the scale runs, in CSS pixels of box width. One pixel of a
+ * full-size box is about 0.008 of scale, which the drawn text cannot show.
+ */
+const SCALE_SEARCH_PIXEL = 1;
+
+/**
+ * How near the slide runs, in CSS pixels of screen distance.
+ *
+ * The slide runs tighter than the scale search, and the two are not one number. The
+ * slide stops at the first feasible point of a subdivision, so whatever it leaves as
+ * slack the box then grows into: the box of a slid label touches the edge of the
+ * viewport, and one CSS pixel of slack on a 20 pixel box is 0.1 of scale. Measured
+ * over a pan of 40 light years a frame at a zoom of 2,000, one CSS pixel draws a slid
+ * label at 0.700 to 0.747, which pulses between frames, while 0.05 draws it at 0.700
+ * in every frame. The rule asks the search to run until the interval is shorter than
+ * one CSS pixel, which this meets with margin, and it costs four or five more steps
+ * for each region that slides.
+ */
+const SLIDE_SEARCH_PIXEL = 0.05;
 
 /** A point on the galactic plane at `y = 0`, in light years. */
 export interface PlanePoint {
@@ -81,63 +78,27 @@ export interface PlacedLabel extends LabelBox {
   readonly id: number;
   /** The region name the label reads. */
   readonly name: string;
-  /** The plane point the anchor projects from, so the next frame can hold it. */
+  /** The scale the label draws at, from the floor to 1. */
+  readonly scale: number;
+  /** The plane point the box centres on, in light years. */
   readonly plane: PlanePoint;
 }
 
-/**
- * The samples of one frame that land on the plane inside the model bounds. A sample
- * whose ray runs away from the plane, or whose plane point falls outside the grid, is
- * not here and does not count toward the candidate share.
- */
-export interface FrameSamples {
-  /** How many samples land. */
-  readonly count: number;
-  /** How many screen points the sweep read. */
-  readonly points: number;
-  /** The screen `x` of each landed sample, in CSS pixels. The length is `count`. */
-  readonly x: Float64Array;
-  /** The screen `y` of each landed sample, in CSS pixels. The length is `count`. */
-  readonly y: Float64Array;
-  /** The plane `x` of each landed sample, in light years. The length is `count`. */
-  readonly planeX: Float64Array;
-  /** The plane `z` of each landed sample, in light years. The length is `count`. */
-  readonly planeZ: Float64Array;
-  /** The region id of each landed sample. 0 means the cell holds no region. */
-  readonly ids: Uint8Array;
-  /** How long the sweep took, in milliseconds. */
-  readonly elapsedMs: number;
-  /**
-   * The region id at any point of the plane, not only under a sample. The anchor rule
-   * reads it at the mean of a region's sample plane positions, which lies between them.
-   */
-  readonly regionAtPlane: (x: number, z: number) => number;
-  /**
-   * A plane point projected to the screen, or null when it sits behind the camera. The
-   * anchor is worked out on the plane and projected through this.
-   */
-  readonly toScreen: (x: number, z: number) => AnchorPoint | null;
-}
+/** Measures the box of a name at a scale, in CSS pixels. */
+export type MeasureLabel = (name: string, scale: number) => LabelSize;
 
-/** A region the frame shows enough of to name. */
-export interface LabelCandidate {
-  /** The region id, 1 to 42. */
-  readonly id: number;
-  /** The region name. */
-  readonly name: string;
-  /** How many samples of the frame the region holds. */
-  readonly count: number;
-  /** The plane point the anchor projects from, in light years. */
-  readonly plane: PlanePoint;
-  /** Where the label sits, in CSS pixels from the top left. */
-  readonly anchor: AnchorPoint;
-}
-
-function clamp(value: number, low: number, high: number): number {
-  if (!Number.isFinite(value)) return (low + high) / 2;
-  if (high < low) return (low + high) / 2;
-  return Math.min(Math.max(value, low), high);
-}
+/** Why a region carries no label. `0` means the region carries one. */
+export const LABEL_DRAWN = 0;
+/** The camera sits at or below the galactic plane, so no label is drawn at all. */
+export const LABEL_BELOW_PLANE = 1;
+/** No part of the region projects inside the viewport. */
+export const LABEL_OFF_SCREEN = 2;
+/** No point of the segment holds the floor-scale box inside the viewport. */
+export const LABEL_NO_ANCHOR = 3;
+/** The anchor reads back as another region. */
+export const LABEL_OTHER_REGION = 4;
+/** The clearance at the anchor holds no box down to the floor scale. */
+export const LABEL_NO_ROOM = 5;
 
 function smoothstep(low: number, high: number, value: number): number {
   const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
@@ -153,392 +114,745 @@ export function labelFade(distance: number): number {
 }
 
 /**
- * The typed arrays one sweep fills. The overlay holds one set and hands it back every
- * frame, so a sweep at 1920x1080 allocates none of the 67 KB of sample arrays it took
- * before. The window the overlay times carries a bound of 4 milliseconds for a single
- * frame, and a young-generation collection landing inside it is what an allocation of
- * that size every frame buys: the worst frame measured 4.5 ms with it and 1.0 to 1.8 ms
- * without it. The sweep still makes the five `subarray` views and two closures it
- * returns, which are a few small objects and not kilobytes.
- */
-export interface SampleBuffers {
-  readonly x: Float64Array;
-  readonly y: Float64Array;
-  readonly planeX: Float64Array;
-  readonly planeZ: Float64Array;
-  readonly ids: Uint8Array;
-}
-
-/**
- * The shape of the sample grid. The sweep and the point count both read it here, so the
- * two cannot drift apart. If they did, and the sweep asked for more points than the
- * overlay fitted, the sweep would allocate a new set inside the timed window on every
- * frame.
- */
-function sampleColumns(viewport: Viewport): number {
-  return Math.max(1, Math.ceil(viewport.width / SAMPLE_SPACING));
-}
-
-function sampleRows(viewport: Viewport): number {
-  return Math.max(1, Math.ceil(viewport.height / SAMPLE_SPACING));
-}
-
-/** How many screen points a sweep of a viewport reads. */
-export function samplePointCount(viewport: Viewport): number {
-  return sampleColumns(viewport) * sampleRows(viewport);
-}
-
-/**
- * The buffers a caller already holds when they take the points, or a new set when they
- * do not. The size follows the viewport, so a resize takes one allocation and no frame
- * after it does.
- */
-export function fitSampleBuffers(
-  buffers: SampleBuffers | null,
-  points: number,
-): SampleBuffers {
-  if (buffers !== null && buffers.ids.length >= points) return buffers;
-  return {
-    x: new Float64Array(points),
-    y: new Float64Array(points),
-    planeX: new Float64Array(points),
-    planeZ: new Float64Array(points),
-    ids: new Uint8Array(points),
-  };
-}
-
-/**
- * Samples the frame on a grid of screen points about 32 CSS pixels apart, and reads the
- * region under each one from the coarse grid. That is 2,040 points at 1920x1080.
+ * The map between the galactic plane and the screen for one frame.
  *
- * The caller may hand in the buffers to fill. The overlay does, so the sweep allocates
- * nothing each frame; a caller that gives none gets a fresh set.
- *
- * The view-projection matrix is inverted once for the whole sweep. Inverting it per
- * point, as `rayDirection` does, would be 2,000 matrix inversions a frame.
+ * The camera reads the plane through a perspective, so plane and screen are one
+ * homography apart. Building it once for the frame makes a projection nine
+ * multiplications, and it makes the reverse read and the light years under a pixel
+ * exact rather than a difference of two samples. `project` builds the view-projection
+ * matrix on every call, which a frame that projects 562 vertices cannot pay for.
  */
-export function sampleFrame(
-  view: View,
+export interface PlaneMap {
+  /** Screen from plane, row by row: `(u t, v t, t) = forward (x, z, 1)`. */
+  readonly forward: Float64Array;
+  /** Plane from screen, row by row: `(x s, z s, s) = back (u, v, 1)`. */
+  readonly back: Float64Array;
+  /** True when the map could be built, which needs the camera off the plane. */
+  readonly usable: boolean;
+}
+
+/** The inverse of a 3 by 3 matrix, row by row. False when it has none. */
+function invert3(m: Float64Array, out: Float64Array): boolean {
+  const cofactor0 = m[4] * m[8] - m[5] * m[7];
+  const cofactor3 = m[5] * m[6] - m[3] * m[8];
+  const cofactor6 = m[3] * m[7] - m[4] * m[6];
+  const determinant = m[0] * cofactor0 + m[1] * cofactor3 + m[2] * cofactor6;
+  if (determinant === 0 || !Number.isFinite(determinant)) return false;
+  const scale = 1 / determinant;
+  out[0] = cofactor0 * scale;
+  out[1] = (m[2] * m[7] - m[1] * m[8]) * scale;
+  out[2] = (m[1] * m[5] - m[2] * m[4]) * scale;
+  out[3] = cofactor3 * scale;
+  out[4] = (m[0] * m[8] - m[2] * m[6]) * scale;
+  out[5] = (m[2] * m[3] - m[0] * m[5]) * scale;
+  out[6] = cofactor6 * scale;
+  out[7] = (m[1] * m[6] - m[0] * m[7]) * scale;
+  out[8] = (m[0] * m[4] - m[1] * m[3]) * scale;
+  return true;
+}
+
+/**
+ * Builds the plane map of a view. The view-projection matrix is built once here and
+ * every projection of the frame reads this map instead.
+ */
+export function planeMap(view: View, viewport: Viewport): PlaneMap {
+  const matrix = viewProjectionMatrix(view, viewport);
+  const camera = cameraPosition(view);
+  const cameraX = camera[0];
+  const cameraY = camera[1];
+  const cameraZ = camera[2];
+
+  // A plane point `(x, 0, z)` sits at `(x - cameraX, -cameraY, -(z - cameraZ))` in the
+  // renderer's world frame, so each clip coordinate is affine in `x` and `z`.
+  const clipXx = matrix[0];
+  const clipXz = -matrix[8];
+  const clipX1 =
+    -matrix[0] * cameraX - matrix[4] * cameraY + matrix[8] * cameraZ + matrix[12];
+  const clipYx = matrix[1];
+  const clipYz = -matrix[9];
+  const clipY1 =
+    -matrix[1] * cameraX - matrix[5] * cameraY + matrix[9] * cameraZ + matrix[13];
+  const clipWx = matrix[3];
+  const clipWz = -matrix[11];
+  const clipW1 =
+    -matrix[3] * cameraX - matrix[7] * cameraY + matrix[11] * cameraZ + matrix[15];
+
+  // `u = (clipX / clipW * 0.5 + 0.5) * width` and `v = (0.5 - clipY / clipW * 0.5) *
+  // height`, which is the homography below with `t = clipW`. A point is in front of
+  // the camera when `t` is positive.
+  const halfWidth = viewport.width / 2;
+  const halfHeight = viewport.height / 2;
+  const forward = new Float64Array(9);
+  forward[0] = halfWidth * (clipXx + clipWx);
+  forward[1] = halfWidth * (clipXz + clipWz);
+  forward[2] = halfWidth * (clipX1 + clipW1);
+  forward[3] = halfHeight * (clipWx - clipYx);
+  forward[4] = halfHeight * (clipWz - clipYz);
+  forward[5] = halfHeight * (clipW1 - clipY1);
+  forward[6] = clipWx;
+  forward[7] = clipWz;
+  forward[8] = clipW1;
+
+  const back = new Float64Array(9);
+  const usable = invert3(forward, back);
+  return { forward, back, usable };
+}
+
+/**
+ * Projects a plane point. `out` takes the screen position in CSS pixels. The result is
+ * the `t` of the map, which is positive when the point is in front of the camera.
+ */
+function toScreen(map: PlaneMap, x: number, z: number, out: Float64Array): number {
+  const forward = map.forward;
+  const t = forward[6] * x + forward[7] * z + forward[8];
+  out[0] = (forward[0] * x + forward[1] * z + forward[2]) / t;
+  out[1] = (forward[3] * x + forward[4] * z + forward[5]) / t;
+  return t;
+}
+
+/**
+ * The plane point under a screen point. `out` takes the plane position in light years.
+ * The result is positive when the plane point is in front of the camera, and zero or
+ * less when the ray runs away from the plane or meets it behind the camera.
+ */
+function toPlane(map: PlaneMap, u: number, v: number, out: Float64Array): number {
+  const back = map.back;
+  const s = back[6] * u + back[7] * v + back[8];
+  out[0] = (back[0] * u + back[1] * v + back[2]) / s;
+  out[1] = (back[3] * u + back[4] * v + back[5]) / s;
+  return s;
+}
+
+/**
+ * The light years one CSS pixel covers on the plane at a screen point, in the
+ * direction that covers most.
+ *
+ * It is the largest singular value of the Jacobian of the plane map at that point, so
+ * it is exact rather than a difference of two samples. `x` and `z` are the plane point
+ * the caller has already read there.
+ */
+function lightYearsPerPixel(
+  map: PlaneMap,
+  u: number,
+  v: number,
+  x: number,
+  z: number,
+): number {
+  const back = map.back;
+  const s = back[6] * u + back[7] * v + back[8];
+  const a = (back[0] - x * back[6]) / s;
+  const b = (back[1] - x * back[7]) / s;
+  const c = (back[3] - z * back[6]) / s;
+  const d = (back[4] - z * back[7]) / s;
+  const square = a * a + b * b + c * c + d * d;
+  const determinant = a * d - b * c;
+  const inside = Math.max(0, square * square - 4 * determinant * determinant);
+  return Math.sqrt((square + Math.sqrt(inside)) / 2);
+}
+
+/** True when a segment on the screen meets the viewport rectangle. */
+function segmentMeetsViewport(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
   viewport: Viewport,
-  grid: CoarseRegionGrid,
-  buffers: SampleBuffers | null = null,
-): FrameSamples {
-  const started = performance.now();
-  const columns = sampleColumns(viewport);
-  const rows = sampleRows(viewport);
-  const stepX = viewport.width / columns;
-  const stepY = viewport.height / rows;
-  const points = columns * rows;
-
-  const pool = fitSampleBuffers(buffers, points);
-  const x = pool.x;
-  const y = pool.y;
-  const planeX = pool.planeX;
-  const planeZ = pool.planeZ;
-  const ids = pool.ids;
-  const inverse = inverseViewProjection(view, viewport);
-  const origin = cameraPosition(view);
-  const pixel = { x: 0, y: 0 };
-
-  const regionAtPlane = (readX: number, readZ: number): number =>
-    coarseRegionIdAt(grid, readX, readZ);
-
-  const toScreen = (readX: number, readZ: number): AnchorPoint | null => {
-    const screen = project(view, [readX, 0, readZ], viewport);
-    if (!screen.inFront) return null;
-    return { x: screen.x, y: screen.y };
+): boolean {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  let low = 0;
+  let high = 1;
+  // Liang and Barsky: each edge of the rectangle cuts the parameter range, and the
+  // segment meets the rectangle when a range is left.
+  const cut = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0;
+    const at = q / p;
+    if (p < 0) {
+      if (at > high) return false;
+      if (at > low) low = at;
+    } else {
+      if (at < low) return false;
+      if (at < high) high = at;
+    }
+    return true;
   };
-
-  let count = 0;
-  for (let row = 0; row < rows; row += 1) {
-    pixel.y = (row + 0.5) * stepY;
-    for (let column = 0; column < columns; column += 1) {
-      pixel.x = (column + 0.5) * stepX;
-      const point = planePointFrom(inverse, origin, pixel, viewport, 0);
-      if (point === null) continue;
-      if (!insideCoarseRegionGrid(grid, point[0], point[2])) continue;
-      x[count] = pixel.x;
-      y[count] = pixel.y;
-      planeX[count] = point[0];
-      planeZ[count] = point[2];
-      ids[count] = coarseRegionIdAt(grid, point[0], point[2]);
-      count += 1;
-    }
-  }
-
-  return {
-    count,
-    points,
-    x: x.subarray(0, count),
-    y: y.subarray(0, count),
-    planeX: planeX.subarray(0, count),
-    planeZ: planeZ.subarray(0, count),
-    ids: ids.subarray(0, count),
-    elapsedMs: performance.now() - started,
-    regionAtPlane,
-    toScreen,
-  };
-}
-
-/** The ids that carried a label in the frame before. An empty set is the first frame. */
-export type PreviousLabels = ReadonlySet<number>;
-
-/** The plane anchor each region carried in the frame before, by region id. */
-export type HeldAnchors = ReadonlyMap<number, PlanePoint>;
-
-/**
- * What the placement remembers of the frame before. The overlay owns it and hands it
- * in, so the placement itself stays a function of what it is given.
- */
-export interface LabelMemory {
-  /** The regions that carried a label. */
-  readonly previous: PreviousLabels;
-  /** The plane point each of those anchored on. */
-  readonly anchors: HeldAnchors;
-}
-
-/** No label in the frame before, which is what a first frame reads. */
-export const NO_LABEL_MEMORY: LabelMemory = {
-  previous: new Set<number>(),
-  anchors: new Map<number, PlanePoint>(),
-};
-
-/**
- * The candidates of a frame, in the order they take a place. A region is a candidate
- * when it holds at least 1 percent of the landed samples, so a region with nothing on
- * screen is never one. A region that carried a label in the frame before stays a
- * candidate until its share falls below half of that, so a region sitting on the
- * threshold does not blink.
- *
- * The anchor is worked out on the galactic plane and then projected. It is the mean of
- * the plane positions of the region's samples, and where the region under that mean is
- * another region it is the plane position of the sample the region itself holds nearest
- * the mean: a region can show as two separated patches, and the mean of those falls
- * between them.
- *
- * The plane is what makes the anchor move. The sample grid is fixed in screen space, so
- * anything averaged or chosen in screen space changes only when a sample crosses a
- * region edge: it holds still and then steps. A plane position moves with the camera, so
- * its projection slides.
- *
- * An anchor held from the frame before keeps its plane point while that point still
- * resolves to the region and still projects inside the frame, so the anchor does not hop
- * between two samples that are almost equally near the mean. Its projection still moves.
- *
- * The candidate holding the sample nearest the centre of the frame comes first, so the
- * region the view is centred on is always named. A count order alone does not name the
- * centre: at a view of the galactic centre the `Galactic Centre` holds fewer samples
- * than a dozen regions around it. The rest follow by sample count, most first, after the
- * count of a region that carried a label in the frame before is multiplied by
- * `CARRIED_BONUS`. The bonus is a margin against a swap on a near tie, not a priority: a
- * region that now fills the frame still overtakes one that is leaving it. The order
- * decides which label the overlap rule drops, so an order that changes between frames
- * makes the label set flicker.
- */
-export function labelCandidates(
-  samples: FrameSamples,
-  viewport: Viewport,
-  regions: readonly Region[] = REGIONS,
-  memory: LabelMemory = NO_LABEL_MEMORY,
-): LabelCandidate[] {
-  if (samples.count === 0) return [];
-  const byId = new Map(regions.map((region) => [region.id, region]));
-  const previous = memory.previous;
-
-  const counts = new Int32Array(ID_RANGE);
-  const sumPlaneX = new Float64Array(ID_RANGE);
-  const sumPlaneZ = new Float64Array(ID_RANGE);
-  for (let index = 0; index < samples.count; index += 1) {
-    const id = samples.ids[index] as number;
-    counts[id] += 1;
-    sumPlaneX[id] += samples.planeX[index] as number;
-    sumPlaneZ[id] += samples.planeZ[index] as number;
-  }
-
-  const least = CANDIDATE_SHARE * samples.count;
-  const kept = HELD_SHARE * samples.count;
-  const wanted = new Uint8Array(ID_RANGE);
-  for (let id = 1; id < ID_RANGE; id += 1) {
-    if ((counts[id] as number) <= 0) continue;
-    if (!byId.has(id)) continue;
-    const enough = previous.has(id) ? kept : least;
-    if ((counts[id] as number) < enough) continue;
-    wanted[id] = 1;
-  }
-
-  // One pass finds, for every candidate, the sample of its own region whose plane
-  // position is nearest the mean of them, and the sample nearest the centre of the
-  // frame. The first is measured on the plane and the second on the screen, because the
-  // centre of the frame is a screen position.
-  const centreX = viewport.width / 2;
-  const centreY = viewport.height / 2;
-  const bestToMean = new Float64Array(ID_RANGE).fill(Infinity);
-  const anchorIndex = new Int32Array(ID_RANGE).fill(-1);
-  let nearestCentreId = NO_REGION_ID;
-  let nearestCentreRange = Infinity;
-  for (let index = 0; index < samples.count; index += 1) {
-    const id = samples.ids[index] as number;
-    if (wanted[id] !== 1) continue;
-
-    const meanX = (sumPlaneX[id] as number) / (counts[id] as number);
-    const meanZ = (sumPlaneZ[id] as number) / (counts[id] as number);
-    const toMean =
-      ((samples.planeX[index] as number) - meanX) ** 2 +
-      ((samples.planeZ[index] as number) - meanZ) ** 2;
-    if (toMean < (bestToMean[id] as number)) {
-      bestToMean[id] = toMean;
-      anchorIndex[id] = index;
-    }
-
-    const toCentre =
-      ((samples.x[index] as number) - centreX) ** 2 +
-      ((samples.y[index] as number) - centreY) ** 2;
-    if (toCentre < nearestCentreRange) {
-      nearestCentreRange = toCentre;
-      nearestCentreId = id;
-    }
-  }
-
-  /** True when a projected point lies inside the viewport. */
-  const insideFrame = (point: AnchorPoint): boolean =>
-    point.x >= 0 &&
-    point.y >= 0 &&
-    point.x <= viewport.width &&
-    point.y <= viewport.height;
-
-  const candidates: LabelCandidate[] = [];
-  for (let id = 1; id < ID_RANGE; id += 1) {
-    const index = anchorIndex[id] as number;
-    if (index < 0) continue;
-    const region = byId.get(id);
-    if (region === undefined) continue;
-
-    const meanX = (sumPlaneX[id] as number) / (counts[id] as number);
-    const meanZ = (sumPlaneZ[id] as number) / (counts[id] as number);
-    const onRegion = samples.regionAtPlane(meanX, meanZ) === id;
-    let plane: PlanePoint = onRegion
-      ? { x: meanX, z: meanZ }
-      : {
-          x: samples.planeX[index] as number,
-          z: samples.planeZ[index] as number,
-        };
-
-    // The anchor of the frame before is kept while its plane point still resolves to
-    // this region and still projects inside the frame.
-    const carried = memory.anchors.get(id);
-    if (carried !== undefined && samples.regionAtPlane(carried.x, carried.z) === id) {
-      const projected = samples.toScreen(carried.x, carried.z);
-      if (projected !== null && insideFrame(projected)) plane = carried;
-    }
-
-    const screen = samples.toScreen(plane.x, plane.z);
-    if (screen === null) continue;
-    candidates.push({
-      id,
-      name: region.name,
-      count: counts[id] as number,
-      plane,
-      anchor: {
-        x: clamp(screen.x, LABEL_INSET, viewport.width - LABEL_INSET),
-        y: clamp(screen.y, LABEL_INSET, viewport.height - LABEL_INSET),
-      },
-    });
-  }
-
-  const weightOf = (candidate: LabelCandidate): number =>
-    previous.has(candidate.id) ? candidate.count * CARRIED_BONUS : candidate.count;
-  // The id settles a tie, so the order is total and two frames that hold the same
-  // counts give the same order.
-  candidates.sort((first, second) => {
-    const byWeight = weightOf(second) - weightOf(first);
-    if (byWeight !== 0) return byWeight;
-    return first.id - second.id;
-  });
-  const first = candidates.findIndex((candidate) => candidate.id === nearestCentreId);
-  if (first > 0) candidates.unshift(...candidates.splice(first, 1));
-  return candidates;
-}
-
-/** The box of a label centred on its anchor, moved to lie inside the viewport. */
-function labelBox(anchor: AnchorPoint, size: LabelSize, viewport: Viewport): LabelBox {
-  return {
-    left: clamp(anchor.x - size.width / 2, 0, viewport.width - size.width),
-    top: clamp(anchor.y - size.height / 2, 0, viewport.height - size.height),
-    width: size.width,
-    height: size.height,
-  };
-}
-
-/** True when two boxes share an area. */
-export function boxesOverlap(first: LabelBox, second: LabelBox): boolean {
   return (
-    first.left < second.left + second.width &&
-    second.left < first.left + first.width &&
-    first.top < second.top + second.height &&
-    second.top < first.top + first.height
+    cut(-dx, x0) &&
+    cut(dx, viewport.width - x0) &&
+    cut(-dy, y0) &&
+    cut(dy, viewport.height - y0)
+  );
+}
+
+/** True when a box centred on a screen point lies wholly inside the viewport. */
+function boxInsideViewport(
+  u: number,
+  v: number,
+  size: LabelSize,
+  viewport: Viewport,
+): boolean {
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  return (
+    u - halfWidth >= 0 &&
+    v - halfHeight >= 0 &&
+    u + halfWidth <= viewport.width &&
+    v + halfHeight <= viewport.height
   );
 }
 
 /**
- * The labels the page shows for the samples of one frame. A label that would overlap a
- * placed one is dropped, and at most 12 are placed. The caller gives what the frame
- * before held, so the placement itself holds no state.
+ * What the placement reads and the frame does not change: the coarse region grid, the
+ * label geometry and the boundary set, with the chains of each region taken once.
  */
-export function chooseLabels(
-  samples: FrameSamples,
-  viewport: Viewport,
-  measure: (name: string) => LabelSize,
-  regions: readonly Region[] = REGIONS,
-  memory: LabelMemory = NO_LABEL_MEMORY,
-): PlacedLabel[] {
-  const placed: PlacedLabel[] = [];
-  for (const candidate of labelCandidates(samples, viewport, regions, memory)) {
-    if (placed.length >= MAX_LABELS) break;
-    const box = labelBox(candidate.anchor, measure(candidate.name), viewport);
-    if (placed.some((other) => boxesOverlap(box, other))) continue;
-    placed.push({
-      id: candidate.id,
-      name: candidate.name,
-      plane: candidate.plane,
-      ...box,
-    });
-  }
-  return placed;
+export interface LabelSource {
+  readonly grid: CoarseRegionGrid;
+  readonly geometry: RegionLabelGeometry;
+  readonly lines: RegionLines;
+  /** The chains that separate each region, indexed by region id. */
+  readonly chains: readonly Uint32Array[];
 }
 
-/** What the sweep and the placement have cost since the last reset. */
-export interface SamplingStats {
-  /** How many frames the label work ran. */
+/**
+ * Takes the chains of each region from the pair the boundary set carries, so candidacy
+ * walks a region's own boundary and not the whole set.
+ */
+export function labelSource(
+  grid: CoarseRegionGrid,
+  geometry: RegionLabelGeometry,
+  lines: RegionLines,
+): LabelSource {
+  const counts = new Int32Array(ID_RANGE);
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    counts[lines.pairs[chain * 2]] += 1;
+    counts[lines.pairs[chain * 2 + 1]] += 1;
+  }
+  const chains: Uint32Array[] = [];
+  for (let id = 0; id < ID_RANGE; id += 1) chains.push(new Uint32Array(counts[id]));
+  const written = new Int32Array(ID_RANGE);
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    for (let side = 0; side < 2; side += 1) {
+      const id = lines.pairs[chain * 2 + side];
+      const list = chains[id] as Uint32Array;
+      list[written[id]] = chain;
+      written[id] += 1;
+    }
+  }
+  return { grid, geometry, lines, chains };
+}
+
+/**
+ * The typed arrays one frame fills. The overlay holds one set and fits it outside the
+ * window it times, so a resize cannot allocate inside a measurement.
+ */
+export interface PlacementBuffers {
+  /** The screen `u` of every vertex of the boundary set, in CSS pixels. */
+  readonly screenU: Float64Array;
+  /** The screen `v` of every vertex of the boundary set, in CSS pixels. */
+  readonly screenV: Float64Array;
+  /** The `t` of every vertex, which is positive in front of the camera. */
+  readonly screenT: Float64Array;
+  /** 1 for a region any part of which projects inside the viewport. */
+  readonly candidate: Uint8Array;
+  /** Why each region carries no label, by region id. */
+  readonly reasons: Uint8Array;
+}
+
+/**
+ * The buffers a caller already holds when they are large enough, or a new set when
+ * they are not. The size follows the vertex count, so one boundary set takes one
+ * allocation and no frame after it does.
+ */
+export function fitPlacementBuffers(
+  buffers: PlacementBuffers | null,
+  vertexCount: number,
+): PlacementBuffers {
+  if (buffers !== null && buffers.screenU.length >= vertexCount) return buffers;
+  return {
+    screenU: new Float64Array(vertexCount),
+    screenV: new Float64Array(vertexCount),
+    screenT: new Float64Array(vertexCount),
+    candidate: new Uint8Array(ID_RANGE),
+    reasons: new Uint8Array(ID_RANGE),
+  };
+}
+
+/** What one frame of placement cost. */
+export interface PlacementWork {
+  /** How many plane points the frame projected. */
+  readonly projections: number;
+  /** How many vertices of the boundary set the frame projected. */
+  readonly vertexProjections: number;
+  /** How many box corners the frame unprojected. */
+  readonly unprojections: number;
+  /** The most steps any one search of the frame took. */
+  readonly steps: number;
+}
+
+/** The work of a frame that places nothing. */
+const NO_WORK: PlacementWork = {
+  projections: 0,
+  vertexProjections: 0,
+  unprojections: 0,
+  steps: 0,
+};
+
+/** The labels of one frame, with why each other region carries none. */
+export interface Placement extends PlacementWork {
+  readonly labels: PlacedLabel[];
+  /** Why each region carries no label, by region id. A view on the buffers. */
+  readonly reasons: Uint8Array;
+}
+
+/** The scratch of one frame. One set is reused, so a frame allocates nothing here. */
+const framePoint = new Float64Array(2);
+const frameCorner = new Float64Array(2);
+const frameAnchor = new Float64Array(2);
+
+/**
+ * Marks every region any part of which projects inside the viewport.
+ *
+ * The test covers the region's own boundary segments, its centre, and the regions that
+ * hold the plane points under the middle and the four corners of the frame. The last
+ * of those is not decoration: a camera looking almost straight down inside a large
+ * region sees about 577 light years with no boundary and no centre in the frame.
+ *
+ * The vertices are projected **once for the frame** into the buffers and every region
+ * indexes into them. Each of the 439 segments belongs to two regions, so a region that
+ * projected its own segments would make about 1,756 endpoint projections instead of
+ * 562.
+ *
+ * A segment with an end behind the camera is clipped against the camera plane before
+ * it is tested. The projection returns a mirrored position for such a point, so an
+ * unclipped segment gives a mirrored line and the test comes out wrong.
+ *
+ * A frame corner whose ray runs away from the plane contributes nothing. The top edge
+ * of the frame looks 30 degrees above the view axis, which is half the vertical field
+ * of view, so the whole top edge misses the plane at any pitch below 30.
+ */
+export function markCandidates(
+  map: PlaneMap,
+  viewport: Viewport,
+  source: LabelSource,
+  buffers: PlacementBuffers,
+  regions: readonly Region[],
+  work: { projections: number; vertexProjections: number },
+): Uint8Array {
+  const candidate = buffers.candidate;
+  candidate.fill(0);
+  if (!map.usable) return candidate;
+
+  const lines = source.lines;
+  const positions = lines.positions;
+  const screenU = buffers.screenU;
+  const screenV = buffers.screenV;
+  const screenT = buffers.screenT;
+  for (let vertex = 0; vertex < lines.vertexCount; vertex += 1) {
+    const t = toScreen(
+      map,
+      positions[vertex * 3],
+      positions[vertex * 3 + 2],
+      framePoint,
+    );
+    screenU[vertex] = framePoint[0];
+    screenV[vertex] = framePoint[1];
+    screenT[vertex] = t;
+  }
+  work.vertexProjections += lines.vertexCount;
+  work.projections += lines.vertexCount;
+
+  // The middle and the four corners of the frame. A region can fill the frame with no
+  // boundary and no centre in view, and only these points find it.
+  const framePoints: readonly [number, number][] = [
+    [viewport.width / 2, viewport.height / 2],
+    [0, 0],
+    [viewport.width, 0],
+    [0, viewport.height],
+    [viewport.width, viewport.height],
+  ];
+  for (const point of framePoints) {
+    if (toPlane(map, point[0], point[1], framePoint) <= 0) continue;
+    candidate[coarseRegionIdAt(source.grid, framePoint[0], framePoint[1])] = 1;
+  }
+
+  for (const region of regions) {
+    const centreX = source.geometry.centres[(region.id - 1) * 2];
+    const centreZ = source.geometry.centres[(region.id - 1) * 2 + 1];
+    if (!Number.isFinite(centreX)) continue;
+    work.projections += 1;
+    if (toScreen(map, centreX, centreZ, framePoint) <= 0) continue;
+    if (
+      framePoint[0] >= 0 &&
+      framePoint[1] >= 0 &&
+      framePoint[0] <= viewport.width &&
+      framePoint[1] <= viewport.height
+    ) {
+      candidate[region.id] = 1;
+    }
+  }
+
+  for (const region of regions) {
+    if (candidate[region.id] === 1) continue;
+    const chains = source.chains[region.id];
+    if (chains === undefined) continue;
+    for (const chain of chains) {
+      const first = lines.first[chain];
+      const last = lines.last[chain];
+      for (let vertex = first; vertex < last; vertex += 1) {
+        const t0 = screenT[vertex];
+        const t1 = screenT[vertex + 1];
+        if (t0 <= 0 && t1 <= 0) continue;
+        let u0 = screenU[vertex];
+        let v0 = screenV[vertex];
+        let u1 = screenU[vertex + 1];
+        let v1 = screenV[vertex + 1];
+        if (t0 <= 0 || t1 <= 0) {
+          // The end behind the camera moves to the camera plane, where the map keeps
+          // the direction of the line and takes the point out to the far distance.
+          const inside = t0 > 0 ? vertex : vertex + 1;
+          const outside = t0 > 0 ? vertex + 1 : vertex;
+          const drop = screenT[inside] - screenT[outside];
+          // The crossing itself has no screen position, so the clipped end stops just
+          // short of it, where the map takes the line out to the far distance.
+          const at = drop === 0 ? 0 : (screenT[inside] / drop) * (1 - 1e-6);
+          const x =
+            positions[inside * 3] +
+            (positions[outside * 3] - positions[inside * 3]) * at;
+          const z =
+            positions[inside * 3 + 2] +
+            (positions[outside * 3 + 2] - positions[inside * 3 + 2]) * at;
+          work.projections += 1;
+          toScreen(map, x, z, framePoint);
+          if (t0 > 0) {
+            u1 = framePoint[0];
+            v1 = framePoint[1];
+          } else {
+            u0 = framePoint[0];
+            v0 = framePoint[1];
+          }
+        }
+        if (!segmentMeetsViewport(u0, v0, u1, v1, viewport)) continue;
+        candidate[region.id] = 1;
+        break;
+      }
+      if (candidate[region.id] === 1) break;
+    }
+  }
+  return candidate;
+}
+
+/**
+ * The clearance at a plane point, as the placement reads it.
+ *
+ * It is the larger of two lower bounds: the interpolated read of the downsampled
+ * field, and the region's recorded clearance less the distance from the region's
+ * centre. The field is a distance, so it is 1-Lipschitz and the second term is sound;
+ * it is also exact at the centre, which is where most labels sit. The page holds the
+ * field downsampled by 8 and each cell of it carries the smallest exact value in its
+ * block, so a read at a centre — a local maximum of the field — comes back a median of
+ * 368 light years low.
+ *
+ * The read is bilinear rather than nearest cell, so the drawn size of a label does not
+ * step as the anchor crosses a cell edge.
+ */
+export function labelClearanceAt(
+  geometry: RegionLabelGeometry,
+  id: number,
+  x: number,
+  z: number,
+): number {
+  const read = clearanceAt(geometry.field, x, z);
+  const centreX = geometry.centres[(id - 1) * 2];
+  const centreZ = geometry.centres[(id - 1) * 2 + 1];
+  const away = Math.hypot(x - centreX, z - centreZ);
+  const fromCentre = geometry.clearances[id - 1] - away;
+  const both = Math.max(read ?? Number.NEGATIVE_INFINITY, fromCentre);
+  return Number.isFinite(both) ? Math.max(0, both) : 0;
+}
+
+/**
+ * The clearance a label box needs at its anchor, in light years, or null when a corner
+ * of the box reaches past the horizon.
+ *
+ * The four corners of the box, at the scale under test and centred on the projection
+ * of the anchor, are unprojected to the plane. The requirement is the largest distance
+ * from the anchor to those four plane points, plus the boundary departure bound, plus
+ * half the drawn line width converted at the largest light years per pixel over the
+ * same corners, plus two cells of the trace grid.
+ *
+ * The footprint is not the pixel diagonal of the box. Under obliquity the along-plane
+ * scale is about 1.9 times the across-plane scale at a pitch of 35, and a box is about
+ * 7 times wider than it is tall, so a pixel form asks about twice the true footprint.
+ */
+export function requiredClearance(
+  map: PlaneMap,
+  geometry: RegionLabelGeometry,
+  anchorU: number,
+  anchorV: number,
+  anchorX: number,
+  anchorZ: number,
+  size: LabelSize,
+  work: { unprojections: number },
+): number | null {
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  let footprint = 0;
+  let perPixel = 0;
+  for (let corner = 0; corner < 4; corner += 1) {
+    const u = anchorU + (corner % 2 === 0 ? -halfWidth : halfWidth);
+    const v = anchorV + (corner < 2 ? -halfHeight : halfHeight);
+    work.unprojections += 1;
+    if (toPlane(map, u, v, frameCorner) <= 0) return null;
+    const away = Math.hypot(frameCorner[0] - anchorX, frameCorner[1] - anchorZ);
+    if (away > footprint) footprint = away;
+    const scale = lightYearsPerPixel(map, u, v, frameCorner[0], frameCorner[1]);
+    if (scale > perPixel) perPixel = scale;
+  }
+  // The clearance is a distance to the traced boundary while the rule is about the
+  // drawn line, which may sit up to the departure bound inside the region and is four
+  // CSS pixels wide. The two trace cells cover the overshoot of a read between block
+  // minima of the downsampled field.
+  const traceCell = geometry.field.cell / CLEARANCE_DOWNSAMPLE;
+  return (
+    footprint +
+    geometry.departureLy +
+    (REGION_LINE_WIDTH_CSS / 2) * perPixel +
+    2 * traceCell
+  );
+}
+
+/**
+ * The labels of one frame.
+ *
+ * The anchor is a function of the camera alone. It is the point of the plane segment
+ * from the region's centre to the plane point under the middle of the frame nearest
+ * the centre whose floor-scale box lies inside the viewport, it must read back as its
+ * own region on the coarse grid, and the clearance there must hold the box at some
+ * scale down to the floor. There is no cap on the count and no order between labels:
+ * regions do not overlap on the plane and the plane projects one to one, so two boxes
+ * that each lie inside their own region cannot overlap each other.
+ */
+export function placeLabels(
+  view: View,
+  viewport: Viewport,
+  source: LabelSource,
+  measure: MeasureLabel,
+  regions: readonly Region[] = REGIONS,
+  buffers: PlacementBuffers | null = null,
+): Placement {
+  const pool = fitPlacementBuffers(buffers, source.lines.vertexCount);
+  const work = {
+    projections: 0,
+    vertexProjections: 0,
+    unprojections: 0,
+    steps: 0,
+  };
+  const reasons = pool.reasons;
+  reasons.fill(LABEL_DRAWN);
+  const labels: PlacedLabel[] = [];
+  const done = (): Placement => ({ labels, reasons, ...work });
+
+  // Step 1. The wanted point exists whenever the camera sits above the plane. The
+  // cursor carries a height of its own and the controls move it, so this is not
+  // always true; when it is not, no label is drawn at all.
+  const radians = (view.pitch * Math.PI) / 180;
+  const above = view.cursor[1] + view.distance * Math.sin(radians) > 0;
+  const map = planeMap(view, viewport);
+  if (!above || !map.usable) {
+    for (const region of regions) reasons[region.id] = LABEL_BELOW_PLANE;
+    return done();
+  }
+  if (toPlane(map, viewport.width / 2, viewport.height / 2, framePoint) <= 0) {
+    for (const region of regions) reasons[region.id] = LABEL_BELOW_PLANE;
+    return done();
+  }
+  const wantedX = framePoint[0];
+  const wantedZ = framePoint[1];
+
+  const candidate = markCandidates(map, viewport, source, pool, regions, work);
+  const geometry = source.geometry;
+
+  for (const region of regions) {
+    if (candidate[region.id] !== 1) {
+      reasons[region.id] = LABEL_OFF_SCREEN;
+      continue;
+    }
+    const centreX = geometry.centres[(region.id - 1) * 2];
+    const centreZ = geometry.centres[(region.id - 1) * 2 + 1];
+    if (!Number.isFinite(centreX)) {
+      reasons[region.id] = LABEL_OFF_SCREEN;
+      continue;
+    }
+    const floorSize = measure(region.name, LABEL_FLOOR_SCALE);
+
+    // Step 2. The slide. `fits` is "the projected point lies inside a fixed inset
+    // rectangle", which is convex, and the part of the segment in front of the camera
+    // is a suffix over which the projection traces a straight screen path in one
+    // direction. So the feasible set is one interval ending at the wanted point, and
+    // the anchor is its near end.
+    const fits = (at: number): boolean => {
+      const x = centreX + (wantedX - centreX) * at;
+      const z = centreZ + (wantedZ - centreZ) * at;
+      work.projections += 1;
+      if (toScreen(map, x, z, framePoint) <= 0) return false;
+      return boxInsideViewport(framePoint[0], framePoint[1], floorSize, viewport);
+    };
+    let at = 0;
+    if (!fits(0)) {
+      if (!fits(1)) {
+        reasons[region.id] = LABEL_NO_ANCHOR;
+        continue;
+      }
+      let low = 0;
+      let high = 1;
+      let steps = 0;
+      for (;;) {
+        // The search runs until the interval is shorter than one CSS pixel on screen,
+        // not for a fixed count. A low end behind the camera has no screen position,
+        // and the search moves it in front within a step or two, because a point near
+        // the camera plane projects far outside the viewport and cannot be feasible.
+        const lowX = centreX + (wantedX - centreX) * low;
+        const lowZ = centreZ + (wantedZ - centreZ) * low;
+        work.projections += 1;
+        const lowT = toScreen(map, lowX, lowZ, framePoint);
+        if (lowT > 0) {
+          const lowU = framePoint[0];
+          const lowV = framePoint[1];
+          const highX = centreX + (wantedX - centreX) * high;
+          const highZ = centreZ + (wantedZ - centreZ) * high;
+          work.projections += 1;
+          toScreen(map, highX, highZ, framePoint);
+          if (
+            Math.hypot(framePoint[0] - lowU, framePoint[1] - lowV) <= SLIDE_SEARCH_PIXEL
+          ) {
+            break;
+          }
+        }
+        const middle = (low + high) / 2;
+        if (middle <= low || middle >= high) break;
+        steps += 1;
+        if (fits(middle)) high = middle;
+        else low = middle;
+      }
+      if (steps > work.steps) work.steps = steps;
+      at = high;
+    }
+    const anchorX = centreX + (wantedX - centreX) * at;
+    const anchorZ = centreZ + (wantedZ - centreZ) * at;
+
+    // Step 3. The anchor must read back as its own region. The clearance field carries
+    // a distance and no identity, so without this a box could sit inside a neighbour.
+    if (coarseRegionIdAt(source.grid, anchorX, anchorZ) !== region.id) {
+      reasons[region.id] = LABEL_OTHER_REGION;
+      continue;
+    }
+
+    work.projections += 1;
+    toScreen(map, anchorX, anchorZ, frameAnchor);
+    const anchorU = frameAnchor[0];
+    const anchorV = frameAnchor[1];
+    const clearance = labelClearanceAt(geometry, region.id, anchorX, anchorZ);
+
+    // Step 4. The size. The box holds the clearance at the anchor and lies inside the
+    // viewport, and both are monotone in the scale, so the search is a bisection.
+    const holds = (scale: number): boolean => {
+      const size = measure(region.name, scale);
+      if (!boxInsideViewport(anchorU, anchorV, size, viewport)) return false;
+      const needed = requiredClearance(
+        map,
+        geometry,
+        anchorU,
+        anchorV,
+        anchorX,
+        anchorZ,
+        size,
+        work,
+      );
+      return needed !== null && clearance >= needed;
+    };
+    let scale = LABEL_FULL_SCALE;
+    if (!holds(LABEL_FULL_SCALE)) {
+      if (!holds(LABEL_FLOOR_SCALE)) {
+        reasons[region.id] = LABEL_NO_ROOM;
+        continue;
+      }
+      let low = LABEL_FLOOR_SCALE;
+      let high = LABEL_FULL_SCALE;
+      const fullWidth = measure(region.name, LABEL_FULL_SCALE).width;
+      let steps = 0;
+      // The search runs until the interval of scales left is narrower than one CSS
+      // pixel of box width, as the slide runs to one CSS pixel of screen distance.
+      while ((high - low) * fullWidth > SCALE_SEARCH_PIXEL) {
+        const middle = (low + high) / 2;
+        if (middle <= low || middle >= high) break;
+        steps += 1;
+        if (holds(middle)) low = middle;
+        else high = middle;
+      }
+      if (steps > work.steps) work.steps = steps;
+      scale = low;
+    }
+
+    const size = measure(region.name, scale);
+    labels.push({
+      id: region.id,
+      name: region.name,
+      scale,
+      plane: { x: anchorX, z: anchorZ },
+      left: anchorU - size.width / 2,
+      top: anchorV - size.height / 2,
+      width: size.width,
+      height: size.height,
+    });
+  }
+  return done();
+}
+
+/**
+ * What the placement has cost: the frames and the times since the last reset, and the
+ * work of the last frame. A frame that places nothing reports no work.
+ */
+export interface PlacementStats extends PlacementWork {
+  /** How many frames the placement ran. */
   readonly frames: number;
-  /** The mean time of the sweep and the placement of one frame, in milliseconds. */
+  /** The mean time of the placement of one frame, in milliseconds. */
   readonly meanMs: number;
   /** The time of the longest single frame of that work, in milliseconds. */
   readonly worstMs: number;
 }
 
+/** One label the page shows, as a test reads it. */
+export interface LabelReading {
+  readonly id: number;
+  readonly name: string;
+  readonly scale: number;
+}
+
 /** The overlay that holds the label elements. */
 export interface LabelOverlay {
-  /** Takes the coarse region grid the sweep reads. Nothing is placed before it. */
-  setGrid(grid: CoarseRegionGrid): void;
+  /**
+   * Takes the coarse region grid, the label geometry and the boundary set the
+   * placement reads. Nothing is placed before all three arrive.
+   */
+  setGrid(
+    grid: CoarseRegionGrid,
+    geometry: RegionLabelGeometry,
+    lines: RegionLines,
+  ): void;
   /** Places the labels of a view, or clears them when the switch is off. */
   update(view: View, viewport: Viewport, on: boolean): void;
-  /** The sample counts of the last frame the sweep ran, by region id. */
-  lastCounts(): {
-    readonly id: number;
-    readonly name: string;
-    readonly count: number;
-  }[];
-  /** How many samples of the last frame landed on the plane. */
-  lastSampleCount(): number;
-  /** The mean sweep time since the last reset, for the budget test. */
-  sampling(): SamplingStats;
-  /** Starts the sweep time mean again. */
-  resetSampling(): void;
+  /** The labels of the last frame, with the scale each one draws at. */
+  placements(): LabelReading[];
+  /** The mean and the worst placement time since the last reset. */
+  placement(): PlacementStats;
+  /** Starts the placement time mean again. */
+  resetPlacement(): void;
 }
 
 /**
- * Builds the label overlay in an element. The builder measures every region name once,
- * with the element's own style, and then keeps one element per region to reuse.
+ * Builds the label overlay in an element. The builder keeps one element per region and
+ * measures each name once, at full size; a scale multiplies that box, which is what
+ * the `scale` transform of the element gives.
  */
 export function createLabelOverlay(
   host: HTMLElement,
@@ -551,6 +865,9 @@ export function createLabelOverlay(
     element.className = 'region-label';
     element.dataset['regionId'] = String(region.id);
     element.textContent = region.name;
+    // The box is scaled from its top left corner, so the position the placement gives
+    // is the position the browser draws at, at every scale.
+    element.style.transformOrigin = 'top left';
     elements.set(region.id, element);
   }
 
@@ -578,35 +895,54 @@ export function createLabelOverlay(
     return size;
   };
   const byName = new Map(regions.map((region) => [region.name, region.id]));
-  const measure = (name: string): LabelSize => measureById(byName.get(name) ?? 0, name);
+  const measure: MeasureLabel = (name: string, scale: number): LabelSize => {
+    const full = measureById(byName.get(name) ?? 0, name);
+    return { width: full.width * scale, height: full.height * scale };
+  };
 
-  let grid: CoarseRegionGrid | null = null;
+  let source: LabelSource | null = null;
   let shown: PlacedLabel[] = [];
-  // What the frame before held. The overlay owns this state and the placement reads it
-  // as an argument, so the rules of the placement stay testable without a page.
-  let memory: LabelMemory = NO_LABEL_MEMORY;
-  let last: FrameSamples | null = null;
-  let pool: SampleBuffers | null = null;
+  let buffers: PlacementBuffers | null = null;
   let frames = 0;
   let totalMs = 0;
   let worstMs = 0;
+  let work: PlacementWork = NO_WORK;
 
   return {
-    setGrid(next: CoarseRegionGrid): void {
-      grid = next;
+    setGrid(
+      grid: CoarseRegionGrid,
+      geometry: RegionLabelGeometry,
+      lines: RegionLines,
+    ): void {
+      source = labelSource(grid, geometry, lines);
+      buffers = fitPlacementBuffers(buffers, lines.vertexCount);
     },
     update(view: View, viewport: Viewport, on: boolean): void {
       let labels: PlacedLabel[] = [];
-      if (on && grid !== null && labelFade(view.distance) > 0) {
-        // The reading covers the sweep and the placement, which is the whole cost the
-        // labels put on the main thread before the elements move. `elapsedMs` covers
-        // the sweep alone, so the placement would sit in no measured window.
-        pool = fitSampleBuffers(pool, samplePointCount(viewport));
+      // The counters describe the frame the page asks about. A frame that places
+      // nothing reports no work, and does not keep the count of the frame before.
+      work = NO_WORK;
+      if (on && source !== null && labelFade(view.distance) > 0) {
+        // The buffers are fitted outside the window the page times, so a resize or a
+        // new boundary set cannot allocate inside a measurement.
+        buffers = fitPlacementBuffers(buffers, source.lines.vertexCount);
         const started = performance.now();
-        const samples = sampleFrame(view, viewport, grid, pool);
-        last = samples;
-        labels = chooseLabels(samples, viewport, measure, regions, memory);
+        const placement = placeLabels(
+          view,
+          viewport,
+          source,
+          measure,
+          regions,
+          buffers,
+        );
         const elapsed = performance.now() - started;
+        labels = placement.labels;
+        work = {
+          projections: placement.projections,
+          vertexProjections: placement.vertexProjections,
+          unprojections: placement.unprojections,
+          steps: placement.steps,
+        };
         frames += 1;
         totalMs += elapsed;
         if (elapsed > worstMs) worstMs = elapsed;
@@ -622,39 +958,31 @@ export function createLabelOverlay(
         if (element === undefined) continue;
         element.style.left = `${label.left}px`;
         element.style.top = `${label.top}px`;
+        element.style.transform = label.scale === 1 ? '' : `scale(${label.scale})`;
         if (element.parentNode === null) host.append(element);
       }
       shown = labels;
-      memory = {
-        previous: wanted,
-        anchors: new Map(labels.map((label) => [label.id, label.plane])),
+    },
+    placements(): LabelReading[] {
+      return shown.map((label) => ({
+        id: label.id,
+        name: label.name,
+        scale: label.scale,
+      }));
+    },
+    placement(): PlacementStats {
+      return {
+        frames,
+        meanMs: frames === 0 ? 0 : totalMs / frames,
+        worstMs,
+        ...work,
       };
     },
-    lastCounts(): { id: number; name: string; count: number }[] {
-      const samples = last;
-      if (samples === null) return [];
-      const counts = new Int32Array(ID_RANGE);
-      for (let index = 0; index < samples.count; index += 1) {
-        counts[samples.ids[index] as number] += 1;
-      }
-      const rows: { id: number; name: string; count: number }[] = [];
-      for (const region of regions) {
-        const count = counts[region.id] as number;
-        if (count > 0) rows.push({ id: region.id, name: region.name, count });
-      }
-      rows.sort((first, second) => second.count - first.count);
-      return rows;
-    },
-    lastSampleCount(): number {
-      return last === null ? 0 : last.count;
-    },
-    sampling(): SamplingStats {
-      return { frames, meanMs: frames === 0 ? 0 : totalMs / frames, worstMs };
-    },
-    resetSampling(): void {
+    resetPlacement(): void {
       frames = 0;
       totalMs = 0;
       worstMs = 0;
+      work = NO_WORK;
     },
   };
 }

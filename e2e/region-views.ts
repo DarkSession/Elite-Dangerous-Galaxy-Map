@@ -1,9 +1,9 @@
-// The two views the boundary line tests read.
+// The three views the boundary line tests read.
 //
-// Two scenarios of the galactic regions spec need a view chosen from the boundary set
+// Three scenarios of the galactic regions spec need a view chosen from the boundary set
 // and not by hand: one where a chain crosses the frame within 5 degrees of vertical,
-// and one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
-// pixels.
+// one at a vertex where two segments meet at at least 60 degrees, and one where a
+// segment longer than 10,000 light years crosses the whole frame.
 // `tests/region-views.test.ts` builds the boundary set, runs the search in
 // `tests/region-views.ts`, and fails if these constants are not what it gives.
 //
@@ -44,26 +44,48 @@ export interface CrossingChoice {
   readonly lightYearsPerPixel: number;
 }
 
+/** A view where one long segment crosses the whole frame from side to side. */
+export interface LongSegmentChoice {
+  readonly view: ChosenView;
+  readonly viewport: ChosenViewport;
+  /** The chain, and the two vertices of the segment. */
+  readonly chain: number;
+  readonly from: number;
+  readonly to: number;
+  /** The point at the centre of the frame, on the drawn line. */
+  readonly point: [number, number, number];
+  /** The two ends of the segment, both far outside the frame. */
+  readonly ends: [[number, number, number], [number, number, number]];
+  /** How long the segment is, in light years. */
+  readonly segmentLy: number;
+  /** How far the segment leans from the vertical, in degrees. 90 is flat. */
+  readonly angleFromVertical: number;
+  /** How far the nearest other part of the boundary is, in light years. */
+  readonly clearanceLy: number;
+  /** How many light years one CSS pixel covers at the cursor. */
+  readonly lightYearsPerPixel: number;
+}
+
 /** A view centred on a bend of a chain. */
 export interface CornerChoice {
   readonly view: ChosenView;
   readonly viewport: ChosenViewport;
-  /** The chain, and the vertex the bend is measured at. */
+  /** The chain, and the vertex the two segments meet at. */
   readonly chain: number;
   readonly vertex: number;
-  /** How far the line turns over the reach, in degrees. 0 is straight. */
+  /** How far the two segments meet at, in degrees. 0 is straight. */
   readonly turnDegrees: number;
   /** How far the reach reads on each side of the vertex, in CSS pixels. */
   readonly reachPixels: number;
   /** The bend itself, at the centre of the frame. */
   readonly bend: [number, number, number];
   /**
-   * The drawn line inside the reach, as the vertices it runs through, in order. The
-   * browser test reads the pixels on these segments, because the corner bound holds
-   * every vertex to 20 degrees and a bend is therefore a run and not one vertex.
+   * The drawn line inside the join reading, in order: a point back along the segment
+   * that arrives, the bend, and a point forward along the segment that leaves. The
+   * line is straight between its vertices, so three points hold the whole reading.
    */
   readonly bendLine: [number, number, number][];
-  /** A straight part of the same chain, past the bend, for the comparison. */
+  /** A straight part of one of the two segments, past the join reading. */
   readonly straightFrom: [number, number, number];
   readonly straightTo: [number, number, number];
   /** How far the nearest other part of the boundary is, in light years. */
@@ -75,47 +97,65 @@ export interface CornerChoice {
 /** The view the width reading takes. */
 export const VERTICAL_CROSSING: CrossingChoice = {
   view: {
-    cursor: [400.7349548339844, 0, 10118.80712890625],
-    distance: 1875,
-    yaw: 179.9,
+    cursor: [400.7349548339844, 0, 10266.85546875],
+    distance: 2004,
+    yaw: 0,
     pitch: 89,
   },
   viewport: { width: 1280, height: 720 },
   chain: 38,
-  from: 22256,
-  to: 22288,
-  point: [400.7349548339844, 0, 10118.80712890625],
-  angleFromVertical: 0.013647897608527493,
-  clearanceLy: 1505.149929083743,
-  lightYearsPerPixel: 3.007032652029301,
+  from: 169,
+  to: 170,
+  point: [400.7349548339844, 0, 10266.85546875],
+  angleFromVertical: 0,
+  clearanceLy: 1650.3522385983451,
+  lightYearsPerPixel: 3.2139164984889166,
 };
 
 /** The view the join reading takes. */
 export const SHARP_CORNER: CornerChoice = {
   view: {
-    cursor: [-10515.3193359375, 0, 72346.9609375],
+    cursor: [-7643.216796875, 0, 41529.69921875],
     distance: 500,
     yaw: 0,
     pitch: 89,
   },
   viewport: { width: 1280, height: 720 },
-  chain: 122,
-  vertex: 67639,
-  turnDegrees: 37.078664944628265,
+  chain: 97,
+  vertex: 438,
+  turnDegrees: 98.28936687284326,
   reachPixels: 8,
-  bend: [-10515.3193359375, 0, 72346.9609375],
+  bend: [-7643.216796875, 0, 41529.69921875],
   bendLine: [
-    [-10516.7578125, 0, 72337.421875],
-    [-10516.619140625, 0, 72341.28125],
-    [-10516.1396484375, 0, 72344.4609375],
-    [-10515.3193359375, 0, 72346.9609375],
-    [-10514.1591796875, 0, 72348.7890625],
-    [-10512.755859375, 0, 72350.390625],
-    [-10511.1103515625, 0, 72351.765625],
-    [-10509.220703125, 0, 72352.921875],
+    [-7634.6101626750415, 0, 41512.485961704384],
+    [-7643.216796875, 0, 41529.69921875],
+    [-7659.0093790071805, 0, 41518.700822504696],
   ],
-  straightFrom: [-10473.70703125, 0, 72357.578125],
-  straightTo: [-10349.3173828125, 0, 72390.765625],
-  clearanceLy: 6412.076952539205,
+  straightFrom: [-7674.80196113936, 0, 41507.70242625939],
+  straightTo: [-7801.142618196803, 0, 41419.715256296964],
+  clearanceLy: 1655.2277021089476,
+  lightYearsPerPixel: 0.8018753738744802,
+};
+
+/** The view the long segment reading takes. */
+export const LONG_SEGMENT: LongSegmentChoice = {
+  view: {
+    cursor: [29080.98645127834, 0, 56071.116455574745],
+    distance: 500,
+    yaw: 134.6,
+    pitch: 89,
+  },
+  viewport: { width: 1280, height: 720 },
+  chain: 109,
+  from: 484,
+  to: 485,
+  point: [29080.98645127834, 0, 56071.116455574745],
+  ends: [
+    [23841.69921875, 0, 50758.03515625],
+    [34353.12109375, 0, 61417.5078125],
+  ],
+  segmentLy: 14970.449129654393,
+  angleFromVertical: 89.99933059604366,
+  clearanceLy: 7461.83379593574,
   lightYearsPerPixel: 0.8018753738744802,
 };

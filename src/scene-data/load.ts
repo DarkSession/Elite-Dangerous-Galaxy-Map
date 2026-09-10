@@ -70,5 +70,6 @@ export async function loadSceneData(
     detail: cloud.detail,
     regionLines: region.lines,
     regionGrid: region.grid,
+    regionGeometry: region.geometry,
   };
 }

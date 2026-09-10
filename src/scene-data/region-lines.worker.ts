@@ -8,6 +8,10 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 
 scope.addEventListener('message', () => {
   const data = buildRegionData();
-  const response: RegionLinesResponse = { lines: data.lines, grid: data.grid };
+  const response: RegionLinesResponse = {
+    lines: data.lines,
+    grid: data.grid,
+    geometry: data.geometry,
+  };
   scope.postMessage(response, regionResponseTransferables(response));
 });

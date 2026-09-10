@@ -81,6 +81,7 @@ function twoChains(): RegionLines {
     positions,
     first: Uint32Array.from([0, 3]),
     last: Uint32Array.from([2, 4]),
+    pairs: Uint8Array.from([1, 2, 2, 3]),
   };
 }
 

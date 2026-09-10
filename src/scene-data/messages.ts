@@ -4,6 +4,8 @@ import type {
   CoarseRegionGrid,
   DensityVolume,
   PointCloud,
+  RegionClearanceField,
+  RegionLabelGeometry,
   RegionLines,
   SceneData,
   SurfaceDetail,
@@ -28,10 +30,14 @@ export interface PointCloudResponse {
 /** What the volume worker sends back. */
 export type VolumeResponse = DensityVolume;
 
-/** What the region worker sends back: the boundary set and the coarse region grid. */
+/**
+ * What the region worker sends back: the boundary set, the coarse region grid and the
+ * label geometry.
+ */
 export interface RegionLinesResponse {
   readonly lines: RegionLines;
   readonly grid: CoarseRegionGrid;
+  readonly geometry: RegionLabelGeometry;
 }
 
 /** The buffers a point cloud message moves instead of copying. */
@@ -65,6 +71,25 @@ export function regionLinesTransferables(lines: RegionLines): Transferable[] {
     lines.positions.buffer as ArrayBuffer,
     lines.first.buffer as ArrayBuffer,
     lines.last.buffer as ArrayBuffer,
+    lines.pairs.buffer as ArrayBuffer,
+  ];
+}
+
+/** The buffer a clearance field message moves instead of copying. */
+export function regionClearanceFieldTransferables(
+  field: RegionClearanceField,
+): Transferable[] {
+  return [field.values.buffer as ArrayBuffer];
+}
+
+/** The buffers a label geometry message moves instead of copying. */
+export function regionLabelGeometryTransferables(
+  geometry: RegionLabelGeometry,
+): Transferable[] {
+  return [
+    geometry.centres.buffer as ArrayBuffer,
+    geometry.clearances.buffer as ArrayBuffer,
+    ...regionClearanceFieldTransferables(geometry.field),
   ];
 }
 
@@ -80,6 +105,7 @@ export function regionResponseTransferables(
   return [
     ...regionLinesTransferables(response.lines),
     ...coarseRegionGridTransferables(response.grid),
+    ...regionLabelGeometryTransferables(response.geometry),
   ];
 }
 
@@ -92,5 +118,6 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...surfaceDetailTransferables(scene.detail),
     ...regionLinesTransferables(scene.regionLines),
     ...coarseRegionGridTransferables(scene.regionGrid),
+    ...regionLabelGeometryTransferables(scene.regionGeometry),
   ];
 }

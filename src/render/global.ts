@@ -60,25 +60,42 @@ export interface GalaxyMapGlobal {
   /** Compiles one program. Returns null on success, or the error text. */
   compileTestProgram?: (vertex: string, fragment: string) => string | null;
   /**
-   * The regions the last label sweep found, with the samples each one holds, most
-   * first. A test reads it to check that every label names a region on the screen.
+   * The labels the last frame placed, with the scale each one draws at. A test reads
+   * it to check the size a region's label falls to before it leaves the page.
    */
-  regionSampleCounts?: () => { id: number; name: string; count: number }[];
-  /** How many samples of the last sweep landed on the plane inside the model bounds. */
-  regionSampleTotal?: () => number;
+  regionLabelPlacements?: () => { id: number; name: string; scale: number }[];
   /**
-   * The mean and the worst label sweep time in ms, with the frames they cover, since
-   * the reset.
+   * The mean and the worst label placement time in ms, with the frames they cover and
+   * the work of the last frame, since the reset.
    */
-  labelSampling?: () => { frames: number; meanMs: number; worstMs: number };
+  labelPlacement?: () => {
+    frames: number;
+    meanMs: number;
+    worstMs: number;
+    projections: number;
+    vertexProjections: number;
+    unprojections: number;
+    steps: number;
+  };
   /**
    * The name of the region under a CSS pixel, read from the coarse region grid at the
    * plane `y = 0`. A test reads it to work out for itself which regions a frame shows,
    * rather than reading the counts the label code made.
    */
   regionNameAtScreen?: (x: number, y: number) => string | null;
-  /** Starts the label sweep time mean again. */
-  resetLabelSampling?: () => void;
+  /**
+   * The centre of every region and the clearance there, as the worker measured them. A
+   * test reads it to check that a label sits on the centre of its region.
+   */
+  regionCentres?: () => {
+    id: number;
+    name: string;
+    x: number;
+    z: number;
+    clearanceLy: number;
+  }[];
+  /** Starts the label placement time mean again. */
+  resetLabelPlacement?: () => void;
 }
 
 declare global {
