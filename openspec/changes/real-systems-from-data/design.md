@@ -1,0 +1,182 @@
+## Context
+
+See [proposal.md](proposal.md) for the motivation. The facts below shape the approach.
+
+- The page boots itself today. `src/app/main.ts` runs on load, finds the canvas, starts
+  the workers and enters the frame loop. It exposes `window.__galaxyMap` for the browser
+  tests only. There is no way for a host to call into the map.
+- The decoration star field draws 1,856 boxels as instances. The CPU writes one record
+  per boxel; the vertex shader turns `gl_InstanceID` and `gl_VertexID` into a star
+  position through a hash. No star position ever reaches the card. The CPU has the same
+  hash in `starOffsets` and `starPosition` in `src/scene-data/boxel.ts`.
+- `createStarField` rebuilds its table only when the drawn set changes. It compares a
+  key of the base class and the low index of each block.
+- The region boundary overlay already draws after the tone map. It is the pattern a
+  second overlay follows.
+- Every drawn boxel is drawn by exactly one size class, because the classes nest with no
+  gap and no overlap.
+- The galaxy model bounds come from the parameter document alone. The record reader can
+  read them without the 1024x1024 detail grid.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- One entry point a host calls, which returns a handle before the scene data is ready.
+- A record reader that owns the external dump format, so nothing else reads a raw record.
+- Exact drawn positions for every system, at every zoom distance, which phase 4 reuses
+  for picking.
+- Suppression whose cost does not grow with the frame rate.
+- No change to the galaxy's brightness when a host loads data.
+
+**Non-Goals:**
+
+- A published npm package, a bundle format or a version policy. This change makes the
+  entry point; packaging is a separate piece of work.
+- A worker for the record reader. 10,000 records validate in well under one frame.
+- Suppression outside the base size class.
+
+## Decisions
+
+### The entry point returns a handle at once, and a `ready` promise separately
+
+`createGalaxyMap(canvas)` builds the render context, starts the workers and returns the
+handle in the same tick. `addSystems` therefore works before the first frame. The set
+lives outside the render loop, so the loop reads whatever the set holds when it draws.
+
+Alternative: an `async createGalaxyMap` that resolves after the first frame. Rejected: a
+host would then have to wait before it could add a system, and the first frame would draw
+an empty map even when the host had the data ready.
+
+`src/app/create-map.ts` holds the entry point. `src/app/main.ts` becomes the demo page:
+it calls the entry point, puts the handle on `window.galaxyMap` and keeps the
+`window.__galaxyMap` test hooks.
+
+### The record reader owns the dump format
+
+`src/scene-data/real-systems.ts` validates a record and builds the set. It reads `name`
+and `coords`, keeps the seven optional fields the phase 4 HUD needs, and drops the rest.
+A Spansh record carries `bodies` and `stations` arrays; at 10,000 systems those would
+hold megabytes the map never draws, so the reader drops them rather than storing them.
+
+`id64` becomes a decimal string. A Spansh `id64` is a 64-bit integer and `JSON.parse`
+rounds it above 2^53, so a host that parsed a dump with the default reviver has already
+lost digits. The reader accepts a number, a string or a `bigint` and stores the text, so a
+host that cares can pass the exact value and the HUD can show it.
+
+Alternative: store `id64` as a `bigint`. Rejected: it does not survive `structuredClone`
+into a worker as a plain object field without care, and the map only ever shows it.
+
+### Positions stay in `float64` and the pass rebases them every frame
+
+The set holds one `Float64Array` of three game coordinates per system. Each frame the
+pass writes `position - camera` into a `Float32Array` and uploads it with one
+`bufferSubData`. At the bound of 10,000 systems that is 30,000 subtractions and a 120 KB
+write per frame.
+
+Alternative: the chunk scheme the other passes use, where a buffer holds positions
+relative to a chunk origin and never changes. Rejected here: the chunks would have to be
+small enough to hold precision, and a set spread over the galaxy then gives one chunk per
+system in the worst case, which is one draw call per system. The point cloud gets away
+with one chunk because 2,000,000 static samples cannot be rebased per frame; 10,000 can.
+
+The rebase also buys exactness. A `float32` holds a number of 125,000 to better than
+0.008 light years, so every system in the set meets the 0.01 light year bound at every
+camera position, not only the near ones. Phase 4 picks on the CPU from the same
+`Float64Array`.
+
+### A marker is a point sprite of a fixed size, drawn after the tone map
+
+The pass draws `gl.POINTS`, one vertex per system, with `gl_PointSize` set to 7 CSS
+pixels times the device pixel ratio. The fragment shader reads `gl_PointCoord`: the inner
+5/7 of the disc takes the light colour and the ring takes the dark colour. That is the
+two-tone rule the region lines use, for the same reason: the marker has to read over the
+cream core of the galaxy and over dark space.
+
+The pass draws after the tone map and after the region overlay, with alpha blending and
+no depth test. Three things follow. The far view is untouched when the set is empty. No
+scene pass can wash a marker out at the galactic core. The scene light accounting of the
+star field and the point cloud does not change.
+
+Alternative: an additive scene pass beside the star field, with the zone colour ramp.
+Rejected by the look decision: a real system must read as different from an invented star,
+and a scene pass at the core is tone-mapped into the wash.
+
+Fixed size rather than a perspective size with a floor: a marker is an annotation, not a
+body, so its size carries no distance information. One number is also one thing to test.
+
+### Suppression runs on the CPU and reaches the shader as a bit mask
+
+The sweep is CPU work, because the CPU already has the star hash and the star pass has no
+room to test a list per vertex.
+
+**The index.** `src/scene-data/star-suppression.ts` builds, for one size class, a map
+from boxel index to the systems inside that boxel grown by 3 light years. A system enters
+up to 8 entries, one per boxel whose grown box holds it. Building costs 10,000 inserts per
+class and happens once per class per version of the system set.
+
+**The sweep.** For each boxel of the base class block, the sweep looks the index up. The
+lookup misses for almost every boxel, and a miss costs nothing more. On a hit the sweep
+generates the boxel's `drawn` star positions with `starOffsets` and tests each against the
+systems of the entry. The result is 8 words of 32 bits, one bit per star index.
+
+**The cache.** The result of a boxel depends on its address, its class and the version of
+the system set, never on the camera. A `Map` keyed by class and index holds it, and the
+map is cleared when the version changes or when it passes 8,192 entries. A camera that
+moves by one base boxel then sweeps at most the 64 boxels per axis that entered the set.
+The worst case is the first sweep after a change of zoom band, which rebuilds all 512.
+
+**The upload.** The mask is an `R32UI` texture, 8 texels wide and one row per record of
+the boxel table. `stars.vert` reads
+`texelFetch(uMask, ivec2(gl_VertexID >> 5, gl_InstanceID), 0)` and drops the star when its
+bit is set. Rows outside the base class are zero. The texture is 1,856 by 8 words, which
+is 59 KB, and it is uploaded with the boxel table, so it follows the same cache.
+
+A `uSuppress` uniform is 0 when the sweep found nothing anywhere. The shader then makes
+no fetch at all, so a page with no system draws the frame it drew before this change,
+byte for byte.
+
+Alternative: pass the mask as 8 more instance attributes. Rejected: GLSL ES 3.00 cannot
+index attributes dynamically, so the shader would need a chain of eight comparisons, and
+the record would grow from 36 to 68 bytes for data that is almost always zero.
+
+Alternative: test the star against the systems in the fragment or vertex shader directly.
+Rejected: it needs the system list on the card in a form the shader can search, per
+vertex, 475,136 times a frame.
+
+### Light is conserved by dividing over the stars that remain
+
+`lightPerStar` becomes `boxelLight / (drawn - suppressed)`. The boxel then carries the
+same light whether or not a host loaded data, so the handover with the point cloud is
+untouched and the galaxy does not dim.
+
+The star radius keeps using `drawn`, the count before suppression. The radius sets only
+how concentrated a star's light is. Holding it fixed means the field's grain does not
+shift when a host loads data near the camera.
+
+## Risks / Trade-offs
+
+- **A zoom-band change sweeps 512 boxels at once.** → The per-class index makes a miss
+  free, and the per-boxel cache survives a return to the band. The spec bounds the first
+  sweep at 12 ms and a one-boxel move at 2 ms, and a unit test measures both.
+- **10,000 markers of 7 pixels read as a dot cloud in the far view.** → That is the
+  decision: a marker must be findable at every zoom. The host controls how many records
+  it loads, and the `systems` switch removes the pass.
+- **The per-frame rebase runs even when the camera has not moved.** → It is 30,000
+  subtractions and a 120 KB write. The frame budget test covers it, because
+  `measureFrames` redraws the same view and the rebase is not cached.
+- **A boxel can lose every star.** → It needs a real system within 3 light years of each
+  of them, which the drawn spacing allows only where the boxel draws one or two stars. The
+  light lost is then under one point cloud sample's.
+- **Dump data carries licence terms.** → The map ships no data, so the host owns the
+  terms of whatever it loads. Nothing is added to `THIRD_PARTY_NOTICES` review.
+- **The entry point is a new public surface.** → It is small on purpose: five members.
+  Phase 4 adds selection to the same handle.
+
+## Open Questions
+
+- Whether a host should be able to give a system its own colour or label. Deferred: it
+  adds a per-system attribute and no requirement here depends on it.
+- Whether phase 4 picks on the CPU from the `Float64Array` or with a GPU id buffer. The
+  roadmap says the CPU at a few thousand systems, and this change stores what either
+  needs.
