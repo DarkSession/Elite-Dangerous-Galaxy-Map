@@ -50,8 +50,8 @@ See [proposal.md](proposal.md) for the motivation. The facts below shape the app
 
 ### The entry point returns a handle at once, and a `ready` promise separately
 
-`createGalaxyMap(canvas)` builds the render context, starts the workers and returns the
-handle in the same tick. `addSystems` therefore works before the first frame. The set
+`createGalaxyMap(canvas, options)` builds the render context, starts the workers and
+returns the handle in the same tick. `addSystems` therefore works before the first frame. The set
 lives outside the render loop, so the loop reads whatever the set holds when it draws.
 
 Alternative: an `async createGalaxyMap` that resolves after the first frame. Rejected: a

@@ -15,7 +15,7 @@ camera. `buildBoxelBlocks` takes the base low from the four boxels the class abo
 so the block runs from `2 * C - 4` to `2 * C + 3`, where `C` is the camera's index in the
 class above. The camera's own base index is `2 * C` or `2 * C + 1`, so on the worse of
 the two the block reaches 2 base edges past the camera. That is the bound the rule holds
-to: 2 base edges, which is more than one sixteenth of the zoom distance while the base
+to: 2 base edges, which is at least one sixteenth of the zoom distance while the base
 class rule does not hit its clamp, and 320 light years above 5,120 light years of zoom
 distance, where the base edge holds at 160.
 
@@ -49,6 +49,11 @@ that pays for a new set of boxels, not the steady state.
 Both bounds SHALL be read from `frameStats` on the handle's `debug` member, which reports
 the frames the loop drew with their mean and worst time. The far view's `measureFrames`
 redraws one fixed view and returns a mean, so it cannot measure either one.
+
+The two numbers are not on one scale. `measureFrames` waits for the card before it stops
+the clock, so its mean holds the GPU work; `frameStats` times the loop's own draw call,
+because the frame budget requirement forbids a wait for the card in the normal loop. The
+20 ms and the 50 ms bound the CPU work the sweep adds, which is what this rule is about.
 
 The page SHALL expose the number of stars the last frame suppressed.
 

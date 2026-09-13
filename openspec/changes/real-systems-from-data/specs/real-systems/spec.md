@@ -52,7 +52,9 @@ since the last reset with their mean and worst draw time in milliseconds, and
 `resetFrameStats()`, which starts the count again. The existing `measureFrames` redraws
 one fixed view and returns a mean, so it cannot measure a pan, a zoom or a worst frame;
 `frameStats` measures the frames the loop itself draws, as `labelSampling` already does
-for the label sweep.
+for the label sweep. `frameStats` times the draw call alone, because the frame budget
+requirement of `far-view-rendering` forbids a wait for the card in the normal loop, so
+its numbers are not on the same scale as `measureFrames`.
 
 The demo page SHALL call the entry point, SHALL put the handle on `window.galaxyMap`,
 and SHALL keep every `window.__galaxyMap` hook the browser tests read today, including
@@ -283,8 +285,9 @@ The page SHALL expose the number of markers the last frame drew.
 - **WHEN** the browser test adds one system at the galactic centre, which is the
   brightest ground, and one 3,000 light years above the plane at the rim, which is the
   darkest, opens a view that shows each at a range above 3,000 light years, and reads the
-  middle pixel of each marker and the pixel 2 CSS pixels inside each marker's edge on the
-  row through its centre, at a device pixel ratio of 1
+  middle pixel of each marker and, on the row through its centre, the ring pixel whose
+  own centre lies between 1 and 2 CSS pixels inside the edge of the disc, at a device
+  pixel ratio of 1
 - **THEN** every middle pixel is (153, 230, 255) within 2 per channel, and every ring
   pixel is (5, 10, 26) within 2 per channel
 
