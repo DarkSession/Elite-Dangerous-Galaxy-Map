@@ -10,16 +10,26 @@ The radius is about half the mean spacing of systems at Sol, which is 6.4 light 
 the measured 3.8 systems per 1,000 cubic light years. An invented star that close to a
 real system stands for that same system, so the real record replaces it.
 
-The base class block spans 8 base boxels on each axis around the camera. At or below
-5,120 light years of zoom distance the base class rule does not hit its clamp, so the
-base edge is more than one thirty-second of the zoom distance and the block reaches more
-than one eighth of that distance in every direction. Above 5,120 light years the base
-class holds at 4, its edge holds at 160 light years, and the block reaches 640 light
-years whatever the distance; the field itself fades out between 4,000 and 8,000 light
-years, so what the block leaves out sits in a field that is already fading.
+The base class block spans 8 base boxels on each axis, but it is not centred on the
+camera. `buildBoxelBlocks` takes the base low from the four boxels the class above drops,
+so the block runs from `2 * C - 4` to `2 * C + 3`, where `C` is the camera's index in the
+class above. The camera's own base index is `2 * C` or `2 * C + 1`, so on the worse of
+the two the block reaches 2 base edges past the camera. That is the bound the rule holds
+to: 2 base edges, which is more than one sixteenth of the zoom distance while the base
+class rule does not hit its clamp, and 320 light years above 5,120 light years of zoom
+distance, where the base edge holds at 160.
 
-Beyond that block a boxel is coarser and draws stars further apart, so an invented star
-there is not a twin of a real one.
+A twin therefore survives outside the block. A boxel of the class above the base places
+its stars at the same spacing while its count stays under the cap, so it is not true that
+a coarser boxel always draws stars further apart. Near Sol at a zoom distance of 500
+light years the base class is 1 and the class above places about 243 stars in a 40 light
+year boxel, which is the same 6.4 light year spacing. A real system between 40 and 160
+light years from the camera can then keep an invented star about 3 light years from it,
+which the frame shows as a second point beside the marker.
+
+The change accepts that. The rule covers the systems near the camera, where a host looks,
+and suppression in every drawn class is a separate piece of work: it turns a sweep of 512
+boxels into one of 1,856.
 
 The suppressed set of a boxel SHALL depend on the boxel's grid index, its size class and
 the real-system set alone. It SHALL NOT depend on the camera or on the zoom distance.
@@ -31,7 +41,14 @@ drop every kept set when the real-system set changes.
 A change of the base size class replaces the whole base class block, so one frame
 computes every suppressed set of that block. That frame MAY exceed the frame budget. The
 worst frame of a zoom that crosses a base class boundary SHALL stay under 50 ms, so the
-change reads as one slow frame and not as a stall.
+change reads as one slow frame and not as a stall. A pan inside one base class brings in
+at most 64 boxels per step, and its worst frame SHALL stay under 20 ms. Both bounds sit
+above the 16.7 ms mean the frame budget holds, because each one covers the single frame
+that pays for a new set of boxels, not the steady state.
+
+Both bounds SHALL be read from `frameStats` on the handle's `debug` member, which reports
+the frames the loop drew with their mean and worst time. The far view's `measureFrames`
+redraws one fixed view and returns a mean, so it cannot measure either one.
 
 The page SHALL expose the number of stars the last frame suppressed.
 
@@ -66,16 +83,16 @@ The page SHALL expose the number of stars the last frame suppressed.
 #### Scenario: A camera move stays inside the frame budget
 
 - **WHEN** the browser test adds 10,000 systems within 600 light years of Sol at
-  `#c=0,0,0&d=500&p=35&y=0`, pans the camera 200 light years at a fixed zoom distance,
-  and reads the longest frame of the pan
-- **THEN** the longest frame is under 20 ms
+  `#c=0,0,0&d=500&p=35&y=0`, resets `frameStats`, pans the camera 200 light years at a
+  fixed zoom distance, and reads `frameStats`
+- **THEN** the worst time is under 20 ms
 
 #### Scenario: A base class change costs one slow frame at most
 
-- **WHEN** the browser test adds 10,000 systems within 600 light years of Sol, then zooms
-  from 300 to 1,400 light years of zoom distance, which crosses the base class boundaries
-  at 320 and at 640, and reads the longest frame of the zoom
-- **THEN** the longest frame is under 50 ms
+- **WHEN** the browser test adds 10,000 systems within 600 light years of Sol, resets
+  `frameStats`, zooms from 300 to 1,400 light years of zoom distance, which crosses the
+  base class boundaries at 320, at 640 and at 1,280, and reads `frameStats`
+- **THEN** the worst time is under 50 ms
 
 #### Scenario: A frame reports the suppressed count
 

@@ -65,11 +65,12 @@
 
 ## 5. The marker pass
 
-- [ ] 5.1 Add `src/render/shaders/systems.vert` and `systems.frag`: a point sprite of
-      `clamp(focal * 20 / range, 7, 12)` CSS pixels times the device pixel ratio, a core
-      of (0.60, 0.90, 1.00), a ring of (0.02, 0.04, 0.10) over the outer 1 CSS pixel, and
-      a 1 device pixel antialiasing ramp at the outer edge. Verify `compileTestProgram`
-      accepts both.
+- [ ] 5.1 Add `src/render/shaders/systems.vert` and `systems.frag`: a point sprite whose
+      CSS diameter is `clamp(focalCss * 20 / range, 7, 12)` and whose `gl_PointSize` is
+      that times the device pixel ratio, with `focalCss` the renderer's device-pixel
+      `focal` over the ratio; a core of (0.60, 0.90, 1.00); a ring of (0.02, 0.04, 0.10)
+      over the outer 2 CSS pixels; and an antialiasing ramp confined to the outer 1 device
+      pixel. Verify `compileTestProgram` accepts both.
 - [ ] 5.2 Add `src/render/system-pass.ts` with the colour constants, the buffer and the
       per-frame rebase from the `Float64Array`. Verify a unit test checks the rebase
       against the `float64` result over 1,000 positions.
@@ -79,49 +80,65 @@
       passes.
 - [ ] 5.4 Verify the browser tests "A marker shows at every zoom distance", "The size
       falls to the floor and rises to the cap", "The marker colours reach the frame over
-      both grounds", "The marker colour is not the zone ramp" and "A region boundary does
-      not cover a marker" pass.
+      both grounds", "The marker colour is not the zone ramp", "The page reports the
+      marker count", "Two markers overlap in the order the set holds them" and "A region
+      boundary does not cover a marker" pass.
 - [ ] 5.5 Verify the unit test "Position error at the far corner" holds 0.01 light years
       at every listed cursor and zoom distance.
 
 ## 6. The library entry point
 
-- [ ] 6.1 Move the bootstrap into `src/app/create-map.ts` as `createGalaxyMap(canvas)`.
-      It returns the handle in the same tick with `addSystems`, `clearSystems`,
-      `systemCount`, `ready`, `dispose`, `getView`, `setView`, `onViewChange` and `debug`,
-      and it owns the render context, the scene data, the view, the controls, the label
-      overlay and the frame loop. Verify `pnpm build` checks the types.
-- [ ] 6.2 Reject `ready` when the context is null or the renderer is software, leave the
+- [ ] 6.1 Add the frame time accumulator to `src/render/renderer.ts`: each frame the loop
+      draws adds its time to a mean, a worst and a count, with a reset. Build it like the
+      label sweep's `sampling`. Verify a unit test reads the three numbers over 10 frames
+      of known time.
+- [ ] 6.2 Add a cancel signal to `loadSceneData` in `src/scene-data/load.ts`, and
+      terminate every worker it started when the signal fires. Verify a unit test aborts a
+      load and sees each worker terminated.
+- [ ] 6.3 Move the bootstrap into `src/app/create-map.ts` as
+      `createGalaxyMap(canvas, options)`: build the context, start the scene-data load,
+      own the frame loop, and return a handle with `addSystems`, `clearSystems`,
+      `systemCount` and `ready` in the same tick. Verify `pnpm build` checks the types.
+- [ ] 6.4 Move the view state, the controls and the label overlay into the entry point,
+      and add `getView`, `setView` and `onViewChange`. Take the label host from
+      `options.labelHost`, and make one in the canvas's parent when the option is absent,
+      so no `getElementById` stays in the library. Verify the browser test "The library
+      makes its own label host" passes.
+- [ ] 6.5 Put every renderer probe behind the handle's `debug` member, `frameStats` and
+      `resetFrameStats` included. Verify `pnpm build` checks the types.
+- [ ] 6.6 Reject `ready` when the context is null or the renderer is software, leave the
       frame loop unstarted, and keep `addSystems` working. Verify the unit test "No WebGL2
       context rejects ready" and the browser test "The page shows the failure" pass.
-- [ ] 6.3 Implement `dispose`: stop the frame loop, remove the listeners the map added,
-      delete the GPU objects and terminate any running scene-data worker, and make a
-      second call do nothing. Verify the browser test "Dispose stops the map and repeats
-      safely" passes.
-- [ ] 6.4 Reduce `src/app/main.ts` to the demo page: call the entry point, put the handle
+- [ ] 6.7 Implement `dispose`: stop the frame loop, remove the listeners the map added,
+      delete the GPU objects, abort the scene-data load, and make a second call do
+      nothing. Verify the browser test "Dispose stops the map and repeats safely" passes.
+- [ ] 6.8 Reduce `src/app/main.ts` to the demo page: call the entry point, put the handle
       on `window.galaxyMap`, parse the URL fragment into `setView` and write it back from
       `onViewChange`, catch a `ready` rejection into the message box and
       `window.__galaxyMap.error`, and set every `window.__galaxyMap` hook the browser
       tests read from `debug`, `renderer` included. Verify the existing browser tests pass
       unchanged.
-- [ ] 6.5 Check that no module the library imports reads or writes `window.location`.
-      Verify the browser test "The page owns the URL fragment" passes.
-- [ ] 6.6 Add the test hooks for the marker count and the suppressed count to
-      `src/render/global.ts`, and add `systems` to the `setPasses` parameter type. Verify
-      the types build and the hooks read from the page.
-- [ ] 6.7 Declare `window.galaxyMap` in `e2e/global.d.ts` beside `window.__galaxyMap`.
+- [ ] 6.9 Add a `no-restricted-properties` rule to `eslint.config.js` that fails the lint
+      on `window.location` in every file but `src/app/main.ts`. Verify `pnpm lint` is
+      clean, and fails when a read of `window.location.hash` is put in
+      `src/app/create-map.ts`.
+- [ ] 6.10 Add the test hooks for the marker count, the suppressed count and the frame
+      statistics to `src/render/global.ts`, and add `systems` to the `setPasses` parameter
+      type. Verify the types build and the hooks read from the page.
+- [ ] 6.11 Declare `window.galaxyMap` in `e2e/global.d.ts` beside `window.__galaxyMap`.
       Verify `pnpm build` and `pnpm test:e2e` type-check the new spec file.
-- [ ] 6.8 Verify the browser tests "The handle works before the first frame" and "The
-      handle empties the set" pass.
+- [ ] 6.12 Verify the browser tests "The handle works before the first frame", "The handle
+      empties the set" and "The page writes the fragment from the handle" pass.
 
 ## 7. Budgets and the whole suite
 
 - [ ] 7.1 Add the frame budget browser test with 10,000 systems at the eight views. Verify
       each mean is under 16.7 ms.
-- [ ] 7.2 Add the sweep frame tests to the browser suite: a pan at a fixed zoom distance
-      and a zoom that crosses the base class boundaries at 320 and 640 light years, each
-      with 10,000 systems near Sol. Verify the worst frame of the pan is under 20 ms and
-      the worst frame of the zoom is under 50 ms.
+- [ ] 7.2 Add the sweep frame tests to the browser suite, both reading `frameStats`: a
+      pan at a fixed zoom distance, and a zoom from 300 to 1,400 light years that crosses
+      the base class boundaries at 320, 640 and 1,280, each with 10,000 systems near Sol.
+      Verify the worst frame of the pan is under 20 ms and the worst frame of the zoom is
+      under 50 ms.
 - [ ] 7.3 Verify the baseline image still matches and the far view is byte-identical with
       an empty set, through "The far view does not change" and "The added passes leave the
       far view alone".
@@ -132,7 +149,8 @@
 
 - [ ] 8.1 Update `docs/roadmap.md`: mark phase 3 implemented, record the four decisions
       this change settled and answer its three open questions. Verify the phase 3 section
-      names the record shape, the entry point, the suppression rule and the marker look.
+      names the record shape, the entry point, the suppression rule, the marker look and
+      the twin that survives outside the base class block.
 - [ ] 8.2 Update `README.md` with the entry point and a short example of `addSystems`.
       Verify the example matches the handle the code exposes.
 - [ ] 8.3 Run the implementation review gate: launch the

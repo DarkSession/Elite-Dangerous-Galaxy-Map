@@ -14,12 +14,14 @@ the systems and holds their records; it does not select and it draws no HUD.
 
 ## What Changes
 
-- The page gets a public entry point, `createGalaxyMap(canvas)`. It returns a handle in
-  the same tick with `addSystems`, `clearSystems`, `systemCount`, `ready`, `dispose`,
+- The page gets a public entry point, `createGalaxyMap(canvas, options)`. It returns a
+  handle in the same tick with `addSystems`, `clearSystems`, `systemCount`, `ready`, `dispose`,
   `getView`, `setView`, `onViewChange` and `debug`. The library owns the render context,
   the scene data, the view, the controls and the frame loop; the page keeps the URL
   fragment, the message box and the `window.__galaxyMap` test hooks, and puts the handle
-  on `window.galaxyMap`.
+  on `window.galaxyMap`. The handle is larger than the `createGalaxyMap` plus add and
+  clear the scope settled on, because the page cannot keep the URL fragment or the
+  browser tests without the view members and `debug`.
 - `ready` rejects when the canvas gives no WebGL2 context or the card reports a software
   renderer, and `dispose` stops the frame loop and releases what the map holds.
 - `addSystems` reads records in the shape an EDSM or a Spansh dump gives: a `name` and
@@ -44,8 +46,15 @@ Non-goals: selection, a HUD, picking, names for decoration stars, a level of det
 the markers, and a bundled or fetched data file. The host supplies every record.
 
 **Scale.** The pass holds up to 10,000 systems. The map rejects the records past that
-bound and reports them. There is no level of detail: one instanced draw covers the
-whole set at every zoom distance.
+bound and reports them. There is no level of detail: one draw call covers the whole set
+at every zoom distance.
+
+**Known limit.** Suppression runs in the base size class alone, which reaches 2 base
+boxel edges past the camera. Further out, a boxel of the class above places its stars at
+the same spacing while its count stays under the cap, so a real system there can keep an
+invented star about 3 light years from it. Near Sol at a zoom distance of 500 light
+years that is beyond 40 light years from the camera. The specs state the distances, and
+suppression in every drawn class is a separate piece of work.
 
 ## Capabilities
 
@@ -69,6 +78,8 @@ whole set at every zoom distance.
 - `src/app/main.ts`: splits into a library entry point and a demo page that calls it.
 - `src/scene-data/`: a new `real-systems.ts` for the reader and the set, and a new
   `star-suppression.ts` for the sweep that finds the stars a real system removes.
+- `src/scene-data/load.ts`: `loadSceneData` takes a cancel signal, so `dispose` can stop
+  a load that is still running.
 - `src/scene-data/star-field.ts`: the boxel table carries a suppression mask, and the
   light per star divides by the count that remains. `drawnStarCount` becomes
   `placedStarCount` and `systemCount(density, volume)` becomes `systemsInVolume`, because
@@ -76,8 +87,13 @@ whole set at every zoom distance.
 - `src/render/`: a new `system-pass.ts` with its own shaders, and a mask texture in
   `star-pass.ts`. `stars.vert` reads the mask. `renderer.ts` gains the pass and the
   switch.
-- `src/render/global.ts`: new test hooks for the marker count and the suppressed count,
-  and a `systems` field in the `setPasses` parameter type.
+- `src/render/global.ts`: new test hooks for the marker count, the suppressed count and
+  the frame statistics, and a `systems` field in the `setPasses` parameter type.
+- `src/render/renderer.ts`: a frame time accumulator with a mean, a worst and a frame
+  count, built like the label sweep's, because `measureFrames` redraws one fixed view and
+  cannot measure a pan or a zoom.
+- `eslint.config.js`: a rule that fails the lint on `window.location` outside
+  `src/app/main.ts`, so the library cannot reach the URL.
 - `e2e/global.d.ts`: declares `window.galaxyMap` beside `window.__galaxyMap`.
 - `e2e/`: a new `systems.spec.ts`. The existing baseline image does not change, because
   the demo page loads no system.

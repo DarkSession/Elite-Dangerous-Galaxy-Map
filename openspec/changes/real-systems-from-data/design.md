@@ -17,6 +17,16 @@ See [proposal.md](proposal.md) for the motivation. The facts below shape the app
   gap and no overlap.
 - The galaxy model bounds come from the parameter document alone. The record reader can
   read them without the 1024x1024 detail grid.
+- `loadSceneData` in `src/scene-data/load.ts` starts three workers and terminates each
+  one when its own promise settles. There is no way to stop a load that is running.
+- `measureFrames` in `src/render/renderer.ts` redraws one fixed view and returns a mean.
+  It cannot measure a pan, a zoom or a worst frame. `labelSampling` is the pattern for
+  that: it accumulates the mean and the worst over the frames the loop drew.
+- `src/app/main.ts` finds the label overlay host with `document.getElementById('labels')`.
+  A library cannot depend on an element id in the host's page.
+- The base class block is not centred on the camera. `buildBoxelBlocks` takes the base low
+  from the four boxels the class above drops, so the block reaches 2 base edges past the
+  camera in the worse of the two cases.
 
 ## Goals / Non-Goals
 
@@ -57,9 +67,29 @@ page's message box and the `window.__galaxyMap` hooks the browser tests read. Th
 fragment stays on the page because a library must not touch `window.location`; the page
 parses it into `setView` and writes it back from `onViewChange`.
 
-The handle carries nine members. Nine is what the page needs to do its job: four for the
-system set and the lifecycle, three for the view, one for the failure path and one,
-`debug`, for the hooks the browser tests read. `debug` is not supported surface, so it
+An ESLint rule holds that boundary, not a test. The production build the browser suite
+serves puts the page and the library in one bundle, so a search of the served source
+cannot tell one from the other. `no-restricted-properties` on `window.location`, with
+`src/app/main.ts` excepted, fails the lint on the file that breaks the rule. That is the
+same instrument `eslint.config.js` already uses for the scene-data import rule.
+
+`dispose` needs a cancellable load. `loadSceneData` takes an `AbortSignal` and terminates
+every worker it started when the signal fires; `dispose` aborts it. Without that a
+`dispose` during start-up leaves three workers running.
+
+`debug` gains `frameStats()` and `resetFrameStats()`, built like `labelSampling`: the
+frame loop adds each frame's draw time to a mean and a worst. Two of the suppression
+scenarios measure a pan and a zoom, which `measureFrames` cannot see, and the `dispose`
+scenario counts the frames the loop drew.
+
+`createGalaxyMap` takes an optional second argument for the label overlay host. With no
+host the library makes its own element in the canvas's parent, so a host that has only a
+canvas still gets labels, and the `getElementById('labels')` lookup leaves the library.
+
+The handle carries nine members. That is more than the `createGalaxyMap` plus add and
+clear the owner settled on, and the human should see the growth. Nine is what the page
+needs to do its job: four for the system set and the lifecycle, three for the view, one
+for the failure path and one, `debug`, for the hooks the browser tests read. `debug` is not supported surface, so it
 can grow and shrink without a change of the library's contract. Today `main.ts` sets
 about 25 fields on `window.__galaxyMap`; almost all of them are renderer probes, and they
 move behind `debug` rather than onto the handle.
@@ -99,19 +129,22 @@ camera position, not only the near ones. Phase 4 picks on the CPU from the same
 
 ### A marker is a point sprite with a size floor, drawn after the tone map
 
-The pass draws `gl.POINTS`, one vertex per system. `gl_PointSize` is
-`clamp(focal * 20 / range, 7, 12)` CSS pixels times the device pixel ratio, so a marker
-shrinks with distance like a body until it reaches 7 pixels, and never grows past 12. The
-floor is what keeps a marker findable in the far view; the cap stops a near marker from
-covering the frame. With the dev container's 35 degree field of view at 720 rows, the two
-limits bite below about 1,900 light years of range and above about 3,260.
+The pass draws `gl.POINTS`, one vertex per system. The CSS diameter is
+`clamp(focalCss * 20 / range, 7, 12)` and `gl_PointSize` is that times the device pixel
+ratio, so a marker shrinks with distance like a body until it reaches 7 pixels, and never
+grows past 12. `focal` in `renderer.ts` comes from the drawing buffer height, so it is
+device pixels per light year and `focalCss` is `focal` over the ratio; writing the rule
+in device pixels and then scaling again would scale twice, which the e2e ratio of 1 hides.
+With the 35 degree field of view at 720 rows, the two limits bite below about 1,900 light
+years of range and above about 3,260.
 
-The fragment shader reads `gl_PointCoord`. The outer 1 CSS pixel of the disc takes the
+The fragment shader reads `gl_PointCoord`. The outer 2 CSS pixels of the disc take the
 ring colour (0.02, 0.04, 0.10) and the rest takes the core colour (0.60, 0.90, 1.00). The
-disc is opaque inside its edge, with a 1 device pixel antialiasing ramp at the outer edge,
-so both colours reach the frame unmixed and a test can read them. A ring of a fixed pixel
-width rather than a fixed fraction keeps the dark edge readable at the floor size, where
-5/7 of 7 pixels would leave a one-pixel core.
+disc is opaque inside its edge and the antialiasing ramp is confined to the outer 1 device
+pixel, so at the e2e ratio of 1 the inner CSS pixel of the ring is fully covered and a
+test can read (5, 10, 26) from it. A 1 CSS pixel ring would put the ramp and the whole
+ring in the same pixel, and over the galactic core, where the existing spec pins the
+luminance between 0.8 and 0.97, a half-covered ring reads near (117, 117, 140).
 
 The pass draws after the tone map and after the region overlay, with alpha blending and
 no depth test. Three things follow. The far view is untouched when the set is empty. No
@@ -132,6 +165,17 @@ instead of one, which the size scenario covers at both limits.
 The sweep is CPU work, because the CPU already has the star hash and the star pass has no
 room to test a list per vertex.
 
+**The reach.** The base class block reaches 2 base edges past the camera in the worse of
+the two alignments, because `buildBoxelBlocks` derives the base low from the parent's
+dropped four rather than from the camera's own boxel. That is `d / 16` while the base
+class rule does not hit its clamp, and 320 light years above 5,120 light years of zoom.
+Outside the block a twin survives: the class above the base places its stars at the same
+spacing while its count stays under the cap, so near Sol at 500 light years of zoom a
+real system 40 to 160 light years out keeps an invented star about 3 light years from it.
+The owner settled suppression on the base class block, and extending it to every drawn
+class turns a sweep of 512 boxels into one of 1,856, so this change states the limit
+rather than removing it.
+
 **The index.** `src/scene-data/star-suppression.ts` builds, for one size class, a map
 from boxel index to the systems inside that boxel grown by 3 light years. A system enters
 up to 8 entries, one per boxel whose grown box holds it. Building costs 10,000 inserts per
@@ -150,9 +194,9 @@ worst case is the first sweep after a change of base class, which sweeps all 512
 
 A unit test counts the boxels each build swept, because that is what the cache rule
 decides and a count does not depend on the machine. The wall clock is measured in the
-browser instead, with the same frame measurement the far view's budget uses: a pan at a
-fixed zoom distance stays under 20 ms in its worst frame, and a zoom that crosses a base
-class boundary stays under 50 ms in its worst frame.
+browser instead, through the new `frameStats` accumulator: a pan at a fixed zoom distance
+stays under 20 ms in its worst frame, and a zoom that crosses a base class boundary stays
+under 50 ms.
 
 **The upload.** The mask is an `R32UI` texture, 8 texels wide and one row per record of
 the boxel table. `stars.vert` reads
@@ -206,6 +250,10 @@ one name must mean one thing.
 - **A boxel can lose every star.** → It needs a real system within 3 light years of each
   of them, which the placed spacing allows only where the boxel places one or two stars.
   The light lost is then under one point cloud sample's.
+- **A twin survives outside the base class block.** → Near Sol at 500 light years of
+  zoom, a real system 40 to 160 light years from the camera keeps an invented star about
+  3 light years from it. The spec states the distances. Suppression in every drawn class
+  is the fix, and it is a separate piece of work.
 - **Dump data carries licence terms.** → The map ships no data, so the host owns the
   terms of whatever it loads. Nothing is added to `THIRD_PARTY_NOTICES` review.
 - **The entry point is a new public surface.** → Eight of its nine members are the
@@ -219,3 +267,6 @@ one name must mean one thing.
 - Whether phase 4 picks on the CPU from the `Float64Array` or with a GPU id buffer. The
   roadmap says the CPU at a few thousand systems, and this change stores what either
   needs.
+- Whether suppression should run in every drawn size class rather than the base class
+  alone. It removes the surviving twin, and it costs a sweep of 1,856 boxels instead of
+  512. The cache and the index carry either, so the change is a rule and not a rewrite.

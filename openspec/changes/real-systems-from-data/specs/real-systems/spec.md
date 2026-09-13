@@ -8,8 +8,13 @@ for each system it keeps, and removes the invented star that stands for the same
 
 ### Requirement: The map is created through a library entry point
 
-The map SHALL expose `createGalaxyMap(canvas)`. The call SHALL return a handle in the
-same tick, before the scene data is ready. The handle SHALL carry these members:
+The map SHALL expose `createGalaxyMap(canvas, options)`. The call SHALL return a handle
+in the same tick, before the scene data is ready. `options` SHALL be optional, and SHALL
+carry an optional `labelHost` element for the region label overlay. With no `labelHost`
+the library SHALL create its own overlay element in the canvas's parent, so a host that
+gives a canvas alone gets a working map. The library SHALL NOT read an element by id.
+
+The handle SHALL carry these members:
 
 | Member                 | What it does                                              |
 | ---------------------- | --------------------------------------------------------- |
@@ -29,13 +34,25 @@ first frame SHALL draw in it.
 
 The library SHALL own the render context, the scene data, the view state, the controls,
 the label overlay and the frame loop. The library SHALL NOT read or write
-`window.location`. The page owns the URL fragment: it parses the fragment, gives the
-view to `setView`, and writes the fragment back from `onViewChange`. The requirement
-"View state in the URL fragment" of `map-navigation` is then the page's to meet, and it
-is unchanged.
+`window.location`, and an ESLint rule SHALL fail the lint on `window.location` in every
+source file outside `src/app/main.ts`. A lint rule is what holds the boundary, because
+the production build puts the page and the library in one bundle, where a search of the
+served source cannot tell them apart. The project already holds its scene-data import
+rule this way.
+
+The page owns the URL fragment: it parses the fragment, gives the view to `setView`, and
+writes the fragment back from `onViewChange`. The requirement "View state in the URL
+fragment" of `map-navigation` is then the page's to meet, and it is unchanged.
 
 `debug` is not part of the supported surface. It carries the pass switches, the pixel
 readers, the frame measurement, the counts and the program probe. Phase 4 may change it.
+
+`debug` SHALL carry `frameStats()`, which returns the number of frames the loop drew
+since the last reset with their mean and worst draw time in milliseconds, and
+`resetFrameStats()`, which starts the count again. The existing `measureFrames` redraws
+one fixed view and returns a mean, so it cannot measure a pan, a zoom or a worst frame;
+`frameStats` measures the frames the loop itself draws, as `labelSampling` already does
+for the label sweep.
 
 The demo page SHALL call the entry point, SHALL put the handle on `window.galaxyMap`,
 and SHALL keep every `window.__galaxyMap` hook the browser tests read today, including
@@ -54,13 +71,23 @@ and SHALL keep every `window.__galaxyMap` hook the browser tests read today, inc
   and reads it again
 - **THEN** the first reading is 100 and the second is 0
 
-#### Scenario: The page owns the URL fragment
+#### Scenario: The page writes the fragment from the handle
 
-- **WHEN** the browser test calls `setView` on the handle with a new cursor, waits for
-  the page to write the fragment, and searches the library's own source for
-  `window.location`
-- **THEN** the fragment holds the new cursor, and no module the library imports reads or
-  writes `window.location`
+- **WHEN** the browser test calls `setView` on the handle with a new cursor and waits for
+  the page to write the fragment
+- **THEN** the fragment holds the new cursor
+
+#### Scenario: The lint holds the library away from the location
+
+- **WHEN** `pnpm lint` runs over the tree, and again over a tree where
+  `src/app/create-map.ts` reads `window.location.hash`
+- **THEN** the first run is clean and the second fails on that line
+
+#### Scenario: The library makes its own label host
+
+- **WHEN** a browser test calls the entry point with a canvas whose parent holds no
+  element with the id `labels`, and with no `options`, and waits for `ready`
+- **THEN** the map draws and the region labels show
 
 ### Requirement: The entry point reports a start-up failure through `ready`
 
@@ -93,12 +120,15 @@ then met as they were before the split.
 SHALL delete the GPU objects the passes hold, and SHALL terminate any scene-data worker
 that is still running. A second call SHALL do nothing and SHALL NOT throw.
 
+`loadSceneData` starts three workers and terminates each one when its own promise
+settles, so there is no way to stop a load that is still running. It SHALL take a cancel
+signal, and SHALL terminate every worker it started when the signal fires.
+
 #### Scenario: Dispose stops the map and repeats safely
 
-- **WHEN** the browser test waits for `ready`, reads the frame count, calls `dispose`,
-  waits 10 animation frames, reads the frame count again, and calls `dispose` a second
-  time
-- **THEN** the two frame counts are equal and the second call throws nothing
+- **WHEN** the browser test waits for `ready`, reads `debug.frameStats().frames`, calls
+  `dispose`, waits 10 animation frames, reads it again, and calls `dispose` a second time
+- **THEN** the two readings are equal and the second call throws nothing
 
 ### Requirement: A record follows the shape of an EDSM or a Spansh dump
 
@@ -213,22 +243,27 @@ them.
 
 ### Requirement: A marker draws for every system at every zoom distance
 
-The renderer SHALL draw one marker per system in the set, in one instanced pass, at
-every zoom distance from 500 to 120,000 light years. There SHALL be no level of detail:
-the pass draws the whole set in every frame.
+The renderer SHALL draw one marker per system in the set, in one draw call, at every
+zoom distance from 500 to 120,000 light years. There SHALL be no level of detail: the
+pass draws the whole set in every frame.
 
-A marker SHALL be a disc whose size in CSS pixels is `focal * 20 / range`, held between a
-floor of 7 and a cap of 12, where `focal` is the pixels per light year at one light year
-of range and `range` is the distance from the camera. The floor is what makes a marker
-findable in the far view, where the perspective size falls below one pixel. The cap
-stops a near marker from covering the frame.
+A marker SHALL be a disc whose diameter in CSS pixels is `focalCss * 20 / range`, held
+between a floor of 7 and a cap of 12, where `range` is the distance from the camera in
+light years and `focalCss` is the CSS pixels per light year at one light year of range.
+The renderer's own `focal` is in device pixels, because it comes from the drawing buffer
+height, so `focalCss` is `focal` over the device pixel ratio and `gl_PointSize` is the
+CSS diameter times that ratio. The floor is what makes a marker findable in the far view,
+where the perspective size falls below one pixel. The cap stops a near marker from
+covering the frame.
 
-The 1 CSS pixel at each edge of the disc SHALL carry the ring colour and the rest SHALL
-carry the core colour. The core colour SHALL be (0.60, 0.90, 1.00) and the ring colour
-SHALL be (0.02, 0.04, 0.10). The disc SHALL be opaque inside its edge, with an
-antialiasing ramp of 1 device pixel at the outer edge, so the two colours reach the frame
-as they are. A light core with a dark ring reads over the cream core of the galaxy and
-over dark space alike.
+The outer 2 CSS pixels of the disc SHALL carry the ring colour and the rest SHALL carry
+the core colour. The core colour SHALL be (0.60, 0.90, 1.00) and the ring colour SHALL be
+(0.02, 0.04, 0.10). The disc SHALL be opaque inside its edge, with an antialiasing ramp
+in the outer 1 device pixel alone, so at a device pixel ratio of 1 the inner CSS pixel of
+the ring is opaque and a test can read the ring colour as it is. A ring of a fixed pixel
+width rather than a fixed fraction of the disc keeps the dark edge readable at the floor
+size. A light core with a dark ring reads over the cream core of the galaxy and over dark
+space alike.
 
 The colour SHALL NOT follow the population zone ramp that the decoration stars and the
 point cloud use, so a real system reads as different from an invented star.
@@ -248,7 +283,8 @@ The page SHALL expose the number of markers the last frame drew.
 - **WHEN** the browser test adds one system at the galactic centre, which is the
   brightest ground, and one 3,000 light years above the plane at the rim, which is the
   darkest, opens a view that shows each at a range above 3,000 light years, and reads the
-  middle pixel of each marker and a pixel on each marker's ring
+  middle pixel of each marker and the pixel 2 CSS pixels inside each marker's edge on the
+  row through its centre, at a device pixel ratio of 1
 - **THEN** every middle pixel is (153, 230, 255) within 2 per channel, and every ring
   pixel is (5, 10, 26) within 2 per channel
 
@@ -258,7 +294,16 @@ The page SHALL expose the number of markers the last frame drew.
   counts the pixels of the row through the marker's centre that differ from the frame
   drawn with the pass off, then opens a view that puts the system 1,000 light years from
   the camera and counts again
-- **THEN** the first count is 7 and the second is 12, at a device pixel ratio of 1
+- **THEN** the first count is 7 within 1 and the second is 12 within 1, at a device pixel
+  ratio of 1. The tolerance is one pixel, because a disc that does not sit on a pixel
+  centre covers one more or one fewer pixel on its row
+
+#### Scenario: The page reports the marker count
+
+- **WHEN** the browser test reads the marker count with an empty set, adds 100 systems
+  around Sol at a view that shows them all, draws a frame and reads the count again, then
+  switches the systems pass off, draws again and reads it a third time
+- **THEN** the readings are 0, 100 and 0
 
 #### Scenario: The marker colour is not the zone ramp
 
@@ -281,6 +326,14 @@ overlap blend in a fixed order.
   20,000 light years where the overlay draws in full, and reads the middle pixel of the
   marker
 - **THEN** the pixel holds the marker's core colour, not the boundary's colour
+
+#### Scenario: Two markers overlap in the order the set holds them
+
+- **WHEN** the browser test adds two systems 1 light year apart at a range that makes
+  their discs overlap, reads the frame, then calls `clearSystems` and adds the same two
+  records in the other order and reads the frame again
+- **THEN** the overlap holds the second record's marker on top in each frame, so the two
+  frames differ
 
 #### Scenario: The far view does not change
 
