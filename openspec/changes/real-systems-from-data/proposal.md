@@ -14,16 +14,22 @@ the systems and holds their records; it does not select and it draws no HUD.
 
 ## What Changes
 
-- The page gets a public entry point, `createGalaxyMap(canvas)`. It returns a handle
-  with `addSystems`, `clearSystems` and `systemCount`. The demo page calls the entry
-  point and puts the handle on `window.galaxyMap`.
+- The page gets a public entry point, `createGalaxyMap(canvas)`. It returns a handle in
+  the same tick with `addSystems`, `clearSystems`, `systemCount`, `ready`, `dispose`,
+  `getView`, `setView`, `onViewChange` and `debug`. The library owns the render context,
+  the scene data, the view, the controls and the frame loop; the page keeps the URL
+  fragment, the message box and the `window.__galaxyMap` test hooks, and puts the handle
+  on `window.galaxyMap`.
+- `ready` rejects when the canvas gives no WebGL2 context or the card reports a software
+  renderer, and `dispose` stops the frame loop and releases what the map holds.
 - `addSystems` reads records in the shape an EDSM or a Spansh dump gives: a `name` and
   a `coords` object of `x`, `y` and `z`. It keeps the optional fields the phase 4 HUD
   needs and drops the rest. It reports every record it rejects, with the reason.
-- A new render pass draws one marker per real system. The marker has a fixed colour and
-  a fixed brightness, not the population zone ramp, so a real system reads as different
-  from an invented star. The pass draws at every zoom distance, from 500 to 120,000
-  light years, and a size floor keeps a marker findable in the far view.
+- A new render pass draws one marker per real system. A marker is a disc of
+  `focal * 20 / range` CSS pixels, held between a floor of 7 and a cap of 12. The floor
+  keeps a marker findable in the far view. The colour is fixed, not the population zone
+  ramp, so a real system reads as different from an invented star. The pass draws at
+  every zoom distance, from 500 to 120,000 light years.
 - The pass draws after the tone map and after the region overlay, so no other pass can
   cover a marker and the scene light of the far view does not change.
 - The decoration star field removes the invented stars within 3 light years of a real
@@ -52,7 +58,9 @@ whole set at every zoom distance.
 
 - `close-view-stars`: a real system suppresses the invented stars near it in the base
   size class. The boxel's light spreads over the stars that remain, so a boxel's light
-  does not change. The drawn count the page reports excludes the suppressed stars.
+  does not change. The delta names two counts: the placed count, which does not depend on
+  the system set and sets the star radius, and the drawn count, which is the placed count
+  less the suppressed stars and carries the light.
 - `far-view-rendering`: the draw order gains the marker pass, after the tone map and
   after the region boundary overlay.
 
@@ -62,11 +70,15 @@ whole set at every zoom distance.
 - `src/scene-data/`: a new `real-systems.ts` for the reader and the set, and a new
   `star-suppression.ts` for the sweep that finds the stars a real system removes.
 - `src/scene-data/star-field.ts`: the boxel table carries a suppression mask, and the
-  light per star divides by the count that remains.
+  light per star divides by the count that remains. `drawnStarCount` becomes
+  `placedStarCount` and `systemCount(density, volume)` becomes `systemsInVolume`, because
+  the handle's `systemCount()` returns a different quantity.
 - `src/render/`: a new `system-pass.ts` with its own shaders, and a mask texture in
   `star-pass.ts`. `stars.vert` reads the mask. `renderer.ts` gains the pass and the
   switch.
-- `src/render/global.ts`: new test hooks for the marker count and the suppressed count.
+- `src/render/global.ts`: new test hooks for the marker count and the suppressed count,
+  and a `systems` field in the `setPasses` parameter type.
+- `e2e/global.d.ts`: declares `window.galaxyMap` beside `window.__galaxyMap`.
 - `e2e/`: a new `systems.spec.ts`. The existing baseline image does not change, because
   the demo page loads no system.
 - No new dependency. The record shape is an external format, so the reader owns it and

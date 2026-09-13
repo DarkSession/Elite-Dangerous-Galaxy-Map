@@ -48,9 +48,21 @@ Alternative: an `async createGalaxyMap` that resolves after the first frame. Rej
 host would then have to wait before it could add a system, and the first frame would draw
 an empty map even when the host had the data ready.
 
-`src/app/create-map.ts` holds the entry point. `src/app/main.ts` becomes the demo page:
-it calls the entry point, puts the handle on `window.galaxyMap` and keeps the
-`window.__galaxyMap` test hooks.
+`src/app/create-map.ts` holds the entry point. The library takes the render context, the
+scene data, the view state, the controls, the label overlay and the frame loop, which
+`src/app/main.ts` holds today.
+
+`src/app/main.ts` becomes the demo page. It keeps three things: the URL fragment, the
+page's message box and the `window.__galaxyMap` hooks the browser tests read. The
+fragment stays on the page because a library must not touch `window.location`; the page
+parses it into `setView` and writes it back from `onViewChange`.
+
+The handle carries nine members. Nine is what the page needs to do its job: four for the
+system set and the lifecycle, three for the view, one for the failure path and one,
+`debug`, for the hooks the browser tests read. `debug` is not supported surface, so it
+can grow and shrink without a change of the library's contract. Today `main.ts` sets
+about 25 fields on `window.__galaxyMap`; almost all of them are renderer probes, and they
+move behind `debug` rather than onto the handle.
 
 ### The record reader owns the dump format
 
@@ -85,13 +97,21 @@ The rebase also buys exactness. A `float32` holds a number of 125,000 to better 
 camera position, not only the near ones. Phase 4 picks on the CPU from the same
 `Float64Array`.
 
-### A marker is a point sprite of a fixed size, drawn after the tone map
+### A marker is a point sprite with a size floor, drawn after the tone map
 
-The pass draws `gl.POINTS`, one vertex per system, with `gl_PointSize` set to 7 CSS
-pixels times the device pixel ratio. The fragment shader reads `gl_PointCoord`: the inner
-5/7 of the disc takes the light colour and the ring takes the dark colour. That is the
-two-tone rule the region lines use, for the same reason: the marker has to read over the
-cream core of the galaxy and over dark space.
+The pass draws `gl.POINTS`, one vertex per system. `gl_PointSize` is
+`clamp(focal * 20 / range, 7, 12)` CSS pixels times the device pixel ratio, so a marker
+shrinks with distance like a body until it reaches 7 pixels, and never grows past 12. The
+floor is what keeps a marker findable in the far view; the cap stops a near marker from
+covering the frame. With the dev container's 35 degree field of view at 720 rows, the two
+limits bite below about 1,900 light years of range and above about 3,260.
+
+The fragment shader reads `gl_PointCoord`. The outer 1 CSS pixel of the disc takes the
+ring colour (0.02, 0.04, 0.10) and the rest takes the core colour (0.60, 0.90, 1.00). The
+disc is opaque inside its edge, with a 1 device pixel antialiasing ramp at the outer edge,
+so both colours reach the frame unmixed and a test can read them. A ring of a fixed pixel
+width rather than a fixed fraction keeps the dark edge readable at the floor size, where
+5/7 of 7 pixels would leave a one-pixel core.
 
 The pass draws after the tone map and after the region overlay, with alpha blending and
 no depth test. Three things follow. The far view is untouched when the set is empty. No
@@ -102,8 +122,10 @@ Alternative: an additive scene pass beside the star field, with the zone colour 
 Rejected by the look decision: a real system must read as different from an invented star,
 and a scene pass at the core is tone-mapped into the wash.
 
-Fixed size rather than a perspective size with a floor: a marker is an annotation, not a
-body, so its size carries no distance information. One number is also one thing to test.
+A perspective size with a floor rather than one fixed size: a marker that shrinks with
+distance still reads as a thing in the scene while the camera moves, and the floor gives
+the far view what a fixed size would give it anyway. The cost is two numbers to test
+instead of one, which the size scenario covers at both limits.
 
 ### Suppression runs on the CPU and reaches the shader as a bit mask
 
@@ -117,14 +139,20 @@ class and happens once per class per version of the system set.
 
 **The sweep.** For each boxel of the base class block, the sweep looks the index up. The
 lookup misses for almost every boxel, and a miss costs nothing more. On a hit the sweep
-generates the boxel's `drawn` star positions with `starOffsets` and tests each against the
+generates the boxel's placed star positions with `starOffsets` and tests each against the
 systems of the entry. The result is 8 words of 32 bits, one bit per star index.
 
 **The cache.** The result of a boxel depends on its address, its class and the version of
 the system set, never on the camera. A `Map` keyed by class and index holds it, and the
 map is cleared when the version changes or when it passes 8,192 entries. A camera that
-moves by one base boxel then sweeps at most the 64 boxels per axis that entered the set.
-The worst case is the first sweep after a change of zoom band, which rebuilds all 512.
+moves by one base boxel on one axis then sweeps the 64 boxels that entered the set. The
+worst case is the first sweep after a change of base class, which sweeps all 512.
+
+A unit test counts the boxels each build swept, because that is what the cache rule
+decides and a count does not depend on the machine. The wall clock is measured in the
+browser instead, with the same frame measurement the far view's budget uses: a pan at a
+fixed zoom distance stays under 20 ms in its worst frame, and a zoom that crosses a base
+class boundary stays under 50 ms in its worst frame.
 
 **The upload.** The mask is an `R32UI` texture, 8 texels wide and one row per record of
 the boxel table. `stars.vert` reads
@@ -146,32 +174,43 @@ vertex, 475,136 times a frame.
 
 ### Light is conserved by dividing over the stars that remain
 
-`lightPerStar` becomes `boxelLight / (drawn - suppressed)`. The boxel then carries the
-same light whether or not a host loaded data, so the handover with the point cloud is
-untouched and the galaxy does not dim.
+The spec now names two counts. The **placed count** is `min(256, round(count))`, which
+does not depend on the system set. The **drawn count** is the placed count less the
+suppressed stars.
 
-The star radius keeps using `drawn`, the count before suppression. The radius sets only
-how concentrated a star's light is. Holding it fixed means the field's grain does not
-shift when a host loads data near the camera.
+`lightPerStar` becomes `boxelLight / drawnCount`. The boxel then carries the same light
+whether or not a host loaded data, so the handover with the point cloud is untouched and
+the galaxy does not dim.
+
+The star radius keeps using the placed count. The radius sets only how concentrated a
+star's light is. Holding it fixed means the field's grain does not shift when a host loads
+data near the camera.
+
+`drawnStarCount` in `src/scene-data/star-field.ts` returns the placed count, so it is
+renamed `placedStarCount`. `systemCount(density, volume)` in the same file is renamed
+`systemsInVolume`, because the handle's `systemCount()` returns a different quantity and
+one name must mean one thing.
 
 ## Risks / Trade-offs
 
-- **A zoom-band change sweeps 512 boxels at once.** → The per-class index makes a miss
-  free, and the per-boxel cache survives a return to the band. The spec bounds the first
-  sweep at 12 ms and a one-boxel move at 2 ms, and a unit test measures both.
-- **10,000 markers of 7 pixels read as a dot cloud in the far view.** → That is the
+- **A base class change sweeps 512 boxels at once.** → The per-class index makes a miss
+  free, and the per-boxel cache survives a return to the band. The spec accepts one slow
+  frame there and bounds it at 50 ms, measured in the browser; a unit test holds the cache
+  rule by counting the boxels each build swept.
+- **10,000 markers at the floor size read as a dot cloud in the far view.** → That is the
   decision: a marker must be findable at every zoom. The host controls how many records
   it loads, and the `systems` switch removes the pass.
 - **The per-frame rebase runs even when the camera has not moved.** → It is 30,000
   subtractions and a 120 KB write. The frame budget test covers it, because
   `measureFrames` redraws the same view and the rebase is not cached.
 - **A boxel can lose every star.** → It needs a real system within 3 light years of each
-  of them, which the drawn spacing allows only where the boxel draws one or two stars. The
-  light lost is then under one point cloud sample's.
+  of them, which the placed spacing allows only where the boxel places one or two stars.
+  The light lost is then under one point cloud sample's.
 - **Dump data carries licence terms.** → The map ships no data, so the host owns the
   terms of whatever it loads. Nothing is added to `THIRD_PARTY_NOTICES` review.
-- **The entry point is a new public surface.** → It is small on purpose: five members.
-  Phase 4 adds selection to the same handle.
+- **The entry point is a new public surface.** → Eight of its nine members are the
+  supported surface and the ninth, `debug`, is stated not to be. Phase 4 adds selection to
+  the same handle.
 
 ## Open Questions
 
