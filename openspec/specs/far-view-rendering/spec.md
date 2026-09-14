@@ -6,6 +6,7 @@ the look of the game's galaxy map, exact positions at every distance, and a fram
 
 ## Requirements
 
+
 ### Requirement: Hardware rendering is asserted
 At startup the renderer SHALL read the unmasked renderer string through
 `WEBGL_debug_renderer_info`, or `RENDERER` when that extension is absent, and expose it
@@ -42,7 +43,9 @@ is required and SHALL NOT throw.
 
 Each frame SHALL draw the density volume by raymarching, then the cloud sprites, then
 the star field and the point cloud as additive point sprites over them, and SHALL draw
-the region boundary overlay after the tone map. Each point cloud sample SHALL carry the
+the region boundary overlay and then the real-system markers after the tone map. Each
+overlay draws over the finished frame, so neither adds light the tone map reads and
+neither changes a look constant of the far view. Each point cloud sample SHALL carry the
 handover factor the star field defines, which is 1 at every range when the zoom distance
 is 8,000 light years or more, so the far view draws as it did before the star field
 existed. The volume SHALL store density on
@@ -196,8 +199,9 @@ sprites soften.
 
 #### Scenario: The added passes leave the far view alone
 
-- **WHEN** the browser test renders the default view at 1280x720 with the star pass and
-  the region overlay switched on, and again with both switched off
+- **WHEN** the browser test renders the default view at 1280x720 with the star pass, the
+  region overlay and the marker pass switched on and no system in the set, and again with
+  all three switched off
 - **THEN** the two image files are byte-identical
 
 
