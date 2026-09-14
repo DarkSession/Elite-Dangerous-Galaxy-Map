@@ -1158,7 +1158,9 @@ test.describe('the images and the lightbox', () => {
   // picture before it in the same turn, so a reading that did not first compare the two
   // paths would hide the caption for the whole load of a second picture.
   test('the caption shows while a second picture loads', async ({ page }) => {
-    let release: (() => void) | null = null;
+    // The assignment happens inside the executor, which TypeScript's flow analysis does
+    // not follow, so the variable carries a definite assignment assertion.
+    let release!: () => void;
     const held = new Promise<void>((done) => {
       release = done;
     });
@@ -1193,7 +1195,7 @@ test.describe('the images and the lightbox', () => {
     await expect(placeholder).toBeVisible();
     await expect(placeholder).toHaveText('APPROACH VECTOR');
 
-    release?.();
+    release();
     await expect(placeholder).toBeHidden();
   });
 
