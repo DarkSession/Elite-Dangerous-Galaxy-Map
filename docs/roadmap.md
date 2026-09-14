@@ -401,6 +401,35 @@ Lets the user select a placed system and shows its information in the HUD.
   - Whether a selected system appears in the URL fragment.
   - Keyboard access to selection.
 
+## Phase 5: the library API
+
+Change: not yet created.
+
+Makes the public API typed, so the map is usable as a library.
+
+- **The problem.** `addCategories` and `addSystems` take `readonly unknown[]`. The
+  compiler therefore accepts any array, and the consumer finds a misspelt field only in
+  the rejection report at run time. `unknown` at the boundary also hides the accepted
+  shape from the editor, so the README is the only place that states it.
+- **Typed input.** The library exports `CategoryInput` and `SystemRecordInput`, and both
+  methods take an array of the type. The run-time parser stays, because the data comes
+  from a file or a network call that the compiler does not check. The type states the
+  contract and the parser holds it.
+- **The shape follows Spansh and EDSM.** A Spansh dump record and an EDSM system record
+  both carry `name`, `id64` and `coords` with `x`, `y` and `z`. The library keeps those
+  names, so a record from either source passes with no rename. The library adds
+  `primaryCategory` and `secondaryCategories`, which neither source has.
+- **The consumer converts.** The library does not read a Spansh dump, call the EDSM API
+  or hold a schema for either. The consumer reads its own data and builds the input
+  array before the call. This keeps the data source and the drawing layer separate, as
+  every phase does.
+- **Open questions.**
+  - Whether the typed methods replace the `unknown` ones or sit beside them for one
+    release.
+  - Whether the library exports a type guard, so a consumer can filter a parsed dump
+    before the call.
+  - Which other fields of a Spansh record the HUD of phase 4 needs.
+
 ## Sources
 
 - Galaxy density model: [galaxy-density-model.md](galaxy-density-model.md) in this
