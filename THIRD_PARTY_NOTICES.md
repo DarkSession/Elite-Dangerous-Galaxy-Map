@@ -65,14 +65,19 @@ third-party code and no third-party data file.
 
 ## The Guardian site records of the demo page
 
-`src/app/demo-systems.json` holds 381 Guardian sites. The demo page loads them as an
-example host data set; the library itself ships no data and fetches none. The records
-come from the [Canonn Research Group](https://canonn.science/) through
+`src/app/demo-systems.json` holds 3 categories and 212 Guardian systems, with 600
+Guardian Ruins sites between them. The demo page loads them as an example host data set;
+the library itself ships no data and fetches none. The records come from the
+[Canonn Research Group](https://canonn.science/) through
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), which is under the
-**MIT** licence. The file is a conversion of three of that project's data sets:
-`guardian_ruins.json`, `guardian_structures.json` and `guardian_beacons.json`. The
-conversion keeps each system's name, its coordinates and its site types, and drops
-every other field.
+**MIT** licence. The file is a conversion of that project's `guardian_ruins.json` data
+set, which `Source/data/MapData-GR.js` fetches. `scripts/build-demo-systems.mjs` makes the
+conversion, and `pnpm build:demo` runs it. The conversion keeps each system's name, its
+coordinates, its site types and the bodies its sites are on, and drops every other field.
+
+Each record names its thumbnails at `https://ruins.canonn.tech/images/maps/`, one for each
+site type the system holds. The browser loads each picture from Canonn, so this repository
+holds none of them and the library fetches none itself.
 
 The category names, the colours and the descriptions in that file are this project's
 own. Canonn's own map gives each category a random colour on each load.
@@ -105,6 +110,44 @@ SOFTWARE.
 
 The sites are places in the game's galaxy, so the Frontier Developments terms above
 also apply to them.
+
+## The HUD fonts
+
+The HUD bundles two font families. The build carries the `woff2` files from the two
+packages, so no host page reaches a font CDN and the browser tests stay offline.
+
+- **Chakra Petch**, from [`@fontsource/chakra-petch`](https://www.npmjs.com/package/@fontsource/chakra-petch).
+  Copyright 2018 The Chakra Petch Project Authors, under the **SIL Open Font License,
+  Version 1.1**.
+- **IBM Plex Mono**, from [`@fontsource/ibm-plex-mono`](https://www.npmjs.com/package/@fontsource/ibm-plex-mono).
+  Copyright 2017 IBM Corp, under the **SIL Open Font License, Version 1.1**.
+
+The licence permits use, study, change and redistribution, on these conditions: the
+font files keep this notice, a changed font takes another name, and a font is not sold
+by itself. Each package carries the full licence text in its own `LICENSE` file. The
+full text is also at <https://openfontlicense.org/>.
+
+## The selection pin
+
+`src/app/markers.ts` draws a pin over the selected system. The shape is the system
+marker of the game's own galaxy map. The eight points of the path come from
+`https://edassets.org/static/img/galaxy-map/Marker-galaxy-map.svg`, which ED Assets
+publishes. This project commits no copy of that file: the eight numbers are written
+into a path of its own.
+
+ED Assets states no licence on the file. This notice records where the numbers came
+from. The shape itself is Frontier Developments' and falls under the same
+non-commercial media usage rules as the game data above.
+
+## The HUD mockup
+
+`.design/` holds the mockup the HUD is built from. `.design/support.js` is 69 KB of
+runtime that the design tool wrote so the mockup opens in a browser. It carries no
+licence header and no copyright line. It is generated output that travels with the
+mockup, and the map neither imports it nor ships it.
+
+`.design/uploads/pasted-1789380827969-0.png` is a screenshot of this project's own map,
+so it is this project's own work.
 
 ## The procedural naming tables
 

@@ -23,6 +23,16 @@ declare global {
     __readyAt?: number;
     /** How many context menu events reached the document without being stopped. */
     __openContextMenus?: number;
+    /** The names the selection listeners heard, for the selection tests. */
+    __selectionLog?: (string | null)[];
+    /** The second map the HUD tests build, with the HUD on. */
+    __hudMap?: GalaxyMap;
+    /** The systems the HUD footer action was called with. */
+    __hudActionCalls?: string[];
+    /** How many times the search box called the name filter. */
+    __filterCalls?: number;
+    /** How many times the map asked the HUD to rebuild its panels. */
+    __hudRefreshCalls?: number;
   }
 }
 

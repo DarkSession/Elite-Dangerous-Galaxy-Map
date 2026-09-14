@@ -16,14 +16,17 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 /**
  * How large the page chunk may be, in bytes. It measured 108,194 bytes when this test was
- * written, 124,530 bytes after the phase 3 change, which did not refresh this note, and
+ * written, 124,530 bytes after the phase 3 change, which did not refresh this note,
  * 131,090 bytes after the deep zoom change, which added about 6.5 KB for the glow shader,
- * the region mode and the second boundary set. The guard is for the 199 KiB region cell
- * lookup: that table in the chunk reads about 330,000 bytes, so the limit fails long
- * before it. The limit holds 14 per cent of headroom over the reading, which is less than
- * the 20 per cent the first limit held over its own.
+ * the region mode and the second boundary set, and 144,230 bytes before the flight,
+ * markers and grid change. That change took the chunk to 152,848 bytes. The growth is the
+ * selection flight, the grid pass and the grid labels.
+ *
+ * The guard is for the 199 KiB region cell lookup. A chunk that pulled that table in
+ * reads over 340,000 bytes, so a limit of 170,000 still catches the regression. The limit
+ * also leaves room for one more feature before it needs a new reading.
  */
-const MAIN_CHUNK_LIMIT = 150_000;
+const MAIN_CHUNK_LIMIT = 170_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,

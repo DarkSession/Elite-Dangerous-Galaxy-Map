@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:demo": "node scripts/build-demo-systems.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -28,6 +29,8 @@
   },
   "dependencies": {
     "@elite-dangerous-almanac/core": "0.2.8",
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "gl-matrix": "^3.4.4"
   }
 }

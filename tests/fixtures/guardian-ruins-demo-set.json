@@ -1,0 +1,222 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "Ruins Alpha",
+      "color": [
+        255,
+        176,
+        64
+      ],
+      "description": "A Guardian ruin of the Alpha layout."
+    },
+    {
+      "name": "Ruins Beta",
+      "color": [
+        255,
+        122,
+        64
+      ],
+      "description": "A Guardian ruin of the Beta layout."
+    },
+    {
+      "name": "Ruins Gamma",
+      "color": [
+        255,
+        88,
+        120
+      ],
+      "description": "A Guardian ruin of the Gamma layout."
+    }
+  ],
+  "systems": [
+    {
+      "name": "Synuefe XR-H d11-102",
+      "coords": {
+        "x": 357.34375,
+        "y": -49.34375,
+        "z": -74.75
+      },
+      "primaryCategory": "Ruins Beta",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian ruin. The body is 1 B.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        }
+      ]
+    },
+    {
+      "name": "Col 173 Sector KY-Q d5-47",
+      "coords": {
+        "x": 1043.875,
+        "y": -100.75,
+        "z": -246.0625
+      },
+      "primaryCategory": "Ruins Beta",
+      "secondaryCategories": [
+        "Ruins Alpha",
+        "Ruins Gamma"
+      ],
+      "description": "The system holds 5 Guardian ruins. The bodies are 8 C, 9 A and 9 D.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/alpha-thumbnail.png",
+          "caption": "Alpha site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        }
+      ]
+    },
+    {
+      "name": "HIP 39768",
+      "coords": {
+        "x": 866.59375,
+        "y": -119.125,
+        "z": -109.03125
+      },
+      "primaryCategory": "Ruins Beta",
+      "secondaryCategories": [],
+      "description": "The system holds 2 Guardian ruins. The body is A 14 F.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        }
+      ]
+    },
+    {
+      "name": "Synuefe TP-F b44-0",
+      "coords": {
+        "x": 838.75,
+        "y": -197.84375,
+        "z": -111.84375
+      },
+      "primaryCategory": "Ruins Gamma",
+      "secondaryCategories": [
+        "Ruins Beta",
+        "Ruins Alpha"
+      ],
+      "description": "The system holds 3 Guardian ruins. The body is CD 1.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/alpha-thumbnail.png",
+          "caption": "Alpha site"
+        }
+      ]
+    },
+    {
+      "name": "Synuefe NL-N c23-4",
+      "coords": {
+        "x": 860.125,
+        "y": -124.59375,
+        "z": -61.0625
+      },
+      "primaryCategory": "Ruins Alpha",
+      "secondaryCategories": [
+        "Ruins Gamma"
+      ],
+      "description": "The system holds 3 Guardian ruins. The body is B 3.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/alpha-thumbnail.png",
+          "caption": "Alpha site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        }
+      ]
+    },
+    {
+      "name": "Synuefe LY-I b42-2",
+      "coords": {
+        "x": 814.71875,
+        "y": -222.78125,
+        "z": -151.15625
+      },
+      "primaryCategory": "Ruins Gamma",
+      "secondaryCategories": [
+        "Ruins Beta"
+      ],
+      "description": "The system holds 3 Guardian ruins. The body is C 2.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        }
+      ]
+    },
+    {
+      "name": "Col 173 Sector AV-N b23-5",
+      "coords": {
+        "x": 1117.03125,
+        "y": -71.03125,
+        "z": -202.15625
+      },
+      "primaryCategory": "Ruins Beta",
+      "secondaryCategories": [
+        "Ruins Gamma"
+      ],
+      "description": "The system holds 3 Guardian ruins. The body is A 2.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        }
+      ]
+    },
+    {
+      "name": "Col 173 Sector LY-Q d5-13",
+      "coords": {
+        "x": 1120.34375,
+        "y": -87.21875,
+        "z": -216.875
+      },
+      "primaryCategory": "Ruins Alpha",
+      "secondaryCategories": [
+        "Ruins Beta",
+        "Ruins Gamma"
+      ],
+      "description": "The system holds 4 Guardian ruins. The bodies are AB 9 A and AB 9 B.",
+      "images": [
+        {
+          "url": "https://ruins.canonn.tech/images/maps/alpha-thumbnail.png",
+          "caption": "Alpha site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/beta-thumbnail.png",
+          "caption": "Beta site"
+        },
+        {
+          "url": "https://ruins.canonn.tech/images/maps/gamma-thumbnail.png",
+          "caption": "Gamma site"
+        }
+      ]
+    }
+  ]
+}

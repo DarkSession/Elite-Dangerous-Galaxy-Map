@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'vitest';
 import { project } from './projection';
 import {
+  applyKeyDown,
+  applyKeyUp,
   beginDrag,
+  beginPress,
   dragCursor,
+  isClick,
   moveByKeys,
   notchesFromWheel,
   orbit,
+  trackPress,
   zoomByNotches,
 } from './controls';
 import { createDefaultView, MAX_DISTANCE, MIN_DISTANCE } from './view';
@@ -128,5 +133,82 @@ describe('the right drag', () => {
     const screen = project(view, (start as NonNullable<typeof start>).point, viewport);
     expect(Math.abs(screen.x - endPixel.x)).toBeLessThan(1);
     expect(Math.abs(screen.y - endPixel.y)).toBeLessThan(1);
+  });
+});
+
+describe('the click test', () => {
+  test('reads a short still press as a click', () => {
+    const press = beginPress({ x: 400, y: 300 }, 0);
+    trackPress(press, { x: 403, y: 300 });
+
+    expect(isClick(press, 120)).toBe(true);
+  });
+
+  test('reads a press that moves far as an orbit, even when it comes back', () => {
+    const view = createDefaultView();
+    const yawBefore = view.yaw;
+    const press = beginPress({ x: 400, y: 300 }, 0);
+    trackPress(press, { x: 440, y: 300 });
+    orbit(view, 40, 0);
+    trackPress(press, { x: 400, y: 300 });
+    orbit(view, -40, 0);
+
+    expect(isClick(press, 120)).toBe(false);
+    expect(view.yaw).toBeCloseTo(yawBefore, 9);
+  });
+
+  test('reads a long still press as an orbit', () => {
+    const press = beginPress({ x: 400, y: 300 }, 0);
+
+    expect(isClick(press, 600)).toBe(false);
+  });
+
+  test('holds the two limits at 4 CSS pixels and 400 milliseconds', () => {
+    const onLimit = beginPress({ x: 0, y: 0 }, 0);
+    trackPress(onLimit, { x: 4, y: 0 });
+    expect(isClick(onLimit, 400)).toBe(true);
+
+    const pastPixels = beginPress({ x: 0, y: 0 }, 0);
+    trackPress(pastPixels, { x: 5, y: 0 });
+    expect(isClick(pastPixels, 100)).toBe(false);
+
+    const pastTime = beginPress({ x: 0, y: 0 }, 0);
+    expect(isClick(pastTime, 401)).toBe(false);
+  });
+});
+
+describe('the form-field guard', () => {
+  test('ignores a key aimed at an input, a text area, a select or an editable', () => {
+    const keys = new Set<string>();
+    for (const target of [
+      { tagName: 'INPUT' },
+      { tagName: 'TEXTAREA' },
+      { tagName: 'SELECT' },
+      { tagName: 'DIV', isContentEditable: true },
+    ]) {
+      applyKeyDown(keys, 'KeyW', target);
+    }
+
+    expect(keys.size).toBe(0);
+  });
+
+  test('holds a key aimed at the canvas', () => {
+    const keys = new Set<string>();
+    applyKeyDown(keys, 'KeyW', { tagName: 'CANVAS' });
+
+    expect(keys.has('W')).toBe(true);
+  });
+
+  test('leaves the cursor still when a key goes down in a field', () => {
+    const keys = new Set<string>();
+    const view = createDefaultView();
+    view.distance = 20000;
+    const before: [number, number, number] = [...view.cursor];
+
+    applyKeyDown(keys, 'KeyW', { tagName: 'INPUT' });
+    applyKeyUp(keys, 'KeyW');
+    moveByKeys(view, keys, 1);
+
+    expect(view.cursor).toEqual(before);
   });
 });

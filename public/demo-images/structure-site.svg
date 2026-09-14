@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-label="A drawing of a Guardian structure">
+  <rect width="400" height="300" fill="#140e12" />
+  <g stroke="#7dff9e" fill="none" stroke-width="2" opacity="0.7">
+    <path d="M 200 40 L 330 260 L 70 260 Z" />
+    <path d="M 200 110 L 265 225 L 135 225 Z" />
+    <line x1="70" y1="260" x2="330" y2="260" />
+  </g>
+  <g stroke="#ff9a3c" fill="none" stroke-width="1.5" opacity="0.5">
+    <circle cx="200" cy="200" r="90" />
+    <circle cx="200" cy="200" r="130" />
+  </g>
+</svg>

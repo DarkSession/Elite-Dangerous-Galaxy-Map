@@ -190,16 +190,13 @@ describe('the marker colour buffer', () => {
 
 describe('the marker size', () => {
   test('falls to the floor and rises to the cap', () => {
-    // The browser suite renders 720 rows at a 60 degree field of view, so the focal
-    // length is 623.5 CSS pixels per light year at one light year of range.
-    const focalCss = 720 / (2 * Math.tan((60 * Math.PI) / 360));
-    expect(markerCssSize(focalCss, 120000)).toBe(MIN_MARKER_CSS);
-    expect(markerCssSize(focalCss, 500)).toBe(MAX_MARKER_CSS);
-    // The cap boundary sits near 1,040 light years of range.
-    expect(markerCssSize(focalCss, 1040)).toBeCloseTo(MAX_MARKER_CSS, 1);
-    // The floor boundary sits near 1,780 light years of range.
-    expect(markerCssSize(focalCss, 1500)).toBeGreaterThan(MIN_MARKER_CSS);
-    expect(markerCssSize(focalCss, 1500)).toBeLessThan(MAX_MARKER_CSS);
+    expect(markerCssSize(120000)).toBe(MIN_MARKER_CSS);
+    expect(markerCssSize(10)).toBe(MAX_MARKER_CSS);
+    // The plateau runs from 50 to 1,000 light years of range.
+    expect(markerCssSize(50)).toBeCloseTo(12, 9);
+    expect(markerCssSize(1000)).toBeCloseTo(12, 9);
+    expect(markerCssSize(4000)).toBeGreaterThan(MIN_MARKER_CSS);
+    expect(markerCssSize(4000)).toBeLessThan(12);
   });
 });
 
@@ -299,29 +296,24 @@ describe('the drawn marker count', () => {
 
 describe('the sprite size', () => {
   test('reads the disc at the limits and the glow at 2.5 times each', () => {
-    const focalCss = 720 / (2 * Math.tan((60 * Math.PI) / 360));
-    expect(markerSpriteCssSize(focalCss, 120000, 'disc')).toBe(MIN_MARKER_CSS);
-    expect(markerSpriteCssSize(focalCss, 500, 'disc')).toBe(MAX_MARKER_CSS);
-    expect(markerSpriteCssSize(focalCss, 120000, 'glow')).toBe(
-      MIN_MARKER_CSS * GLOW_SIZE_FACTOR,
-    );
-    expect(markerSpriteCssSize(focalCss, 500, 'glow')).toBe(
-      MAX_MARKER_CSS * GLOW_SIZE_FACTOR,
-    );
-    for (const range of [500, 1040, 1500, 20000, 120000]) {
-      const disc = markerSpriteCssSize(focalCss, range, 'disc');
-      const glow = markerSpriteCssSize(focalCss, range, 'glow');
+    expect(markerSpriteCssSize(120000, 'disc')).toBe(MIN_MARKER_CSS);
+    expect(markerSpriteCssSize(10, 'disc')).toBe(MAX_MARKER_CSS);
+    expect(markerSpriteCssSize(120000, 'glow')).toBe(MIN_MARKER_CSS * GLOW_SIZE_FACTOR);
+    expect(markerSpriteCssSize(10, 'glow')).toBe(MAX_MARKER_CSS * GLOW_SIZE_FACTOR);
+    for (const range of [10, 500, 1040, 1500, 20000, 120000]) {
+      const disc = markerSpriteCssSize(range, 'disc');
+      const glow = markerSpriteCssSize(range, 'glow');
       expect(disc).toBeGreaterThanOrEqual(7);
-      expect(disc).toBeLessThanOrEqual(12);
+      expect(disc).toBeLessThanOrEqual(16);
       expect(glow).toBeGreaterThanOrEqual(17.5);
-      expect(glow).toBeLessThanOrEqual(30);
+      expect(glow).toBeLessThanOrEqual(40);
     }
   });
 
   test('stays at or under the point size the card reports', () => {
     const cap = MAX_MARKER_CSS * GLOW_SIZE_FACTOR;
     // 1023 is what the card in the dev container reports. 64 stands for a card that
-    // reports less than the 90 device pixels a glow asks for at a ratio of 3.
+    // reports less than the 120 device pixels a glow asks for at a ratio of 3.
     for (const maximum of [1023, 64]) {
       for (const pixelRatio of [1, 2, 3]) {
         const size = markerPointSize(cap, pixelRatio, maximum);
@@ -329,15 +321,15 @@ describe('the sprite size', () => {
         expect(size).toBe(Math.min(cap * pixelRatio, maximum));
       }
     }
-    expect(markerPointSize(cap, 3, 1023)).toBe(90);
+    expect(markerPointSize(cap, 3, 1023)).toBe(120);
     expect(markerPointSize(cap, 3, 64)).toBe(64);
   });
 });
 
 describe('the glow alpha', () => {
   test('starts at 1, never rises outward and holds every step under 0.05', () => {
-    // The floor sprite is 17.5 CSS pixels across and the cap sprite 30, so the two
-    // radii are 8.75 and 15.
+    // The floor sprite is 17.5 CSS pixels across and the cap sprite 40, so the two
+    // radii are 8.75 and 20.
     for (const radius of [
       (MIN_MARKER_CSS * GLOW_SIZE_FACTOR) / 2,
       (MAX_MARKER_CSS * GLOW_SIZE_FACTOR) / 2,
@@ -394,7 +386,6 @@ describe('the two styles', () => {
     const drawn = pass.draw({
       viewProjection: new Float32Array(16),
       camera: [0, 0, 0],
-      focal: 623.5,
       pixelRatio: 1,
       set,
     });

@@ -11,12 +11,10 @@ layout(location = 1) in vec3 aCore;
 layout(location = 2) in vec2 aStyleRange;
 
 uniform mat4 uViewProjection;
-// The CSS pixels per light year at one light year of range, times the marker's own
-// size in light years. The CSS diameter is this over the range.
-uniform float uScale;
-// The floor and the cap of the CSS diameter. The floor keeps a marker findable in the
-// far view, where the perspective size falls below one pixel.
-uniform vec2 uLimits;
+// The four ranges of the size stop table, in light years, in rising order.
+uniform vec4 uSizeRanges;
+// The CSS diameter of the marker at each of those four ranges.
+uniform vec4 uSizeValues;
 // Device pixels per CSS pixel.
 uniform float uPixelRatio;
 // The width of the ring, in CSS pixels.
@@ -31,18 +29,37 @@ out float vRadius;
 out float vRing;
 out float vStyle;
 
+// The disc diameter in CSS pixels at a range in light years. The rule reads the range
+// alone and not the viewport. It walks the stop table: between two stops the size is
+// even in the logarithm of the range, and outside the ends it holds the end value.
+// `markerCssSize` of `src/scene-data/marker-size.ts` holds the same walk, and the table
+// comes from that file, so there is no second copy of the numbers.
+float discCssSize(float range) {
+  float logRange = log(max(range, 1e-6));
+  if (logRange <= log(uSizeRanges[0])) return uSizeValues[0];
+  for (int stop = 1; stop < 4; stop += 1) {
+    float high = log(uSizeRanges[stop]);
+    if (logRange > high) continue;
+    float low = log(uSizeRanges[stop - 1]);
+    float part = (logRange - low) / (high - low);
+    return mix(uSizeValues[stop - 1], uSizeValues[stop], part);
+  }
+  return uSizeValues[3];
+}
+
 void main() {
   float range = length(aOffset);
   // A marker draws only while the camera is inside the draw range of its own category.
+  // A range of 0 is the marker the category switch or the name filter took off.
   // A clip-space z over w of 2 is behind the far plane, so the point is clipped and no
   // fragment is written. The cut does not fade: a marker draws in full or not at all.
-  if (range > aStyleRange.y) {
+  if (aStyleRange.y <= 0.0 || range > aStyleRange.y) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     return;
   }
 
-  float disc = clamp(uScale / max(range, 1.0), uLimits.x, uLimits.y);
+  float disc = discCssSize(range);
   float sprite = aStyleRange.x > 0.5 ? disc * uGlowFactor : disc;
   float size = min(sprite * uPixelRatio, uMaxPointSize);
   gl_PointSize = size;

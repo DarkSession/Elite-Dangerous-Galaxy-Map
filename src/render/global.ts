@@ -31,6 +31,7 @@ export interface GalaxyMapGlobal {
     glow?: boolean;
     regions?: boolean;
     systems?: boolean;
+    grid?: boolean;
   }) => void;
   /** How many vertices the last frame's star draw issued. */
   starVertexCount?: () => number;
@@ -106,6 +107,35 @@ export interface GalaxyMapGlobal {
   regionNameAtScreen?: (x: number, y: number) => string | null;
   /** Starts the label sweep time mean again. */
   resetLabelSampling?: () => void;
+  /**
+   * The mean and the worst time of the hover pick and the overlay marks, with the
+   * frames they cover, since the reset. The work runs around the draw call, so
+   * `frameStats` does not see it.
+   */
+  selectionSampling?: () => { frames: number; meanMs: number; worstMs: number };
+  /** Starts the selection work mean again. */
+  resetSelectionSampling?: () => void;
+  /**
+   * The mean and the worst interval between animation frames, with the frames they
+   * cover, since the reset. It covers everything the browser does per frame, so it is
+   * what shows a dropped frame.
+   */
+  frameIntervalStats?: () => { frames: number; meanMs: number; worstMs: number };
+  /** Starts the animation frame interval mean again. */
+  resetFrameIntervalStats?: () => void;
+  /** How many vertices the last frame's grid draw issued. */
+  gridVertexCount?: () => number;
+  /** The spacing of the label level of the last frame, in light years. */
+  gridSpacingLy?: () => number;
+  /** The spacing, the screen spacing, the width and the alpha of each grid level. */
+  gridLevels?: () => {
+    spacingLy: number;
+    screenCss: number;
+    widthCss: number;
+    alpha: number;
+  }[];
+  /** The milliseconds left in the running selection flight, and 0 when none runs. */
+  selectionFlightMs?: () => number;
 }
 
 declare global {

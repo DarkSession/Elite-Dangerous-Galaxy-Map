@@ -1,0 +1,218 @@
+[
+  {
+    "SiteId": "1",
+    "Site Type": "Beta",
+    "System Name": "Synuefe XR-H d11-102",
+    "x": "357.34375",
+    "y": "-49.34375",
+    "z": "-74.75",
+    "Body Name": "1 B"
+  },
+  {
+    "SiteId": "6",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector KY-Q d5-47",
+    "x": "1043.875",
+    "y": "-100.75",
+    "z": "-246.0625",
+    "Body Name": "8 C"
+  },
+  {
+    "SiteId": "7",
+    "Site Type": "Alpha",
+    "System Name": "Col 173 Sector KY-Q d5-47",
+    "x": "1043.875",
+    "y": "-100.75",
+    "z": "-246.0625",
+    "Body Name": "8 C"
+  },
+  {
+    "SiteId": "8",
+    "Site Type": "Beta",
+    "System Name": "HIP 39768",
+    "x": "866.59375",
+    "y": "-119.125",
+    "z": "-109.03125",
+    "Body Name": "A 14 F"
+  },
+  {
+    "SiteId": "9",
+    "Site Type": "Gamma",
+    "System Name": "Synuefe TP-F b44-0",
+    "x": "838.75",
+    "y": "-197.84375",
+    "z": "-111.84375",
+    "Body Name": "CD 1"
+  },
+  {
+    "SiteId": "10",
+    "Site Type": "Beta",
+    "System Name": "Synuefe TP-F b44-0",
+    "x": "838.75",
+    "y": "-197.84375",
+    "z": "-111.84375",
+    "Body Name": "CD 1"
+  },
+  {
+    "SiteId": "11",
+    "Site Type": "Alpha",
+    "System Name": "Synuefe TP-F b44-0",
+    "x": "838.75",
+    "y": "-197.84375",
+    "z": "-111.84375",
+    "Body Name": "CD 1"
+  },
+  {
+    "SiteId": "12",
+    "Site Type": "Alpha",
+    "System Name": "Col 173 Sector KY-Q d5-47",
+    "x": "1043.875",
+    "y": "-100.75",
+    "z": "-246.0625",
+    "Body Name": "9 A"
+  },
+  {
+    "SiteId": "13",
+    "Site Type": "Alpha",
+    "System Name": "Synuefe NL-N c23-4",
+    "x": "860.125",
+    "y": "-124.59375",
+    "z": "-61.0625",
+    "Body Name": "B 3"
+  },
+  {
+    "SiteId": "14",
+    "Site Type": "Gamma",
+    "System Name": "Col 173 Sector KY-Q d5-47",
+    "x": "1043.875",
+    "y": "-100.75",
+    "z": "-246.0625",
+    "Body Name": "9 A"
+  },
+  {
+    "SiteId": "15",
+    "Site Type": "Gamma",
+    "System Name": "Synuefe LY-I b42-2",
+    "x": "814.71875",
+    "y": "-222.78125",
+    "z": "-151.15625",
+    "Body Name": "C 2"
+  },
+  {
+    "SiteId": "16",
+    "Site Type": "Gamma",
+    "System Name": "Synuefe LY-I b42-2",
+    "x": "814.71875",
+    "y": "-222.78125",
+    "z": "-151.15625",
+    "Body Name": "C 2"
+  },
+  {
+    "SiteId": "17",
+    "Site Type": "Beta",
+    "System Name": "Synuefe LY-I b42-2",
+    "x": "814.71875",
+    "y": "-222.78125",
+    "z": "-151.15625",
+    "Body Name": "C 2"
+  },
+  {
+    "SiteId": "18",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector AV-N b23-5",
+    "x": "1117.03125",
+    "y": "-71.03125",
+    "z": "-202.15625",
+    "Body Name": "A 2"
+  },
+  {
+    "SiteId": "19",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector AV-N b23-5",
+    "x": "1117.03125",
+    "y": "-71.03125",
+    "z": "-202.15625",
+    "Body Name": "A 2"
+  },
+  {
+    "SiteId": "20",
+    "Site Type": "Gamma",
+    "System Name": "Col 173 Sector AV-N b23-5",
+    "x": "1117.03125",
+    "y": "-71.03125",
+    "z": "-202.15625",
+    "Body Name": "A 2"
+  },
+  {
+    "SiteId": "21",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector KY-Q d5-47",
+    "x": "1043.875",
+    "y": "-100.75",
+    "z": "-246.0625",
+    "Body Name": "9 D"
+  },
+  {
+    "SiteId": "22",
+    "Site Type": "Alpha",
+    "System Name": "Synuefe NL-N c23-4",
+    "x": "860.125",
+    "y": "-124.59375",
+    "z": "-61.0625",
+    "Body Name": "B 3"
+  },
+  {
+    "SiteId": "23",
+    "Site Type": "Alpha",
+    "System Name": "Col 173 Sector LY-Q d5-13",
+    "x": "1120.34375",
+    "y": "-87.21875",
+    "z": "-216.875",
+    "Body Name": "AB 9 A"
+  },
+  {
+    "SiteId": "24",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector LY-Q d5-13",
+    "x": "1120.34375",
+    "y": "-87.21875",
+    "z": "-216.875",
+    "Body Name": "AB 9 A"
+  },
+  {
+    "SiteId": "25",
+    "Site Type": "Beta",
+    "System Name": "HIP 39768",
+    "x": "866.59375",
+    "y": "-119.125",
+    "z": "-109.03125",
+    "Body Name": "A 14 F"
+  },
+  {
+    "SiteId": "26",
+    "Site Type": "Beta",
+    "System Name": "Col 173 Sector LY-Q d5-13",
+    "x": "1120.34375",
+    "y": "-87.21875",
+    "z": "-216.875",
+    "Body Name": "AB 9 A"
+  },
+  {
+    "SiteId": "27",
+    "Site Type": "Gamma",
+    "System Name": "Col 173 Sector LY-Q d5-13",
+    "x": "1120.34375",
+    "y": "-87.21875",
+    "z": "-216.875",
+    "Body Name": "AB 9 B"
+  },
+  {
+    "SiteId": "64",
+    "Site Type": "Gamma",
+    "System Name": "Synuefe NL-N c23-4",
+    "x": "860.125",
+    "y": "-124.59375",
+    "z": "-61.0625",
+    "Body Name": "B 3"
+  }
+]

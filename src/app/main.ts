@@ -25,9 +25,11 @@ function writeFragment(fragment: string): void {
 }
 
 /**
- * Puts the demo data set on the map: 15 categories and 381 Guardian systems, which
- * `THIRD_PARTY_NOTICES.md` names. The page is a host application, so it supplies the
- * records through the same two calls any other host uses. The library bundles no data.
+ * Puts the demo data set on the map: 3 categories and 212 Guardian systems, which
+ * `THIRD_PARTY_NOTICES.md` names. Each record names its thumbnails at
+ * `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn. The
+ * page is a host application, so it supplies the records through the same two calls any
+ * other host uses. The library bundles no data.
  *
  * The dev server alone runs this. `import.meta.env.DEV` is a constant in the production
  * build, so the bundler drops the block and the import with it. That matters: the
@@ -50,10 +52,21 @@ async function loadDemoSystems(map: GalaxyMap): Promise<void> {
 
 function start(target: HTMLCanvasElement): void {
   const global = galaxyMapGlobal();
-  const map: GalaxyMap = createGalaxyMap(
-    target,
-    labelHost === null ? {} : { labelHost: labelHost as HTMLElement },
-  );
+  const map: GalaxyMap = createGalaxyMap(target, {
+    ...(labelHost === null ? {} : { labelHost: labelHost as HTMLElement }),
+    // The demo page is a host application, so it turns the HUD on the way any other
+    // host does, and it adds one footer action to show what `actions` gives a host.
+    hud: {
+      actions: [
+        {
+          label: 'LOG RECORD',
+          onSelect: (system) => {
+            console.info('The demo action read a system.', system);
+          },
+        },
+      ],
+    },
+  });
   window.galaxyMap = map;
   // The entry point itself, so a browser test can build a second map with a canvas of
   // its own and check what the library makes when the host gives no options.
@@ -97,6 +110,14 @@ function start(target: HTMLCanvasElement): void {
   global.labelSampling = () => debug.labelSampling();
   global.resetLabelSampling = () => debug.resetLabelSampling();
   global.regionNameAtScreen = (x, y) => debug.regionNameAtScreen(x, y);
+  global.selectionSampling = () => debug.selectionSampling();
+  global.resetSelectionSampling = () => debug.resetSelectionSampling();
+  global.frameIntervalStats = () => debug.frameIntervalStats();
+  global.resetFrameIntervalStats = () => debug.resetFrameIntervalStats();
+  global.gridVertexCount = () => debug.gridVertexCount();
+  global.gridSpacingLy = () => debug.gridSpacingLy();
+  global.gridLevels = () => debug.gridLevels();
+  global.selectionFlightMs = () => debug.selectionFlightMs();
   global.regionLinePositions = () => debug.regionLinePositions();
   global.regionLineChains = () => debug.regionLineChains();
   global.compileTestProgram = (vertex, fragment) =>

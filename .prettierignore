@@ -10,6 +10,12 @@ src/galaxy-model/galaxy-model.json
 tests/fixtures/galaxy-model.json
 tests/fixtures/galaxy-detail.json
 
+# Committed data a script writes. `scripts/build-demo-systems.mjs` writes both with
+# `JSON.stringify(set, null, 2)`, so Prettier and the script would give each file a
+# different shape and `pnpm build:demo` would make the tree dirty at once.
+src/app/demo-systems.json
+tests/fixtures/guardian-ruins-demo-set.json
+
 # Baseline images and other snapshots.
 e2e/**/*-snapshots/**
 
@@ -17,6 +23,9 @@ e2e/**/*-snapshots/**
 *.vert
 *.frag
 *.glsl
+
+# The HUD mockup and the runtime the design tool wrote.
+.design
 
 # Files this project does not own the formatting of: the OpenSpec artifacts and the
 # generated skill and command files, the dev container and the editor configuration.

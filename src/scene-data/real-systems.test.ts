@@ -469,3 +469,213 @@ describe('the set', () => {
     expect(secondMs).toBeLessThan(50);
   });
 });
+
+describe('the three HUD record fields', () => {
+  test('keeps the fields when they are strings', () => {
+    const set = setWith('A');
+    const report = set.addSystems([
+      {
+        ...record('Sol', 'A'),
+        description: 'The home system.',
+        primaryStar: 'G2 V',
+        images: [{ url: 'https://example.test/a.png', caption: 'A' }],
+      },
+      {
+        ...record('Achenar', 'A'),
+        description: 4,
+        primaryStar: null,
+      },
+    ]);
+
+    expect(report.added).toBe(2);
+    const first = set.system(0);
+    expect(first?.description).toBe('The home system.');
+    expect(first?.primaryStar).toBe('G2 V');
+    expect(first?.images).toEqual([
+      { url: 'https://example.test/a.png', caption: 'A' },
+    ]);
+    const second = set.system(1);
+    expect(second?.description).toBeUndefined();
+    expect(second?.primaryStar).toBeUndefined();
+  });
+
+  test('drops a bad image entry and caps the list at eight', () => {
+    const set = setWith('A');
+    const images: unknown[] = [
+      { url: 'https://example.test/a.png', caption: 'A' },
+      { url: 'javascript:alert(1)' },
+      { url: '/local/b.png' },
+      'c.png',
+    ];
+    for (let index = 0; index < 10; index += 1) {
+      images.push({ url: `https://example.test/more-${index}.png` });
+    }
+    const report = set.addSystems([{ ...record('Sol', 'A'), images }]);
+
+    expect(report.added).toBe(1);
+    const kept = set.system(0)?.images ?? [];
+    expect(kept).toHaveLength(8);
+    expect(kept.map((image) => image.url)).toEqual([
+      'https://example.test/a.png',
+      '/local/b.png',
+      'https://example.test/more-0.png',
+      'https://example.test/more-1.png',
+      'https://example.test/more-2.png',
+      'https://example.test/more-3.png',
+      'https://example.test/more-4.png',
+      'https://example.test/more-5.png',
+    ]);
+    expect(kept[0]?.caption).toBe('A');
+  });
+
+  // The URL standard removes every tab, carriage return and line feed from a URL, and
+  // strips the control characters and the spaces at each end, before it reads the
+  // scheme. A guard on the raw string lets those URLs through, and the browser runs
+  // them.
+  test('drops a scheme that whitespace hides', () => {
+    const set = setWith('A');
+    const report = set.addSystems([
+      {
+        ...record('Sol', 'A'),
+        images: [
+          { url: '\tdata:image/svg+xml,%3Csvg%3E%3C/svg%3E' },
+          { url: ' javascript:alert(1)' },
+          { url: 'ja\tvascript:alert(1)' },
+          { url: '\nhttps://example.test/a.png' },
+        ],
+      },
+    ]);
+
+    expect(report.added).toBe(1);
+    const kept = set.system(0)?.images ?? [];
+    expect(kept.map((image) => image.url)).toEqual(['\nhttps://example.test/a.png']);
+  });
+
+  test('drops an images field that is not an array', () => {
+    const set = setWith('A');
+    const report = set.addSystems([
+      { ...record('Sol', 'A'), images: 'a.png' },
+      { ...record('Achenar', 'A'), images: [] },
+    ]);
+
+    expect(report.added).toBe(2);
+    expect(set.system(0)?.images).toBeUndefined();
+    expect(set.system(1)?.images).toBeUndefined();
+  });
+});
+
+describe('the category switch', () => {
+  test('takes the markers of a category off the frame', () => {
+    const set = setWith('A', 'B');
+    set.addSystems([record('one', 'A'), record('two', 'B')]);
+
+    expect(set.isCategoryVisible('A')).toBe(true);
+    expect(Array.from(set.markerFlags)).toEqual([1, 1]);
+
+    set.setCategoryVisible('A', false);
+
+    expect(set.isCategoryVisible('A')).toBe(false);
+    expect(Array.from(set.markerFlags)).toEqual([0, 1]);
+    expect(set.drawsMarker(0)).toBe(false);
+    expect(set.drawsMarker(1)).toBe(true);
+  });
+
+  test('raises the category version, so the marker pass rebuilds', () => {
+    const set = setWith('A');
+    const before = set.categoryVersion;
+    set.setCategoryVisible('A', false);
+
+    expect(set.categoryVersion).toBeGreaterThan(before);
+  });
+
+  test('keeps the visibility when the category is replaced', () => {
+    const set = setWith('A');
+    set.setCategoryVisible('A', false);
+    set.addCategories([{ name: 'A', color: [255, 40, 40] }]);
+
+    expect(set.isCategoryVisible('A')).toBe(false);
+  });
+
+  test('changes nothing for a name the table does not hold', () => {
+    const set = setWith('A');
+    expect(() => {
+      set.setCategoryVisible('nothing', false);
+    }).not.toThrow();
+
+    expect(set.isCategoryVisible('nothing')).toBe(false);
+    expect(set.isCategoryVisible('A')).toBe(true);
+  });
+
+  test('reads the primary category alone', () => {
+    const set = setWith('A', 'B');
+    set.addSystems([{ ...record('one', 'A'), secondaryCategories: ['B'] }]);
+    set.setCategoryVisible('A', false);
+
+    expect(set.drawsMarker(0)).toBe(false);
+
+    set.setCategoryVisible('A', true);
+    set.setCategoryVisible('B', false);
+
+    expect(set.drawsMarker(0)).toBe(true);
+  });
+
+  test('goes with the table on a paired clear', () => {
+    const set = setWith('A');
+    set.setCategoryVisible('A', false);
+    set.clearSystemsAndCategories();
+    set.addCategories([{ name: 'A', color: [1, 2, 3] }]);
+
+    expect(set.isCategoryVisible('A')).toBe(true);
+  });
+});
+
+describe('the name filter', () => {
+  test('starts empty and keeps every marker', () => {
+    const set = setWith('A');
+    set.addSystems([record('Sol', 'A'), record('Achenar', 'A')]);
+
+    expect(set.getNameFilter()).toBe('');
+    expect(Array.from(set.markerFlags)).toEqual([1, 1]);
+  });
+
+  test('keeps the markers whose name holds the text', () => {
+    const set = setWith('A');
+    set.addSystems([record('Sol', 'A'), record('Solati', 'A'), record('Achenar', 'A')]);
+
+    set.setNameFilter('sol');
+
+    expect(set.getNameFilter()).toBe('sol');
+    expect(Array.from(set.markerFlags)).toEqual([1, 1, 0]);
+
+    set.setNameFilter('');
+
+    expect(Array.from(set.markerFlags)).toEqual([1, 1, 1]);
+  });
+
+  test('folds case on both sides', () => {
+    const set = setWith('A');
+    set.addSystems([record('Achenar', 'A')]);
+
+    for (const text of ['ACHE', 'ache', 'AcHe']) {
+      set.setNameFilter(text);
+      expect(set.drawsMarker(0)).toBe(true);
+    }
+  });
+
+  test('raises the category version, so the marker pass rebuilds', () => {
+    const set = setWith('A');
+    const before = set.categoryVersion;
+    set.setNameFilter('sol');
+
+    expect(set.categoryVersion).toBeGreaterThan(before);
+  });
+
+  test('survives a clear of the set', () => {
+    const set = setWith('A');
+    set.addSystems([record('Sol', 'A')]);
+    set.setNameFilter('sol');
+    set.clearSystems();
+
+    expect(set.getNameFilter()).toBe('sol');
+  });
+});

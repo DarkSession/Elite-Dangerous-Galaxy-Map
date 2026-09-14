@@ -388,18 +388,116 @@ and gives the region overlay three modes.
 
 ## Phase 4: selection and HUD
 
-Change: not yet created.
+Change: `selection-and-hud`. Status: implemented.
 
-Lets the user select a placed system and shows its information in the HUD.
+Lets the user select a placed system, draws a coordinate grid and shows the record in a
+HUD.
 
-- **Picking.** On the CPU: project each real system to the screen and take the nearest
-  within a pixel radius. No GPU id buffer at a few thousand systems.
-- **HUD.** Plain DOM over the canvas. Shows the selected system's name, coordinates and
-  the notable information from its record.
-- **Open questions.**
-  - Whether selection moves the cursor to the system.
-  - Whether a selected system appears in the URL fragment.
-  - Keyboard access to selection.
+- **Picking.** On the CPU, in `src/scene-data/picking.ts`: project each drawn system to
+  the screen and take the nearest inside a pixel radius. The sweep reads the same
+  `markerFlags` array the marker pass reads, so the pick and the screen never disagree.
+  The pointer pick runs once per frame. With 10,000 systems, the name labels on and the
+  pointer on a marker, the pick and the two overlay marks together stay under a mean of
+  0.5 ms per frame and a worst of 1 ms, against a budget of 2 ms. The reading moves from
+  run to run, so the numbers here are the bound the runs hold to and not one run's pair.
+- **Selection.** `setSelection(identity)` takes the `id64`, or the name when the record
+  has none. The handle carries `getSelection`, `onSelectionChange`, `getHover` and
+  `systemAt`. A left click on the canvas selects the system under the pointer. A click
+  that finds no system keeps the selection, because the same button orbits the camera
+  and a click between markers is more often a missed grab.
+- **The coordinate grid.** `src/render/grid-pass.ts` draws lines on the galactic plane,
+  with a spacing that steps with the zoom. The `grid` option and `setGridVisible` turn
+  it on. It draws 516 vertices. Its draw cost is under what the frame timer resolves.
+  The reading with the grid on and the reading with it off differ by less than 0.03 ms
+  at a pitch of 5 degrees, where its fill is worst, and at a pitch of 89. The difference
+  changes sign from run to run, so it is smaller than the spread of the instrument. The
+  budget is 1 ms. Phase 4.1 replaced this grid with the plane fill below.
+- **HUD.** Plain DOM in one `div.gm-hud`, built by `src/hud/`, behind a dynamic import,
+  so it is a chunk of its own, about 27 kB, that a host which does not ask for the HUD
+  never loads. It holds the top bar with the region name and the zoom distance, the
+  category browser with a search box, the map option switches, and the information panel
+  with the fields, the description, the thumbnails and a lightbox. It reads the map
+  through the public handle alone, and an ESLint rule stops it importing
+  `src/render/`, `src/scene-data/` or `src/camera/`. Every writer compares before it
+  writes, so a still map makes no DOM write. The HUD holds 464 elements with 10,000
+  systems in one expanded category, because the expanded list draws at most 200 rows.
+- **The record fields the HUD shows.** The reader keeps `allegiance`, `government`,
+  `primaryEconomy`, `security`, `population` and `bodyCount` from a dump, and the host
+  may add `description`, `primaryStar` and `images`. A field the record does not carry
+  leaves no empty row.
+- **Answers to the open questions.**
+  - **Selection moves the cursor.** It puts the cursor on the system and caps the
+    distance at 500 light years. A view already closer than 500 does not change, so a
+    close view stays close.
+  - **The selection does not go in the URL fragment.** The fragment carries the view
+    alone. A link that selects a system would need the host's data set to hold that
+    system, and the library holds no data of its own.
+  - **Every HUD control works from the keyboard.** Each control is a button or an input
+    in the tab order, `Escape` closes the lightbox and then clears the selection, and
+    the lightbox holds the focus while it is open.
+- **One mockup control is not built.** The map options panel of the mockup carries a
+  **Category glow** switch. No spec of this phase states what the switch does to the
+  frame, so the HUD does not draw it. Build it when the look it controls is specified.
+
+## Phase 4.1: the selection flight, the marker size curve and the grid levels
+
+Change: `flight-markers-and-grid`. Status: implemented.
+
+Flies the camera to a selection, takes the viewport out of the marker size, rewrites the
+coordinate grid as a plane fill with six decade levels, and replaces the demo data set.
+
+- **The selection flight.** `src/camera/flight.ts` holds `flightAt(from, to, elapsedMs)`,
+  a pure function of two views and a time. It runs for 350 ms on the ease `1 - (1 - u)^3`,
+  moves the cursor linearly and the distance geometrically, and leaves the yaw and the
+  pitch. Any pointer, wheel or key input ends it where it has reached, and `setView` ends
+  it too. A page that reports `prefers-reduced-motion: reduce` writes the end view in one
+  frame. `debug.selectionFlightMs()` reads the time the flight has left, and 0 when no flight
+  runs. Over a flight from
+  20,000 light years with 10,000 systems at 1920x1080 the animation frame interval is a
+  mean of 16.664 ms over 22 frames, against a bound of 18 ms.
+- **The marker size follows the range alone.** `markerCssSize` lost its `focalCss` term
+  and is now a four-stop log-linear curve of the camera range: 16 CSS pixels at 10 light
+  years and below, 12 from 50 to 1,000, and 7 at 10,000 and beyond. The same system draws
+  the same size in a 1,080 row canvas and a 400 row one. The glow sprite is 2.5 times the
+  disc, so its cap moved from 30 to 40 CSS pixels. The fill that cap buys was measured
+  before the curve was written: 10,000 forced 40 CSS pixel glow markers within 10 light
+  years of Sol at 1920x1080 draw in a mean of 1.617 ms, against the 16.7 ms budget, so the
+  close cap stayed at 16. The worst case the marker pass draws is 10,000 systems inside
+  10 light years of Sol at a zoom of 10, where every sprite is at or near the cap. It
+  reads 1.506 ms, and no marker reading of the suite is over 1.52 ms.
+- **The grid is one triangle.** `src/render/grid-pass.ts` draws 3 vertices, not 516. The
+  fragment shader un-projects each pixel to a ray, meets it with the plane at the cursor's
+  own height, and works out six decade levels from 1 to 100,000 light years. A level's
+  width and alpha follow its own spacing on the screen at that pixel, from the derivative
+  of the plane coordinate, so no level draws moire and every level fades out toward the
+  horizon. Where two levels cover a pixel the alpha is the larger and not the sum. Each
+  level fades to nothing at 100 of its own lines from the cursor. The camera phase of each
+  level is worked out in `float64` on the processor, so the shader never adds two large
+  numbers.
+- **The grid costs no measurable fill.** At 1920x1080 the draw time with the grid on is
+  0.966 ms against 0.954 ms with it off at a pitch of 5 degrees, and 0.728 ms against
+  0.686 ms at a pitch of 89. Both differences are under 0.05 ms, against a budget of 1 ms.
+- **The grid carries coordinates.** `src/app/grid-labels.ts` places a DOM label on each
+  crossing of the label level, which is the smallest level at least 400 CSS pixels apart
+  at the cursor. It sweeps 289 candidates, drops the ones outside the viewport or behind
+  the near plane, keeps the 32 nearest the centre of the canvas and skips a box that
+  overlaps one already placed. One more label states the plane's height on the lower edge.
+  With 31 labels on screen, 10,000 systems and a pitch of 5 degrees, the animation frame
+  interval is a mean of 16.666 ms, against a bound of 18 ms.
+- **The demo set is the Guardian Ruins.** `scripts/build-demo-systems.mjs` converts the
+  `guardian_ruins.json` dump of CanonnED3D-Map into `src/app/demo-systems.json`: 600 sites
+  in 212 systems in 3 categories, where 166 systems hold more than one site type. A record
+  is one system and carries one thumbnail for each type it holds, by its
+  `ruins.canonn.tech` URL, so the repository holds no picture. The script fetches the dump
+  into `data/`, which the repository ignores. The browser suite reaches no network: the one
+  test that reads a thumbnail from the built page names a picture of the project's own
+  under `public/`.
+- **The readings above are from one machine.** Every one was taken on
+  `ANGLE (NVIDIA, Vulkan 1.4.341 (NVIDIA NVIDIA GeForce RTX 4080 (0x00002704)), NVIDIA)`.
+  A software renderer gives another number, and the suite fails a run that falls back to
+  one.
+- **The baseline image did not move.** The grid is off unless the options ask for it and
+  the production build drops the demo set, so the committed far view is byte-identical.
 
 ## Phase 5: the library API
 

@@ -95,6 +95,17 @@ export interface AddReport {
   readonly rejected: Reject[];
 }
 
+/** The largest number of images one record holds. */
+export const MAX_IMAGES = 8;
+
+/** One picture of a system, which the HUD shows as a thumbnail. */
+export interface SystemImage {
+  /** Where the browser loads the picture from. The library never fetches it. */
+  readonly url: string;
+  /** What the picture shows. */
+  readonly caption?: string;
+}
+
 /** One real system the set holds. */
 export interface RealSystem {
   readonly name: string;
@@ -112,6 +123,12 @@ export interface RealSystem {
   readonly security?: string;
   readonly population?: number;
   readonly bodyCount?: number;
+  /** A paragraph about the system, which the HUD shows. */
+  readonly description?: string;
+  /** The class of the primary star, for example `K5 V`. */
+  readonly primaryStar?: string;
+  /** Up to 8 pictures, which the HUD shows as thumbnails. */
+  readonly images?: readonly SystemImage[];
 }
 
 /** The category table and the system set, which the host fills through the handle. */
@@ -136,12 +153,35 @@ export interface RealSystemSet {
   readonly positions: Float64Array;
   /** The table index of each system's primary category, in the same order. */
   readonly categoryIndices: Uint16Array;
+  /**
+   * One byte per system, in the same order: 1 when its marker draws and 0 when the
+   * category switch or the name filter cuts it. The marker pass and the pick sweep both
+   * read it, so the two never disagree about what is on the screen. It is rebuilt when
+   * the set or the category table changes, which is once per change and not once per
+   * frame.
+   */
+  readonly markerFlags: Uint8Array;
+  /** True when the marker of one system draws. False outside the set. */
+  drawsMarker(index: number): boolean;
+  /** Turns the markers of a category on or off. An unknown name changes nothing. */
+  setCategoryVisible(name: string, visible: boolean): void;
+  /** True when the markers of a category draw. False for a name the table lacks. */
+  isCategoryVisible(name: string): boolean;
+  /** Keeps the markers whose name holds the text, compared without case. */
+  setNameFilter(text: string): void;
+  /** Reads the filter text. */
+  getNameFilter(): string;
   /** One system, or null outside the set. */
   system(index: number): RealSystem | null;
   /** One category of the table, or null outside it. */
   category(index: number): Category | null;
   /** The table index of a category name, or -1 when the table does not hold it. */
   categoryIndex(name: string): number;
+  /**
+   * The index of the system with an identity, or -1. The identity is the `id64` when the
+   * record carries one, and the name when it does not.
+   */
+  indexOfIdentity(identity: string): number;
 }
 
 /** True when three finite numbers from 0 to 255 name a colour. */
@@ -204,6 +244,51 @@ function readId64(value: unknown): string | null {
   return null;
 }
 
+/**
+ * True when a URL names a scheme the HUD may put in an image element. A URL with no
+ * scheme is a relative URL and passes. The rule is a safety rule and not a formatting
+ * one: a `javascript:` or a `data:` URL from an untrusted dump would run or embed
+ * content the host did not mean to serve.
+ */
+function safeImageUrl(url: string): boolean {
+  // The test reads the string the browser reads. The URL standard removes every tab,
+  // carriage return and line feed from the whole string, and strips the C0 control
+  // characters and the spaces at each end, before it reads the scheme. A guard on the
+  // raw string therefore lets `\tjavascript:` through, and the browser still runs it.
+  const joined = url.replace(/[\t\n\r]/g, '');
+  let start = 0;
+  let end = joined.length;
+  // Every C0 control character and the space, which is code point 32 and below.
+  while (start < end && joined.charCodeAt(start) <= 0x20) start += 1;
+  while (end > start && joined.charCodeAt(end - 1) <= 0x20) end -= 1;
+  const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.exec(joined.slice(start, end));
+  if (scheme === null) return true;
+  const name = scheme[0].slice(0, -1).toLowerCase();
+  return name === 'http' || name === 'https';
+}
+
+/**
+ * The images of a record, at most 8, in the order the record gave them. An entry that
+ * is not an object, whose `url` is not a string, or whose `url` names another scheme is
+ * dropped. A bad entry does not reject the record, because an image is decoration and
+ * the rest of the record still draws and still reads.
+ */
+function readImages(value: unknown): SystemImage[] | null {
+  if (!Array.isArray(value)) return null;
+  const images: SystemImage[] = [];
+  for (const entry of value) {
+    if (images.length >= MAX_IMAGES) break;
+    if (typeof entry !== 'object' || entry === null) continue;
+    const source = entry as Record<string, unknown>;
+    const url = source['url'];
+    if (typeof url !== 'string' || url.length === 0) continue;
+    if (!safeImageUrl(url)) continue;
+    const caption = source['caption'];
+    images.push(typeof caption === 'string' ? { url, caption } : { url });
+  }
+  return images.length === 0 ? null : images;
+}
+
 /** True when a position lies inside the model bounds. */
 function insideBounds(x: number, y: number, z: number): boolean {
   const bounds = MODEL_BOUNDS;
@@ -218,7 +303,14 @@ function insideBounds(x: number, y: number, z: number): boolean {
 }
 
 /** The record fields the reader keeps as strings, beside the name. */
-const TEXT_FIELDS = ['allegiance', 'government', 'primaryEconomy', 'security'] as const;
+const TEXT_FIELDS = [
+  'allegiance',
+  'government',
+  'primaryEconomy',
+  'security',
+  'description',
+  'primaryStar',
+] as const;
 
 /** The record fields the reader keeps as finite numbers. */
 const NUMBER_FIELDS = ['population', 'bodyCount'] as const;
@@ -236,12 +328,19 @@ interface MutableSystem {
   security?: string;
   population?: number;
   bodyCount?: number;
+  description?: string;
+  primaryStar?: string;
+  images?: SystemImage[];
 }
 
 /** Creates an empty category table and an empty system set. */
 export function createSystemSet(): RealSystemSet {
   const categories: Category[] = [];
   const categoryOf = new Map<string, number>();
+  // What the user chose to look at, by category name. A category is on when the table
+  // takes it, and a replacement under the same name keeps the choice, because the
+  // replacement changes the table entry and not what the user asked to see.
+  const categoryVisible = new Map<string, boolean>();
   let categoryVersion = 0;
 
   const positions = new Float64Array(MAX_SYSTEMS * 3);
@@ -251,6 +350,32 @@ export function createSystemSet(): RealSystemSet {
   // rather than a scan of the set for each record.
   const slotOf = new Map<string, number>();
   let version = 0;
+
+  // The filter text, and the same text folded to lower case once. The comparison folds
+  // both sides to lower case, so it reads the same in every browser.
+  let nameFilter = '';
+  let nameFilterFold = '';
+
+  // One byte per system: 1 when its marker draws. The flags follow the set, the
+  // category table and the filter, and the visibility and the filter both raise
+  // `categoryVersion`, so one pair of version numbers says when to build them again.
+  const markerFlags = new Uint8Array(MAX_SYSTEMS);
+  let flagsVersion = -1;
+  let flagsCategoryVersion = -1;
+
+  const refreshFlags = (): void => {
+    if (flagsVersion === version && flagsCategoryVersion === categoryVersion) return;
+    for (let index = 0; index < systems.length; index += 1) {
+      const system = systems[index] as RealSystem;
+      const on = categoryVisible.get(system.primaryCategory) !== false;
+      const kept =
+        nameFilterFold.length === 0 ||
+        system.name.toLowerCase().includes(nameFilterFold);
+      markerFlags[index] = on && kept ? 1 : 0;
+    }
+    flagsVersion = version;
+    flagsCategoryVersion = categoryVersion;
+  };
 
   const writeSystem = (slot: number, system: RealSystem): void => {
     systems[slot] = system;
@@ -419,6 +544,8 @@ export function createSystemSet(): RealSystemSet {
           const value = readFinite(record[field]);
           if (value !== null) system[field] = value;
         }
+        const images = readImages(record['images']);
+        if (images !== null) system.images = images;
 
         if (slot === undefined) {
           const next = systems.length;
@@ -446,6 +573,7 @@ export function createSystemSet(): RealSystemSet {
       slotOf.clear();
       categories.length = 0;
       categoryOf.clear();
+      categoryVisible.clear();
       version += 1;
       categoryVersion += 1;
     },
@@ -468,6 +596,37 @@ export function createSystemSet(): RealSystemSet {
     get categoryIndices(): Uint16Array {
       return categoryIndices.subarray(0, systems.length);
     },
+    get markerFlags(): Uint8Array {
+      refreshFlags();
+      return markerFlags.subarray(0, systems.length);
+    },
+    drawsMarker(index: number): boolean {
+      if (index < 0 || index >= systems.length) return false;
+      refreshFlags();
+      return markerFlags[index] === 1;
+    },
+    setCategoryVisible(name: string, visible: boolean): void {
+      // A name the table does not hold changes nothing and does not throw, so a host
+      // that lists categories from its own data cannot break the map with a typo.
+      if (!categoryOf.has(name)) return;
+      if ((categoryVisible.get(name) !== false) === visible) return;
+      categoryVisible.set(name, visible);
+      categoryVersion += 1;
+    },
+    isCategoryVisible(name: string): boolean {
+      if (!categoryOf.has(name)) return false;
+      return categoryVisible.get(name) !== false;
+    },
+    setNameFilter(text: string): void {
+      const next = typeof text === 'string' ? text : '';
+      if (next === nameFilter) return;
+      nameFilter = next;
+      nameFilterFold = next.toLowerCase();
+      categoryVersion += 1;
+    },
+    getNameFilter(): string {
+      return nameFilter;
+    },
     system(index: number): RealSystem | null {
       return systems[index] ?? null;
     },
@@ -476,6 +635,11 @@ export function createSystemSet(): RealSystemSet {
     },
     categoryIndex(name: string): number {
       return categoryOf.get(name) ?? -1;
+    },
+    indexOfIdentity(identity: string): number {
+      // A record with an `id64` is held under it, so the `id64` is read first. A record
+      // without one is held under its name.
+      return slotOf.get(`id64:${identity}`) ?? slotOf.get(`name:${identity}`) ?? -1;
     },
   };
 }
