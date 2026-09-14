@@ -36,6 +36,14 @@ describe('the URL fragment', () => {
     expect(view.yaw).toBe(0);
   });
 
+  // The close zoom limit moved from 500 to 10 light years, so a fragment the old limit
+  // would have clamped now loads as it was written.
+  test('reads a fragment below the old zoom limit', () => {
+    expect(parseViewFragment('#c=0,0,0&d=50&p=35&y=0').distance).toBe(50);
+    expect(parseViewFragment('#c=0,0,0&d=1&p=35&y=0').distance).toBe(MIN_DISTANCE);
+    expect(MIN_DISTANCE).toBe(10);
+  });
+
   test('writes the fragment the parser reads', () => {
     const view = createDefaultView();
     view.distance = 30000;

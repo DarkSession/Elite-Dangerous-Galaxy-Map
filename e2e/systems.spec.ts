@@ -14,6 +14,40 @@ const RIM_ABOVE: [number, number, number] = [40015, 3000, 25895];
 const CORE: [number, number, number] = [153, 230, 255];
 const RING: [number, number, number] = [5, 10, 26];
 
+/**
+ * A point 20,000 light years above the plane at the rim. The frame holds no light there,
+ * so a reading of a white marker is the alpha of the marker itself.
+ */
+const DARK_SPACE: [number, number, number] = [40015, 20000, 25895];
+
+/** A colour that makes a luminance reading the alpha of the marker. */
+const WHITE: [number, number, number] = [255, 255, 255];
+
+/** The pitch every view in this file takes. */
+const PITCH = 35;
+
+/**
+ * A point at an exact range from the camera of a view, near the middle of the screen.
+ * `cameraDirection` in `src/camera/projection.ts` puts the camera at
+ * `cursor + distance * (0, sin(pitch), -cos(pitch))` at a yaw of 0, so the world x axis
+ * lies across the view direction: `lateral` moves the point sideways on the screen and
+ * leaves the range alone.
+ */
+function atRange(
+  cursor: readonly [number, number, number],
+  distance: number,
+  range: number,
+  lateral = 0,
+): [number, number, number] {
+  const pitch = (PITCH * Math.PI) / 180;
+  const along = Math.sqrt(range * range - lateral * lateral);
+  return [
+    cursor[0] + lateral,
+    cursor[1] + Math.sin(pitch) * (distance - along),
+    cursor[2] - Math.cos(pitch) * (distance - along),
+  ];
+}
+
 /** A record the reader accepts. */
 function record(
   name: string,
@@ -167,6 +201,86 @@ async function ringPixelAt(
   );
 }
 
+/** The pixel index of the centre of the sprite of a marker. */
+async function centrePixel(
+  page: Page,
+  point: readonly [number, number, number],
+): Promise<{ x: number; y: number }> {
+  return page.evaluate((where) => {
+    const map = window.galaxyMap;
+    if (map === undefined) return { x: -1, y: -1 };
+    const screen = map.debug.project(where as [number, number, number]);
+    return { x: Math.floor(screen.x), y: Math.floor(screen.y) };
+  }, point);
+}
+
+/** One pixel of the frame, by its pixel index. */
+async function pixelOf(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<[number, number, number, number]> {
+  return page.evaluate(
+    (where) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [0, 0, 0, 0] as [number, number, number, number];
+      return map.debug.readPixel(where.x, where.y);
+    },
+    { x, y },
+  );
+}
+
+/** The luminance of one pixel of the frame, by its pixel index. */
+async function luminanceOf(page: Page, x: number, y: number): Promise<number> {
+  return page.evaluate(
+    (where) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return -1;
+      const [red, green, blue] = map.debug.readPixel(where.x, where.y);
+      return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+    },
+    { x, y },
+  );
+}
+
+/**
+ * The luminance the marker pass adds at each of a list of pixels. The frame the composite
+ * writes over empty space still carries about 9 of 255, so a reading of the frame itself
+ * is the alpha of the glow over that floor. The difference of the two frames is the light
+ * the pass put there, which is the alpha times the colour of the category.
+ */
+async function addedLuminance(
+  page: Page,
+  pixels: readonly { x: number; y: number }[],
+): Promise<number[]> {
+  await setPasses(page, { systems: true });
+  const on: number[] = [];
+  for (const pixel of pixels) on.push(await luminanceOf(page, pixel.x, pixel.y));
+  await setPasses(page, { systems: false });
+  const off: number[] = [];
+  for (const pixel of pixels) off.push(await luminanceOf(page, pixel.x, pixel.y));
+  return on.map((value, index) => value - (off[index] as number));
+}
+
+/** The row of pixels through the centre of the sprite of a marker, by pixel index. */
+async function rowThrough(
+  page: Page,
+  point: readonly [number, number, number],
+  half: number,
+): Promise<number[]> {
+  const centre = await centrePixel(page, point);
+  return page.evaluate(
+    (where) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [];
+      return Array.from(
+        map.debug.readRect(where.x - where.half, where.y, where.half * 2 + 1, 1),
+      );
+    },
+    { x: centre.x, y: centre.y, half },
+  );
+}
+
 /** The whole frame as a PNG data URL, without the label overlay. */
 async function frameOf(page: Page): Promise<string> {
   return page.evaluate(() => {
@@ -214,10 +328,15 @@ test('the marker shaders compile', async ({ page }) => {
 test('a marker shows at every zoom distance', async ({ page }) => {
   const where: [number, number, number] = [0, 0, 6000];
   await openMap(page, '#c=0,0,6000&d=500&p=35&y=0');
-  await addCategories(page, [{ name: 'Empire', color: [153, 230, 255] }]);
+  // The range is above the default so that the 120,000 light year view reads the zoom
+  // limit and not the range cut: at that zoom the camera stands 146,600 light years from
+  // the cursor, which is past the default range of 120,000.
+  await addCategories(page, [
+    { name: 'Empire', color: [153, 230, 255], maxDrawRange: 200000 },
+  ]);
   await addSystems(page, [record('One', where, 'Empire')]);
 
-  for (const distance of [500, 4000, 20000, 120000]) {
+  for (const distance of [10, 500, 4000, 20000, 120000]) {
     await setView(page, where, distance);
     await setPasses(page, { systems: true });
     const withMarker = await pixelAt(page, where);
@@ -231,7 +350,17 @@ test('a marker shows at every zoom distance', async ({ page }) => {
 test('the size falls to the floor and rises to the cap', async ({ page }) => {
   const where: [number, number, number] = [0, 0, 0];
   await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
-  await addCategories(page, [{ name: 'Empire', color: [153, 230, 255] }]);
+  // The disc style, because the reading is the width of the disc itself. The range is
+  // above the default because the system sits at the cursor, so at a zoom of 120,000
+  // light years its camera range is 120,000 exactly, on the boundary of the default cut.
+  await addCategories(page, [
+    {
+      name: 'Empire',
+      color: [153, 230, 255],
+      markerStyle: 'disc',
+      maxDrawRange: 200000,
+    },
+  ]);
   await addSystems(page, [record('One', where, 'Empire')]);
 
   const countAt = async (distance: number): Promise<number> => {
@@ -256,7 +385,8 @@ test('the size falls to the floor and rises to the cap', async ({ page }) => {
 
 test('the marker colours reach the frame over both grounds', async ({ page }) => {
   await openMap(page, '#c=15,-35,25895&d=4000&p=35&y=0');
-  await addCategories(page, [{ name: 'Empire', color: CORE }]);
+  // The disc style, because the reading is the ring, and a glow has no ring.
+  await addCategories(page, [{ name: 'Empire', color: CORE, markerStyle: 'disc' }]);
   await addSystems(page, [
     record('Centre', CENTRE, 'Empire'),
     record('Rim', RIM_ABOVE, 'Empire'),
@@ -406,9 +536,12 @@ test('the far view does not change', async ({ page }) => {
 
 test('two markers overlap in the order the set holds them', async ({ page }) => {
   await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
+  // Both categories take the disc style, because the reading is a pixel 1.25 CSS pixels
+  // from a marker centre. A disc is opaque that far inside its edge; a glow is not, so
+  // under the default style the pixel would hold a blend of the two colours.
   await addCategories(page, [
-    { name: 'Empire', color: [0, 180, 255] },
-    { name: 'Alliance', color: [255, 40, 40] },
+    { name: 'Empire', color: [0, 180, 255], markerStyle: 'disc' },
+    { name: 'Alliance', color: [255, 40, 40], markerStyle: 'disc' },
   ]);
   const first = record('One', [0, 0, 0], 'Empire');
   const second = record('Two', [1, 0, 0], 'Alliance');
@@ -739,4 +872,286 @@ test.describe('a page the card refuses', () => {
     expect(error).toContain('WebGL2');
     expect(message).toContain('WebGL2');
   });
+});
+
+// The glow readings sample the sprite by pixel index, so the sprite centre has to sit on
+// a pixel centre. A viewport of an odd width and an odd height puts the middle of the
+// screen at 640.5 by 360.5, which is the centre of one pixel. At an even size the middle
+// falls on a pixel corner and every sample lies half a pixel off the spike it reads.
+test.describe('the glow', () => {
+  test.use({ viewport: { width: 1281, height: 721 }, deviceScaleFactor: 1 });
+
+  /** The view that puts one marker at the cap size over dark space. */
+  const openGlow = async (
+    page: Page,
+    categories: readonly unknown[],
+    records: readonly unknown[],
+  ): Promise<void> => {
+    await openMap(page, '#c=40015,20000,25895&d=500&p=35&y=0');
+    // The marker pass alone. The frame 20,000 light years above the plane still carries
+    // about 11 of 255 from the volume and the glow pass, and every reading here is the
+    // alpha of the glow itself, so the other passes go.
+    await setPasses(page, {
+      volume: false,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      regions: false,
+      systems: true,
+    });
+    await addCategories(page, categories);
+    await addSystems(page, records);
+    await setView(page, DARK_SPACE, 500);
+  };
+
+  test('holds the category colour at its centre', async ({ page }) => {
+    await openGlow(
+      page,
+      [{ name: 'Empire', color: CORE }],
+      [record('One', DARK_SPACE, 'Empire')],
+    );
+    const centre = await centrePixel(page, DARK_SPACE);
+    const middle = await pixelOf(page, centre.x, centre.y);
+    console.log('the glow centre', middle);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((middle[channel] as number) - (CORE[channel] as number)),
+      ).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('has spikes', async ({ page }) => {
+    await openGlow(
+      page,
+      [{ name: 'Empire', color: WHITE }],
+      [record('One', DARK_SPACE, 'Empire')],
+    );
+    // The sprite is 30 CSS pixels across at the cap, so its radius is 15 and half of it
+    // is between the pixels 7 and 8 from the centre. The sample is the pixel at 8.
+    const centre = await centrePixel(page, DARK_SPACE);
+    // Six pixels out on each axis is 8.49 from the centre, which is the same radius on
+    // the 45 degree diagonal. The fourth reading is 40 pixels out, well past the sprite.
+    const [horizontal, vertical, diagonal, ground] = await addedLuminance(page, [
+      { x: centre.x + 8, y: centre.y },
+      { x: centre.x, y: centre.y + 8 },
+      { x: centre.x + 6, y: centre.y + 6 },
+      { x: centre.x + 40, y: centre.y },
+    ]);
+    console.log('the spikes', { horizontal, vertical, diagonal, ground });
+
+    expect(ground).toBe(0);
+    expect((horizontal as number) - (diagonal as number)).toBeGreaterThan(0.1);
+    expect((vertical as number) - (diagonal as number)).toBeGreaterThan(0.1);
+  });
+
+  test('has no ring', async ({ page }) => {
+    await openGlow(
+      page,
+      [{ name: 'Empire', color: WHITE }],
+      [record('One', DARK_SPACE, 'Empire')],
+    );
+    const centre = await centrePixel(page, DARK_SPACE);
+    // Ten pixels out on each axis is 14.1 from the centre, which is the last sample
+    // inside a sprite of the radius 15.
+    const pixels: { x: number; y: number }[] = [];
+    for (let step = 0; step <= 10; step += 1) {
+      pixels.push({ x: centre.x + step, y: centre.y + step });
+    }
+    const readings = await addedLuminance(page, pixels);
+    console.log('the diagonal', readings.map((value) => value.toFixed(4)).join(' '));
+
+    expect(readings[0]).toBeGreaterThan(0.9);
+    for (let step = 1; step < readings.length; step += 1) {
+      expect(readings[step]).toBeLessThanOrEqual(readings[step - 1] as number);
+    }
+    expect(readings[readings.length - 1]).toBeLessThan(0.02);
+  });
+
+  test('is 2.5 times the disc', async ({ page }) => {
+    const glowAt = atRange(DARK_SPACE, 500, 500, -40);
+    const discAt = atRange(DARK_SPACE, 500, 500, 40);
+    await openGlow(
+      page,
+      [
+        { name: 'Glow', color: WHITE },
+        { name: 'Disc', color: WHITE, markerStyle: 'disc' },
+      ],
+      [record('G', glowAt, 'Glow'), record('D', discAt, 'Disc')],
+    );
+
+    await setPasses(page, { systems: true });
+    const glowOn = await rowThrough(page, glowAt, 30);
+    const discOn = await rowThrough(page, discAt, 30);
+    await setPasses(page, { systems: false });
+    const glowOff = await rowThrough(page, glowAt, 30);
+    const discOff = await rowThrough(page, discAt, 30);
+
+    const glow = differingPixels(glowOn, glowOff);
+    const disc = differingPixels(discOn, discOff);
+    console.log('the row widths', { glow, disc, ratio: glow / disc });
+
+    expect(disc).toBeGreaterThan(0);
+    expect(glow / disc).toBeGreaterThanOrEqual(2);
+    expect(glow / disc).toBeLessThanOrEqual(2.7);
+  });
+
+  test('replaces the disc when a category is restyled', async ({ page }) => {
+    await openGlow(
+      page,
+      [{ name: 'Empire', color: WHITE, markerStyle: 'disc' }],
+      [record('One', DARK_SPACE, 'Empire')],
+    );
+
+    const centre = await centrePixel(page, DARK_SPACE);
+    await setPasses(page, { systems: true });
+    const discOn = await rowThrough(page, DARK_SPACE, 30);
+    const discMiddle = await pixelOf(page, centre.x, centre.y);
+    await setPasses(page, { systems: false });
+    const off = await rowThrough(page, DARK_SPACE, 30);
+    const disc = differingPixels(discOn, off);
+
+    const report = await addCategories(page, [{ name: 'Empire', color: WHITE }]);
+    expect(report.replaced).toBe(1);
+    await setPasses(page, { systems: true });
+    const glowOn = await rowThrough(page, DARK_SPACE, 30);
+    const glowMiddle = await pixelOf(page, centre.x, centre.y);
+    const glow = differingPixels(glowOn, off);
+    const count = await page.evaluate(() => window.galaxyMap?.systemCount() ?? -1);
+    console.log('the restyle', { disc, glow, ratio: glow / disc, count });
+
+    expect(count).toBe(1);
+    expect(discMiddle.slice(0, 3)).toEqual(WHITE);
+    expect(glowMiddle.slice(0, 3)).toEqual(WHITE);
+    expect(glow / disc).toBeGreaterThanOrEqual(2);
+    expect(glow / disc).toBeLessThanOrEqual(2.7);
+  });
+});
+
+test('a marker outside its range does not draw', async ({ page }) => {
+  const where: [number, number, number] = [0, 0, 0];
+  await openMap(page, '#c=0,0,0&d=1500&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 2000 }]);
+  await addSystems(page, [record('Sol', where, 'Empire')]);
+
+  const readings: Record<string, [number, number, number, number][]> = {};
+  for (const distance of [1500, 2500]) {
+    await setView(page, where, distance);
+    await setPasses(page, { systems: true });
+    const on = await pixelAt(page, where);
+    await setPasses(page, { systems: false });
+    const off = await pixelAt(page, where);
+    readings[String(distance)] = [on, off];
+  }
+  console.log('the range cut', readings);
+
+  expect(readings['1500']?.[0]).not.toEqual(readings['1500']?.[1]);
+  expect(readings['2500']?.[0]).toEqual(readings['2500']?.[1]);
+});
+
+test('the range follows each system and not the zoom', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  const near = atRange(cursor, 1000, 1000);
+  const far = atRange(cursor, 1000, 5000, 800);
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 3000 }]);
+  await addSystems(page, [
+    record('Near', near, 'Empire'),
+    record('Far', far, 'Empire'),
+  ]);
+  await setView(page, cursor, 1000);
+
+  await setPasses(page, { systems: true });
+  const nearOn = await pixelAt(page, near);
+  const farOn = await pixelAt(page, far);
+  const count = await page.evaluate(
+    () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+  );
+  await setPasses(page, { systems: false });
+  const nearOff = await pixelAt(page, near);
+  const farOff = await pixelAt(page, far);
+  console.log('one frame, two ranges', { nearOn, nearOff, farOn, farOff, count });
+
+  expect(nearOn).not.toEqual(nearOff);
+  expect(farOn).toEqual(farOff);
+  expect(count).toBe(1);
+});
+
+test('the cut does not fade', async ({ page }) => {
+  const where: [number, number, number] = [0, 0, 0];
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 5000 }]);
+  await addSystems(page, [record('Sol', where, 'Empire')]);
+
+  // The system sits at the cursor, so the zoom distance is the camera range and the
+  // marker stays at the middle of the screen at every one of the three readings.
+  const readings: [number, number, number, number][] = [];
+  for (const range of [1000, 3000, 4900]) {
+    await setView(page, where, range);
+    readings.push(await pixelAt(page, where));
+  }
+  console.log('the readings up to the cut', readings);
+
+  for (const reading of readings) {
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((reading[channel] as number) - (CORE[channel] as number)),
+      ).toBeLessThanOrEqual(2);
+    }
+  }
+});
+
+test('a changed range changes what draws', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 1000 }]);
+  const records: Record<string, unknown>[] = [];
+  for (let index = 0; index < 100; index += 1) {
+    const range = 500 + (index * 4500) / 99;
+    records.push(record(`S${index}`, atRange(cursor, 1000, range), 'Empire'));
+  }
+  expect((await addSystems(page, records)).added).toBe(100);
+
+  await setView(page, cursor, 1000);
+  const cut = await page.evaluate(
+    () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+  );
+
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 120000 }]);
+  await drawFrame(page);
+  const all = await page.evaluate(
+    () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+  );
+  console.log('the changed range', { cut, all });
+
+  expect(cut).toBeGreaterThan(0);
+  expect(cut).toBeLessThan(100);
+  expect(all).toBe(100);
+});
+
+test('two categories cut at their own ranges in one frame', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  const nearRange = atRange(cursor, 1000, 2000, -400);
+  const farRange = atRange(cursor, 1000, 2000, 400);
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addCategories(page, [
+    { name: 'Short', color: CORE, maxDrawRange: 1000 },
+    { name: 'Long', color: CORE, maxDrawRange: 120000 },
+  ]);
+  await addSystems(page, [
+    record('Short', nearRange, 'Short'),
+    record('Long', farRange, 'Long'),
+  ]);
+  await setView(page, cursor, 1000);
+
+  await setPasses(page, { systems: true });
+  const shortOn = await pixelAt(page, nearRange);
+  const longOn = await pixelAt(page, farRange);
+  await setPasses(page, { systems: false });
+  const shortOff = await pixelAt(page, nearRange);
+  const longOff = await pixelAt(page, farRange);
+  console.log('two ranges', { shortOn, shortOff, longOn, longOff });
+
+  expect(shortOn).toEqual(shortOff);
+  expect(longOn).not.toEqual(longOff);
 });

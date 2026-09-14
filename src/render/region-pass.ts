@@ -80,6 +80,11 @@ export interface RegionPassFrame {
   readonly fade: number;
   /** How many device pixels one CSS pixel holds. */
   readonly pixelRatio: number;
+  /**
+   * True draws the traced boundary set and false the smoothed one. The pass holds both,
+   * so a change is a bind of another vertex array and not an upload.
+   */
+  readonly traced: boolean;
 }
 
 /** The region overlay pass. */
@@ -208,32 +213,52 @@ export function createRegionPass(
   programs: RegionPrograms,
   lines: RegionLines,
   fullScreenVertexArray: WebGLVertexArrayObject,
+  traced: RegionLines = lines,
 ): RegionPass {
-  const vertexArray = gl.createVertexArray();
-  const positionBuffer = gl.createBuffer();
   const cornerBuffer = gl.createBuffer();
-  if (vertexArray === null || positionBuffer === null || cornerBuffer === null) {
+  if (cornerBuffer === null) {
     throw new Error('The context gave no buffer for the region boundaries.');
   }
-
-  gl.bindVertexArray(vertexArray);
-
   // The corner steps once per vertex of the quad. The two endpoints step once per
-  // segment, and the draw loop points them at the chain it is about to draw.
+  // segment, and the draw loop points them at the chain it is about to draw. The two
+  // sets share it.
   gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, RIBBON_CORNERS, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, toWorldPositions(lines.positions), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribDivisor(0, 1);
-  gl.vertexAttribDivisor(1, 1);
+  /** One set, uploaded once, with the vertex array that reads it. */
+  interface Uploaded {
+    readonly set: RegionLines;
+    readonly vertexArray: WebGLVertexArrayObject;
+    readonly positionBuffer: WebGLBuffer;
+  }
 
-  gl.bindVertexArray(null);
-  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  const upload = (set: RegionLines): Uploaded => {
+    const vertexArray = gl.createVertexArray();
+    const positionBuffer = gl.createBuffer();
+    if (vertexArray === null || positionBuffer === null) {
+      throw new Error('The context gave no buffer for the region boundaries.');
+    }
+    gl.bindVertexArray(vertexArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, toWorldPositions(set.positions), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribDivisor(0, 1);
+    gl.vertexAttribDivisor(1, 1);
+
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    return { set, vertexArray, positionBuffer };
+  };
+
+  const smoothedUpload = upload(lines);
+  // The two sets hold the same chain count, so a chain of one is the same boundary as the
+  // chain of the same index in the other.
+  const tracedUpload = traced === lines ? smoothedUpload : upload(traced);
 
   const coverage = createCoverageTarget(gl);
 
@@ -246,6 +271,7 @@ export function createRegionPass(
       const width = gl.drawingBufferWidth;
       const height = gl.drawingBufferHeight;
       const halfWidth = (REGION_LINE_WIDTH_CSS / 2) * frame.pixelRatio;
+      const drawn = frame.traced ? tracedUpload : smoothedUpload;
       coverage.resize(width, height);
 
       // Step one: the coverage of every segment, largest value wins.
@@ -272,13 +298,13 @@ export function createRegionPass(
       gl.uniform2f(ribbon.uniforms['uTargetSize'] ?? null, width, height);
       gl.uniform1f(ribbon.uniforms['uHalfWidth'] ?? null, halfWidth);
 
-      gl.bindVertexArray(vertexArray);
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.bindVertexArray(drawn.vertexArray);
+      gl.bindBuffer(gl.ARRAY_BUFFER, drawn.positionBuffer);
       // One instanced call per chain. A segment reads the shared vertex array at two
       // offsets one vertex apart, so the endpoints need no second buffer.
-      for (let chain = 0; chain < lines.chainCount; chain += 1) {
-        const first = lines.first[chain] as number;
-        const segments = (lines.last[chain] as number) - first;
+      for (let chain = 0; chain < drawn.set.chainCount; chain += 1) {
+        const first = drawn.set.first[chain] as number;
+        const segments = (drawn.set.last[chain] as number) - first;
         if (segments < 1) continue;
         gl.vertexAttribPointer(
           0,
@@ -343,9 +369,11 @@ export function createRegionPass(
     },
     dispose(): void {
       coverage.dispose();
-      gl.deleteBuffer(positionBuffer);
       gl.deleteBuffer(cornerBuffer);
-      gl.deleteVertexArray(vertexArray);
+      for (const held of new Set([smoothedUpload, tracedUpload])) {
+        gl.deleteBuffer(held.positionBuffer);
+        gl.deleteVertexArray(held.vertexArray);
+      }
     },
   };
 }

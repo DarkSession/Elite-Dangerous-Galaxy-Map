@@ -17,9 +17,19 @@ is (-49,985, -40,985, -24,105) in game coordinates, size class 0 has an edge of 
 light years, and each higher class doubles the edge to 1,280 light years at class 7.
 
 Four size classes SHALL draw at once. The base class SHALL be
-`clamp(ceil(log2(distance / 320)), 0, 4)` and the field SHALL draw the base class and
-the three above it. The rule SHALL use `ceil`, so the covered radius never falls below
-0.75 of the zoom distance while the base class is below its clamp.
+`clamp(ceil(log2(distance / 320)), 0, 4)`, where `distance` is the **effective zoom
+distance** the requirement "The star field and the point cloud hand over without a change
+in light" defines, and the field SHALL draw the base class and the three above it. The rule
+SHALL use `ceil`, so the covered radius never falls below 0.75 of the zoom distance while
+the base class is below its clamp.
+
+The effective zoom distance is `max(distance, 640)` light years, so the base class never
+falls below 1 and the 320 light year boundary of the rule is never crossed, however close
+the camera comes. Every figure below therefore holds at every zoom distance the map
+reaches, including the ones under 320 that `map-navigation` opened. Without the hold the
+base class would reach 0 below 320 light years, the covered radius would halve and the
+point cloud would fill the band the halving vacated, in a frame where the field itself
+carries no light.
 
 The blocks SHALL be built from the coarsest class down. On each axis, with `c(s)` the
 index of the boxel of class `s` that holds the camera:
@@ -36,8 +46,10 @@ index of the boxel of class `s` that holds the camera:
 The drawn set SHALL therefore hold `512 + 3 * 448 = 1,856` boxels at every view, with
 no gap and no overlap, and the camera SHALL lie inside the block of every class. The
 field SHALL cover a sphere of radius `3 * edge(s0+3)` around the camera, which is
-between 0.75 and 1.5 times the zoom distance while the clamp does not bite, that is at
-every zoom distance up to 5,120 light years.
+between 0.75 and 1.5 times the effective zoom distance while the clamp does not bite, that
+is at every effective zoom distance up to 5,120 light years. Below 640 light years the
+sphere holds at 480 light years, which is more than 1.5 times the zoom distance and never
+less, so the field still covers everything the handover asks of it.
 
 #### Scenario: Base class follows the zoom distance
 
@@ -45,6 +57,14 @@ every zoom distance up to 5,120 light years.
   4,000 and 8,000 light years
 - **THEN** the classes are 1, 2, 3, 4 and 4, whose edges are 20, 40, 80, 160 and 160
   light years
+
+#### Scenario: Base class does not fall below 1
+
+- **WHEN** a unit test reads the base size class at zoom distances 10, 100, 320 and 640
+  light years
+- **THEN** every one is 1, whose edge is 20 light years, because the effective zoom
+  distance holds at 640. The pure rule on the view's own distance would give 0 at 10, 100
+  and 320, and would step to 1 only at 640
 
 #### Scenario: The drawn set holds 1,856 boxels
 
@@ -70,8 +90,9 @@ every zoom distance up to 5,120 light years.
 #### Scenario: The reach never falls below three quarters of the zoom distance
 
 - **WHEN** a unit test reads the covered radius at 200 zoom distances spaced evenly in
-  the logarithm from 500 to 5,120 light years
-- **THEN** the covered radius is at least 0.75 times the zoom distance at every one
+  the logarithm from 10 to 5,120 light years
+- **THEN** the covered radius is at least 0.75 times the zoom distance at every one. Below
+  640 light years it holds at 480, so the ratio only grows as the camera comes in
 
 ### Requirement: A boxel's stars come from its address
 
@@ -297,8 +318,11 @@ The page SHALL expose the number of stars the last frame suppressed.
   `frameStats`
 - **THEN** the worst time is under 50 ms
 
-  The zoom starts at 500 and not at 300, because `map-navigation` clamps the zoom
-  distance to 500 light years and the boundary at 320 cannot be reached.
+  The zoom starts at 500 and not at 300, because the field reads the effective zoom
+  distance, which holds at 640 light years below that. The boundary at 320 is inside the
+  reachable range now that the zoom goes to 10, but the field does not cross it: the
+  requirement "The star field and the point cloud hand over without a change in light" is
+  what stops the base class from stepping there.
 
 #### Scenario: A frame reports the suppressed count
 
@@ -438,9 +462,27 @@ A shape whose scatter is too large makes neighbouring boxels read as blocks.
 
 ### Requirement: The star field and the point cloud hand over without a change in light
 
+The star field and the handover SHALL read an **effective zoom distance** of
+`max(distance, 640)` light years, where `distance` is the view's own zoom distance. The
+close fade below SHALL read the view's own zoom distance and not the effective one.
+
+The effective distance exists because the zoom reaches 10 light years. The base size class
+rule steps at 320 light years, so without the hold the boxel set, the covered radius and
+the handover radii would all change there, and the point cloud's near void would halve
+from 480 light years to 240 in one wheel notch. The field carries no light below 640 light
+years, so nothing the user sees would move with it, but the point cloud would: a band from
+240 to 480 light years of range would fill with sprites the frame before did not hold. The
+hold keeps every one of those values at the value it takes at 640 light years, which is the
+value the map draws at 500 light years today, so no frame that draws today changes and no
+new step appears below it.
+
+Holding the distance SHALL change no drawn light. The field's light is the close fade times
+the weight, and the close fade is 0 at every distance the hold covers.
+
 The renderer SHALL compute, each frame, an inner radius of `3 * edge(s0+2)` and an
-outer radius of `3 * edge(s0+3)`, and a weight that is 1 at a zoom distance of 4,000
-light years and below, 0 at 8,000 and above, and smooth between.
+outer radius of `3 * edge(s0+3)`, where `s0` is the base size class of the effective zoom
+distance, and a weight that is 1 at a zoom distance of 4,000 light years and below, 0 at
+8,000 and above, and smooth between.
 
 The weight SHALL follow the zoom distance alone. The `stars` switch SHALL NOT change it,
 so a frame drawn with the star pass off holds the same point cloud as the frame drawn
@@ -455,10 +497,10 @@ light years and below, 1 at 2,560 and above, and a smoothstep between. The inven
 stands in for systems the map holds no record of, so it gives way as the camera comes
 close enough to read one system from the next. A real system does not fade: the
 requirement "A marker draws for every system at every zoom distance" of `real-systems`
-draws a marker at every zoom distance from 500 to 120,000 light years. Inside the covered
-sphere the close view then shows the host's systems and nothing the map invented. Outside
-it the point cloud, the volume and the cloud sprites draw the galaxy as they did before,
-so the frame is not empty.
+draws a marker at every zoom distance from 10 to 120,000 light years, for every system its
+category's draw range keeps. Inside the covered sphere the close view then shows the
+host's systems and nothing the map invented. Outside it the point cloud, the volume and
+the cloud sprites draw the galaxy as they did before, so the frame is not empty.
 
 A star's brightness SHALL carry `close * weight * (1 - smoothstep(inner, outer, range))`
 and a point cloud sample's brightness SHALL carry
@@ -487,6 +529,54 @@ The close fade SHALL change the light a star deposits. It SHALL NOT change a box
 placed count, its drawn count or its star radius, so the two counts the page reports do
 not depend on the zoom distance and the field holds its grain while it fades.
 
+#### Scenario: The effective distance holds below 640
+
+- **WHEN** a unit test reads the effective zoom distance at 10, 100, 320, 500, 640, 2,000
+  and 120,000 light years
+- **THEN** the readings are 640, 640, 640, 640, 640, 2,000 and 120,000
+
+#### Scenario: The handover radii do not step below 640
+
+- **WHEN** a unit test reads the inner and the outer handover radius at every zoom distance
+  from 10 to 640 light years, stepping by the wheel's 1.15 factor
+- **THEN** every reading is 240 and 480 light years, which is the pair the map reads at 500
+  light years today
+
+#### Scenario: The boxel set does not change below 640
+
+- **WHEN** a unit test lists the drawn boxels at a fixed camera position at zoom distances
+  10, 100, 320 and 500 light years
+- **THEN** the four lists are equal, and each holds the 1,856 boxels the list holds at 640
+  light years
+
+#### Scenario: The drawn field does not change below 640
+
+- **WHEN** the browser test opens the map, moves the cursor back along the camera
+  direction by the zoom distance so the camera holds one position at Sol, and reads the
+  star vertex count and the star drawn count at zoom distances 10, 100, 320 and 640 light
+  years
+- **THEN** the four readings are equal, and the drawn count is above 0 and below the
+  vertex count.
+
+  The camera has to hold one position, because the drawn boxel list is camera-relative.
+  The drawn count is the reading that moves: it is the sum over the drawn boxels, so it
+  changes as soon as the base size class steps and the field draws another list. Measured
+  on the pinned model the four readings are 340,529 of 475,136, and with the hold removed
+  from the render loop the reading at 10 light years falls to 225,870
+
+The four scenarios above are what hold this rule. The three unit scenarios read the three
+values the hold protects directly: the base class, the handover radii and the drawn boxel
+list. The browser scenario reads the rule where it is applied, which is the render loop,
+because a unit test on a pure function cannot fail when the loop stops calling it.
+
+A browser scenario over the mean luminance of the frame was tried and dropped. The frame
+mean cannot see the difference the hold makes: the point cloud samples it governs cover
+about 0.15 percent of the frame, so removing the hold moves the reading at 320 light years
+by 0.0007 at the galactic centre and by less than 1e-5 at Sol, which is under the frame's
+own change from one wheel notch. The counts the page reports carry the difference the
+frame mean hides. A test that cannot fail when the rule is broken is not a test of the
+rule.
+
 #### Scenario: The two fades sum to one
 
 - **WHEN** a unit test sweeps the range from 0 to 20,000 light years at zoom distances
@@ -497,7 +587,7 @@ not depend on the zoom distance and the field holds its grain while it fades.
 #### Scenario: The close fade takes light out of the frame
 
 - **WHEN** a unit test sweeps the range from 0 to 20,000 light years at zoom distances
-  500, 640, 1,000 and 2,000 light years, and reads both factors at each sample
+  10, 500, 640, 1,000 and 2,000 light years, and reads both factors at each sample
 - **THEN** the point factor equals `1 - weight * (1 - smoothstep(inner, outer, range))` at
   every sample, which is the value it holds when the close fade is 1, and the star factor
   is the close fade times `weight * (1 - smoothstep(inner, outer, range))`
@@ -512,15 +602,15 @@ not depend on the zoom distance and the field holds its grain while it fades.
 
 #### Scenario: The close fade follows the zoom distance
 
-- **WHEN** a unit test reads the close fade at zoom distances 500, 640, 1,000, 1,280,
+- **WHEN** a unit test reads the close fade at zoom distances 10, 500, 640, 1,000, 1,280,
   2,560 and 4,000 light years
-- **THEN** the readings are 0, 0, 0.092, 0.259, 1 and 1 within 1e-3, and the fade never
+- **THEN** the readings are 0, 0, 0, 0.092, 0.259, 1 and 1 within 1e-3, and the fade never
   falls as the zoom distance rises
 
 #### Scenario: The fade band lies inside the covered sphere
 
 - **WHEN** a unit test reads the inner and the outer radius at every base class the
-  rule can select, 1 to 4
+  rule can select from an effective zoom distance, 1 to 4
 - **THEN** the outer radius equals `3 * edge(s0+3)`, the radius the field covers, and
   the inner radius is half of it
 
@@ -544,16 +634,17 @@ not depend on the zoom distance and the field holds its grain while it fades.
 #### Scenario: The invented field goes as the camera comes in
 
 - **WHEN** the browser test opens `#c=0,0,0&d=2560&p=35&y=0`,
-  `#c=0,0,0&d=1280&p=35&y=0` and `#c=0,0,0&d=640&p=35&y=0` with an empty system set, and
-  renders each with the star pass on and with it off
+  `#c=0,0,0&d=1280&p=35&y=0`, `#c=0,0,0&d=640&p=35&y=0` and `#c=0,0,0&d=10&p=35&y=0` with
+  an empty system set, and renders each with the star pass on and with it off
 - **THEN** the mean absolute pixel difference falls from the first view to the third, and
-  at 640 light years the two image files are byte-identical
+  at 640 and at 10 light years the two image files are byte-identical
 
 #### Scenario: A real system stays when the invented field goes
 
 - **WHEN** the browser test adds one category and one system at Sol, opens
-  `#c=0,0,0&d=640&p=35&y=0`, and reads the middle pixel of the marker
-- **THEN** the pixel holds the category's colour, and the frame drawn with the star pass
+  `#c=0,0,0&d=640&p=35&y=0` and `#c=0,0,0&d=10&p=35&y=0`, and reads the middle pixel of the
+  marker in each
+- **THEN** each pixel holds the category's colour, and each frame drawn with the star pass
   off is byte-identical to the frame drawn with it on
 
 ### Requirement: A star is drawn as a point sprite of the disc
@@ -635,8 +726,13 @@ and the close fade says how much of its light reaches the frame.
 ### Requirement: Frame budget at close zoom
 
 At 1920x1080 on the dev container's GPU, the mean render time over 300 consecutive
-frames SHALL stay under 16.7 ms at zoom distances of 500, 1,000 and 4,000 light years
-from the cursor, with the cursor at Sol and at the galactic centre. The list holds
+frames SHALL stay under 16.7 ms at zoom distances of 10, 500, 1,000 and 4,000 light years
+from the cursor, with the cursor at Sol and at the galactic centre.
+
+The 10 light year view is the new closest zoom. The field adds no light there, but it
+still builds its boxel table and runs its suppression sweep, because the effective zoom
+distance holds at 640 light years. The view is in the list so that cost is measured where
+it is paid and not assumed from the 500 light year reading. The list holds
 4,000 light years because that is the worst fill of the star field: the weight is still
 1, the coarsest class is the 1,280 light year sector, nearly every boxel is capped and
 most sprites sit at the 16 pixel size clamp. The measurement SHALL use the same function
@@ -647,4 +743,10 @@ table.
 
 - **WHEN** the browser test sets each of the six views at 500, 1,000 and 4,000 light
   years and calls the measurement function for 300 frames
+- **THEN** each returned mean is under 16.7 ms
+
+#### Scenario: The closest zoom is under budget
+
+- **WHEN** the browser test sets the two views at 10 light years, one with the cursor at
+  Sol and one at the galactic centre, and calls the measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms

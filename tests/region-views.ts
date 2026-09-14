@@ -15,7 +15,12 @@ import { project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
 import type { RegionLines } from '../src/scene-data/types';
-import type { CornerChoice, CrossingChoice, ChosenView } from '../e2e/region-views';
+import type {
+  BothSetsChoice,
+  CornerChoice,
+  CrossingChoice,
+  ChosenView,
+} from '../e2e/region-views';
 
 /** The galactic centre in game coordinates, as the browser helpers hold it. */
 const GALACTIC_CENTRE: readonly [number, number, number] = [15, -35, 25895];
@@ -360,4 +365,277 @@ export function findSharpCorner(lines: RegionLines, viewport: Viewport): CornerC
     };
   }
   throw new Error('no place turns 30 degrees within the reading reach');
+}
+
+/** A cell hash of the segments of a boundary set, for a nearest-segment reading. */
+interface SegmentIndex {
+  /** The shortest distance from a plane point to any segment of the set. */
+  gapTo(point: Plane): number;
+}
+
+/** The side of one cell of the segment hash, in light years. */
+const INDEX_CELL_LY = 200;
+
+function indexSegments(lines: RegionLines): SegmentIndex {
+  const buckets = new Map<number, number[]>();
+  const add = (key: number, vertex: number): void => {
+    const held = buckets.get(key);
+    if (held === undefined) buckets.set(key, [vertex]);
+    else held.push(vertex);
+  };
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    const first = lines.first[chain] as number;
+    const last = lines.last[chain] as number;
+    for (let vertex = first; vertex < last; vertex += 1) {
+      const a = planeAt(lines, vertex);
+      const b = planeAt(lines, vertex + 1);
+      // A segment can cross several cells, so it goes into every cell of its box.
+      const lowX = Math.floor(Math.min(a[0], b[0]) / INDEX_CELL_LY);
+      const highX = Math.floor(Math.max(a[0], b[0]) / INDEX_CELL_LY);
+      const lowZ = Math.floor(Math.min(a[1], b[1]) / INDEX_CELL_LY);
+      const highZ = Math.floor(Math.max(a[1], b[1]) / INDEX_CELL_LY);
+      for (let cellX = lowX; cellX <= highX; cellX += 1) {
+        for (let cellZ = lowZ; cellZ <= highZ; cellZ += 1) {
+          add(cellX * 100000 + cellZ, vertex);
+        }
+      }
+    }
+  }
+
+  const gapToSegment = (point: Plane, vertex: number): number => {
+    const a = planeAt(lines, vertex);
+    const b = planeAt(lines, vertex + 1);
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const span = dx * dx + dz * dz;
+    let part =
+      span === 0 ? 0 : ((point[0] - a[0]) * dx + (point[1] - a[1]) * dz) / span;
+    if (part < 0) part = 0;
+    if (part > 1) part = 1;
+    return Math.hypot(point[0] - (a[0] + part * dx), point[1] - (a[1] + part * dz));
+  };
+
+  return {
+    gapTo(point: Plane): number {
+      const cellX = Math.floor(point[0] / INDEX_CELL_LY);
+      const cellZ = Math.floor(point[1] / INDEX_CELL_LY);
+      let nearest = Number.POSITIVE_INFINITY;
+      for (let ring = 0; ring <= 20; ring += 1) {
+        for (let stepZ = -ring; stepZ <= ring; stepZ += 1) {
+          for (let stepX = -ring; stepX <= ring; stepX += 1) {
+            if (Math.max(Math.abs(stepX), Math.abs(stepZ)) !== ring) continue;
+            const held = buckets.get((cellX + stepX) * 100000 + cellZ + stepZ);
+            if (held === undefined) continue;
+            for (const vertex of held) {
+              const away = gapToSegment(point, vertex);
+              if (away < nearest) nearest = away;
+            }
+          }
+        }
+        // A segment outside this ring cannot be nearer than the ring's own reach.
+        if (nearest <= ring * INDEX_CELL_LY) break;
+      }
+      return nearest;
+    },
+  };
+}
+
+/** How near the chosen point must sit to a chain of each set, in light years. */
+const BOTH_SETS_GAP_LY = 0.5;
+
+/** How far the nearest other chain must stay from the chosen point, in light years. */
+const BOTH_SETS_CLEARANCE_LY = 200;
+
+/**
+ * Finds a plane point that sits on a chain of both boundary sets.
+ *
+ * The scenario "The boundary still draws at the closest zoom" reads the same point in
+ * both modes, down to a zoom of 10 light years. The frame there covers about 12 light
+ * years across the cursor, while the smoothed line may sit 49.3 light years from the
+ * traced one, so a point chosen against one set alone can leave the other set's line
+ * outside the frame.
+ *
+ * The search takes the midpoint of a long traced segment, because the two lines coincide
+ * along a straight run of the boundary, and keeps the longest such segment whose
+ * midpoint is within half a light year of the smoothed set as well.
+ */
+export function findPointNearBothSets(
+  lines: RegionLines,
+  traced: RegionLines,
+): BothSetsChoice {
+  const smoothedIndex = indexSegments(lines);
+  /** The longest traced segment the search has accepted so far. */
+  let best: BothSetsChoice | null = null;
+  let bestLength = 0;
+
+  for (let chain = 0; chain < traced.chainCount; chain += 1) {
+    const first = traced.first[chain] as number;
+    const last = traced.last[chain] as number;
+    for (let vertex = first; vertex < last; vertex += 1) {
+      const a = planeAt(traced, vertex);
+      const b = planeAt(traced, vertex + 1);
+      const length = gap(a, b);
+      if (length <= bestLength) continue;
+      const point: Plane = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+      // The disc under the line must be bright, as it must be for the width reading.
+      const radius = Math.hypot(
+        point[0] - GALACTIC_CENTRE[0],
+        point[1] - GALACTIC_CENTRE[2],
+      );
+      if (radius > 16000) continue;
+
+      const smoothedGap = smoothedIndex.gapTo(point);
+      if (smoothedGap > BOTH_SETS_GAP_LY) continue;
+
+      // No other chain may come near, in either set, so the reading at the closest
+      // zoom holds one boundary and not two.
+      const clearance = Math.min(
+        clearanceFrom(traced, point, (other) => other >= first && other <= last),
+        clearanceFrom(lines, point, (other) => {
+          const first2 = lines.first[chain] as number;
+          const last2 = lines.last[chain] as number;
+          return other >= first2 && other <= last2;
+        }),
+      );
+      if (clearance < BOTH_SETS_CLEARANCE_LY) continue;
+
+      bestLength = length;
+      best = {
+        point: game(point),
+        chain,
+        segmentLengthLy: length,
+        smoothedGapLy: smoothedGap,
+        tracedGapLy: 0,
+        clearanceLy: clearance,
+      };
+    }
+  }
+  if (best === null) throw new Error('no point sits on a chain of both sets');
+  return best;
+}
+
+/** How long each arm of a traced corner must be, in light years. */
+const TRACED_ARM_LY = 160;
+
+/** Where the straight run of the comparison starts and ends along an arm. */
+const TRACED_RUN_FROM_LY = 60;
+const TRACED_RUN_TO_LY = 140;
+
+/** How far along each arm the bend line reaches, in light years. */
+const TRACED_BEND_REACH_LY = 12;
+
+/**
+ * Finds a lattice node where the traced line turns by 90 degrees.
+ *
+ * Every vertex of the traced set is such a node: the set keeps a node only where the
+ * direction of the unit edges changes, and the edges run along the axes of the grid. The
+ * search therefore asks for the reading conditions and not for the turn: both arms longer
+ * than 160 light years, so each one is more than 20 CSS pixels at the chosen zoom, a
+ * straight run of the same chain for the comparison, and no other chain near.
+ *
+ * The view takes the same 500 light year zoom the smoothed corner takes, where one CSS
+ * pixel covers 0.8 light years.
+ */
+export function findTracedCorner(
+  traced: RegionLines,
+  viewport: Viewport,
+): CornerChoice {
+  const distance = 500;
+  const perPixel = (2 * distance * Math.tan(Math.PI / 6)) / viewport.height;
+
+  for (let chain = 0; chain < traced.chainCount; chain += 1) {
+    const first = traced.first[chain] as number;
+    const last = traced.last[chain] as number;
+    for (let vertex = first + 1; vertex < last; vertex += 1) {
+      const bend = planeAt(traced, vertex);
+      const back = planeAt(traced, vertex - 1);
+      const forward = planeAt(traced, vertex + 1);
+      const armBack = gap(bend, back);
+      const armForward = gap(bend, forward);
+      if (armBack < TRACED_ARM_LY || armForward < TRACED_ARM_LY) continue;
+
+      const inX = bend[0] - back[0];
+      const inZ = bend[1] - back[1];
+      const outX = forward[0] - bend[0];
+      const outZ = forward[1] - bend[1];
+      const cosine = (inX * outX + inZ * outZ) / (armBack * armForward);
+      const turn = (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
+      if (Math.abs(turn - 90) > 1e-6) continue;
+
+      // The disc under the line must be bright, as it must be for the width reading.
+      const radius = Math.hypot(
+        bend[0] - GALACTIC_CENTRE[0],
+        bend[1] - GALACTIC_CENTRE[2],
+      );
+      if (radius > 16000) continue;
+
+      // No other chain may come near the reading window, and this chain may not fold
+      // back over the corner.
+      const clearance = clearanceFrom(
+        traced,
+        bend,
+        (other) => other >= first && other <= last,
+      );
+      if (clearance < 150) continue;
+      let folds = false;
+      for (const step of [-1, 1]) {
+        let arc = 0;
+        let other = vertex;
+        for (;;) {
+          const next = other + step;
+          if (next < first || next > last) break;
+          arc += gap(planeAt(traced, other), planeAt(traced, next));
+          other = next;
+          if (arc < NEIGHBOUR_ARC_LY) continue;
+          if (gap(bend, planeAt(traced, other)) < 30) folds = true;
+        }
+      }
+      if (folds) continue;
+
+      /** A point along an arm, at a distance from the corner in light years. */
+      const along = (to: Plane, away: number): Plane => {
+        const span = gap(bend, to);
+        return [
+          bend[0] + ((to[0] - bend[0]) * away) / span,
+          bend[1] + ((to[1] - bend[1]) * away) / span,
+        ];
+      };
+
+      const view: ChosenView = { cursor: game(bend), distance, yaw: 0, pitch: PITCH };
+      const straightFrom = along(forward, TRACED_RUN_FROM_LY);
+      const straightTo = along(forward, TRACED_RUN_TO_LY);
+      const inFrame = (point: Plane): boolean => {
+        const screen = project(view as View, game(point), viewport);
+        return (
+          screen.inFront &&
+          screen.x > 20 &&
+          screen.x < viewport.width - 20 &&
+          screen.y > 20 &&
+          screen.y < viewport.height - 20
+        );
+      };
+      if (!inFrame(straightFrom) || !inFrame(straightTo)) continue;
+
+      return {
+        view,
+        viewport: { width: viewport.width, height: viewport.height },
+        chain,
+        vertex,
+        turnDegrees: turn,
+        reachPixels: JOIN_REACH_PIXELS,
+        bend: game(bend),
+        bendLine: [
+          game(along(back, TRACED_BEND_REACH_LY)),
+          game(bend),
+          game(along(forward, TRACED_BEND_REACH_LY)),
+        ],
+        straightFrom: game(straightFrom),
+        straightTo: game(straightTo),
+        clearanceLy: clearance,
+        lightYearsPerPixel: perPixel,
+      };
+    }
+  }
+  throw new Error('no traced corner meets the reading conditions');
 }

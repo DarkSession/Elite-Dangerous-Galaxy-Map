@@ -6,6 +6,9 @@ precision highp float;
 
 layout(location = 0) in vec3 aOffset;
 layout(location = 1) in vec3 aCore;
+// The style of the marker, 0 for a disc and 1 for a glow, and the draw range of its
+// category in light years.
+layout(location = 2) in vec2 aStyleRange;
 
 uniform mat4 uViewProjection;
 // The CSS pixels per light year at one light year of range, times the marker's own
@@ -18,17 +21,34 @@ uniform vec2 uLimits;
 uniform float uPixelRatio;
 // The width of the ring, in CSS pixels.
 uniform float uRingCss;
+// The sprite of a glow, as a multiple of the disc diameter.
+uniform float uGlowFactor;
+// The largest point size the card draws, in device pixels.
+uniform float uMaxPointSize;
 
 out vec3 vCore;
 out float vRadius;
 out float vRing;
+out float vStyle;
 
 void main() {
-  float range = max(length(aOffset), 1.0);
-  float size = clamp(uScale / range, uLimits.x, uLimits.y) * uPixelRatio;
+  float range = length(aOffset);
+  // A marker draws only while the camera is inside the draw range of its own category.
+  // A clip-space z over w of 2 is behind the far plane, so the point is clipped and no
+  // fragment is written. The cut does not fade: a marker draws in full or not at all.
+  if (range > aStyleRange.y) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+
+  float disc = clamp(uScale / max(range, 1.0), uLimits.x, uLimits.y);
+  float sprite = aStyleRange.x > 0.5 ? disc * uGlowFactor : disc;
+  float size = min(sprite * uPixelRatio, uMaxPointSize);
   gl_PointSize = size;
   vCore = aCore;
   vRadius = size * 0.5;
   vRing = uRingCss * uPixelRatio;
+  vStyle = aStyleRange.x;
   gl_Position = uViewProjection * vec4(aOffset, 1.0);
 }

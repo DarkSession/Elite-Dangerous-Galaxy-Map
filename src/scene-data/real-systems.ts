@@ -24,6 +24,22 @@ export const SUPPRESSION_RADIUS_LY = 3;
  */
 export const MODEL_BOUNDS: Range = loadGalaxyModel(parameters).bounds;
 
+/** The two shapes a marker draws in. */
+export type MarkerStyle = 'glow' | 'disc';
+
+/** The style a category takes when it names none. */
+export const DEFAULT_MARKER_STYLE: MarkerStyle = 'glow';
+
+/**
+ * The draw range a category takes when it names none, in light years. It is the far zoom
+ * limit, so a marker at the cursor draws at every zoom the map reaches. It still cuts a
+ * marker far from the cursor at a far view: at a zoom of 120,000 light years the camera
+ * sits about 146,600 light years from the cursor, and the far rim of the disc lies about
+ * 126,800 light years further, so the default removes the markers of the outer band the
+ * frame still draws.
+ */
+export const DEFAULT_MAX_DRAW_RANGE_LY = 120000;
+
 /** One group the host sorts its systems into. */
 export interface Category {
   /** The identity of the category. */
@@ -32,10 +48,15 @@ export interface Category {
   readonly color: readonly [number, number, number];
   /** What the phase 4 HUD shows about the category. */
   readonly description?: string;
+  /** The shape the markers of the category draw in. */
+  readonly markerStyle: MarkerStyle;
+  /** How far the camera comes from a system before its marker stops, in light years. */
+  readonly maxDrawRange: number;
 }
 
 /** Why the reader rejected a category. */
-export type CategoryRejectReason = 'no-name' | 'bad-color' | 'over-capacity';
+export type CategoryRejectReason =
+  'no-name' | 'bad-color' | 'bad-style' | 'bad-range' | 'over-capacity';
 
 /** One category the reader rejected. */
 export interface CategoryReject {
@@ -148,6 +169,28 @@ function readFinite(value: unknown): number | null {
 }
 
 /**
+ * The marker style of a category record. It gives the default when the field is absent
+ * and `null` on any other value, because a style the reader does not know rejects the
+ * category. A host that misspells a style would otherwise get the default and no report.
+ */
+function readMarkerStyle(value: unknown): MarkerStyle | null {
+  if (value === undefined) return DEFAULT_MARKER_STYLE;
+  if (value === 'glow' || value === 'disc') return value;
+  return null;
+}
+
+/**
+ * The draw range of a category record, in light years. It gives the default when the
+ * field is absent and `null` on a value that is not a finite number above 0.
+ */
+function readDrawRange(value: unknown): number | null {
+  if (value === undefined) return DEFAULT_MAX_DRAW_RANGE_LY;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value <= 0) return null;
+  return value;
+}
+
+/**
  * The `id64` as a decimal string. A Spansh `id64` is a 64-bit integer and `JSON.parse`
  * loses digits above 2^53, so a host that needs every digit passes a string or a
  * `bigint`.
@@ -240,6 +283,16 @@ export function createSystemSet(): RealSystemSet {
           rejected.push({ index, reason: 'bad-color' });
           continue;
         }
+        const markerStyle = readMarkerStyle(record['markerStyle']);
+        if (markerStyle === null) {
+          rejected.push({ index, reason: 'bad-style' });
+          continue;
+        }
+        const maxDrawRange = readDrawRange(record['maxDrawRange']);
+        if (maxDrawRange === null) {
+          rejected.push({ index, reason: 'bad-range' });
+          continue;
+        }
         const existing = categoryOf.get(name);
         // A replacement adds no category, so the capacity bound never rejects one.
         if (existing === undefined && categories.length >= MAX_CATEGORIES) {
@@ -247,11 +300,13 @@ export function createSystemSet(): RealSystemSet {
           continue;
         }
 
+        // A replace replaces the whole category, so the style and the range of the old
+        // one are gone and the default takes the place of a field the new one drops.
         const description = record['description'];
         const category: Category =
           typeof description === 'string'
-            ? { name, color, description }
-            : { name, color };
+            ? { name, color, description, markerStyle, maxDrawRange }
+            : { name, color, markerStyle, maxDrawRange };
 
         if (existing === undefined) {
           categoryOf.set(name, categories.length);

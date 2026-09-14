@@ -29,6 +29,16 @@ import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
 import { createLabelOverlay } from './labels';
 import type { LabelOverlay, SamplingStats } from './labels';
 
+/**
+ * What the region overlay draws. `off` draws no boundary and places no label.
+ * `simplified` draws the smoothed boundary set, and `accurate` draws the traced one,
+ * which is the staircase the region data is. `accurate` places the same labels.
+ */
+export type RegionMode = 'off' | 'simplified' | 'accurate';
+
+/** The mode the map takes when the host names none. */
+export const DEFAULT_REGION_MODE: RegionMode = 'simplified';
+
 /** Options for `createGalaxyMap`. */
 export interface GalaxyMapOptions {
   /**
@@ -36,6 +46,8 @@ export interface GalaxyMapOptions {
    * canvas's parent, so a host that gives a canvas alone gets a working map.
    */
   readonly labelHost?: HTMLElement;
+  /** What the region overlay draws. The default is `simplified`. */
+  readonly regionMode?: RegionMode;
 }
 
 /** A view as a host reads and writes it. */
@@ -63,6 +75,14 @@ export interface GalaxyMapDebug {
   systemMarkerCount(): number;
   /** Holds the close fade at a value from 0 to 1, or `null` for the zoom distance. */
   setCloseFade(value: number | null): void;
+  /**
+   * Holds the near plane in light years, or `null` for the zoom distance rule. The hold
+   * reaches the frame alone: `project` and `planePointAt` build their matrix from the
+   * rule, so a hold below 100 light years would make the drawn frame and the projected
+   * pixel disagree. The scenario the hook serves reads 500 light years and above, where
+   * the rule already gives 10.
+   */
+  setNearPlane(value: number | null): void;
   readPixel(x: number, y: number): [number, number, number, number];
   readRect(x: number, y: number, width: number, height: number): Uint8Array;
   drawingBufferSize(): [number, number];
@@ -70,7 +90,9 @@ export interface GalaxyMapDebug {
   project(point: readonly [number, number, number]): { x: number; y: number };
   planePointAt(x: number, y: number): [number, number, number] | null;
   regionNameAtScreen(x: number, y: number): string | null;
+  /** The vertices of the smoothed set, whatever mode the map is in. */
   regionLinePositions(): Float32Array;
+  /** The chain bounds of the smoothed set, whatever mode the map is in. */
   regionLineChains(): { first: Uint32Array; last: Uint32Array };
   regionSampleCounts(): { id: number; name: string; count: number }[];
   regionSampleTotal(): number;
@@ -103,6 +125,13 @@ export interface GalaxyMap {
   setView(view: Partial<MapView>): void;
   /** Calls `listener` after the view changes. Returns an unsubscribe. */
   onViewChange(listener: (view: MapView) => void): () => void;
+  /** Reads what the region overlay draws. */
+  getRegionMode(): RegionMode;
+  /**
+   * Chooses what the region overlay draws, from the next frame on. A value that is not
+   * one of the three leaves the mode as it was.
+   */
+  setRegionMode(mode: RegionMode): void;
   /** The renderer probes the browser tests read. */
   readonly debug: GalaxyMapDebug;
 }
@@ -150,6 +179,12 @@ export function createGalaxyMap(
   let regionGrid: CoarseRegionGrid | null = null;
   let regionLines: RegionLines | null = null;
   let regionsOn = true;
+  let regionMode: RegionMode =
+    options.regionMode === 'off' ||
+    options.regionMode === 'simplified' ||
+    options.regionMode === 'accurate'
+      ? options.regionMode
+      : DEFAULT_REGION_MODE;
   let frameHandle: number | null = null;
   let disposed = false;
   // `dispose` releases the renderer, so the last reading is kept. The test that checks
@@ -180,7 +215,7 @@ export function createGalaxyMap(
   const drawFrame = (): void => {
     if (renderer === null) return;
     renderer.render(view);
-    labels?.update(view, renderer.viewport(), regionsOn);
+    labels?.update(view, renderer.viewport(), regionsOn && regionMode !== 'off');
   };
 
   const onResize = (): void => renderer?.resize();
@@ -237,7 +272,8 @@ export function createGalaxyMap(
 
     await nextFrame();
     if (disposed) return;
-    renderer.setRegionLines(scene.regionLines);
+    renderer.setRegionLines(scene.regionLines, scene.regionLinesTraced);
+    renderer.setRegionDraw(regionMode !== 'off', regionMode === 'accurate');
     labels?.setGrid(scene.regionGrid);
     regionGrid = scene.regionGrid;
     regionLines = scene.regionLines;
@@ -303,6 +339,10 @@ export function createGalaxyMap(
     },
     setCloseFade(value: number | null): void {
       renderer?.setCloseFade(value);
+      drawFrame();
+    },
+    setNearPlane(value: number | null): void {
+      renderer?.setNearPlane(value);
       drawFrame();
     },
     readPixel(x: number, y: number): [number, number, number, number] {
@@ -415,6 +455,18 @@ export function createGalaxyMap(
       return () => {
         listeners.delete(listener);
       };
+    },
+    getRegionMode(): RegionMode {
+      return regionMode;
+    },
+    setRegionMode(mode: RegionMode): void {
+      // A value the map does not know leaves the mode as it was, as a bad view field
+      // does. The host reads `getRegionMode` to see what took effect.
+      if (mode !== 'off' && mode !== 'simplified' && mode !== 'accurate') return;
+      if (mode === regionMode) return;
+      regionMode = mode;
+      renderer?.setRegionDraw(mode !== 'off', mode === 'accurate');
+      drawFrame();
     },
     debug,
   };

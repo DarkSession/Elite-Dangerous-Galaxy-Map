@@ -1,12 +1,4 @@
-## Purpose
-
-Lets a host application put real star systems on the map. The host creates the map with
-one call, gives it a table of categories with a second, and adds records with a third.
-The map validates each record, draws a marker for each system it keeps in the colour of
-that system's primary category, and removes the invented star that stands for the same
-system.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: The map is created through a library entry point
 
@@ -136,46 +128,42 @@ switch stays on `debug`.
   sets beside `window.galaxyMap`. The browser suite runs against the built preview, which
   serves no source path the test could import.
 
-### Requirement: The entry point reports a start-up failure through `ready`
+### Requirement: The marker pass draws over the finished frame
 
-When the canvas gives no WebGL2 context, or the card reports a software renderer,
-`createGalaxyMap` SHALL still return a handle. `ready` SHALL then reject with the named
-error, and the frame loop SHALL NOT start. `addSystems` SHALL keep reading records, and
-nothing SHALL draw.
+The marker pass SHALL draw after the tone map and after the region boundary overlay, and
+SHALL blend over the frame with alpha. It SHALL use no depth test. No other pass can
+then cover a marker, and a marker adds no light the tone map reads.
 
-The demo page SHALL catch that rejection, SHALL put the text on
-`window.__galaxyMap.error` and SHALL show it in the page's message box. The requirements
-"Hardware rendering is asserted" and "WebGL2 is required" of `far-view-rendering` are
-then met as they were before the split.
+The pass SHALL draw the markers in the order the set holds them, so two markers that
+overlap blend in a fixed order.
 
-#### Scenario: No WebGL2 context rejects ready
+#### Scenario: A region boundary does not cover a marker
 
-- **WHEN** a unit test calls the entry point with a canvas whose `getContext` returns
-  `null`, and waits on `ready`
-- **THEN** the handle exists, `ready` rejects with the message the context reports, and
-  no animation frame is requested
+- **WHEN** the browser test places one system on a region boundary, opens a view at
+  20,000 light years where the overlay draws in full, and reads the middle pixel of the
+  marker
+- **THEN** the pixel holds the marker's core colour, not the boundary's colour
 
-#### Scenario: The page shows the failure
+#### Scenario: Two markers overlap in the order the set holds them
 
-- **WHEN** the browser test opens the page with WebGL2 refused
-- **THEN** `window.__galaxyMap.error` holds the message and the page's message box shows
-  it
+- **WHEN** the browser test adds two categories, each with the `markerStyle` `disc`, adds
+  two systems 1 light year apart at a range that makes their discs overlap, reads the
+  frame, then calls `clearSystems` and adds the same two records in the other order and
+  reads the frame again
+- **THEN** the overlap holds the second record's marker on top in each frame, so the two
+  frames differ
 
-### Requirement: The handle releases what it holds on dispose
+  Both categories take the `disc` style, because the test reads a pixel 1.25 CSS pixels
+  from a marker centre and asserts one category colour there. A `disc` is opaque that far
+  inside its edge; a `glow` is not, so under the default style the pixel would hold a
+  blend of the two colours and the reading would have no single right answer
 
-`dispose` SHALL stop the frame loop, SHALL remove the event listeners the map added,
-SHALL delete the GPU objects the passes hold, and SHALL terminate any scene-data worker
-that is still running. A second call SHALL do nothing and SHALL NOT throw.
+#### Scenario: The far view does not change
 
-`loadSceneData` starts three workers and terminates each one when its own promise
-settles, so there is no way to stop a load that is still running. It SHALL take a cancel
-signal, and SHALL terminate every worker it started when the signal fires.
-
-#### Scenario: Dispose stops the map and repeats safely
-
-- **WHEN** the browser test waits for `ready`, reads `debug.frameStats().frames`, calls
-  `dispose`, waits 10 animation frames, reads it again, and calls `dispose` a second time
-- **THEN** the two readings are equal and the second call throws nothing
+- **WHEN** the browser test renders the default view at 1280x720 with no system in the
+  set, and again with the marker pass switched off
+- **THEN** the two image files are byte-identical, and the frame still matches the
+  committed baseline image with at most 2 percent of pixels differing
 
 ### Requirement: A category carries a name, a colour and a description
 
@@ -286,163 +274,6 @@ allegiance and a host that groups them by star class both fit the same call.
 - **THEN** the category is accepted, its name and colour hold, and it carries no
   description
 
-### Requirement: A record follows the shape of an EDSM or a Spansh dump
-
-A record SHALL carry a `name` that is a string of at least one character, a `coords`
-object whose `x`, `y` and `z` are finite numbers, and a `primaryCategory` that is the name
-of a category the table holds. The position is in game coordinates in light years.
-
-A record MAY carry `secondaryCategories`, an array of names of categories the table
-holds. The array MAY hold any number of names. The reader SHALL drop a name that repeats
-and a name equal to the primary category, and SHALL keep the rest in the order the record
-gave them. A `secondaryCategories` that is present and is not an array SHALL be dropped,
-as an optional field of the wrong type is dropped. An entry of the array that is not the
-name of a category the table holds SHALL reject the record, which covers an entry that is
-not a string. A secondary category does not change how a marker draws; phase 4 reads it
-in the HUD.
-
-The reader SHALL keep these optional fields when they are present and of the stated
-type, and SHALL drop every other field of the record:
-
-| Field             | Type                       |
-| ----------------- | -------------------------- |
-| `id64`            | number, string or `bigint` |
-| `allegiance`      | string                     |
-| `government`      | string                     |
-| `primaryEconomy`  | string                     |
-| `security`        | string                     |
-| `population`      | finite number              |
-| `bodyCount`       | finite number              |
-
-The reader SHALL store `id64` as a decimal string. A Spansh `id64` is a 64-bit integer,
-and `JSON.parse` loses digits above 2^53, so a host that needs every digit passes a
-string or a `bigint`.
-
-#### Scenario: An EDSM record and a Spansh record are both read
-
-- **WHEN** a unit test adds two categories, then one EDSM record, which carries `id64`,
-  `name`, `coords`, `primaryCategory` and `date`, and one Spansh record, which carries
-  those fields and `allegiance`, `government`, `primaryEconomy`, `security`,
-  `population`, `bodyCount`, `bodies` and `stations`
-- **THEN** both are accepted, the kept fields hold the values the records gave, and
-  neither `date` nor `bodies` nor `stations` is held
-
-#### Scenario: An unknown secondary category rejects the record
-
-- **WHEN** a unit test adds the category `A`, then two records that name `A` as the
-  primary category: one whose `secondaryCategories` hold `B`, which the table does not
-  hold, and one whose `secondaryCategories` is the string `A` and not an array
-- **THEN** the first is rejected as `unknown-category`, and the second is accepted with
-  no secondary category
-
-#### Scenario: The secondary categories are kept in order, without a repeat
-
-- **WHEN** a unit test adds the categories `A`, `B` and `C`, then one record whose
-  primary category is `A` and whose `secondaryCategories` are `C`, `B`, `C` and `A`
-- **THEN** the record is accepted and holds the secondary categories `C` and `B`, in that
-  order
-
-#### Scenario: A large id64 keeps every digit
-
-- **WHEN** a unit test adds a record whose `id64` is the string `2871051900826` and one
-  whose `id64` is the bigint `18262930337633`
-- **THEN** the reader holds `"2871051900826"` and `"18262930337633"`
-
-### Requirement: The reader reports every record it rejects
-
-`addSystems` SHALL return a report of `added`, `replaced` and `rejected`. Each rejected
-entry SHALL carry the index of the record in the call and one reason from this set:
-`no-name`, `no-coords`, `no-category`, `unknown-category`, `out-of-bounds`,
-`over-capacity`.
-
-A record whose position lies outside the galaxy model bounds SHALL be rejected as
-`out-of-bounds`. The bounds are the volume the map draws, so a record outside them could
-never show. The reader SHALL reject a bad record and SHALL keep reading the rest of the
-call.
-
-A record with no `primaryCategory`, or whose `primaryCategory` is not a string of at
-least one character, SHALL be rejected as `no-category`. A record whose primary category,
-or one of whose secondary categories, names a category the table does not hold SHALL be
-rejected as `unknown-category`. A category is what colours a marker, so a system without
-one has no colour to draw in. The host therefore adds its categories before its systems,
-and the report names every record that arrived too early.
-
-#### Scenario: Each fault gets its own reason
-
-- **WHEN** a unit test adds one category, then seven records: one valid, one with an
-  empty name, one with no `coords`, one whose `coords.x` is `NaN`, one at
-  (0, 0, 900,000), one with no `primaryCategory`, and one whose `primaryCategory` names a
-  category the table does not hold
-- **THEN** `added` is 1, and `rejected` holds `no-name` at index 1, `no-coords` at
-  index 2, `no-coords` at index 3, `out-of-bounds` at index 4, `no-category` at index 5
-  and `unknown-category` at index 6
-
-### Requirement: A system's identity is its id64, or its name
-
-The identity of a record SHALL be its `id64` when it has one, and its `name` when it has
-none. A record whose identity is already in the set SHALL replace the record that holds
-it. The set SHALL then not grow, and the call SHALL report the record under `replaced`.
-
-A replacement SHALL work on a full set, because it adds no system. The capacity bound
-rejects a record that would grow the set, and never one that replaces a system already
-in it.
-
-#### Scenario: The same system twice replaces rather than adds
-
-- **WHEN** a unit test adds a record with `id64` 10477373803, then adds the same `id64`
-  at a different position, and reads the count and the stored position
-- **THEN** the count is 1, `replaced` is 1, and the stored position is the second one
-
-#### Scenario: A full set still takes a replacement
-
-- **WHEN** a unit test fills the set to 10,000 systems, then adds one record whose
-  `id64` is already in the set at a new position, and one record with a new `id64`
-- **THEN** the first is reported under `replaced` and holds the new position, the second
-  is rejected as `over-capacity`, and the count stays 10,000
-
-### Requirement: The set holds up to 10,000 systems
-
-The set SHALL hold at most 10,000 systems. `addSystems` SHALL accept records up to that
-bound and SHALL reject every record that would grow the set past it with the reason
-`over-capacity`. `clearSystems` SHALL empty the set, and the next call SHALL then accept
-10,000 records again.
-
-`clearSystemsAndCategories`, which the requirement "A category carries a name, a colour
-and a description" defines, SHALL free both bounds: after it the next calls SHALL accept
-256 categories and 10,000 records.
-
-#### Scenario: The bound rejects the excess
-
-- **WHEN** a unit test adds 9,998 systems, then adds 5 more with new identities, then
-  calls `clearSystems` and adds 10,000
-- **THEN** the second call reports `added` 2 and 3 entries of `over-capacity`, and the
-  third call reports `added` 10,000 and no rejection
-
-### Requirement: The set holds positions in float64
-
-Every change to the set SHALL raise the set version, and every change to the category
-table SHALL raise the table version. An add, a replace, a clear and a paired clear all
-count as a change. The marker pass rebuilds its colour buffer from those two numbers and
-the star field drops the suppressed sets it kept, so a change that did not raise them
-would leave both stale.
-
-The system set SHALL hold positions as one `Float64Array` of three game coordinates per
-system, in the order the records were added, the index of each system's primary category
-in the table as one `Uint16Array` in the same order, and the record fields as plain
-objects and strings.
-
-The positions stay in `float64`, because the marker pass subtracts the camera position
-from them every frame and phase 4 projects them for picking. The requirement
-"Scene data carries no rendering types" of `far-view-scene-data` already holds the
-import direction for every module under the scene-data directory, and this set is one of
-them.
-
-#### Scenario: Positions are float64 game coordinates
-
-- **WHEN** a unit test adds three records and reads the set's position array
-- **THEN** the array is a `Float64Array` of length 9 and holds the three positions in
-  the order the records were added
-
 ### Requirement: A marker draws for every system at every zoom distance
 
 The renderer SHALL draw one marker per system in the set, in one draw call, at every
@@ -538,75 +369,6 @@ range rule kept and not the number the set holds.
 - **THEN** the first reading is (153, 230, 255) and the second is (255, 40, 40), each
   within 2 per channel, and the system count does not change
 
-### Requirement: The marker pass draws over the finished frame
-
-The marker pass SHALL draw after the tone map and after the region boundary overlay, and
-SHALL blend over the frame with alpha. It SHALL use no depth test. No other pass can
-then cover a marker, and a marker adds no light the tone map reads.
-
-The pass SHALL draw the markers in the order the set holds them, so two markers that
-overlap blend in a fixed order.
-
-#### Scenario: A region boundary does not cover a marker
-
-- **WHEN** the browser test places one system on a region boundary, opens a view at
-  20,000 light years where the overlay draws in full, and reads the middle pixel of the
-  marker
-- **THEN** the pixel holds the marker's core colour, not the boundary's colour
-
-#### Scenario: Two markers overlap in the order the set holds them
-
-- **WHEN** the browser test adds two categories, each with the `markerStyle` `disc`, adds
-  two systems 1 light year apart at a range that makes their discs overlap, reads the
-  frame, then calls `clearSystems` and adds the same two records in the other order and
-  reads the frame again
-- **THEN** the overlap holds the second record's marker on top in each frame, so the two
-  frames differ
-
-  Both categories take the `disc` style, because the test reads a pixel 1.25 CSS pixels
-  from a marker centre and asserts one category colour there. A `disc` is opaque that far
-  inside its edge; a `glow` is not, so under the default style the pixel would hold a
-  blend of the two colours and the reading would have no single right answer
-
-#### Scenario: The far view does not change
-
-- **WHEN** the browser test renders the default view at 1280x720 with no system in the
-  set, and again with the marker pass switched off
-- **THEN** the two image files are byte-identical, and the frame still matches the
-  committed baseline image with at most 2 percent of pixels differing
-
-### Requirement: A marker's drawn position is exact
-
-The renderer SHALL subtract the camera position from each system position in `float64`
-on the CPU each frame, and SHALL give the shader the offset as a `float32`. The drawn
-position of a marker SHALL be within 0.01 light years of the position the same
-subtraction gives in `float64`, at every cursor inside the model bounds and every zoom
-distance.
-
-The galaxy spans under 125,000 light years, and a `float32` holds a number of that size
-to better than 0.008 light years, so the bound holds for every system in the set and not
-only for the near ones.
-
-#### Scenario: Position error at the far corner
-
-- **WHEN** a unit test places the cursor at (50,000, 0, 75,000) and at Sol, at zoom
-  distances 500, 20,000 and 120,000 light years, and pushes 1,000 system positions
-  spread over the model bounds through a `float32` emulation of the vertex transform
-- **THEN** every drawn position is within 0.01 light years of the `float64` result
-
-### Requirement: The marker pass has a switch
-
-The renderer SHALL expose a `systems` switch beside the switches for the volume, the
-clouds, the points, the stars, the glow and the regions. With the switch off the pass
-SHALL draw nothing.
-
-#### Scenario: The switch removes the markers
-
-- **WHEN** the browser test adds 100 systems around Sol, opens `#c=0,0,0&d=4000&p=35&y=0`
-  and reads the frame, then switches the systems off and reads it again
-- **THEN** the two frames differ with the switch on, and the frame with the switch off is
-  byte-identical to the frame the page draws with an empty set
-
 ### Requirement: Frame budget with a full set
 
 At 1920x1080 on the dev container's GPU, with 10,000 systems in the set, the mean render
@@ -644,6 +406,9 @@ frame budget uses, so it holds that CPU work and the GPU work together.
   function for 300 frames
 - **THEN** the returned mean is under 16.7 ms. This is the worst case for the marker pass,
   because every one of the 10,000 glow sprites is at its 30 CSS pixel cap
+
+## ADDED Requirements
+
 ### Requirement: A marker draws in one of two styles
 
 A category SHALL choose the style its markers draw in, through its `markerStyle` field.

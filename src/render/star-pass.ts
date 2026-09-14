@@ -68,15 +68,34 @@ export function starWeight(distance: number): number {
 }
 
 /**
+ * The zoom distance the star field and the handover read, in light years. It holds at
+ * `CLOSE_FADE_NEAR` below that distance, so the base size class never falls below 1 and
+ * the 320 light year boundary of the base class rule is never crossed, however close the
+ * camera comes.
+ *
+ * Without the hold the boxel set, the covered radius and the handover radii would all
+ * step at 320 light years, and the point cloud's near void would halve from 480 light
+ * years to 240 in one wheel notch. The field carries no light below 640 light years, so
+ * nothing the user sees would move with it, but the point cloud would.
+ *
+ * The close fade reads the view's own zoom distance and not this one.
+ */
+export function effectiveStarDistance(distance: number): number {
+  return Math.max(distance, CLOSE_FADE_NEAR);
+}
+
+/**
  * How much of the field's light reaches the frame at a zoom distance, 0 to 1. It is 0
  * at 640 light years and below and 1 at 2,560 and above. The invented field stands in
  * for systems the map holds no record of, so it gives way as the camera comes close
  * enough to read one system from the next.
  *
  * The band comes from the base class rule, which steps just above 320, 640, 1,280,
- * 2,560 and 5,120 light years. `map-navigation` clamps the zoom distance to 500, so
- * 640 is the lowest boundary the camera reaches and the field is gone over the whole
- * reachable band below it.
+ * 2,560 and 5,120 light years. The field reads the effective zoom distance, which holds
+ * at 640, so 640 is the lowest boundary the field crosses and its light is gone over the
+ * whole band below it, down to the closest zoom of 10 light years.
+ *
+ * This function reads the view's own zoom distance, not the effective one.
  */
 export function closeFade(distance: number): number {
   return smoothstep(CLOSE_FADE_NEAR, CLOSE_FADE_FAR, distance);

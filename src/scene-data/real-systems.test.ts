@@ -3,6 +3,8 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import { createGalaxyModel } from '../galaxy-model/model';
 import {
   createSystemSet,
+  DEFAULT_MARKER_STYLE,
+  DEFAULT_MAX_DRAW_RANGE_LY,
   MAX_CATEGORIES,
   MAX_SYSTEMS,
   MODEL_BOUNDS,
@@ -51,8 +53,15 @@ describe('the category table', () => {
       name: 'Empire',
       color: [0, 180, 255],
       description: 'The Empire',
+      markerStyle: 'glow',
+      maxDrawRange: 120000,
     });
-    expect(set.category(1)).toEqual({ name: 'Alliance', color: [0, 255, 120] });
+    expect(set.category(1)).toEqual({
+      name: 'Alliance',
+      color: [0, 255, 120],
+      markerStyle: 'glow',
+      maxDrawRange: 120000,
+    });
     expect(set.category(1)?.description).toBeUndefined();
   });
 
@@ -74,6 +83,8 @@ describe('the category table', () => {
       { name: '', color: [1, 2, 3] },
       { name: 'Two', color: [1, 2] },
       { name: 'Nan', color: [1, Number.NaN, 3] },
+      { name: 'Sparkle', color: [1, 2, 3], markerStyle: 'sparkle' },
+      { name: 'Back', color: [1, 2, 3], maxDrawRange: -5 },
     ]);
 
     expect(report.added).toBe(1);
@@ -81,7 +92,45 @@ describe('the category table', () => {
       { index: 1, reason: 'no-name' },
       { index: 2, reason: 'bad-color' },
       { index: 3, reason: 'bad-color' },
+      { index: 4, reason: 'bad-style' },
+      { index: 5, reason: 'bad-range' },
     ]);
+  });
+
+  test('reads a style and a range and keeps them', () => {
+    const set = createSystemSet();
+    const report = set.addCategories([
+      { name: 'Empire', color: [1, 2, 3], markerStyle: 'disc', maxDrawRange: 5000 },
+      { name: 'Alliance', color: [4, 5, 6] },
+    ]);
+
+    expect(report.added).toBe(2);
+    expect(report.rejected).toEqual([]);
+    expect(set.category(0)?.markerStyle).toBe('disc');
+    expect(set.category(0)?.maxDrawRange).toBe(5000);
+    expect(set.category(1)?.markerStyle).toBe('glow');
+    expect(set.category(1)?.maxDrawRange).toBe(120000);
+  });
+
+  test('gives the default style and range to a category with neither field', () => {
+    const set = createSystemSet();
+    set.addCategories([{ name: 'Empire', color: [1, 2, 3] }]);
+
+    expect(DEFAULT_MARKER_STYLE).toBe('glow');
+    expect(DEFAULT_MAX_DRAW_RANGE_LY).toBe(120000);
+    expect(set.category(0)?.markerStyle).toBe(DEFAULT_MARKER_STYLE);
+    expect(set.category(0)?.maxDrawRange).toBe(DEFAULT_MAX_DRAW_RANGE_LY);
+  });
+
+  test('replaces the whole category, so a dropped style and range are gone', () => {
+    const set = createSystemSet();
+    set.addCategories([
+      { name: 'Empire', color: [1, 2, 3], markerStyle: 'disc', maxDrawRange: 5000 },
+    ]);
+    set.addCategories([{ name: 'Empire', color: [4, 5, 6] }]);
+
+    expect(set.category(0)?.markerStyle).toBe('glow');
+    expect(set.category(0)?.maxDrawRange).toBe(120000);
   });
 
   test('rejects the excess past the table bound', () => {
@@ -135,7 +184,12 @@ describe('the category table', () => {
     ]);
 
     expect(report.added).toBe(1);
-    expect(set.category(0)).toEqual({ name: 'Empire', color: [0, 180, 255] });
+    expect(set.category(0)).toEqual({
+      name: 'Empire',
+      color: [0, 180, 255],
+      markerStyle: 'glow',
+      maxDrawRange: 120000,
+    });
   });
 
   test('replaces the whole category, so a dropped description is gone', () => {

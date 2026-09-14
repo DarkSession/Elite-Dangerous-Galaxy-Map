@@ -6,10 +6,12 @@ import { meanLuminanceFrame, openMap } from './helpers';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
-/** The closest zoom at Sol. */
+/** The close view at Sol, at the zoom distance the map stopped at before this change. */
 const CLOSE_SOL = '#c=0,0,0&d=500&p=35&y=0';
-/** The closest zoom at the galactic centre. */
+/** The same close view at the galactic centre, which is the densest ground. */
 const CLOSE_CENTRE = '#c=15,0,25895&d=500&p=35&y=0';
+/** The closest zoom at Sol. */
+const CLOSEST_SOL = '#c=0,0,0&d=10&p=35&y=0';
 /** The zoom distance at which the field has its worst fill. */
 const WIDE_SOL = '#c=0,0,0&d=4000&p=35&y=0';
 /** The bound the star pass holds to at every view. */
@@ -337,9 +339,10 @@ test('the invented field goes as the camera comes in', async ({ page }) => {
     '#c=0,0,0&d=2560&p=35&y=0',
     '#c=0,0,0&d=1280&p=35&y=0',
     '#c=0,0,0&d=640&p=35&y=0',
+    CLOSEST_SOL,
   ];
   const differences: number[] = [];
-  let lastPair: [Buffer, Buffer] | null = null;
+  const pairs: [Buffer, Buffer][] = [];
   for (const where of views) {
     await openMap(page, where);
     await setPasses(page, { stars: true });
@@ -347,16 +350,21 @@ test('the invented field goes as the camera comes in', async ({ page }) => {
     differences.push(await meanPixelDifference(page));
     await setPasses(page, { stars: false });
     const withoutStars = await page.locator('#map').screenshot();
-    lastPair = [withStars, withoutStars];
+    pairs.push([withStars, withoutStars]);
   }
   console.log('the close fade', differences);
 
   expect(differences[0] as number).toBeGreaterThan(differences[1] as number);
   expect(differences[1] as number).toBeGreaterThan(differences[2] as number);
   expect(differences[2] as number).toBe(0);
-  expect(lastPair).not.toBeNull();
-  const pair = lastPair as [Buffer, Buffer];
-  expect(Buffer.compare(pair[0], pair[1])).toBe(0);
+  // The close fade is 0 at 640 light years and below, so the field adds no light at
+  // either of the last two views and each frame with the pass on is the frame with it
+  // off, byte for byte.
+  expect(differences[3] as number).toBe(0);
+  for (const index of [2, 3]) {
+    const pair = pairs[index] as [Buffer, Buffer];
+    expect(Buffer.compare(pair[0], pair[1]), `the view ${views[index]}`).toBe(0);
+  }
 });
 
 test('the point cloud does not take the faded light back', async ({ page }) => {
@@ -637,34 +645,36 @@ test('the same view gives the same frame with systems loaded', async ({ page }) 
 });
 
 test('a real system stays when the invented field goes', async ({ page }) => {
-  await openMap(page, '#c=0,0,0&d=640&p=35&y=0');
-  await page.evaluate(() => {
-    const map = window.galaxyMap;
-    if (map === undefined) return;
-    map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
-    map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
-    ]);
-    map.debug.drawNow();
-  });
+  for (const where of ['#c=0,0,0&d=640&p=35&y=0', CLOSEST_SOL]) {
+    await openMap(page, where);
+    await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return;
+      map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+      map.addSystems([
+        { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      ]);
+      map.debug.drawNow();
+    });
 
-  const pixel = await page.evaluate(() => {
-    const map = window.galaxyMap;
-    if (map === undefined) return [0, 0, 0, 0];
-    const screen = map.debug.project([0, 0, 0]);
-    return map.debug.readPixel(screen.x, screen.y);
-  });
-  console.log('the marker at 640 light years', pixel);
-  for (let channel = 0; channel < 3; channel += 1) {
-    const wanted = [153, 230, 255][channel] as number;
-    expect(Math.abs((pixel[channel] as number) - wanted)).toBeLessThanOrEqual(2);
+    const pixel = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [0, 0, 0, 0];
+      const screen = map.debug.project([0, 0, 0]);
+      return map.debug.readPixel(screen.x, screen.y);
+    });
+    console.log(`the marker at the view ${where}`, pixel);
+    for (let channel = 0; channel < 3; channel += 1) {
+      const wanted = [153, 230, 255][channel] as number;
+      expect(Math.abs((pixel[channel] as number) - wanted)).toBeLessThanOrEqual(2);
+    }
+
+    await setPasses(page, { stars: true });
+    const withStars = await page.locator('#map').screenshot();
+    await setPasses(page, { stars: false });
+    const withoutStars = await page.locator('#map').screenshot();
+    expect(Buffer.compare(withStars, withoutStars), `the view ${where}`).toBe(0);
   }
-
-  await setPasses(page, { stars: true });
-  const withStars = await page.locator('#map').screenshot();
-  await setPasses(page, { stars: false });
-  const withoutStars = await page.locator('#map').screenshot();
-  expect(Buffer.compare(withStars, withoutStars)).toBe(0);
 });
 
 test('a camera move stays inside the frame budget', async ({ page }) => {
@@ -692,8 +702,10 @@ test('a camera move stays inside the frame budget', async ({ page }) => {
 });
 
 test('a base class change costs one slow frame at most', async ({ page }) => {
-  // The zoom starts at 500, because `map-navigation` clamps the zoom distance there and
-  // the base class boundary at 320 cannot be reached. It crosses 640, 1,280 and 2,560.
+  // The zoom starts at 500 and not at 300, because the field reads the effective zoom
+  // distance, which holds at 640 light years below that. The boundary at 320 is inside
+  // the reachable range now that the zoom goes to 10, but the field does not cross it.
+  // The sweep crosses 640, 1,280 and 2,560.
   await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
   await addSystemsAround(page, cameraOf([0, 0, 0], 500), 10000, 600);
 
@@ -714,4 +726,66 @@ test('a base class change costs one slow frame at most', async ({ page }) => {
 
   expect(stats.frames).toBeGreaterThan(40);
   expect(stats.worstMs).toBeLessThan(50);
+});
+
+/**
+ * The zoom distances the hold on the effective distance is read at. The field's boxel
+ * table is the same at all four only while the hold stands.
+ */
+const HOLD_DISTANCES = [10, 100, 320, 640];
+
+test('the drawn field does not change below 640', async ({ page }) => {
+  await openMap(page, CLOSE_SOL);
+
+  // The drawn boxel list is camera-relative, so the camera has to hold one position
+  // while the zoom changes. The cursor therefore moves back along the camera direction
+  // by the zoom distance, which leaves the camera at Sol at every reading.
+  const readCounts = async (
+    distance: number,
+  ): Promise<{ vertices: number; drawn: number }> => {
+    await page.evaluate((zoom) => {
+      const pitch = 35;
+      const radians = (pitch * Math.PI) / 180;
+      // `cameraPosition` in src/camera/projection.ts puts the camera at
+      // `cursor + direction * distance`, and at a yaw of 0 the direction is
+      // `[0, sin(pitch), -cos(pitch)]`.
+      const direction: [number, number, number] = [
+        0,
+        Math.sin(radians),
+        -Math.cos(radians),
+      ];
+      window.__galaxyMap?.setView?.({
+        cursor: [-direction[0] * zoom, -direction[1] * zoom, -direction[2] * zoom] as [
+          number,
+          number,
+          number,
+        ],
+        distance: zoom,
+        yaw: 0,
+        pitch,
+      });
+      window.__galaxyMap?.drawNow?.();
+    }, distance);
+    return page.evaluate(() => ({
+      vertices: window.__galaxyMap?.starVertexCount?.() ?? -1,
+      drawn: window.__galaxyMap?.starDrawnCount?.() ?? -1,
+    }));
+  };
+
+  const counts: { vertices: number; drawn: number }[] = [];
+  for (const distance of HOLD_DISTANCES) counts.push(await readCounts(distance));
+  console.log('the held field', { distances: HOLD_DISTANCES, counts });
+
+  // The drawn count is the reading that moves. It is the sum over the drawn boxels, so
+  // it changes as soon as the base size class steps and the field draws another list.
+  const at640 = counts[counts.length - 1] as { vertices: number; drawn: number };
+  expect(at640.drawn).toBeGreaterThan(0);
+  expect(at640.drawn).toBeLessThan(STAR_VERTEX_COUNT);
+  for (let index = 0; index < counts.length; index += 1) {
+    const count = counts[index] as { vertices: number; drawn: number };
+    expect(count.vertices, `at ${HOLD_DISTANCES[index]} light years`).toBe(
+      at640.vertices,
+    );
+    expect(count.drawn, `at ${HOLD_DISTANCES[index]} light years`).toBe(at640.drawn);
+  }
 });

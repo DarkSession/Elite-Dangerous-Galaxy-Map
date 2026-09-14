@@ -41,9 +41,11 @@ describe('the view state', () => {
     expect(wrapYaw(0)).toBe(0);
   });
 
-  test('holds the distance between 500 and 120,000 light years', () => {
-    expect(clampDistance(10)).toBe(MIN_DISTANCE);
+  test('holds the distance between 10 and 120,000 light years', () => {
+    expect(MIN_DISTANCE).toBe(10);
+    expect(clampDistance(1)).toBe(MIN_DISTANCE);
     expect(clampDistance(1e9)).toBe(MAX_DISTANCE);
+    expect(clampDistance(50)).toBe(50);
     expect(clampDistance(20000)).toBe(20000);
   });
 

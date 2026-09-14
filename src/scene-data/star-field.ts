@@ -45,18 +45,18 @@ export const MASS_INTEGRAL = 4.129e10;
 /**
  * The radius of a star as a fraction of the mean spacing of the stars its boxel draws.
  * The fraction sets how concentrated a star's light is, never how much of it there is.
- * A complete 20 light year boxel at Sol then draws points of about one pixel at the
- * closest zoom, and a capped 1,280 light year boxel at the core draws sprites wide
- * enough to read as a wash.
+ * A complete 20 light year boxel at Sol then draws points of about one pixel at a zoom
+ * distance of 500 light years, and a capped 1,280 light year boxel at the core draws
+ * sprites wide enough to read as a wash.
  *
  * The value trades the grain of the field against the light the tone map shows. The
  * tone map is concave, so the same light shows brighter when it is spread over many
  * pixels and dimmer when it sits on few. A small fraction therefore gives grain and
- * loses displayed light, and a large one does the reverse. Measured at the closest
- * zoom at Sol, with the brightness spread in place: 0.03 gives a grain of 0.050 and a
- * mean frame lift of 0.0023, 0.04 gives 0.045 and 0.0027, 0.06 gives 0.038 and 0.0040,
- * and 0.10 gives 0.030 and 0.0067. The value clears both thresholds the spec sets, by
- * 13 percent on the grain and 35 percent on the lift.
+ * loses displayed light, and a large one does the reverse. Measured at a zoom distance
+ * of 500 light years at Sol, with the brightness spread in place: 0.03 gives a grain of
+ * 0.050 and a mean frame lift of 0.0023, 0.04 gives 0.045 and 0.0027, 0.06 gives 0.038
+ * and 0.0040, and 0.10 gives 0.030 and 0.0067. The value clears both thresholds the
+ * spec sets, by 13 percent on the grain and 35 percent on the lift.
  */
 export const STAR_RADIUS_FRACTION = 0.04;
 

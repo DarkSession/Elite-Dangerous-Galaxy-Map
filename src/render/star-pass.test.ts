@@ -8,6 +8,7 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import { createGalaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import {
+  baseSizeClass,
   boxelEdge,
   boxelOrigin,
   boxelSeed,
@@ -32,6 +33,7 @@ import { MASS_INTEGRAL } from '../scene-data/star-field';
 import { DEFAULT_POINT_BRIGHTNESS, POINT_RADIUS_LY } from './point-pass';
 import {
   closeFade,
+  effectiveStarDistance,
   handoverRadii,
   heldCloseFade,
   MAX_STAR_PIXELS,
@@ -434,5 +436,85 @@ describe('a drawn star position', () => {
       }
     }
     expect(worst).toBeLessThan(0.01);
+  });
+});
+
+/** The distances a wheel sweep from 10 to 640 light years visits, at 1.15 per notch. */
+function wheelSteps(low: number, high: number): number[] {
+  const steps: number[] = [];
+  let distance = high;
+  while (distance > low) {
+    steps.push(distance);
+    distance = distance / 1.15;
+  }
+  steps.push(low);
+  return steps;
+}
+
+/** Distances spaced evenly in the logarithm. */
+function logSpacedDistances(low: number, high: number, count: number): number[] {
+  const logLow = Math.log(low);
+  const step = (Math.log(high) - logLow) / (count - 1);
+  const values: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    values.push(Math.exp(logLow + step * index));
+  }
+  values[0] = low;
+  values[count - 1] = high;
+  return values;
+}
+
+describe('the effective zoom distance', () => {
+  test('holds at 640 light years and follows the view above it', () => {
+    const distances = [10, 100, 320, 500, 640, 2000, 120000];
+    const expected = [640, 640, 640, 640, 640, 2000, 120000];
+    expect(distances.map(effectiveStarDistance)).toEqual(expected);
+  });
+
+  // Without the hold the base class rule would step at 320 light years and give 0
+  // below it, which halves the covered radius and the handover radii.
+  test('holds the base size class at 1 below 640 light years', () => {
+    for (const distance of [10, 100, 320, 640]) {
+      expect(baseSizeClass(effectiveStarDistance(distance)), `at ${distance}`).toBe(1);
+      expect(boxelEdge(baseSizeClass(effectiveStarDistance(distance)))).toBe(20);
+    }
+    // The pure rule on the view's own distance steps to 1 only at 640.
+    expect([10, 100, 320].map(baseSizeClass)).toEqual([0, 0, 0]);
+    expect(baseSizeClass(640)).toBe(1);
+  });
+
+  test('keeps the reach above three quarters of the zoom distance', () => {
+    for (const distance of logSpacedDistances(10, 5120, 200)) {
+      const covered = coveredRadius(effectiveStarDistance(distance));
+      expect(covered / distance, `at ${distance}`).toBeGreaterThanOrEqual(0.75);
+    }
+    // Below 640 light years the reach holds at 480, so the ratio only grows.
+    expect(coveredRadius(effectiveStarDistance(10))).toBe(480);
+    expect(coveredRadius(effectiveStarDistance(500))).toBe(480);
+  });
+
+  test('does not step the handover radii below 640 light years', () => {
+    for (const distance of wheelSteps(10, 640)) {
+      expect(handoverRadii(effectiveStarDistance(distance)), `at ${distance}`).toEqual([
+        240, 480,
+      ]);
+    }
+    // That is the pair the map read at 500 light years before the limit moved.
+    expect(handoverRadii(effectiveStarDistance(500))).toEqual([240, 480]);
+  });
+
+  test('does not change the drawn boxel set below 640 light years', () => {
+    const camera: [number, number, number] = [15, -35, 25895];
+    const key = (distance: number): string =>
+      listDrawnBoxels(camera, effectiveStarDistance(distance))
+        .map((boxel) => `${boxel.sizeClass}:${boxel.index.join(',')}`)
+        .join('|');
+    const reference = key(640);
+    for (const distance of [10, 100, 320, 500]) {
+      expect(key(distance), `at ${distance}`).toBe(reference);
+    }
+    expect(listDrawnBoxels(camera, effectiveStarDistance(10))).toHaveLength(
+      DRAWN_BOXEL_COUNT,
+    );
   });
 });

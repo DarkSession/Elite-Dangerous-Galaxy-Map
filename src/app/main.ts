@@ -83,6 +83,7 @@ function start(target: HTMLCanvasElement): void {
   global.starSuppressedCount = () => debug.starSuppressedCount();
   global.systemMarkerCount = () => debug.systemMarkerCount();
   global.setCloseFade = (value) => debug.setCloseFade(value);
+  global.setNearPlane = (value) => debug.setNearPlane(value);
   global.frameStats = () => debug.frameStats();
   global.resetFrameStats = () => debug.resetFrameStats();
   global.drawingBufferSize = () => debug.drawingBufferSize();

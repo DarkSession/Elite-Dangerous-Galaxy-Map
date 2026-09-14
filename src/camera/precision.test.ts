@@ -9,7 +9,11 @@
 // `float32` limit: at distance 2,000 the separation of 1/32 light year is 2^-16 of
 // the coordinate, which leaves 8 mantissa bits, so one rounding is about 4e-3 of the
 // separation. The bound grows in proportion to the distance, so the limit at the
-// closest zoom distance of 500 light years is a quarter of the limit at 2,000.
+// closest zoom distance of 10 light years is a two-hundredth of the limit at 2,000.
+//
+// The near plane is part of the projection matrix, so it moves the reading. The sweep
+// therefore runs against the near plane the view gives it, which is a tenth of the zoom
+// distance below 100 light years.
 import { describe, expect, test } from 'vitest';
 import { galaxyModel } from '../galaxy-model/model';
 import { cameraPosition, viewProjectionMatrix } from './projection';
@@ -19,8 +23,11 @@ import { mat4 } from 'gl-matrix';
 
 const round = Math.fround;
 
-/** The largest relative error allowed at the closest zoom distance. */
-export const PRECISION_LIMIT_AT_MIN_DISTANCE = 2.5e-3;
+/**
+ * The largest relative error allowed at the closest zoom distance. It is the bound
+ * `1e-2 * distance / 2,000` read at `MIN_DISTANCE`, so it moved with the closest zoom.
+ */
+export const PRECISION_LIMIT_AT_MIN_DISTANCE = 5e-5;
 
 /** The distance the spec states the relative error bound of 1e-2 at, in light years. */
 const REFERENCE_DISTANCE = 2000;
@@ -34,7 +41,9 @@ const viewport = { width: 1920, height: 1080 };
 const SEPARATION = 1 / 32;
 const YAWS = [0, 37, 120, 199, 275, 350];
 const PITCHES = [5, 20, 35, 60, 89];
-const DISTANCES = [MIN_DISTANCE, REFERENCE_DISTANCE, 20000, MAX_DISTANCE];
+// `MIN_DISTANCE` now supplies the 10, so 500 stands as its own entry: it is the zoom
+// distance the map stopped at before this change.
+const DISTANCES = [MIN_DISTANCE, 500, REFERENCE_DISTANCE, 20000, MAX_DISTANCE];
 
 /** The cursors the sweep visits: Sol, the centre, the far corner and the bounds. */
 function sweepCursors(): [number, number, number][] {

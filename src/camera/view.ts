@@ -14,8 +14,13 @@ export interface View {
   pitch: number;
 }
 
-/** The closest the camera comes to the cursor, in light years. */
-export const MIN_DISTANCE = 500;
+/**
+ * The closest the camera comes to the cursor, in light years. It is 10 because that is
+ * the edge of a mass-code `a` boxel, the finest cell the game's own hierarchy holds,
+ * and because a marker's drawn size caps at 12 CSS pixels. Below 10 light years no
+ * marker grows, no line gains detail and no new source of light appears.
+ */
+export const MIN_DISTANCE = 10;
 
 /** The furthest the camera goes from the cursor, in light years. */
 export const MAX_DISTANCE = 120000;

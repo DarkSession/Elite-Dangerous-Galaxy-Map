@@ -5,11 +5,23 @@ import type { View } from './view';
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
-/** The near plane, in light years. */
+/** The ceiling of the near plane, in light years. */
 export const NEAR_PLANE = 10;
 
 /** The far plane, in light years. */
 export const FAR_PLANE = 1_000_000;
+
+/**
+ * The near plane for a zoom distance, in light years. The cursor sits exactly
+ * `distance` light years from the camera, so a fixed near plane of 10 would clip the
+ * cursor at the closest zoom. A tenth of the zoom distance puts the cursor at ten near
+ * planes at every zoom, and the ceiling holds the value at 10 light years at every zoom
+ * distance of 100 and above, which is every zoom distance the map reached before the
+ * limit moved.
+ */
+export function nearPlane(distance: number): number {
+  return Math.min(NEAR_PLANE, distance / 10);
+}
 
 /** The size of the drawing area in pixels. */
 export interface Viewport {
@@ -83,14 +95,22 @@ export function viewMatrix(view: View): mat4 {
   return matrix;
 }
 
-/** The perspective matrix for a drawing area. */
-export function projectionMatrix(viewport: Viewport): mat4 {
+/**
+ * The perspective matrix for a view and a drawing area. `near` overrides the near plane
+ * rule; the renderer passes the value a test holds, so a test can draw a view against
+ * the fixed near plane the map used before the rule existed.
+ */
+export function projectionMatrix(
+  view: View,
+  viewport: Viewport,
+  near: number = nearPlane(view.distance),
+): mat4 {
   const matrix = mat4.create();
   mat4.perspective(
     matrix,
     FIELD_OF_VIEW_DEGREES * DEGREES_TO_RADIANS,
     viewport.width / viewport.height,
-    NEAR_PLANE,
+    near,
     FAR_PLANE,
   );
   return matrix;
@@ -99,7 +119,7 @@ export function projectionMatrix(viewport: Viewport): mat4 {
 /** The product of the projection and the view matrices. */
 export function viewProjectionMatrix(view: View, viewport: Viewport): mat4 {
   const matrix = mat4.create();
-  mat4.multiply(matrix, projectionMatrix(viewport), viewMatrix(view));
+  mat4.multiply(matrix, projectionMatrix(view, viewport), viewMatrix(view));
   return matrix;
 }
 

@@ -122,6 +122,7 @@ export async function loadSceneData(
     volume,
     detail: cloud.detail,
     regionLines: region.lines,
+    regionLinesTraced: region.traced,
     regionGrid: region.grid,
   };
 }

@@ -1,9 +1,10 @@
-// The two views the boundary line tests read.
+// The views and the points the boundary line tests read.
 //
-// Two scenarios of the galactic regions spec need a view chosen from the boundary set
-// and not by hand: one where a chain crosses the frame within 5 degrees of vertical,
-// and one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
-// pixels.
+// Four scenarios of the galactic regions spec need a view or a point chosen from the
+// boundary sets and not by hand: one where a chain crosses the frame within 5 degrees of
+// vertical, one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
+// pixels, one plane point that sits on a chain of both sets, and one lattice node where
+// the traced line turns by 90 degrees.
 // `tests/region-views.test.ts` builds the boundary set, runs the search in
 // `tests/region-views.ts`, and fails if these constants are not what it gives.
 //
@@ -72,6 +73,22 @@ export interface CornerChoice {
   readonly lightYearsPerPixel: number;
 }
 
+/** A plane point that sits on a chain of both boundary sets. */
+export interface BothSetsChoice {
+  /** The point, in game coordinates, on the plane `y = 0`. */
+  readonly point: [number, number, number];
+  /** The chain of each set the point sits on. The two sets share a chain order. */
+  readonly chain: number;
+  /** How long the traced segment the point sits on is, in light years. */
+  readonly segmentLengthLy: number;
+  /** How far the point sits from the smoothed set, in light years. */
+  readonly smoothedGapLy: number;
+  /** How far the point sits from the traced set, in light years. It sits on it. */
+  readonly tracedGapLy: number;
+  /** How far the nearest other chain is, in light years. */
+  readonly clearanceLy: number;
+}
+
 /** The view the width reading takes. */
 export const VERTICAL_CROSSING: CrossingChoice = {
   view: {
@@ -117,5 +134,44 @@ export const SHARP_CORNER: CornerChoice = {
   straightFrom: [-10473.70703125, 0, 72357.578125],
   straightTo: [-10349.3173828125, 0, 72390.765625],
   clearanceLy: 6412.076952539205,
+  lightYearsPerPixel: 0.8018753738744802,
+};
+
+/**
+ * The plane point the closest zoom reading takes. It sits on a chain of the smoothed set
+ * and on the chain of the same index of the traced set, so both modes draw a line through
+ * the centre of the frame down to a zoom of 10 light years.
+ */
+export const NEAR_BOTH_SETS: BothSetsChoice = {
+  point: [400.7349548339844, 0, 10266.85546875],
+  chain: 38,
+  segmentLengthLy: 3306.41015625,
+  smoothedGapLy: 0,
+  tracedGapLy: 0,
+  clearanceLy: 1653.197566902373,
+};
+
+/** The view the 90 degree corner reading of the traced set takes. */
+export const TRACED_CORNER: CornerChoice = {
+  view: {
+    cursor: [400.7349548339844, 0, 11920.060546875],
+    distance: 500,
+    yaw: 0,
+    pitch: 89,
+  },
+  viewport: { width: 1280, height: 720 },
+  chain: 38,
+  vertex: 8228,
+  turnDegrees: 90,
+  reachPixels: 8,
+  bend: [400.7349548339844, 0, 11920.060546875],
+  bendLine: [
+    [400.7349548339844, 0, 11908.060546875],
+    [400.7349548339844, 0, 11920.060546875],
+    [388.7349548339844, 0, 11920.060546875],
+  ],
+  straightFrom: [340.7349548339844, 0, 11920.060546875],
+  straightTo: [260.7349548339844, 0, 11920.060546875],
+  clearanceLy: 1898.5086612424732,
   lightYearsPerPixel: 0.8018753738744802,
 };

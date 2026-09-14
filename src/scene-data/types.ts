@@ -106,5 +106,7 @@ export interface SceneData {
   readonly volume: DensityVolume;
   readonly detail: SurfaceDetail;
   readonly regionLines: RegionLines;
+  /** The traced boundary set, which the `accurate` region mode draws. */
+  readonly regionLinesTraced: RegionLines;
   readonly regionGrid: CoarseRegionGrid;
 }

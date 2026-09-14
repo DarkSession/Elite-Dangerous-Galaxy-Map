@@ -28,6 +28,20 @@ describe('the zoom', () => {
     expect(view.distance).toBe(MAX_DISTANCE);
   });
 
+  // The close limit moved from 500 to 10 light years. The wheel keeps its 1.15 step,
+  // so the range alone is wider and the close limit takes more notches to reach.
+  test('takes 68 notches from 120,000 to reach the close limit', () => {
+    const view = createDefaultView();
+    view.distance = MAX_DISTANCE;
+    let notches = 0;
+    while (view.distance > MIN_DISTANCE) {
+      zoomByNotches(view, 1);
+      notches += 1;
+      expect(notches).toBeLessThan(200);
+    }
+    expect(notches).toBe(68);
+  });
+
   test('reads a wheel notch as one forward notch', () => {
     expect(notchesFromWheel(-100, 0)).toBe(1);
     expect(notchesFromWheel(100, 0)).toBe(-1);

@@ -94,7 +94,25 @@ const FRAME = {
   chunkOffset: [0, 0, 0] as const,
   fade: 1,
   pixelRatio: 1,
+  traced: false,
 };
+
+/** The same two chains as a traced set: the same chain count, other positions. */
+function twoTracedChains(): RegionLines {
+  const positions = new Float32Array([
+    0, 0, 0, 100, 0, 0, 100, 0, 100, 500, 0, 500, 600, 0, 500,
+  ]);
+  for (let index = 0; index < positions.length; index += 1) {
+    positions[index] = (positions[index] as number) + 7;
+  }
+  return {
+    chainCount: 2,
+    vertexCount: 5,
+    positions,
+    first: Uint32Array.from([0, 3]),
+    last: Uint32Array.from([2, 4]),
+  };
+}
 
 describe('the region overlay fade', () => {
   test('draws nothing at and above 30,000 light years', () => {
@@ -239,5 +257,57 @@ describe('the ribbon draw', () => {
       [0, 36],
       [1, 48],
     ]);
+  });
+});
+
+describe('the two boundary sets', () => {
+  test('a mode change binds another vertex array and uploads nothing', () => {
+    const context = fakeContext(800, 600);
+    const pass = createRegionPass(
+      context.gl,
+      fakePrograms(),
+      twoChains(),
+      {} as WebGLVertexArrayObject,
+      twoTracedChains(),
+    );
+
+    // Both sets upload at creation: the corner buffer once and one position buffer each.
+    const uploads = context.of('bufferData').length;
+    expect(uploads).toBe(3);
+
+    const boundBy = (traced: boolean): unknown => {
+      const before = context.of('bindVertexArray').length;
+      pass.draw({ ...FRAME, traced });
+      const binds = context.of('bindVertexArray').slice(before);
+      return binds.find((call) => call.args[0] !== null)?.args[0];
+    };
+
+    const smoothed = boundBy(false);
+    const traced = boundBy(true);
+    const again = boundBy(false);
+    expect(smoothed).toBeDefined();
+    expect(traced).toBeDefined();
+    expect(traced).not.toBe(smoothed);
+    expect(again).toBe(smoothed);
+
+    // A mode change is a bind and not an upload.
+    expect(context.of('bufferData')).toHaveLength(uploads);
+    expect(context.of('bufferSubData')).toHaveLength(0);
+  });
+
+  test('draws the chains of the set the frame names', () => {
+    const context = fakeContext(800, 600);
+    const pass = createRegionPass(
+      context.gl,
+      fakePrograms(),
+      twoChains(),
+      {} as WebGLVertexArrayObject,
+      twoTracedChains(),
+    );
+    pass.draw({ ...FRAME, traced: true });
+
+    const draws = context.of('drawArraysInstanced');
+    expect(draws).toHaveLength(2);
+    expect(draws.map((call) => call.args[3])).toEqual([2, 1]);
   });
 });

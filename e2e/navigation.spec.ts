@@ -97,12 +97,25 @@ test('a zoom writes the distance into the fragment', async ({ page }) => {
 });
 
 test('a stored fragment still loads', async ({ page }) => {
-  // The zoom limit fell from 2,000 to 500 light years. A fragment written before that
-  // must load unchanged, so the page must not re-clamp the distance it reads.
+  // The close zoom limit has moved twice, from 2,000 to 500 and then to 10 light
+  // years. A fragment written before either move must load unchanged, so the page must
+  // not re-clamp the distance it reads.
   await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
   const view = await page.evaluate(() => window.__galaxyMap?.getView?.() ?? null);
   expect(view?.distance).toBe(2000);
   expect(view?.cursor).toEqual([0, 0, 0]);
+});
+
+test('a fragment below the old limit now loads', async ({ page }) => {
+  // The close zoom limit moved from 500 to 10 light years, so a distance the old limit
+  // would have clamped loads as it was written.
+  await openMap(page, '#c=0,0,0&d=50&p=35&y=0');
+  const near = await page.evaluate(() => window.__galaxyMap?.getView?.() ?? null);
+  expect(near?.distance).toBe(50);
+
+  await openMap(page, '#c=0,0,0&d=1&p=35&y=0');
+  const clamped = await page.evaluate(() => window.__galaxyMap?.getView?.() ?? null);
+  expect(clamped?.distance).toBe(10);
 });
 
 test('a right drag opens no context menu', async ({ page }) => {
@@ -136,4 +149,51 @@ test('a left drag turns the camera around the cursor', async ({ page }) => {
   expect(view?.yaw).toBeCloseTo(18, 3);
   expect(view?.pitch).toBeCloseTo(44, 3);
   expect(view?.cursor).toEqual([0, 0, 0]);
+});
+
+// The near plane is `min(10, distance / 10)`. It is 10 light years at every zoom
+// distance of 100 and above, which is every zoom distance the map reached before the
+// close limit moved, so no view that drew before this change draws differently.
+test('the near plane changes no view that draws today', async ({ page }) => {
+  for (const fragment of ['', '#c=0,0,0&d=500&p=35&y=0']) {
+    await openMap(page, fragment);
+    await page.evaluate(() => {
+      window.__galaxyMap?.setNearPlane?.(null);
+      window.__galaxyMap?.drawNow?.();
+    });
+    const byTheRule = await page.locator('#map').screenshot();
+
+    await page.evaluate(() => {
+      window.__galaxyMap?.setNearPlane?.(10);
+      window.__galaxyMap?.drawNow?.();
+    });
+    const fixed = await page.locator('#map').screenshot();
+
+    expect(Buffer.compare(byTheRule, fixed), `the view "${fragment}"`).toBe(0);
+  }
+});
+
+// The cursor sits exactly one zoom distance from the camera, so a fixed near plane of
+// 10 light years would clip it away at the closest zoom.
+test('a marker at the cursor draws at the closest zoom', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=10&p=35&y=0');
+  await page.evaluate(() => {
+    window.galaxyMap?.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+    window.galaxyMap?.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+    ]);
+    window.galaxyMap?.debug.drawNow();
+  });
+
+  const pixel = await page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) return [0, 0, 0, 0];
+    const screen = map.debug.project([0, 0, 0]);
+    return map.debug.readPixel(screen.x, screen.y);
+  });
+  console.log('the marker at the closest zoom', pixel);
+
+  expect(Math.abs((pixel[0] as number) - 153)).toBeLessThanOrEqual(2);
+  expect(Math.abs((pixel[1] as number) - 230)).toBeLessThanOrEqual(2);
+  expect(Math.abs((pixel[2] as number) - 255)).toBeLessThanOrEqual(2);
 });

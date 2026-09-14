@@ -53,6 +53,7 @@ import type { RegionPass, RegionPrograms } from './region-pass';
 import {
   createStarPass,
   createStarProgram,
+  effectiveStarDistance,
   handoverRadii,
   heldCloseFade,
   STAR_LIGHT,
@@ -159,8 +160,18 @@ export interface Renderer {
    * because the counts and the light both read the detailed density.
    */
   setStarField(model: GalaxyModel): void;
-  /** Uploads the region boundary set. Call it in its own animation frame. */
-  setRegionLines(lines: RegionLines): void;
+  /**
+   * Uploads the two region boundary sets, the smoothed one and the traced one. Call it in
+   * its own animation frame.
+   */
+  setRegionLines(lines: RegionLines, traced: RegionLines): void;
+  /**
+   * Chooses what the region overlay draws. `draw` false draws no overlay at all, and
+   * `traced` true draws the traced boundary set in place of the smoothed one. The
+   * renderer holds no host-facing mode: `create-map.ts` owns the three region modes and
+   * turns the one it holds into these two values.
+   */
+  setRegionDraw(draw: boolean, traced: boolean): void;
   /**
    * Takes the real-system set the star field suppresses by and the marker pass draws.
    * The set is live: the renderer reads its version each frame.
@@ -179,6 +190,16 @@ export interface Renderer {
    * distance. A test holds it at 1 to read the field at a close view.
    */
   setCloseFade(value: number | null): void;
+  /**
+   * Holds the near plane at a value in light years. `null` gives it back to the zoom
+   * distance rule. A test holds it at 10 to draw a view against the fixed near plane the
+   * map used before the rule existed. The hold
+   * reaches the frame alone: `project` and `planePointAt` build their matrix from the
+   * rule, so a hold below 100 light years would make the drawn frame and the projected
+   * pixel disagree. The scenario the hook serves reads 500 light years and above, where
+   * the rule already gives 10.
+   */
+  setNearPlane(value: number | null): void;
   /** Draws one frame and adds its time to the frame statistics. */
   render(view: View): void;
   /** The mean and the worst frame time since the last reset. */
@@ -238,7 +259,10 @@ export function createRenderer(
   let starStars = 0;
   let starSuppressed = 0;
   let closeHold: number | null = null;
+  let nearHold: number | null = null;
   let regionPass: RegionPass | null = null;
+  let regionDraw = true;
+  let regionTraced = false;
   let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -305,7 +329,7 @@ export function createRenderer(
 
     mat4.multiply(
       viewProjection,
-      projectionMatrix({ width, height }),
+      projectionMatrix(view, { width, height }, nearHold ?? undefined),
       viewMatrix(view),
     );
     mat4.invert(inverseViewProjection, viewProjection);
@@ -399,7 +423,11 @@ export function createRenderer(
     // distance of 8,000 light years. The two carry one weight between them, so their
     // shares sum to 1 at every range and the total light does not change.
     const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
-    const handover = handoverRadii(view.distance);
+    // The field and the handover read the effective zoom distance, which holds at 640
+    // light years, so the base size class never steps at 320 and the point cloud's near
+    // void does not halve inside the band the closest zoom opened.
+    const starDistance = effectiveStarDistance(view.distance);
+    const handover = handoverRadii(starDistance);
     // The weight follows the zoom distance alone while the field stands. The star
     // switch does not change it, so a frame drawn with the star pass off holds the same
     // point cloud as the frame drawn with it on. A field that has not loaded yet is the
@@ -433,7 +461,7 @@ export function createRenderer(
     // alone and not the product, so the field still builds its table and the sweep still
     // runs below 640 light years, where the close fade holds the light at 0.
     if (drawsStars && weight > 0 && starPass !== null && starField !== null) {
-      const table = starField.update(camera, view.distance);
+      const table = starField.update(camera, starDistance);
       starPass.draw({
         viewProjection: viewProjection as Float32Array,
         focal,
@@ -458,12 +486,13 @@ export function createRenderer(
     // view is the frame it was before the overlay existed.
     const regions = regionFade(view.distance);
     const pixelRatio = width / Math.max(1, canvas.clientWidth);
-    if (passes.regions && regionPass !== null && regions > 0) {
+    if (passes.regions && regionDraw && regionPass !== null && regions > 0) {
       regionPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio,
+        traced: regionTraced,
       });
     }
 
@@ -504,9 +533,19 @@ export function createRenderer(
       detailTexture?.dispose();
       detailTexture = createDetailTexture(gl, detail);
     },
-    setRegionLines(lines: RegionLines): void {
+    setRegionLines(lines: RegionLines, traced: RegionLines): void {
       regionPass?.dispose();
-      regionPass = createRegionPass(gl, regionPrograms, lines, triangle.vertexArray);
+      regionPass = createRegionPass(
+        gl,
+        regionPrograms,
+        lines,
+        triangle.vertexArray,
+        traced,
+      );
+    },
+    setRegionDraw(draw: boolean, traced: boolean): void {
+      regionDraw = draw;
+      regionTraced = traced;
     },
     setStarField(model: GalaxyModel): void {
       starPass?.dispose();
@@ -544,6 +583,9 @@ export function createRenderer(
     },
     setCloseFade(value: number | null): void {
       closeHold = value;
+    },
+    setNearPlane(value: number | null): void {
+      nearHold = value;
     },
     render(view: View): void {
       const start = performance.now();
