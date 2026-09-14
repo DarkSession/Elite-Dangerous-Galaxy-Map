@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
@@ -787,7 +786,12 @@ test.describe('the search box', () => {
   });
 });
 
+// A row click selects, and the block reads the view right after it. The reduced-motion
+// setting writes the end state in one frame, so the readings are the ones the block held
+// before the selection flight existed.
 test.describe('the expanded system list', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
   test('the list opens, closes and holds one category at a time', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha', 'Beta']);
@@ -1125,6 +1129,90 @@ test.describe('the images and the lightbox', () => {
     );
   });
 
+  // The placeholder holds the caption in the middle of the lightbox frame, and the
+  // picture fits inside the frame rather than covering it. A caption left in place reads
+  // through the bars each side of the picture and through its transparent parts.
+  test('the caption behind the picture goes when the picture loads', async ({
+    page,
+  }) => {
+    const served = record('Served', [0, 0, 100], 'Alpha', {
+      images: [{ url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' }],
+    });
+
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [served]);
+    await select(page, 'Served');
+
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    const box = hud(page).locator('.gm-hud__lightbox');
+    await expect(box).toBeVisible();
+    // The picture is not there in the same turn as the click, so the reading repeats.
+    await expect(box.locator('.gm-hud__lightbox-placeholder')).toBeHidden();
+    await expect(box.locator('.gm-hud__lightbox-image')).toBeVisible();
+    // The footer still names the picture, so the caption is not lost.
+    await expect(box.locator('.gm-hud__lightbox-caption')).toHaveText('SITE PLAN');
+  });
+
+  // The box writes the `src` and then reads the element. The element still reports the
+  // picture before it in the same turn, so a reading that did not first compare the two
+  // paths would hide the caption for the whole load of a second picture.
+  test('the caption shows while a second picture loads', async ({ page }) => {
+    let release: (() => void) | null = null;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    // The second picture waits until the test lets it through, so the load window is long
+    // enough to read. The request stays on the page's own origin.
+    await page.route('**/demo-images/structure-site.svg', async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    const served = record('Served', [0, 0, 100], 'Alpha', {
+      images: [
+        { url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' },
+        { url: '/demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
+      ],
+    });
+
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [served]);
+    await select(page, 'Served');
+
+    const box = hud(page).locator('.gm-hud__lightbox');
+    const placeholder = box.locator('.gm-hud__lightbox-placeholder');
+
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    await expect(placeholder).toBeHidden();
+    await hud(page).locator('.gm-hud__lightbox-close').click();
+
+    // The second picture is still held, so its caption must be in view.
+    await hud(page).locator('.gm-hud__thumb').nth(1).click();
+    await expect(placeholder).toBeVisible();
+    await expect(placeholder).toHaveText('APPROACH VECTOR');
+
+    release?.();
+    await expect(placeholder).toBeHidden();
+  });
+
+  test('the caption stays when the picture does not load', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [withImages()]);
+    await select(page, 'Pictured');
+
+    // `/picture-one.png` is not a file the page serves, so the picture fails.
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    const box = hud(page).locator('.gm-hud__lightbox');
+    await expect(box).toBeVisible();
+    await expect(box.locator('.gm-hud__lightbox-image')).toBeHidden();
+    await expect(box.locator('.gm-hud__lightbox-placeholder')).toHaveText(
+      'APPROACH VECTOR',
+    );
+  });
+
   test('a click in the lightbox closes it', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -1190,38 +1278,25 @@ test.describe('the images and the lightbox', () => {
     expect(focused?.connected).toBe(true);
   });
 
-  // The demo records name their pictures by path. The built page must serve them, and a
-  // 404 is not a cross-origin request, so the third-party test above does not see it.
-  // The demo data itself loads in the dev server alone, so the record comes from the
-  // same file the demo page reads and the test puts it on the map.
-  test('a demo picture loads from the built page', async ({ page }) => {
-    interface DemoImage {
-      readonly url: string;
-    }
-    interface DemoSystem {
-      readonly name: string;
-      readonly primaryCategory: string;
-      readonly secondaryCategories?: readonly string[];
-      readonly images?: readonly DemoImage[];
-    }
-    const demo = JSON.parse(
-      readFileSync(new URL('../src/app/demo-systems.json', import.meta.url), 'utf8'),
-    ) as { readonly systems: readonly DemoSystem[] };
-    const pictured = demo.systems.find(
-      (system) => (system.images?.length ?? 0) > 0,
-    ) as DemoSystem;
-    expect(pictured).toBeDefined();
+  // A record names its pictures by path. The built page must serve them, and a 404 is
+  // not a cross-origin request, so the third-party test above does not see it. The
+  // record below is the test's own and names two pictures the build serves from
+  // `public/`: no browser test puts a record of the demo set on the map, because every
+  // one of those names a picture on another host.
+  test('a picture of the built page loads', async ({ page }) => {
+    const pictures = [
+      { url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' },
+      { url: '/demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
+    ];
+    const served = record('Served', [0, 0, 100], 'Alpha', { images: pictures });
 
     await openHud(page);
-    await addCategories(page, [
-      pictured.primaryCategory,
-      ...(pictured.secondaryCategories ?? []),
-    ]);
-    expect(await addSystems(page, [pictured])).toBe(1);
-    await select(page, pictured.name);
+    await addCategories(page, ['Alpha']);
+    expect(await addSystems(page, [served])).toBe(1);
+    await select(page, 'Served');
 
     const images = hud(page).locator('.gm-hud__thumb-image');
-    await expect(images).toHaveCount(pictured.images?.length ?? 0);
+    await expect(images).toHaveCount(pictures.length);
     // Every picture of the record is read, and not the first alone. A typo in the second
     // path would ship unseen otherwise.
     const read = (): Promise<
@@ -1236,7 +1311,7 @@ test.describe('the images and the lightbox', () => {
       );
 
     expect((await read()).map((reading) => reading.source)).toEqual(
-      pictured.images?.map((image) => image.url),
+      pictures.map((picture) => picture.url),
     );
     // The thumbnails load lazily, so the pictures are not there in the same turn as the
     // selection. The reading repeats until every picture has arrived.
@@ -1245,7 +1320,7 @@ test.describe('the images and the lightbox', () => {
         (await read()).every((reading) => reading.complete && reading.width > 0),
       )
       .toBe(true);
-    console.log('the demo pictures', await read());
+    console.log('the pictures of the built page', await read());
   });
 
   test('a broken image keeps its caption', async ({ page }) => {
@@ -1431,6 +1506,10 @@ test.describe('the keyboard', () => {
 });
 
 test.describe('the HUD budget', () => {
+  // A selection flies the camera for 350 ms, and the top bar follows the view each frame
+  // of the flight. The reading below is of a still map, so the flight is off.
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
   test('the HUD adds no work to a still frame', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);

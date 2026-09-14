@@ -220,6 +220,11 @@ export function movementKeyOf(code: string): MovementKey | null {
 export interface Controls {
   /** Applies the keys that are down. Call it once per frame. */
   update(seconds: number): void;
+  /**
+   * True while the user holds a movement key. The map reads it before it advances a
+   * selection flight, so the flight never takes a frame the user is driving.
+   */
+  isMoving(): boolean;
   /** True while the user drags or orbits. */
   isInteracting(): boolean;
   /** Removes every listener. */
@@ -237,7 +242,16 @@ export interface ControlsOptions {
    * leaves it. The map keeps the last pixel and runs the hover pick once per frame, so
    * a pointer that reports at 120 Hz costs one sweep per frame and not one per event.
    */
-  readonly onPointer?: (pixel: { readonly x: number; readonly y: number } | null) => void;
+  readonly onPointer?: (
+    pixel: { readonly x: number; readonly y: number } | null,
+  ) => void;
+  /**
+   * Called before a pointer press, a wheel notch or a movement key acts on the view. A
+   * held movement key calls it once in each frame it moves the view, and not on the
+   * `keydown` alone. The map ends a running selection flight there, so the input acts on
+   * the view the flight had reached and the user is never held.
+   */
+  readonly onInput?: () => void;
 }
 
 /** Wires the control scheme to a canvas. */
@@ -267,6 +281,7 @@ export function attachControls(
   };
 
   const onPointerDown = (event: PointerEvent): void => {
+    if (event.button === 0 || event.button === 2) options.onInput?.();
     if (event.button === 2) {
       event.preventDefault();
       drag = beginDrag(view, pixelOf(event), viewportOf());
@@ -324,6 +339,7 @@ export function attachControls(
 
   const onWheel = (event: WheelEvent): void => {
     event.preventDefault();
+    options.onInput?.();
     zoomByNotches(view, notchesFromWheel(event.deltaY, event.deltaMode));
     changed();
   };
@@ -334,6 +350,10 @@ export function attachControls(
 
   const onKeyDown = (event: KeyboardEvent): void => {
     applyKeyDown(keys, event.code, event.target);
+    // The hook fires for a movement key the form-field guard let through, and not for a
+    // key the user typed into a search box.
+    if (fromFormField(event.target)) return;
+    if (movementKeyOf(event.code) !== null) options.onInput?.();
   };
 
   const onKeyUp = (event: KeyboardEvent): void => {
@@ -353,11 +373,23 @@ export function attachControls(
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
 
+  // The set holds movement keys alone, so a key in it is a movement key the user holds
+  // down. `update` and `isMoving` read the same test under one name.
+  const moving = (): boolean => keys.size > 0;
+
   return {
     update(seconds: number): void {
-      if (keys.size === 0) return;
+      if (!moving()) return;
+      // The hook fires each frame the key is held, and not on the `keydown` alone. A
+      // user who holds the key before the map starts a selection flight sends no new
+      // `keydown` until the auto-repeat of the browser, so this call ends a flight that
+      // starts later in the same frame.
+      options.onInput?.();
       moveByKeys(view, keys, seconds);
       changed();
+    },
+    isMoving(): boolean {
+      return moving();
     },
     isInteracting(): boolean {
       return drag !== null || orbitPointer !== null;

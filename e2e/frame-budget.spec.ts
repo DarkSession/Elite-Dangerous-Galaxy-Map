@@ -148,9 +148,10 @@ test('eight views stay under budget with 10,000 systems', async ({ page }) => {
   }
 });
 
-// The 10 light year view is the most costly of the five for the marker pass: the glow
-// sprite is at its 30 CSS pixel cap there, so every marker inside its category's range
-// fills the cap and the pass writes the largest number of fragments it ever writes.
+// The 10 light year view is the most costly of the five for the marker pass: the disc
+// is at its 16 CSS pixel cap there and the glow sprite is 2.5 times that, so every
+// marker inside its category's range fills the 40 CSS pixel cap and the pass writes the
+// largest number of fragments it ever writes.
 test('the closest zoom is under budget with 10,000 systems', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
@@ -167,7 +168,10 @@ test('the closest zoom is under budget with 10,000 systems', async ({ page }) =>
 });
 
 // The worst case the marker pass draws: every one of the 10,000 markers is inside its
-// category's draw range and every glow sprite is at its cap.
+// category's draw range, and every glow sprite is at or near its 40 CSS pixel cap. The
+// systems sit within 10 light years of Sol and the camera is 10 light years out, so the
+// range of a marker runs from 0 to 20 light years. The size curve reads 16 CSS pixels at
+// 10 light years and below and 14.3 at 20, so the sprite runs from 40 down to 35.7.
 test('the closest zoom is under budget with every marker in range', async ({
   page,
 }) => {
@@ -185,10 +189,11 @@ test('the closest zoom is under budget with every marker in range', async ({
     };
     const records: Record<string, unknown>[] = [];
     for (let index = 0; index < 10000; index += 1) {
-      // Every system sits inside a ball of 10,000 light years around Sol, so no marker
-      // is cut by the range and all 10,000 draw. The cube root spreads them evenly
-      // through the ball rather than around its centre.
-      const radius = 10000 * Math.cbrt(unit());
+      // Every system sits inside a ball of 10 light years around Sol, so no marker is
+      // cut by the range, all 10,000 draw and each one is close enough for the size
+      // curve to give it the largest sprite. The cube root spreads them evenly through
+      // the ball rather than around its centre.
+      const radius = 10 * Math.cbrt(unit());
       const height = 2 * unit() - 1;
       const ring = Math.sqrt(Math.max(0, 1 - height * height));
       const angle = 2 * Math.PI * unit();
@@ -416,7 +421,81 @@ test('the grid draws inside its budget', async ({ page }) => {
     console.log(`the grid at pitch ${pitch}`, readings);
 
     expect(readings).not.toBeNull();
-    expect(readings?.vertices).toBeGreaterThan(0);
+    expect(readings?.vertices).toBe(3);
     expect((readings?.on ?? 0) - (readings?.off ?? 0)).toBeLessThanOrEqual(1);
   }
+});
+
+// The coordinate labels are DOM elements and not a draw pass, so `measureFrames` does
+// not see them. The animation frame interval does, because the sweep and the element
+// writes both run inside it.
+test('the grid labels hold the frame rate', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) return;
+    map.setView({ cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 5 });
+    map.setGridVisible(true);
+  });
+  await waitFrames(page, 10);
+  const labels = await page.evaluate(
+    () => document.querySelectorAll('.gm-grid-label').length,
+  );
+
+  const stats = await intervalOver120Frames(page);
+  console.log('the interval with the grid labels on', { labels, ...stats });
+
+  expect(labels).toBeGreaterThan(0);
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+// The flight moves the view every frame for 350 ms, so it writes a new view matrix, a
+// new marker overlay and a new label position in each of about 21 frames. The reading
+// covers the flight alone, because the statistics reset one frame before it starts.
+test('the selection flight holds the frame rate', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  await page.evaluate(() => {
+    window.galaxyMap?.setView({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+  await waitFrames(page, 10);
+
+  const started = await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return false;
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    map.setSelection(system.id64 ?? system.name);
+    return true;
+  });
+  expect(started).toBe(true);
+
+  await page.waitForFunction(
+    () => (window.__galaxyMap?.selectionFlightMs?.() ?? 0) === 0,
+    undefined,
+    { timeout: 5000 },
+  );
+  const stats = await page.evaluate(
+    () =>
+      window.__galaxyMap?.frameIntervalStats?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      },
+  );
+  console.log('the interval over the flight', stats);
+
+  expect(stats.frames).toBeGreaterThanOrEqual(10);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });

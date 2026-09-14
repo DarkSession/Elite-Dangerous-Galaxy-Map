@@ -160,8 +160,8 @@ async function rowAt(
 /**
  * The colour of a ring pixel on the row through a marker's centre. It takes the pixel
  * whose own centre lies between 1 and 2 CSS pixels inside the edge of the disc, which
- * at the 7 pixel floor is a distance of 1.5 to 2.5 from the centre. Every such pixel
- * is opaque, because the antialiasing ramp covers the outer 1 pixel alone.
+ * at a disc radius of 4.49 is a distance of 2.49 to 3.49 from the centre. Every such
+ * pixel is opaque, because the antialiasing ramp covers the outer 1 pixel alone.
  */
 async function ringPixelAt(
   page: Page,
@@ -372,15 +372,55 @@ test('the size falls to the floor and rises to the cap', async ({ page }) => {
     return differingPixels(withMarker, withoutMarker);
   };
 
-  // The floor: at 120,000 light years the perspective size is far below one pixel.
+  // The floor of 7: the curve holds it from 10,000 light years of range out.
   const floor = await countAt(120000);
-  // The cap: the 60 degree field of view at 720 rows puts the cap boundary at about
-  // 1,040 light years of range, so 500 is well inside it.
-  const cap = await countAt(500);
-  console.log('the marker size', { floor, cap });
+  // The plateau of 12: the curve holds it from 50 to 1,000 light years of range.
+  const plateau = await countAt(500);
+  // The cap of 16: the curve reaches it at 10 light years of range, which is the
+  // closest zoom, so the camera goes onto the system.
+  const cap = await countAt(10);
+  console.log('the marker size', { floor, plateau, cap });
 
   expect(Math.abs(floor - 7)).toBeLessThanOrEqual(1);
-  expect(Math.abs(cap - 12)).toBeLessThanOrEqual(1);
+  expect(Math.abs(plateau - 12)).toBeLessThanOrEqual(1);
+  expect(Math.abs(cap - 16)).toBeLessThanOrEqual(1);
+});
+
+// The old rule read `focalCss`, which follows the viewport height, so one system at one
+// range drew 9.35 CSS pixels in a 1,080 row canvas and 7 in a 400 row one. The curve
+// reads the range alone, so the two counts now agree.
+test('the size does not follow the viewport height', async ({ page }) => {
+  const where: [number, number, number] = [0, 0, 0];
+  await page.setViewportSize({ width: 1280, height: 1080 });
+  await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+  await addCategories(page, [
+    {
+      name: 'Empire',
+      color: [153, 230, 255],
+      markerStyle: 'disc',
+      maxDrawRange: 200000,
+    },
+  ]);
+  await addSystems(page, [record('One', where, 'Empire')]);
+
+  const countAt = async (): Promise<number> => {
+    await setView(page, where, 4000);
+    await setPasses(page, { systems: true });
+    const withMarker = await rowAt(page, where, 20);
+    await setPasses(page, { systems: false });
+    const withoutMarker = await rowAt(page, where, 20);
+    return differingPixels(withMarker, withoutMarker);
+  };
+
+  const tall = await countAt();
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await drawFrame(page);
+  const short = await countAt();
+  console.log('the size at two viewports', { tall, short });
+
+  expect(Math.abs(tall - short)).toBeLessThanOrEqual(1);
+  expect(Math.abs(tall - 9)).toBeLessThanOrEqual(1);
+  expect(Math.abs(short - 9)).toBeLessThanOrEqual(1);
 });
 
 test('the marker colours reach the frame over both grounds', async ({ page }) => {
@@ -393,11 +433,11 @@ test('the marker colours reach the frame over both grounds', async ({ page }) =>
   ]);
 
   for (const where of [CENTRE, RIM_ABOVE]) {
-    // A range of 4,000 light years puts the disc at the 7 CSS pixel floor, so the core
-    // holds the middle pixel and the ring holds the pixel 2 pixels out.
+    // A range of 4,000 light years puts the disc at 8.99 CSS pixels, so its radius is
+    // 4.49: the core holds the middle pixel and the ring holds the pixel 3 pixels out.
     await setView(page, where, 4000);
     const middle = await pixelAt(page, where);
-    const ring = await ringPixelAt(page, where, 3.5);
+    const ring = await ringPixelAt(page, where, 4.4948);
     console.log('the marker colours', where, middle, ring);
 
     for (let channel = 0; channel < 3; channel += 1) {
@@ -881,13 +921,16 @@ test.describe('a page the card refuses', () => {
 test.describe('the glow', () => {
   test.use({ viewport: { width: 1281, height: 721 }, deviceScaleFactor: 1 });
 
-  /** The view that puts one marker at the cap size over dark space. */
+  /**
+   * The view that puts one marker at the cap size over dark space. The cap is a range of
+   * 10 light years or less, so the camera goes onto the system at the closest zoom.
+   */
   const openGlow = async (
     page: Page,
     categories: readonly unknown[],
     records: readonly unknown[],
   ): Promise<void> => {
-    await openMap(page, '#c=40015,20000,25895&d=500&p=35&y=0');
+    await openMap(page, '#c=40015,20000,25895&d=10&p=35&y=0');
     // The marker pass alone. The frame 20,000 light years above the plane still carries
     // about 11 of 255 from the volume and the glow pass, and every reading here is the
     // alpha of the glow itself, so the other passes go.
@@ -902,7 +945,7 @@ test.describe('the glow', () => {
     });
     await addCategories(page, categories);
     await addSystems(page, records);
-    await setView(page, DARK_SPACE, 500);
+    await setView(page, DARK_SPACE, 10);
   };
 
   test('holds the category colour at its centre', async ({ page }) => {
@@ -927,16 +970,16 @@ test.describe('the glow', () => {
       [{ name: 'Empire', color: WHITE }],
       [record('One', DARK_SPACE, 'Empire')],
     );
-    // The sprite is 30 CSS pixels across at the cap, so its radius is 15 and half of it
-    // is between the pixels 7 and 8 from the centre. The sample is the pixel at 8.
+    // The sprite is 40 CSS pixels across at the cap, so its radius is 20. The sample is
+    // the pixel 8 from the centre on each axis.
     const centre = await centrePixel(page, DARK_SPACE);
     // Six pixels out on each axis is 8.49 from the centre, which is the same radius on
-    // the 45 degree diagonal. The fourth reading is 40 pixels out, well past the sprite.
+    // the 45 degree diagonal. The fourth reading is 50 pixels out, well past the sprite.
     const [horizontal, vertical, diagonal, ground] = await addedLuminance(page, [
       { x: centre.x + 8, y: centre.y },
       { x: centre.x, y: centre.y + 8 },
       { x: centre.x + 6, y: centre.y + 6 },
-      { x: centre.x + 40, y: centre.y },
+      { x: centre.x + 50, y: centre.y },
     ]);
     console.log('the spikes', { horizontal, vertical, diagonal, ground });
 
@@ -952,10 +995,10 @@ test.describe('the glow', () => {
       [record('One', DARK_SPACE, 'Empire')],
     );
     const centre = await centrePixel(page, DARK_SPACE);
-    // Ten pixels out on each axis is 14.1 from the centre, which is the last sample
-    // inside a sprite of the radius 15.
+    // Fourteen pixels out on each axis is 19.8 from the centre, which is the last sample
+    // inside a sprite of the radius 20.
     const pixels: { x: number; y: number }[] = [];
-    for (let step = 0; step <= 10; step += 1) {
+    for (let step = 0; step <= 14; step += 1) {
       pixels.push({ x: centre.x + step, y: centre.y + step });
     }
     const readings = await addedLuminance(page, pixels);
@@ -969,8 +1012,11 @@ test.describe('the glow', () => {
   });
 
   test('is 2.5 times the disc', async ({ page }) => {
-    const glowAt = atRange(DARK_SPACE, 500, 500, -40);
-    const discAt = atRange(DARK_SPACE, 500, 500, 40);
+    // Both systems sit 10 light years from the camera, which is the cap. At that range
+    // one light year covers about 62 CSS pixels, so 1.5 light years each side of the
+    // view axis puts the two sprites well apart.
+    const glowAt = atRange(DARK_SPACE, 10, 10, -1.5);
+    const discAt = atRange(DARK_SPACE, 10, 10, 1.5);
     await openGlow(
       page,
       [

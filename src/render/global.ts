@@ -125,10 +125,17 @@ export interface GalaxyMapGlobal {
   resetFrameIntervalStats?: () => void;
   /** How many vertices the last frame's grid draw issued. */
   gridVertexCount?: () => number;
-  /** The spacing of the grid of the last frame, in light years. */
+  /** The spacing of the label level of the last frame, in light years. */
   gridSpacingLy?: () => number;
-  /** The plane offsets of the vertices the last grid draw issued, three floats each. */
-  gridPlanes?: () => Float32Array;
+  /** The spacing, the screen spacing, the width and the alpha of each grid level. */
+  gridLevels?: () => {
+    spacingLy: number;
+    screenCss: number;
+    widthCss: number;
+    alpha: number;
+  }[];
+  /** The milliseconds left in the running selection flight, and 0 when none runs. */
+  selectionFlightMs?: () => number;
 }
 
 declare global {

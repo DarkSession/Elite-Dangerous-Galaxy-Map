@@ -1,21 +1,12 @@
 #version 300 es
-// Draws the coordinate grid on the galactic plane. The CPU subtracts the camera
-// position from every line end in float64 and writes the offset, so the shader never
-// adds two large numbers.
+// The coordinate grid draws one full-screen triangle. The plane, the levels and the
+// lines are all worked out for each fragment, so no line is a vertex.
 precision highp float;
 
-layout(location = 0) in vec3 aOffset;
-// The offset of the vertex from the cursor on the plane, in spacings, and 1 for every
-// fifth line from the middle.
-layout(location = 1) in vec3 aPlane;
-
-uniform mat4 uViewProjection;
-
-out vec2 vPlane;
-out float vMajor;
+out vec2 vNdc;
 
 void main() {
-  vPlane = aPlane.xy;
-  vMajor = aPlane.z;
-  gl_Position = uViewProjection * vec4(aOffset, 1.0);
+  vec2 corner = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)) * 2.0 - 1.0;
+  vNdc = corner;
+  gl_Position = vec4(corner, 0.0, 1.0);
 }

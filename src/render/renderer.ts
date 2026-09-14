@@ -32,8 +32,14 @@ import {
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
-import { createGridPass, createGridProgram, gridSpacing } from './grid-pass';
-import type { GridPass } from './grid-pass';
+import {
+  createGridPass,
+  createGridProgram,
+  gridLabelLevel,
+  gridLevelReadings,
+} from './grid-pass';
+import type { GridLevelReading, GridPass } from './grid-pass';
+export type { GridLevelReading } from './grid-pass';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
 import {
@@ -196,13 +202,16 @@ export interface Renderer {
   setGridDraw(draw: boolean): void;
   /** How many vertices the last frame's grid draw issued. */
   gridVertexCount(): number;
-  /** The spacing of the grid of the last frame, in light years. */
+  /**
+   * The spacing of the label level of the last frame, in light years, and 0 in a frame
+   * the grid did not draw in.
+   */
   gridSpacingLy(): number;
   /**
-   * The plane offsets of the vertices the last grid draw issued, three floats each. The
-   * browser tests read the drawn lines from it.
+   * What each of the six levels of the last frame drew, in order of rising spacing. The
+   * reading is empty in a frame the grid did not draw in.
    */
-  gridPlanes(): Float32Array;
+  gridLevels(): GridLevelReading[];
   /**
    * Holds the close fade at a value from 0 to 1. `null` gives the fade back to the zoom
    * distance. A test holds it at 1 to read the field at a close view.
@@ -279,10 +288,11 @@ export function createRenderer(
   let starSuppressed = 0;
   let closeHold: number | null = null;
   let nearHold: number | null = null;
-  const gridPass: GridPass = createGridPass(gl, gridProgram);
+  const gridPass: GridPass = createGridPass(gl, gridProgram, triangle.vertexArray);
   let gridDraw = false;
   let gridVertices = 0;
   let gridSpacingOfFrame = 0;
+  let gridLevelsOfFrame: GridLevelReading[] = [];
   let regionPass: RegionPass | null = null;
   let regionDraw = true;
   let regionTraced = false;
@@ -510,19 +520,22 @@ export function createRenderer(
     // no light the tone map reads.
     gridVertices = 0;
     const pixelRatio = width / Math.max(1, canvas.clientWidth);
-    gridSpacingOfFrame = gridSpacing(focal / pixelRatio, view.distance);
+    const focalCss = focal / pixelRatio;
     if (passes.grid && gridDraw) {
+      gridSpacingOfFrame = gridLabelLevel(focalCss, view.distance);
+      gridLevelsOfFrame = gridLevelReadings(focalCss, view.distance);
       gridVertices = gridPass.draw({
-        viewProjection: viewProjection as Float32Array,
+        inverseViewProjection: inverseViewProjection as Float32Array,
         cursor: view.cursor,
         camera,
-        spacing: gridSpacingOfFrame,
+        pixelRatio,
         bounds: galaxyModel.bounds,
       });
     } else {
-      // The two probes must agree: a frame with no grid reports no vertices and no
-      // planes, and not the planes of the frame the grid last drew in.
-      gridPass.skip();
+      // The three probes must agree: a frame with no grid reports no vertices, no
+      // spacing and no levels, and not the readings of the frame the grid last drew in.
+      gridSpacingOfFrame = 0;
+      gridLevelsOfFrame = [];
     }
 
     // The region boundaries are an overlay, not scene light. They draw over the
@@ -545,7 +558,6 @@ export function createRenderer(
       systemMarkers = systemPass.draw({
         viewProjection: viewProjection as Float32Array,
         camera,
-        focal,
         pixelRatio,
         set: systemSet,
       });
@@ -633,8 +645,8 @@ export function createRenderer(
     gridSpacingLy(): number {
       return gridSpacingOfFrame;
     },
-    gridPlanes(): Float32Array {
-      return gridPass.lastPlanes();
+    gridLevels(): GridLevelReading[] {
+      return gridLevelsOfFrame;
     },
     setCloseFade(value: number | null): void {
       closeHold = value;

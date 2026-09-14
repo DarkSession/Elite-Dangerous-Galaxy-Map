@@ -26,6 +26,14 @@ export function createLightbox(doc: Document): Lightbox {
   // view, and no broken image icon.
   image.addEventListener('error', () => {
     image.hidden = true;
+    setShown(placeholder, true);
+  });
+  // The placeholder holds the caption in the middle of the frame, and the picture fits
+  // inside the frame rather than covering it. A caption left in place therefore reads
+  // through the bars each side of the picture and through its transparent parts, so the
+  // caption goes as soon as the picture is there. The footer still carries it.
+  image.addEventListener('load', () => {
+    setShown(placeholder, false);
   });
   const close = makeButton(doc, 'gm-hud__lightbox-close');
   close.textContent = 'CLOSE ✕';
@@ -91,9 +99,15 @@ export function createLightbox(doc: Document): Lightbox {
     element,
     open(url: string, caption: string, systemName: string, from: HTMLElement): void {
       opener = from;
+      // A picture the box already shows keeps its `src`, and an unchanged `src` raises no
+      // new `load`, so the element itself says whether the caption must show. A new `src`
+      // always raises `load` or `error`, a picture from the cache as well, so the caption
+      // shows until one of them arrives.
+      const samePicture = image.getAttribute('src') === url;
       image.hidden = false;
       setAttribute(image, 'src', url);
       setText(placeholder, caption);
+      setShown(placeholder, !(samePicture && image.complete && image.naturalWidth > 0));
       setText(captionText, caption);
       setText(systemText, systemName);
       setShown(element, true);

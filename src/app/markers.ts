@@ -8,7 +8,6 @@ import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/proje
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import { markerCssSize } from '../scene-data/marker-size';
-import { focalCssPixels } from '../scene-data/picking';
 import { DEFAULT_MAX_DRAW_RANGE_LY } from '../scene-data/real-systems';
 import type { RealSystemSet } from '../scene-data/real-systems';
 import { boxesOverlap } from './labels';
@@ -274,7 +273,6 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
       const categoryIndices = set.categoryIndices;
       const camera = cameraPosition(view);
       const matrix = viewProjectionMatrix(view, viewport);
-      const focalCss = focalCssPixels(viewport);
       const near = nearPlane(view.distance);
       const halfWidth = viewport.width / 2;
       const halfHeight = viewport.height / 2;
@@ -310,7 +308,7 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         return {
           x: (clipX / clipW + 1) * halfWidth,
           y: (1 - clipY / clipW) * halfHeight,
-          markerCss: markerCssSize(focalCss, range),
+          markerCss: markerCssSize(range),
         };
       };
 

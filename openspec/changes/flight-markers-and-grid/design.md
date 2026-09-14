@@ -256,6 +256,16 @@ the caption and the thumbnail pattern and no picture. That is the trade for not
 redistributing Canonn's images. If it becomes a problem, the answer is to commit three
 PNGs and add them to `THIRD_PARTY_NOTICES.md`, which is the option the owner did not take.
 
+**The page chunk guard** → `tests/main-bundle.test.ts` holds a size limit on the page
+chunk. The chunk read 144,230 bytes before this change and 152,848 after it, against a
+limit of 150,000, so the change crosses the guard. The new bytes are the selection flight,
+the grid pass and the grid labels, and not the import the guard watches for: the sibling
+test still finds the 199 KiB region cell lookup in the region worker alone. The limit
+therefore moves to 170,000, which still catches that regression, because a chunk that
+pulled the lookup in reads over 340,000 bytes. The owner chose the new limit over a split
+of the page chunk: a grid pass that arrives a frame late needs a spec of what the frame
+shows meanwhile, which no request asks for.
+
 ## Migration Plan
 
 The work goes in four independent parts, and each one can be built and merged on its own:

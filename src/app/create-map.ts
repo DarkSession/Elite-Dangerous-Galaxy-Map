@@ -1,9 +1,10 @@
 // The library entry point. One call builds the map and gives back its handle.
 import { attachControls } from '../camera/controls';
 import type { Controls } from '../camera/controls';
+import { FLIGHT_MS, flightAt } from '../camera/flight';
 import { planePoint, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
-import { createDefaultView, normaliseView } from '../camera/view';
+import { copyView, createDefaultView, normaliseView } from '../camera/view';
 import type { View } from '../camera/view';
 import { loadDetailGrid } from '../galaxy-model/detail';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
@@ -15,6 +16,7 @@ import { createFrameAccumulator, createRenderer } from '../render/renderer';
 import type {
   FrameAccumulator,
   FrameStats,
+  GridLevelReading,
   LookSettings,
   PassSwitches,
   Renderer,
@@ -31,6 +33,8 @@ import type {
 } from '../scene-data/real-systems';
 import { coarseRegionIdAt, regionOfId } from '../scene-data/regions';
 import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
+import { createGridLabelOverlay } from './grid-labels';
+import type { GridLabelOverlay } from './grid-labels';
 import { createLabelOverlay } from './labels';
 import type { LabelOverlay, SamplingStats } from './labels';
 import { createMarkerOverlay } from './markers';
@@ -139,10 +143,21 @@ export interface GalaxyMapDebug {
   resetFrameIntervalStats(): void;
   /** How many vertices the last frame's grid draw issued. */
   gridVertexCount(): number;
-  /** The spacing of the grid of the last frame, in light years. */
+  /**
+   * The spacing of the label level of the last frame, in light years, and 0 in a frame
+   * the grid did not draw in.
+   */
   gridSpacingLy(): number;
-  /** The plane offsets of the vertices the last grid draw issued, three floats each. */
-  gridPlanes(): Float32Array;
+  /**
+   * What each of the six levels of the last frame drew, in order of rising spacing. The
+   * reading is empty in a frame the grid did not draw in.
+   */
+  gridLevels(): GridLevelReading[];
+  /**
+   * The milliseconds left in the running selection flight, and 0 when none runs. The
+   * browser tests read the flight from it.
+   */
+  selectionFlightMs(): number;
   compileTestProgram(vertex: string, fragment: string): string | null;
   /** The unmasked renderer string the card reports. */
   readonly renderer: string;
@@ -288,9 +303,19 @@ export function createGalaxyMap(
   let hudDirty = false;
   let handle: GalaxyMap | null = null;
 
+  // The flight the last selection started, or null when none runs. The module holds the
+  // state and `src/camera/flight.ts` holds the arithmetic, so the flight has no timer:
+  // the frame loop reads the clock once and writes the view.
+  let flight: {
+    readonly from: View;
+    readonly to: View;
+    readonly startMs: number;
+  } | null = null;
+
   let renderer: Renderer | null = null;
   let labels: LabelOverlay | null = null;
   let markers: MarkerOverlay | null = null;
+  let gridLabels: GridLabelOverlay | null = null;
   let namesOn = false;
   let gridOn = options.grid === true;
   const selectionWork: FrameAccumulator = createFrameAccumulator();
@@ -349,12 +374,76 @@ export function createGalaxyMap(
     for (const listener of selectionListeners) listener(system);
   };
 
-  /** Puts the selected system at the centre of the screen and caps the distance. */
-  const centreOn = (system: RealSystem): void => {
-    view.cursor = [system.position[0], system.position[1], system.position[2]];
-    view.distance = Math.min(view.distance, SELECTION_DISTANCE_LY);
+  /** Writes a view into the live view and raises the listeners. */
+  const takeView = (next: View): void => {
+    view.cursor = [next.cursor[0], next.cursor[1], next.cursor[2]];
+    view.distance = next.distance;
+    view.yaw = next.yaw;
+    view.pitch = next.pitch;
     normaliseView(view);
     announce();
+  };
+
+  /**
+   * Drops the running flight and leaves the view where it had reached. The pointer, the
+   * wheel, the movement keys and `setView` all call it, so the user is never held for
+   * the length of a flight.
+   */
+  const endFlight = (): void => {
+    flight = null;
+  };
+
+  /**
+   * True while the browser asks for less movement. The map reads it at each selection and
+   * not once at start up, so a user who changes the setting does not reload.
+   */
+  const reducedMotion = (): boolean => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    return media?.matches === true;
+  };
+
+  /**
+   * Flies the camera to the selected system: the cursor on the system, the distance at
+   * `min(distance, 500)`, and the yaw and the pitch unchanged. Where the browser asks for
+   * less movement the view takes the end state in this frame and no flight runs.
+   */
+  const centreOn = (system: RealSystem): void => {
+    const target: View = {
+      cursor: [system.position[0], system.position[1], system.position[2]],
+      distance: Math.min(view.distance, SELECTION_DISTANCE_LY),
+      yaw: view.yaw,
+      pitch: view.pitch,
+    };
+    normaliseView(target);
+    if (reducedMotion()) {
+      endFlight();
+      takeView(target);
+      return;
+    }
+    // A selection during a flight flies from the view as it stands, which the loop has
+    // already written into `view`.
+    flight = { from: copyView(view), to: target, startMs: performance.now() };
+  };
+
+  /**
+   * Advances the running flight to a moment. The loop calls it once a frame before the
+   * draw, so the listeners are raised as often as the map draws and no more.
+   *
+   * A held movement key ends the flight here, before it advances. The loop advances the
+   * flight before `controls.update` moves the view, so a flight that advanced first
+   * would take one frame of the ease from the user. The ease is steep at its start, so
+   * that one frame is a step the user sees.
+   */
+  const advanceFlight = (nowMs: number): void => {
+    if (flight === null) return;
+    if (controls?.isMoving() === true) {
+      endFlight();
+      return;
+    }
+    const elapsed = nowMs - flight.startMs;
+    const next = flightAt(flight.from, flight.to, elapsed);
+    if (elapsed >= FLIGHT_MS) flight = null;
+    takeView(next);
   };
 
   /**
@@ -402,6 +491,10 @@ export function createGalaxyMap(
     });
     selectionWork.add(performance.now() - started);
     labels?.update(view, size, regionsOn && regionMode !== 'off');
+    // The grid labels read the label level the grid pass drew, so a label and its lines
+    // never disagree. A frame with the grid off reports a spacing of 0, which clears the
+    // labels with the same call.
+    gridLabels?.update({ view, viewport: size, spacingLy: renderer.gridSpacingLy() });
   };
 
   const onResize = (): void => renderer?.resize();
@@ -428,10 +521,12 @@ export function createGalaxyMap(
     if (host !== null && host !== options.labelHost) ownedHost = host;
     labels = host === null ? null : createLabelOverlay(host);
     markers = host === null ? null : createMarkerOverlay(host);
+    gridLabels = host === null ? null : createGridLabelOverlay(host);
     renderer.setGridDraw(gridOn);
 
     controls = attachControls(canvas, view, {
       onChange: announce,
+      onInput: endFlight,
       onPointer(pixel: { x: number; y: number } | null): void {
         lastPointer = pixel;
       },
@@ -495,6 +590,9 @@ export function createGalaxyMap(
       const seconds = Math.min((now - previous) / 1000, 0.1);
       frameIntervals.add(now - previous);
       previous = now;
+      // The flight moves the view before the draw, so the frame the user sees is the
+      // frame the flight reached.
+      advanceFlight(performance.now());
       controls?.update(seconds);
       refreshHud();
       drawFrame();
@@ -634,8 +732,13 @@ export function createGalaxyMap(
     gridSpacingLy(): number {
       return renderer?.gridSpacingLy() ?? 0;
     },
-    gridPlanes(): Float32Array {
-      return renderer?.gridPlanes() ?? new Float32Array(0);
+    gridLevels(): GridLevelReading[] {
+      return renderer?.gridLevels() ?? [];
+    },
+    selectionFlightMs(): number {
+      if (flight === null) return 0;
+      const left = FLIGHT_MS - (performance.now() - flight.startMs);
+      return left > 0 ? left : 0;
     },
     compileTestProgram(vertex: string, fragment: string): string | null {
       const gl = context.gl;
@@ -685,6 +788,7 @@ export function createGalaxyMap(
         frameHandle = null;
       }
       loadStop.abort();
+      endFlight();
       if (renderer !== null) lastStats = renderer.frameStats();
       controls?.dispose();
       controls = null;
@@ -696,6 +800,8 @@ export function createGalaxyMap(
       labels = null;
       markers?.clear();
       markers = null;
+      gridLabels?.clear();
+      gridLabels = null;
       ownedHost?.remove();
       ownedHost = null;
       listeners.clear();
@@ -705,6 +811,8 @@ export function createGalaxyMap(
       return readView();
     },
     setView(next: Partial<MapView>): void {
+      // A host that writes the view has taken the camera, so the flight ends here.
+      endFlight();
       if (next.cursor !== undefined) view.cursor = [...next.cursor];
       if (next.distance !== undefined) view.distance = next.distance;
       if (next.yaw !== undefined) view.yaw = next.yaw;
@@ -783,6 +891,7 @@ export function createGalaxyMap(
     setGridVisible(on: boolean): void {
       gridOn = on === true;
       renderer?.setGridDraw(gridOn);
+      if (!gridOn) gridLabels?.clear();
     },
     isGridVisible(): boolean {
       return gridOn;

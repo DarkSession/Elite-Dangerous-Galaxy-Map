@@ -10,6 +10,12 @@ src/galaxy-model/galaxy-model.json
 tests/fixtures/galaxy-model.json
 tests/fixtures/galaxy-detail.json
 
+# Committed data a script writes. `scripts/build-demo-systems.mjs` writes both with
+# `JSON.stringify(set, null, 2)`, so Prettier and the script would give each file a
+# different shape and `pnpm build:demo` would make the tree dirty at once.
+src/app/demo-systems.json
+tests/fixtures/guardian-ruins-demo-set.json
+
 # Baseline images and other snapshots.
 e2e/**/*-snapshots/**
 

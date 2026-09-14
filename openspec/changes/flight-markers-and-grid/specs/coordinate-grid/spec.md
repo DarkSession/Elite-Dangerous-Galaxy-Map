@@ -218,8 +218,9 @@ neighbourhood in.
 **A crossing label** SHALL sit at a crossing of two lines of the label level and SHALL
 read the `x` coordinate and the `z` coordinate of that crossing, in whole light years, in
 that order. The candidates SHALL be the crossings within **8** label spacings of the
-cursor on each axis, which is 289 crossings, so the sweep projects at most 289 points and
-allocates nothing per point.
+cursor on each axis, which is 289 crossings, so the sweep projects at most 289 points. The
+work of one frame is therefore fixed: it follows the label level and not the size of the
+host's data set, which may hold 10,000 systems.
 
 The placement SHALL hold to these bounds:
 

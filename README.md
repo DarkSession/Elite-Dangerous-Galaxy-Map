@@ -42,9 +42,12 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
-The dev server puts a demo data set on the map: 15 categories and 381 Guardian systems
+The dev server puts a demo data set on the map: 3 categories and 212 Guardian systems
 from [src/app/demo-systems.json](src/app/demo-systems.json), which
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names. The demo page adds them with the
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names. Each record names its thumbnails
+at `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
+repository holds no picture of them. `pnpm build:demo` writes the file again from the
+Canonn dump. The demo page adds them with the
 same `addCategories` and `addSystems` calls any host uses. The production build drops
 the data and the code that loads it, so `pnpm preview` and the browser tests open a map
 with an empty set. Open `#c=1500,0,-500&d=3000&p=35&y=0` to see the markers.

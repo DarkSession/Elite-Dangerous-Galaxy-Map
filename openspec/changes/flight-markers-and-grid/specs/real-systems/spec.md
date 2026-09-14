@@ -48,9 +48,9 @@ on, from the dump's `Body Name` field.
 
 **The browser suite SHALL reach no network.** No browser test SHALL put a record of this
 set on the map, because every record of it names a picture on another host. The build
-SHALL keep one picture of the project's own under `public/`, and the browser test that
-reads a thumbnail from the built page SHALL use a record of its own that names that
-picture. The suite therefore still proves that the built page serves a picture it is given,
+SHALL keep at least one picture of the project's own under `public/`, and the browser test
+that reads a thumbnail from the built page SHALL use a record of its own that names a
+picture from there. The suite therefore still proves that the built page serves a picture it is given,
 and it reaches `ruins.canonn.tech` in no run.
 
 The rule the old browser test held, that a typo in a demo record's picture path ships
@@ -441,8 +441,13 @@ frame budget uses, so it holds that CPU work and the GPU work together.
 - **WHEN** the browser test adds 10,000 systems of one category whose `maxDrawRange` is
   300,000 light years, all within 10 light years of Sol, sets the view at 10 light years
   with the cursor at Sol, and calls the measurement function for 300 frames
-- **THEN** the returned mean is under 16.7 ms. This is the worst case for the marker pass,
-  because every one of the 10,000 glow sprites is at the 40 CSS pixel cap, which writes
-  16 million fragments over a frame of 2 million pixels. The old rule reached its 30 CSS
-  pixel cap at a range of about 1,560 light years, so the old worst case put the systems
-  within 10,000 light years of Sol
+- **THEN** the returned mean is under 16.7 ms. The camera sits 10 light years from the
+  cursor and the set lies inside a ball of 10 light years, so a range runs from 0 to 20 and
+  a sprite runs from the 40 CSS pixel cap down to 35.7. Part of the set falls outside the
+  frustum at that zoom, so this scenario measures the largest sprites and not the largest
+  number of them. The other half, all 10,000 sprites forced to the cap together, which
+  writes 16 million fragments over a frame of 2 million pixels, was measured once before
+  the curve was written, to decide whether the cap of 16 could stand. That reading is in
+  `docs/roadmap.md` and no test holds it. The old rule reached its 30 CSS pixel cap at a range of
+  about 1,560 light years, so the old worst case put the systems within 10,000 light years
+  of Sol

@@ -3,7 +3,7 @@ import { cameraDirection, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import { MAX_MARKER_CSS, markerCssSize, MIN_MARKER_CSS } from './marker-size';
-import { focalCssPixels, pickRadiusCss, pickSystem } from './picking';
+import { pickRadiusCss, pickSystem } from './picking';
 import { createSystemSet } from './real-systems';
 import type { RealSystemSet } from './real-systems';
 
@@ -35,11 +35,14 @@ function setWith(points: [string, [number, number, number]][]): RealSystemSet {
 }
 
 describe('the pick radius', () => {
-  test('runs from 7.5 to 10 CSS pixels', () => {
-    const focalCss = focalCssPixels(VIEWPORT);
+  test('runs from 7.5 to 12 CSS pixels', () => {
+    expect(pickRadiusCss(10000)).toBe(MIN_MARKER_CSS / 2 + 4);
+    expect(pickRadiusCss(120000)).toBe(MIN_MARKER_CSS / 2 + 4);
+    expect(pickRadiusCss(10)).toBe(MAX_MARKER_CSS / 2 + 4);
+  });
 
-    expect(pickRadiusCss(focalCss, 120000)).toBe(MIN_MARKER_CSS / 2 + 4);
-    expect(pickRadiusCss(focalCss, 500)).toBe(MAX_MARKER_CSS / 2 + 4);
+  test('reads the range alone and not the viewport', () => {
+    expect(pickRadiusCss(4000)).toBeCloseTo(markerCssSize(4000) / 2 + 4, 9);
   });
 });
 
@@ -58,21 +61,21 @@ describe('the pick sweep', () => {
     const point = atRange(view, 20000);
     const set = setWith([['Sol', point]]);
     const screen = project(view, point, VIEWPORT);
-    expect(markerCssSize(focalCssPixels(VIEWPORT), 20000)).toBe(MIN_MARKER_CSS);
+    expect(markerCssSize(20000)).toBe(MIN_MARKER_CSS);
 
     expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 7, y: screen.y })).toBe(0);
     expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 8, y: screen.y })).toBe(-1);
   });
 
   test('holds its radius at the cap of the marker size', () => {
-    const view = viewAt(500);
-    const point = atRange(view, 500);
+    const view = viewAt(10);
+    const point = atRange(view, 10);
     const set = setWith([['Sol', point]]);
     const screen = project(view, point, VIEWPORT);
-    expect(markerCssSize(focalCssPixels(VIEWPORT), 500)).toBe(MAX_MARKER_CSS);
+    expect(markerCssSize(10)).toBe(MAX_MARKER_CSS);
 
-    expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 10, y: screen.y })).toBe(0);
-    expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 11, y: screen.y })).toBe(-1);
+    expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 12, y: screen.y })).toBe(0);
+    expect(pickSystem(set, view, VIEWPORT, { x: screen.x + 13, y: screen.y })).toBe(-1);
   });
 
   test('takes the nearer of two overlapping markers', () => {

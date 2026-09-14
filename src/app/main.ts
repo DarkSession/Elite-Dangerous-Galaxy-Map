@@ -25,9 +25,11 @@ function writeFragment(fragment: string): void {
 }
 
 /**
- * Puts the demo data set on the map: 15 categories and 381 Guardian systems, which
- * `THIRD_PARTY_NOTICES.md` names. The page is a host application, so it supplies the
- * records through the same two calls any other host uses. The library bundles no data.
+ * Puts the demo data set on the map: 3 categories and 212 Guardian systems, which
+ * `THIRD_PARTY_NOTICES.md` names. Each record names its thumbnails at
+ * `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn. The
+ * page is a host application, so it supplies the records through the same two calls any
+ * other host uses. The library bundles no data.
  *
  * The dev server alone runs this. `import.meta.env.DEV` is a constant in the production
  * build, so the bundler drops the block and the import with it. That matters: the
@@ -114,7 +116,8 @@ function start(target: HTMLCanvasElement): void {
   global.resetFrameIntervalStats = () => debug.resetFrameIntervalStats();
   global.gridVertexCount = () => debug.gridVertexCount();
   global.gridSpacingLy = () => debug.gridSpacingLy();
-  global.gridPlanes = () => debug.gridPlanes();
+  global.gridLevels = () => debug.gridLevels();
+  global.selectionFlightMs = () => debug.selectionFlightMs();
   global.regionLinePositions = () => debug.regionLinePositions();
   global.regionLineChains = () => debug.regionLineChains();
   global.compileTestProgram = (vertex, fragment) =>

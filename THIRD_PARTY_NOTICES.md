@@ -65,14 +65,19 @@ third-party code and no third-party data file.
 
 ## The Guardian site records of the demo page
 
-`src/app/demo-systems.json` holds 381 Guardian sites. The demo page loads them as an
-example host data set; the library itself ships no data and fetches none. The records
-come from the [Canonn Research Group](https://canonn.science/) through
+`src/app/demo-systems.json` holds 3 categories and 212 Guardian systems, with 600
+Guardian Ruins sites between them. The demo page loads them as an example host data set;
+the library itself ships no data and fetches none. The records come from the
+[Canonn Research Group](https://canonn.science/) through
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), which is under the
-**MIT** licence. The file is a conversion of three of that project's data sets:
-`guardian_ruins.json`, `guardian_structures.json` and `guardian_beacons.json`. The
-conversion keeps each system's name, its coordinates and its site types, and drops
-every other field.
+**MIT** licence. The file is a conversion of that project's `guardian_ruins.json` data
+set, which `Source/data/MapData-GR.js` fetches. `scripts/build-demo-systems.mjs` makes the
+conversion, and `pnpm build:demo` runs it. The conversion keeps each system's name, its
+coordinates, its site types and the bodies its sites are on, and drops every other field.
+
+Each record names its thumbnails at `https://ruins.canonn.tech/images/maps/`, one for each
+site type the system holds. The browser loads each picture from Canonn, so this repository
+holds none of them and the library fetches none itself.
 
 The category names, the colours and the descriptions in that file are this project's
 own. Canonn's own map gives each category a random colour on each load.

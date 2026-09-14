@@ -1,6 +1,7 @@
 // Draws one marker per real system, as a point sprite over the finished frame.
 import {
-  MARKER_SIZE_LY,
+  MARKER_SIZE_RANGES,
+  MARKER_SIZE_VALUES,
   markerCssSize,
   MAX_MARKER_CSS,
   MIN_MARKER_CSS,
@@ -34,8 +35,14 @@ export const GLOW_SIZE_FACTOR = 2.5;
 
 // The marker size rule moved to `src/scene-data/marker-size.ts`, because the pick and
 // the overlay marks need it and neither may import the renderer. The pass re-exports the
-// four names, so a reader of the pass still finds them here.
-export { MARKER_SIZE_LY, markerCssSize, MAX_MARKER_CSS, MIN_MARKER_CSS };
+// names, so a reader of the pass still finds them here.
+export {
+  MARKER_SIZE_RANGES,
+  MARKER_SIZE_VALUES,
+  markerCssSize,
+  MAX_MARKER_CSS,
+  MIN_MARKER_CSS,
+};
 
 /** The number the `disc` style carries in the attribute buffer. */
 export const STYLE_DISC = 0;
@@ -64,19 +71,15 @@ const FALLBACK_COLOR: readonly [number, number, number] = [1, 1, 1];
  * glow is 2.5 times as wide, because its halo carries light past the disc the same rule
  * gives it.
  */
-export function markerSpriteCssSize(
-  focalCss: number,
-  range: number,
-  style: MarkerStyle,
-): number {
-  const disc = markerCssSize(focalCss, range);
+export function markerSpriteCssSize(range: number, style: MarkerStyle): number {
+  const disc = markerCssSize(range);
   return style === 'glow' ? disc * GLOW_SIZE_FACTOR : disc;
 }
 
 /**
  * The sprite size the pass asks the card for, in device pixels. The cap is the card's own
- * maximum point size from `ALIASED_POINT_SIZE_RANGE`: a 30 CSS pixel glow at a device
- * pixel ratio of 3 asks for 90 device pixels, so a card that reports less must cap here
+ * maximum point size from `ALIASED_POINT_SIZE_RANGE`: a 40 CSS pixel glow at a device
+ * pixel ratio of 3 asks for 120 device pixels, so a card that reports less must cap here
  * rather than let the driver decide. The vertex shader holds the same rule.
  */
 export function markerPointSize(
@@ -206,8 +209,6 @@ export interface SystemPassFrame {
   readonly viewProjection: Float32Array;
   /** The camera position in game coordinates. */
   readonly camera: readonly [number, number, number];
-  /** Device pixels per light year at one light year of range. */
-  readonly focal: number;
   /** Device pixels per CSS pixel. */
   readonly pixelRatio: number;
   /** The set to draw. */
@@ -225,8 +226,8 @@ export interface SystemPass {
 export function createSystemProgram(gl: WebGL2RenderingContext): Program {
   return createProgram(gl, 'systems', vertexSource, fragmentSource, [
     'uViewProjection',
-    'uScale',
-    'uLimits',
+    'uSizeRanges',
+    'uSizeValues',
     'uPixelRatio',
     'uRingCss',
     'uGlowFactor',
@@ -262,8 +263,8 @@ export function createSystemPass(
   let colorVersion = -1;
   let categoryVersion = -1;
 
-  // The largest sprite the card draws. A 30 CSS pixel glow at a device pixel ratio of 3
-  // asks for 90 device pixels, so a card that reports less caps the sprite here.
+  // The largest sprite the card draws. A 40 CSS pixel glow at a device pixel ratio of 3
+  // asks for 120 device pixels, so a card that reports less caps the sprite here.
   const sizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as
     Float32Array | null | undefined;
   const maxPointSize =
@@ -324,15 +325,29 @@ export function createSystemPass(
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, offsets, 0, count * 3);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-      const focalCss = frame.focal / frame.pixelRatio;
       gl.useProgram(program.program);
       gl.uniformMatrix4fv(
         program.uniforms['uViewProjection'] ?? null,
         false,
         frame.viewProjection,
       );
-      gl.uniform1f(program.uniforms['uScale'] ?? null, focalCss * MARKER_SIZE_LY);
-      gl.uniform2f(program.uniforms['uLimits'] ?? null, MIN_MARKER_CSS, MAX_MARKER_CSS);
+      // The stop table goes to the shader as two vectors, so one edit of the table in
+      // `marker-size.ts` changes the shader as well and there is no second copy of the
+      // numbers.
+      gl.uniform4f(
+        program.uniforms['uSizeRanges'] ?? null,
+        MARKER_SIZE_RANGES[0],
+        MARKER_SIZE_RANGES[1],
+        MARKER_SIZE_RANGES[2],
+        MARKER_SIZE_RANGES[3],
+      );
+      gl.uniform4f(
+        program.uniforms['uSizeValues'] ?? null,
+        MARKER_SIZE_VALUES[0],
+        MARKER_SIZE_VALUES[1],
+        MARKER_SIZE_VALUES[2],
+        MARKER_SIZE_VALUES[3],
+      );
       gl.uniform1f(program.uniforms['uPixelRatio'] ?? null, frame.pixelRatio);
       gl.uniform1f(program.uniforms['uRingCss'] ?? null, RING_CSS_PIXELS);
       gl.uniform1f(program.uniforms['uGlowFactor'] ?? null, GLOW_SIZE_FACTOR);

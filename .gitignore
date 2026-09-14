@@ -3,6 +3,10 @@
 node_modules/
 .pnpm-store/
 
+# Galaxy data dumps. They are large and re-downloadable, so the build script fetches
+# them here and the repository never holds one.
+data/
+
 # Build output
 dist/
 dist-ssr/

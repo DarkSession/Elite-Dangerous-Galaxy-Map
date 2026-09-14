@@ -9,7 +9,6 @@
 // rule from `marker-size.ts`, which both the pick and the marker pass read.
 import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
-import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
 import { markerCssSize } from './marker-size';
 import { DEFAULT_MAX_DRAW_RANGE_LY } from './real-systems';
@@ -17,7 +16,7 @@ import type { RealSystemSet } from './real-systems';
 
 /**
  * How far past the edge of the disc a pixel still hits, in CSS pixels. The pick radius
- * is `markerCssSize / 2 + PICK_MARGIN_CSS`, so it runs from 7.5 to 10 CSS pixels.
+ * is `markerCssSize / 2 + PICK_MARGIN_CSS`, so it runs from 7.5 to 12 CSS pixels.
  */
 export const PICK_MARGIN_CSS = 4;
 
@@ -27,19 +26,17 @@ export const PICK_MARGIN_CSS = 4;
  */
 export const PICK_TIE_CSS = 1e-6;
 
-/** The CSS pixels per light year at one light year of range, for a viewport. */
-export function focalCssPixels(viewport: Viewport): number {
-  return viewport.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
-}
-
 /**
  * The pick radius of a marker at a range, in CSS pixels. It reads the **disc** diameter
  * for both marker styles, so a `glow` and a `disc` of the same range are equally easy to
  * hit. A glow's sprite is 2.5 times the disc, and a pick radius that followed the sprite
  * would make a glow a target 2.5 times as wide for no reason the user can see.
+ *
+ * The disc diameter reads the camera range alone, so the pick radius does too. A pixel
+ * that looks like a hit is therefore a hit at every viewport height.
  */
-export function pickRadiusCss(focalCss: number, range: number): number {
-  return markerCssSize(focalCss, range) / 2 + PICK_MARGIN_CSS;
+export function pickRadiusCss(range: number): number {
+  return markerCssSize(range) / 2 + PICK_MARGIN_CSS;
 }
 
 /**
@@ -64,7 +61,6 @@ export function pickSystem(
   // The matrix is built once for the whole sweep. Building it per system, as `project`
   // does, would be 10,000 matrix builds for one call.
   const matrix = viewProjectionMatrix(view, viewport);
-  const focalCss = focalCssPixels(viewport);
   const near = nearPlane(view.distance);
   const halfWidth = viewport.width / 2;
   const halfHeight = viewport.height / 2;
@@ -98,7 +94,7 @@ export function pickSystem(
     const dx = screenX - pixel.x;
     const dy = screenY - pixel.y;
     const pixels = Math.sqrt(dx * dx + dy * dy);
-    if (pixels > pickRadiusCss(focalCss, range)) continue;
+    if (pixels > pickRadiusCss(range)) continue;
 
     if (pixels < bestPixels - PICK_TIE_CSS) {
       bestIndex = index;
