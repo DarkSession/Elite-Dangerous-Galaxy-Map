@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #08060a; overflow: hidden; }
+  * { box-sizing: border-box; }
+  a { color: #ffb055; text-decoration: none; }
+  a:hover { color: #ffd7a8; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); }
+  ::-webkit-scrollbar-thumb { background: rgba(255,150,60,0.35); }
+  @keyframes hudPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+  @keyframes hudSweep { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+  input { font-family: inherit; }
+</style>
+</helmet>
+<div style="position: relative; width: 100%; height: 100vh; overflow: hidden; background: radial-gradient(circle at 50% 40%, #1a1016 0%, #08060a 70%); color: #f4e6d8; font-family: 'Chakra Petch', 'Helvetica Neue', sans-serif; user-select: none;">
+
+  <div style="position: absolute; inset: 0; cursor: grab; overflow: hidden;" onMouseDown="{{ onPanStart }}" onWheel="{{ onWheel }}" onClick="{{ onMapClick }}">
+    <div style="{{ worldStyle }}">
+      <img src="uploads/pasted-1789380827969-0.png" alt="galaxy" style="position: absolute; inset: 0; width: 100%; height: 100%; filter: saturate(0.22) brightness(0.78) contrast(1.05); pointer-events: none;" />
+
+      <sc-if value="{{ showGrid }}" hint-placeholder-val="{{ false }}">
+        <div style="position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255,150,60,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,150,60,0.10) 1px, transparent 1px); background-size: 240px 240px;"></div>
+      </sc-if>
+
+      <sc-if value="{{ regionsSimple }}" hint-placeholder-val="{{ false }}">
+        <svg viewBox="0 0 3840 1968" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;">
+          <polygon points="1020,600 2240,540 2530,1000 1330,1110" fill="rgba(110,190,255,0.05)" stroke="rgba(140,200,255,0.38)" stroke-width="3"></polygon>
+          <polygon points="2380,300 3580,180 3830,620 2560,700" fill="rgba(255,150,60,0.04)" stroke="rgba(255,170,90,0.32)" stroke-width="3"></polygon>
+          <polygon points="440,900 1480,1150 1340,1620 380,1440" fill="rgba(200,130,255,0.04)" stroke="rgba(205,140,255,0.30)" stroke-width="3"></polygon>
+          <polygon points="2600,760 3640,690 3720,1270 2680,1230" fill="rgba(125,255,160,0.03)" stroke="rgba(125,255,160,0.26)" stroke-width="3"></polygon>
+          <polygon points="1400,1200 2530,1290 2380,1760 1480,1730" fill="rgba(255,90,140,0.03)" stroke="rgba(255,110,150,0.26)" stroke-width="3"></polygon>
+          <text x="1700" y="860" fill="rgba(180,215,255,0.75)" font-size="34" letter-spacing="10" font-family="Chakra Petch">INNER ORION SPUR</text>
+          <text x="2900" y="470" fill="rgba(255,190,130,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">OUTER ORION SPUR</text>
+          <text x="700" y="1230" fill="rgba(215,170,255,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">SANGUINEOUS RIM</text>
+          <text x="2940" y="1010" fill="rgba(160,255,190,0.6)" font-size="34" letter-spacing="10" font-family="Chakra Petch">TEMPLE REACH</text>
+          <text x="1720" y="1520" fill="rgba(255,150,180,0.6)" font-size="34" letter-spacing="10" font-family="Chakra Petch">ERRANT MARCHES</text>
+        </svg>
+      </sc-if>
+
+      <sc-if value="{{ regionsAccurate }}" hint-placeholder-val="{{ false }}">
+        <svg viewBox="0 0 3840 1968" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;">
+          <polygon points="1020,600 1560,520 2110,545 2380,690 2530,1000 1930,1095 1420,1110 1180,880" fill="rgba(110,190,255,0.06)" stroke="rgba(140,200,255,0.55)" stroke-width="2.5"></polygon>
+          <polygon points="2380,300 2880,215 3320,180 3660,255 3830,620 3400,700 2900,680 2560,700 2440,520" fill="rgba(255,150,60,0.05)" stroke="rgba(255,170,90,0.5)" stroke-width="2.5"></polygon>
+          <polygon points="440,900 900,980 1310,1105 1480,1190 1340,1620 900,1580 520,1500 380,1440 400,1140" fill="rgba(200,130,255,0.05)" stroke="rgba(205,140,255,0.46)" stroke-width="2.5"></polygon>
+          <polygon points="2600,760 3040,700 3450,685 3640,760 3720,1270 3200,1300 2760,1260 2680,1120" fill="rgba(125,255,160,0.04)" stroke="rgba(125,255,160,0.4)" stroke-width="2.5"></polygon>
+          <polygon points="1400,1200 1880,1240 2330,1275 2530,1360 2380,1760 1900,1790 1520,1740 1420,1540" fill="rgba(255,90,140,0.04)" stroke="rgba(255,110,150,0.4)" stroke-width="2.5"></polygon>
+          <polygon points="1180,300 1740,240 2200,270 2330,430 2100,520 1560,510 1120,520" fill="rgba(255,215,120,0.04)" stroke="rgba(255,215,120,0.36)" stroke-width="2.5"></polygon>
+          <polygon points="180,420 700,380 1060,440 1090,690 640,780 260,720" fill="rgba(120,220,255,0.03)" stroke="rgba(120,220,255,0.3)" stroke-width="2.5"></polygon>
+          <polygon points="2560,1290 3160,1320 3660,1330 3720,1660 3060,1720 2560,1680" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"></polygon>
+          <polyline points="1180,880 1930,1095 2380,690" fill="none" stroke="rgba(140,200,255,0.3)" stroke-width="2" stroke-dasharray="14 12"></polyline>
+          <polyline points="2560,700 3400,700 3660,255" fill="none" stroke="rgba(255,170,90,0.24)" stroke-width="2" stroke-dasharray="14 12"></polyline>
+          <text x="1620" y="850" fill="rgba(190,220,255,0.85)" font-size="34" letter-spacing="10" font-family="Chakra Petch">INNER ORION SPUR</text>
+          <text x="2880" y="450" fill="rgba(255,195,135,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">OUTER ORION SPUR</text>
+          <text x="640" y="1250" fill="rgba(220,180,255,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">SANGUINEOUS RIM</text>
+          <text x="2940" y="1000" fill="rgba(170,255,200,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">TEMPLE REACH</text>
+          <text x="1700" y="1520" fill="rgba(255,160,190,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">ERRANT MARCHES</text>
+          <text x="1500" y="400" fill="rgba(255,225,150,0.6)" font-size="30" letter-spacing="9" font-family="Chakra Petch">ACHERON BELT</text>
+          <text x="420" y="590" fill="rgba(160,230,255,0.55)" font-size="30" letter-spacing="9" font-family="Chakra Petch">VOID FRINGE</text>
+          <text x="2960" y="1530" fill="rgba(255,255,255,0.42)" font-size="30" letter-spacing="9" font-family="Chakra Petch">UNCHARTED</text>
+        </svg>
+      </sc-if>
+
+      <sc-for list="{{ markers }}" as="m" hint-placeholder-count="24">
+        <div style="{{ m.wrapStyle }}" onClick="{{ m.onClick }}" onMouseEnter="{{ m.onEnter }}" onMouseLeave="{{ m.onLeave }}">
+          <div style="{{ m.dotStyle }}"></div>
+          <sc-if value="{{ m.showRing }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ m.ringStyle }}"></div>
+          </sc-if>
+          <sc-if value="{{ m.showLabel }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ m.labelStyle }}">{{ m.name }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="position: absolute; top: 0; left: 0; right: 0; height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; background: linear-gradient(180deg, rgba(12,8,12,0.92) 0%, rgba(12,8,12,0.35) 100%); border-bottom: 1px solid rgba(255,150,60,0.22);">
+    <div style="display: flex; align-items: baseline; gap: 14px;">
+      <div style="font-size: 17px; font-weight: 600; letter-spacing: 4px; color: #ff9a3c;">GALACTIC CARTOGRAPHICS</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45);">ORION SECTOR</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 26px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: rgba(244,230,216,0.6);">
+      <div>ZOOM <span style="color: #ff9a3c;">{{ zoomLabel }}</span></div>
+      <div style="padding: 5px 11px; border: 1px solid rgba(255,150,60,0.4); color: #ff9a3c; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ resetView }}">RESET VIEW</div>
+    </div>
+  </div>
+
+  <div style="position: absolute; top: 70px; left: 22px; bottom: 22px; width: 316px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; pointer-events: none;">
+
+    <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid rgba(255,150,60,0.2); background: rgba(255,150,60,0.07);">
+        <div style="font-size: 12px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">SYSTEM CATEGORIES</div>
+        <div style="display: flex; gap: 6px;">
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 3px 7px; border: 1px solid rgba(255,150,60,0.3); color: rgba(244,230,216,0.75); cursor: pointer;" style-hover="background: rgba(255,150,60,0.18);" onClick="{{ allOn }}">ALL</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 3px 7px; border: 1px solid rgba(255,150,60,0.3); color: rgba(244,230,216,0.75); cursor: pointer;" style-hover="background: rgba(255,150,60,0.18);" onClick="{{ allOff }}">NONE</div>
+        </div>
+      </div>
+
+      <div style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+        <input type="text" placeholder="SEARCH SYSTEMS" value="{{ query }}" onChange="{{ onQuery }}" style="width: 100%; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 12px; letter-spacing: 2px; padding: 7px 9px; outline: none;" />
+      </div>
+
+      <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+        <sc-for list="{{ cats }}" as="c" hint-placeholder-count="6">
+          <div style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.04);" onClick="{{ c.onToggle }}">
+              <div style="{{ c.swatchStyle }}"></div>
+              <div style="{{ c.nameStyle }}">{{ c.name }}</div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(244,230,216,0.4);">{{ c.count }}</div>
+              <div style="{{ c.expandBtnStyle }}" title="{{ c.expandLabel }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ c.onExpand }}">
+                <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <line x1="1" y1="2.5" x2="11" y2="2.5"></line>
+                  <line x1="1" y1="6" x2="11" y2="6"></line>
+                  <line x1="1" y1="9.5" x2="11" y2="9.5"></line>
+                </svg>
+              </div>
+            </div>
+            <sc-if value="{{ c.expanded }}" hint-placeholder-val="{{ false }}">
+              <div style="max-height: 210px; overflow-y: auto; background: rgba(0,0,0,0.35); border-top: 1px solid rgba(255,255,255,0.05);">
+                <sc-for list="{{ c.systems }}" as="s" hint-placeholder-count="5">
+                  <div style="{{ s.rowStyle }}" style-hover="background: rgba(255,150,60,0.14);" onClick="{{ s.onClick }}">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ s.name }}</span>
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: rgba(244,230,216,0.35);">{{ s.dist }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); flex: 0 0 auto;">
+      <div style="padding: 11px 14px; border-bottom: 1px solid rgba(255,150,60,0.2); background: rgba(255,150,60,0.07); font-size: 12px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">MAP OPTIONS</div>
+      <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 13px;">
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.5);">GALAXY REGIONS</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">
+            <div style="{{ regNoneStyle }}" onClick="{{ setRegNone }}">NONE</div>
+            <div style="{{ regSimpleStyle }}" onClick="{{ setRegSimple }}">SIMPLIFIED</div>
+            <div style="{{ regAccStyle }}" onClick="{{ setRegAccurate }}">ACCURATE</div>
+          </div>
+        </div>
+        <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer;" onClick="{{ t.onToggle }}">
+            <div style="font-size: 12px; letter-spacing: 1px; line-height: 1.3; white-space: nowrap; color: rgba(244,230,216,0.8);">{{ t.label }}</div>
+            <div style="{{ t.trackStyle }}"><div style="{{ t.knobStyle }}"></div></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="{{ infoPanelStyle }}">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid rgba(255,150,60,0.22); background: rgba(255,150,60,0.07);">
+      <div>
+        <div style="font-size: 19px; font-weight: 600; letter-spacing: 1.5px; color: #ffb055;">{{ selName }}</div>
+      </div>
+      <div style="width: 24px; height: 24px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,150,60,0.35); color: #ff9a3c; font-size: 14px; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ closeInfo }}">×</div>
+    </div>
+    <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 14px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;">
+        <div style="border: 1px solid rgba(255,255,255,0.09); padding: 8px 9px;">
+          <div style="font-size: 9px; letter-spacing: 1.5px; color: rgba(244,230,216,0.45);">POSITION (LY)</div>
+          <div style="color: #f4e6d8; margin-top: 4px; line-height: 1.5;">{{ selPos }}</div>
+        </div>
+        <div style="border: 1px solid rgba(255,255,255,0.09); padding: 8px 9px;">
+          <div style="font-size: 9px; letter-spacing: 1.5px; color: rgba(244,230,216,0.45);">PRIMARY STAR</div>
+          <div style="color: #f4e6d8; margin-top: 4px; line-height: 1.5;">{{ selStar }}</div>
+        </div>
+      </div>
+
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 16px 0 8px;">CATEGORIES</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <sc-for list="{{ selCats }}" as="sc" hint-placeholder-count="2">
+          <div style="{{ sc.chipStyle }}">{{ sc.name }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ selHasDesc }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 16px 0 8px;">DESCRIPTION</div>
+          <div style="font-size: 13px; line-height: 1.6; color: rgba(244,230,216,0.85); text-wrap: pretty;">{{ selDesc }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ selHasImages }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 16px 0 8px;">VISUAL RECORDS</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <sc-for list="{{ selImages }}" as="im" hint-placeholder-count="2">
+              <div style="position: relative; aspect-ratio: 4 / 3; border: 1px solid rgba(255,150,60,0.28); cursor: zoom-in; overflow: hidden; background-color: #140e12; background-image: repeating-linear-gradient(135deg, rgba(255,150,60,0.14) 0 6px, rgba(255,150,60,0) 6px 13px);" style-hover="border-color: rgba(255,150,60,0.7);" onClick="{{ im.onOpen }}">
+                <div style="position: absolute; inset: 0; display: flex; align-items: flex-end; padding: 7px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; color: rgba(244,230,216,0.75); background: linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.75) 100%);">{{ im.caption }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+    <div style="padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; gap: 8px;">
+      <div style="flex: 1; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; padding: 8px; border: 1px solid rgba(255,150,60,0.4); color: #ff9a3c; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ centerOnSel }}">CENTRE VIEW</div>
+      <div style="flex: 1; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; padding: 8px; border: 1px solid rgba(255,255,255,0.16); color: rgba(244,230,216,0.65); cursor: pointer;" style-hover="background: rgba(255,255,255,0.08);">TOOL NAME 1</div>
+    </div>
+  </div>
+
+
+  <div style="{{ lightboxStyle }}" onClick="{{ closeLightbox }}">
+    <div style="position: relative; width: min(86vw, 1180px); aspect-ratio: 4 / 3; max-height: 82vh; border: 1px solid rgba(255,150,60,0.45); background-color: #140e12; background-image: repeating-linear-gradient(135deg, rgba(255,150,60,0.12) 0 12px, rgba(255,150,60,0) 12px 26px); box-shadow: 0 0 90px rgba(0,0,0,0.8);">
+      <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 3px; color: rgba(244,230,216,0.55);">{{ lightboxCaption }}</div>
+      <div style="position: absolute; top: -1px; right: -1px; padding: 7px 12px; background: rgba(255,150,60,0.16); border: 1px solid rgba(255,150,60,0.45); font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #ff9a3c; cursor: pointer;">CLOSE ✕</div>
+      <div style="position: absolute; bottom: -30px; left: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45);">{{ lightboxSystem }}</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#ff9a3c&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#ff9a3c&quot;,&quot;#6fd3ff&quot;,&quot;#7dff9e&quot;,&quot;#c77dff&quot;],&quot;section&quot;:&quot;HUD&quot;},&quot;markerScale&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.6,&quot;max&quot;:2,&quot;step&quot;:0.1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;HUD&quot;},&quot;regionMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;simplified&quot;,&quot;options&quot;:[&quot;none&quot;,&quot;simplified&quot;,&quot;accurate&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Map&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const cats = [
+      { id: 'nebula', name: 'Nebulae', color: '#6fd3ff' },
+      { id: 'anomaly', name: 'Anomalies', color: '#c77dff' },
+      { id: 'ruins', name: 'Ancient Ruins', color: '#7dff9e' },
+      { id: 'tourist', name: 'Tourist Beacons', color: '#ffc04d' },
+      { id: 'neutron', name: 'Neutron Route', color: '#ff5d8f' },
+      { id: 'outpost', name: 'Deep Outposts', color: '#ff8a3c' }
+    ];
+    this.cats = cats;
+    this.systems = this.buildSystems(cats);
+    const on = {};
+    cats.forEach(c => { on[c.id] = true; });
+    this.state = {
+      z: 0.5, px: 0, py: 0, fitted: false,
+      on, expanded: null, query: '',
+      selected: null, hover: null,
+      regions: props.regionMode || 'simplified',
+      showNames: false, showGlow: true, showGrid: false,
+      lightbox: null
+    };
+  }
+
+  buildSystems(cats) {
+    let s = 20250914;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const pre = ['Col 285 Sector', 'Eol Prou', 'Praea Euq', 'Byeia Eurk', 'Hypoae Bre', 'Skaudai', 'Dryman', 'Phroi Bluae', 'Nyuena', 'Blua Eaec', 'Thaila', 'Oevasy'];
+    const named = [
+      ['Rho Ophiuchi Gate', 'B2 V'], ['Trifid Approach', 'K5 V'], ['Eta Carinae Watch', 'O6 V'],
+      ['Barnard\'s Threshold', 'M4 V'], ['Veil Terminus', 'A3 V'], ['Lagoon Deep', 'F8 V'],
+      ['Cat\'s Paw Anchorage', 'B5 V'], ['Helix Vigil', 'WD', ], ['Pelican Reach', 'G2 V'],
+      ['Statue of Liberty Rim', 'K2 V'], ['Crescent Hollow', 'M1 III'], ['Bubble Edge Relay', 'G8 V']
+    ];
+    const notes = [
+      'Dense ionised hydrogen shell; hull ablation reported above 40% throttle inside the inner veil. Two survey beacons active.',
+      'Persistent non-baryonic signal returns from the second body. Origin unresolved after nine independent passes.',
+      'Three intact structures on the third moon. Obelisk cluster still responsive to relic scans; no active defences logged.',
+      'Popular waypoint. Orbital observation platform maintains a public docking ring and a small cartographics office.',
+      'Neutron primary with a clean exclusion approach — viable jet cone boost for outbound legs to the core.',
+      'Small independent outpost, refuel and repair only. Commodity market closed since the last relay outage.',
+      'Binary pair with a wide dust lane; excellent vantage on the spur from the high orbital plane.'
+    ];
+    const caps = ['APPROACH VECTOR', 'ORBITAL PLANE', 'SURFACE SITE', 'PRIMARY STAR', 'BEACON RECORD', 'NEBULA CORE'];
+    const out = [];
+    for (let i = 0; i < 52; i++) {
+      const outlier = i >= 46;
+      const x = outlier ? 44 + rnd() * 10 : 26 + rnd() * 41;
+      const y = outlier ? 56 + rnd() * 10 : 16 + rnd() * 33;
+      const nm = i < named.length ? named[i][0]
+        : pre[Math.floor(rnd() * pre.length)] + ' ' + String.fromCharCode(65 + Math.floor(rnd() * 26)) + String.fromCharCode(65 + Math.floor(rnd() * 26)) + '-' + String.fromCharCode(80 + Math.floor(rnd() * 6)) + ' ' + (rnd() < 0.5 ? 'b' : 'd') + Math.floor(rnd() * 30) + '-' + Math.floor(rnd() * 90);
+      const star = i < named.length ? named[i][1] : ['K3 V', 'M2 V', 'G1 V', 'F5 V', 'A8 V', 'B9 V', 'T Tauri', 'Neutron Star', 'Black Hole'][Math.floor(rnd() * 9)];
+      const cids = [cats[Math.floor(rnd() * cats.length)].id];
+      if (rnd() < 0.34) { const extra = cats[Math.floor(rnd() * cats.length)].id; if (extra !== cids[0]) cids.push(extra); }
+      const hasDesc = i < named.length || rnd() < 0.45;
+      const imgCount = i < named.length ? 2 : (rnd() < 0.4 ? 2 : 0);
+      const images = [];
+      for (let k = 0; k < imgCount; k++) images.push({ caption: caps[Math.floor(rnd() * caps.length)] });
+      out.push({
+        id: 'sys' + i, name: nm, x, y, star, cats: cids,
+        desc: hasDesc ? notes[Math.floor(rnd() * notes.length)] : '',
+        images,
+        cx: Math.round((x - 46) * 520), cy: Math.round((rnd() - 0.5) * 340), cz: Math.round((30 - y) * 640)
+      });
+    }
+    return out;
+  }
+
+  componentDidMount() {
+    this.fit();
+    window.addEventListener('resize', this.fit);
+    window.addEventListener('mousemove', this.onPanMove);
+    window.addEventListener('mouseup', this.onPanEnd);
+    window.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('resize', this.fit);
+    window.removeEventListener('mousemove', this.onPanMove);
+    window.removeEventListener('mouseup', this.onPanEnd);
+    window.removeEventListener('keydown', this.onKey);
+  }
+
+  clampView(z, px, py) {
+    const w = window.innerWidth, h = window.innerHeight;
+    const minZ = Math.max(w / 3840, h / 1968);
+    z = Math.min(6, Math.max(minZ, z));
+    const maxX = Math.max(0, (3840 * z - w) / 2), maxY = Math.max(0, (1968 * z - h) / 2);
+    return { z, px: Math.max(-maxX, Math.min(maxX, px)), py: Math.max(-maxY, Math.min(maxY, py)) };
+  }
+
+  fit = () => {
+    const w = window.innerWidth, h = window.innerHeight;
+    this.setState(Object.assign(this.clampView(Math.max(w / 3840, h / 1968) * 1.15, 0, 0), { fitted: true }));
+  };
+
+  onKey = (e) => {
+    if (e.key !== 'Escape') return;
+    if (this.state.lightbox) this.setState({ lightbox: null });
+    else if (this.state.selected) this.setState({ selected: null });
+  };
+
+  onPanStart = (e) => {
+    this._drag = { x: e.clientX, y: e.clientY, px: this.state.px, py: this.state.py, moved: false };
+  };
+  onPanMove = (e) => {
+    if (!this._drag) return;
+    const dx = e.clientX - this._drag.x, dy = e.clientY - this._drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) this._drag.moved = true;
+    this.setState(this.clampView(this.state.z, this._drag.px + dx, this._drag.py + dy));
+  };
+  onPanEnd = () => { if (this._drag) { this._wasDrag = this._drag.moved; this._drag = null; } };
+
+  onWheel = (e) => {
+    e.preventDefault();
+    const f = e.deltaY > 0 ? 0.88 : 1.13;
+    const k = f;
+    this.setState(this.clampView(this.state.z * f, this.state.px * k, this.state.py * k));
+  };
+
+  onMapClick = () => { if (!this._wasDrag) this.setState({ hover: null }); this._wasDrag = false; };
+
+  select = (sys) => {
+    if (this._wasDrag) { this._wasDrag = false; return; }
+    this.setState({ selected: sys.id });
+  };
+
+  centre = (sys) => {
+    const z = this.state.z;
+    this.setState(this.clampView(z, (0.5 - sys.x / 100) * 3840 * z, (0.5 - sys.y / 100) * 1968 * z));
+  };
+
+  visible() {
+    const q = this.state.query.trim().toLowerCase();
+    return this.systems.filter(s => s.cats.some(c => this.state.on[c]) && (!q || s.name.toLowerCase().includes(q)));
+  }
+
+  catOf(id) { return this.cats.find(c => c.id === id); }
+
+  renderVals() {
+    const st = this.state;
+    const accent = this.props.accent || '#ff9a3c';
+    const mScale = this.props.markerScale || 1;
+    const vis = this.visible();
+    const sel = this.systems.find(s => s.id === st.selected) || null;
+    const inv = 1 / st.z;
+
+    const markers = vis.map(s => {
+      const primary = this.catOf(s.cats[0]).color;
+      const isSel = sel && sel.id === s.id;
+      const size = (isSel ? 15 : 11) * mScale;
+      return {
+        name: s.name,
+        wrapStyle: `position:absolute;left:${s.x}%;top:${s.y}%;transform:translate(-50%,-50%) scale(${inv});display:flex;flex-direction:column;align-items:center;cursor:pointer;z-index:${isSel ? 5 : 2}`,
+        dotStyle: `width:${size}px;height:${size}px;background:${primary};transform:rotate(45deg);box-shadow:${st.showGlow ? `0 0 ${size * 1.6}px ${primary}, 0 0 ${size * 0.6}px #fff` : 'none'};border:1px solid rgba(255,255,255,0.85)`,
+        showRing: isSel || st.hover === s.id,
+        ringStyle: `position:absolute;top:50%;left:50%;width:${size * 3.2}px;height:${size * 3.2}px;margin:${-size * 1.6}px 0 0 ${-size * 1.6}px;border:1px solid ${isSel ? accent : 'rgba(255,255,255,0.5)'};border-radius:50%;box-shadow:0 0 14px ${isSel ? accent : 'transparent'}`,
+        showLabel: (st.showNames && st.z > 0.85) || isSel || st.hover === s.id,
+        labelStyle: `margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;white-space:nowrap;color:${isSel ? accent : 'rgba(244,230,216,0.82)'};text-shadow:0 0 8px #000,0 1px 3px #000;background:rgba(8,6,10,0.45);padding:1px 4px`,
+        onClick: (e) => { e.stopPropagation(); this.select(s); },
+        onEnter: () => this.setState({ hover: s.id }),
+        onLeave: () => this.setState({ hover: null })
+      };
+    });
+
+    const cats = this.cats.map(c => {
+      const active = st.on[c.id];
+      const mine = this.systems.filter(s => s.cats.includes(c.id));
+      const expanded = st.expanded === c.id;
+      return {
+        name: c.name,
+        count: mine.length,
+        expanded,
+        expandLabel: expanded ? 'Hide systems' : 'List systems',
+        expandBtnStyle: `display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 auto;border:1px solid ${expanded ? accent : 'rgba(255,150,60,0.28)'};background:${expanded ? 'rgba(255,150,60,0.2)' : 'transparent'};color:${expanded ? accent : 'rgba(255,154,60,0.9)'};cursor:pointer`,
+        swatchStyle: `width:12px;height:12px;flex:0 0 auto;transform:rotate(45deg);background:${active ? c.color : 'transparent'};border:1px solid ${c.color};box-shadow:${active ? '0 0 10px ' + c.color : 'none'};opacity:${active ? 1 : 0.5}`,
+        nameStyle: `flex:1 1 auto;font-size:13px;letter-spacing:1.5px;color:${active ? '#f4e6d8' : 'rgba(244,230,216,0.35)'}`,
+        onToggle: () => this.setState({ on: Object.assign({}, st.on, { [c.id]: !active }) }),
+        onExpand: (e) => { e.stopPropagation(); this.setState({ expanded: expanded ? null : c.id }); },
+        systems: mine.map(s => ({
+          name: s.name,
+          dist: Math.round(Math.sqrt(s.cx * s.cx + s.cy * s.cy + s.cz * s.cz)).toLocaleString(),
+          rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px 6px 16px;font-size:12px;letter-spacing:1px;cursor:pointer;color:${sel && sel.id === s.id ? accent : 'rgba(244,230,216,0.78)'};border-left:2px solid ${sel && sel.id === s.id ? accent : 'transparent'}`,
+          onClick: () => { this.setState({ selected: s.id, on: Object.assign({}, st.on, { [c.id]: true }) }); this.centre(s); }
+        }))
+      };
+    });
+
+    const segBase = 'text-align:center;font-family:\'IBM Plex Mono\',monospace;font-size:9px;letter-spacing:1px;padding:7px 2px;cursor:pointer;border:1px solid ';
+    const seg = (v) => segBase + (st.regions === v ? `${accent};background:rgba(255,150,60,0.22);color:${accent}` : 'rgba(255,255,255,0.14);background:transparent;color:rgba(244,230,216,0.55)');
+
+    const mkToggle = (key, label) => {
+      const v = st[key];
+      return {
+        label,
+        trackStyle: `width:38px;height:16px;flex:0 0 auto;border:1px solid ${v ? accent : 'rgba(255,255,255,0.2)'};background:${v ? 'rgba(255,150,60,0.22)' : 'rgba(255,255,255,0.05)'};position:relative`,
+        knobStyle: `position:absolute;top:1px;left:${v ? '23px' : '1px'};width:12px;height:12px;background:${v ? accent : 'rgba(244,230,216,0.45)'};transition:left .15s ease`,
+        onToggle: () => this.setState({ [key]: !v })
+      };
+    };
+
+    const selCats = sel ? sel.cats.map(id => {
+      const c = this.catOf(id);
+      return { name: c.name, chipStyle: `font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;padding:4px 9px;color:${c.color};border:1px solid ${c.color};background:${c.color}1f` };
+    }) : [];
+
+    return {
+      worldStyle: `position:absolute;left:50%;top:50%;width:3840px;height:1968px;margin:-984px 0 0 -1920px;transform:translate(${st.px}px,${st.py}px) scale(${st.z});transform-origin:50% 50%;will-change:transform`,
+      markers, cats,
+      visibleCount: vis.length,
+      totalCount: this.systems.length,
+      zoomLabel: st.z.toFixed(2) + '×',
+      query: st.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      allOn: () => { const o = {}; this.cats.forEach(c => o[c.id] = true); this.setState({ on: o }); },
+      allOff: () => { const o = {}; this.cats.forEach(c => o[c.id] = false); this.setState({ on: o }); },
+      showGrid: st.showGrid,
+      regionsSimple: st.regions === 'simplified',
+      regionsAccurate: st.regions === 'accurate',
+      regNoneStyle: seg('none'), regSimpleStyle: seg('simplified'), regAccStyle: seg('accurate'),
+      setRegNone: () => this.setState({ regions: 'none' }),
+      setRegSimple: () => this.setState({ regions: 'simplified' }),
+      setRegAccurate: () => this.setState({ regions: 'accurate' }),
+      toggles: [mkToggle('showNames', 'System names'), mkToggle('showGlow', 'Category glow'), mkToggle('showGrid', 'Coordinate grid')],
+      infoPanelStyle: `position:absolute;top:70px;right:22px;width:380px;max-height:calc(100vh - 120px);display:${sel ? 'flex' : 'none'};flex-direction:column;background:rgba(14,10,14,0.9);backdrop-filter:blur(12px);border:1px solid ${accent}55;box-shadow:0 0 50px rgba(0,0,0,0.6);pointer-events:auto;z-index:20`,
+      selName: sel ? sel.name : '',
+      selPos: sel ? `${sel.cx.toLocaleString()} / ${sel.cy.toLocaleString()} / ${sel.cz.toLocaleString()}` : '',
+      selDist: sel ? Math.round(Math.sqrt(sel.cx * sel.cx + sel.cy * sel.cy + sel.cz * sel.cz)).toLocaleString() + ' LY' : '',
+      selStar: sel ? sel.star : '',
+      selCats,
+      selHasDesc: !!(sel && sel.desc),
+      selDesc: sel ? sel.desc : '',
+      selHasImages: !!(sel && sel.images.length),
+      selImages: sel ? sel.images.map((im, i) => ({ caption: im.caption, onOpen: () => this.setState({ lightbox: { caption: im.caption, system: sel.name, i } }) })) : [],
+      closeInfo: () => this.setState({ selected: null }),
+      centerOnSel: () => { if (sel) this.centre(sel); },
+      resetView: this.fit,
+      onPanStart: this.onPanStart,
+      onWheel: this.onWheel,
+      onMapClick: this.onMapClick,
+      lightboxStyle: `position:fixed;inset:0;display:${st.lightbox ? 'flex' : 'none'};align-items:center;justify-content:center;background:rgba(4,3,6,0.88);backdrop-filter:blur(4px);z-index:60;cursor:zoom-out`,
+      lightboxCaption: st.lightbox ? st.lightbox.caption + ' — PLACEHOLDER, DROP IMAGE HERE' : '',
+      lightboxSystem: st.lightbox ? st.lightbox.system : '',
+      closeLightbox: () => this.setState({ lightbox: null })
+    };
+  }
+}
+</script>
+</body>
+</html>
