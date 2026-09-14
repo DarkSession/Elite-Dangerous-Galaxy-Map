@@ -1,9 +1,11 @@
 ## Purpose
 
-Fills the near field with decoration stars when the camera comes close, so the galaxy
-is made of single lights rather than a cloud. The stars are invented: their count in a
-volume follows the density model, and their positions come from the address of the
-boxel that holds them.
+Fills the near field with decoration stars when the camera comes close, so the galaxy is
+made of single lights rather than a cloud. The stars are invented: their count in a
+volume follows the density model, and their positions come from the address of the boxel
+that holds them. They stand in for systems the map holds no record of, so they give way
+to the host's real systems as the camera comes closer still: the field draws in full at a
+zoom distance of 2,560 light years and adds no light at 640 and below.
 
 ## Requirements
 

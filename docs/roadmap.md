@@ -4,7 +4,7 @@ The map is built in the phases below. Each phase is one OpenSpec change. This do
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-09.
+Last updated: 2026-09-14.
 
 ## Facts that hold for every phase
 
@@ -259,20 +259,77 @@ gradually as the user zooms in.
 
 ## Phase 3: real systems from data
 
-Change: not yet created.
+Change: `real-systems-from-data`. Status: implemented.
 
-Adds real systems from a JSON data object, a few thousand at most.
+Makes the map a library and draws the host's real systems over the invented galaxy.
 
-- **Record shape.** In-game coordinates, a system name, and additional data for the
-  HUD. The exact fields are not yet decided.
-- **Rendering.** One instanced pass, separate from the decoration stars. At this count
-  no level of detail is needed.
-- **Data path.** The data object is a data source like the density model: it enters as
-  a plain object and leaves the data layer as typed arrays.
-- **Open questions.**
-  - Where the JSON comes from: bundled, fetched at load, or user-supplied.
-  - The record format and how it is validated.
-  - Whether real systems replace the decoration star at the same position.
+- **Entry point.** `createGalaxyMap(canvas, options)` in `src/app/create-map.ts`
+  returns a handle in the same tick. The handle carries `addCategories`, `addSystems`,
+  `clearSystems`, `clearSystemsAndCategories`, `systemCount`, `ready`, `dispose`,
+  `getView`, `setView`, `onViewChange` and `debug`. The library owns the context, the
+  scene data, the view, the controls and the frame loop. `src/app/main.ts` is the demo
+  page alone: it owns the URL fragment, the message box and the test hooks. An ESLint
+  rule fails a read of `window.location` in every file but that page.
+- **Record shape.** A record is what an EDSM or a Spansh dump gives: a `name`, a
+  `coords` object of `x`, `y` and `z`, and the name of a primary category. The reader
+  keeps `id64` as a decimal string, `secondaryCategories`, `allegiance`, `government`,
+  `primaryEconomy`, `security`, `population` and `bodyCount`, and drops every other
+  field. It reports each rejected record with one of six reasons. The
+  identity is the `id64`, or the name when there is none, and a second record with the
+  same identity replaces the first. The set holds at most 10,000 systems, in one
+  `Float64Array` of positions and one `Uint16Array` of category indices.
+- **Category table.** The host groups its systems by category. A category carries a
+  name, an RGB colour and an optional description. The name is the identity, and a
+  category added twice replaces the first and recolours its markers without moving its
+  table index. The table holds at most 256. No call removes one category:
+  `clearSystemsAndCategories` empties the table and the set together, so a system in
+  the set can never name a category the table does not hold.
+- **Marker look.** One point sprite per system, drawn after the tone map and after the
+  region overlay, so nothing can cover a marker and the scene light does not change.
+  The disc is `focalCss * 20 / range` CSS pixels, held between a floor of 7 and a cap
+  of 12, with the primary category's colour in the core and a fixed dark ring of
+  (0.02, 0.04, 0.10) over the outer 2 CSS pixels. A marker draws at every zoom distance
+  from 500 to 120,000 light years and does not fade.
+- **Close fade.** The invented star field draws in full at a zoom distance of 2,560
+  light years and adds no light at 640 and below, on a smoothstep between. The light it
+  gives up leaves the frame: the point cloud keeps the handover weight and does not
+  take it back, so both invented sources stand down and the close view holds the host's
+  systems alone. The fade changes the light a star deposits and no count, so the placed
+  count, the drawn count and the star radius do not read it.
+- **The `stars` switch controls one pass.** The handover weight followed the switch, so
+  turning the star pass off handed the point cloud its near field back. It now follows
+  the zoom distance alone while the field stands. Without that, a frame at 640 light
+  years drawn with the pass off cannot match the frame drawn with it on, because the
+  close fade has already taken the field's light and only the point cloud moves. A field
+  that has not loaded still gives the point cloud its near field, so a close view does
+  not start empty. The trade is that the switch no longer conserves light: the reading
+  "The handover keeps the light" holds a margin of 0.0002 against a limit of 0.02, and
+  the unit scenario "The two fades sum to one" is what holds the sum now. No production
+  frame changes, because nothing outside the tests turns the switch off.
+- **Suppression rule.** A decoration star within 3 light years of a real system is not
+  drawn. The rule is a correctness rule, not a speed one: the user cannot tell an
+  invented star from a real one, so an invented star beside a real system reads as a
+  place the user can go to. The radius is about half the mean system spacing at Sol. The sweep runs on the
+  CPU over the base size class alone, from a per-class index of boxel to systems, with
+  a cache keyed by size class and boxel index, so a camera move sweeps only the boxels
+  it brought in. The result reaches the shader as an `R32UI` bit mask of 8 texels per
+  boxel row, and a `uSuppress` uniform of 0 makes the shader read no texel at all. The
+  boxel divides its light over the stars that remain, so suppression changes the
+  brightness of no frame.
+- **The twin outside the base class block.** The base class block spans 8 base boxels
+  per axis and reaches at most 2 base edges past the camera, so a coarser class draws
+  its own star near a real system further out and the two stand together there. The
+  marker is the brighter of the two and the close fade takes the invented star out
+  before the camera reaches it. Suppression in every drawn class would remove the twin
+  at the cost of a sweep of 1,856 boxels instead of 512; the index and the cache carry
+  either rule.
+- **Answers to the phase's open questions.**
+  - The data does not come from the map. The host holds it and passes plain records to
+    `addSystems`, so the map bundles no dump and fetches nothing.
+  - The reader validates each record itself and reports the rejects. It reads the EDSM
+    and Spansh field names and needs no schema from the host.
+  - A real system does replace the decoration star at its position, inside the base
+    size class and within 3 light years.
 
 ## Phase 4: selection and HUD
 
