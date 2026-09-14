@@ -106,6 +106,44 @@ SOFTWARE.
 The sites are places in the game's galaxy, so the Frontier Developments terms above
 also apply to them.
 
+## The HUD fonts
+
+The HUD bundles two font families. The build carries the `woff2` files from the two
+packages, so no host page reaches a font CDN and the browser tests stay offline.
+
+- **Chakra Petch**, from [`@fontsource/chakra-petch`](https://www.npmjs.com/package/@fontsource/chakra-petch).
+  Copyright 2018 The Chakra Petch Project Authors, under the **SIL Open Font License,
+  Version 1.1**.
+- **IBM Plex Mono**, from [`@fontsource/ibm-plex-mono`](https://www.npmjs.com/package/@fontsource/ibm-plex-mono).
+  Copyright 2017 IBM Corp, under the **SIL Open Font License, Version 1.1**.
+
+The licence permits use, study, change and redistribution, on these conditions: the
+font files keep this notice, a changed font takes another name, and a font is not sold
+by itself. Each package carries the full licence text in its own `LICENSE` file. The
+full text is also at <https://openfontlicense.org/>.
+
+## The selection pin
+
+`src/app/markers.ts` draws a pin over the selected system. The shape is the system
+marker of the game's own galaxy map. The eight points of the path come from
+`https://edassets.org/static/img/galaxy-map/Marker-galaxy-map.svg`, which ED Assets
+publishes. This project commits no copy of that file: the eight numbers are written
+into a path of its own.
+
+ED Assets states no licence on the file. This notice records where the numbers came
+from. The shape itself is Frontier Developments' and falls under the same
+non-commercial media usage rules as the game data above.
+
+## The HUD mockup
+
+`.design/` holds the mockup the HUD is built from. `.design/support.js` is 69 KB of
+runtime that the design tool wrote so the mockup opens in a browser. It carries no
+licence header and no copyright line. It is generated output that travels with the
+mockup, and the map neither imports it nor ships it.
+
+`.design/uploads/pasted-1789380827969-0.png` is a screenshot of this project's own map,
+so it is this project's own work.
+
 ## The procedural naming tables
 
 `astro/galaxy-grid` also reaches the almanac's procedural naming tables, which come

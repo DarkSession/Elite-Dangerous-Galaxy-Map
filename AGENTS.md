@@ -20,14 +20,19 @@ Application code goes in **`src/`**, in these directories:
 | `src/scene-data/`   | The point cloud, the density volume, the workers |
 | `src/render/`       | The WebGL2 context, the passes, the shaders      |
 | `src/camera/`       | The view state, the projection, the controls     |
+| `src/hud/`          | The opt-in DOM HUD, its panels and its styles    |
 
 Playwright tests go in `e2e/`, with the baseline image beside them. Unit tests sit next
 to the code they check, as `*.test.ts`.
 
-**The import rule**: `src/galaxy-model/` and `src/scene-data/` must not import
-`src/render/`. An ESLint `no-restricted-imports` rule in
-[eslint.config.js](eslint.config.js) fails the lint on a breach. The rule is what lets
-a different density source replace the data layers without a change in the renderer.
+**The import rules**: `src/galaxy-model/` and `src/scene-data/` must not import
+`src/render/`. `src/hud/` must not import `src/render/`, `src/scene-data/` or
+`src/camera/`, and must not read a `debug` property. ESLint `no-restricted-imports` and
+`no-restricted-syntax` rules in [eslint.config.js](eslint.config.js) fail the lint on a
+breach. The first rule lets a different density source replace the data layers without a
+change in the renderer. The second holds the HUD to the public handle of
+[src/app/create-map.ts](src/app/create-map.ts), so a host can build its own chrome from
+the same members the HUD uses.
 
 The work is planned in four phases. [docs/roadmap.md](docs/roadmap.md) records each
 phase, the facts gathered for it, the decisions that span phases and the open

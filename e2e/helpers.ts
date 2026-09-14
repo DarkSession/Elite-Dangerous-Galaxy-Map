@@ -19,10 +19,32 @@ export async function waitForReady(page: Page, timeout = 30000): Promise<void> {
   });
 }
 
+/** Removes the HUD the demo page builds. A page with no HUD does nothing. */
+export async function removeHud(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.galaxyMap?.hud?.dispose();
+  });
+}
+
+/** What a test asks the page for beyond the view. */
+export interface OpenOptions {
+  /**
+   * True keeps the HUD the demo page builds. The default removes it, because its
+   * panels sit over the canvas: a test that screenshots the canvas reads the panels as
+   * well, and a test that moves the pointer over a panel finds no system under it.
+   */
+  readonly hud?: boolean;
+}
+
 /** Opens the map and waits for the first frame. */
-export async function openMap(page: Page, fragment = ''): Promise<void> {
+export async function openMap(
+  page: Page,
+  fragment = '',
+  options: OpenOptions = {},
+): Promise<void> {
   await page.goto(`/${fragment}`);
   await waitForReady(page);
+  if (options.hud !== true) await removeHud(page);
 }
 
 /** Reads the luminance of one pixel, 0 to 1, at a CSS pixel of the canvas. */

@@ -18,6 +18,9 @@ e2e/**/*-snapshots/**
 *.frag
 *.glsl
 
+# The HUD mockup and the runtime the design tool wrote.
+.design
+
 # Files this project does not own the formatting of: the OpenSpec artifacts and the
 # generated skill and command files, the dev container and the editor configuration.
 .agents

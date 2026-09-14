@@ -17,6 +17,12 @@ export const MOVE_FRACTION_PER_SECOND = 0.25;
 /** The keys that move the cursor. */
 export const MOVEMENT_KEYS = ['W', 'A', 'S', 'D', 'R', 'F'] as const;
 
+/** How far a left press may move from its first pixel and still be a click. */
+export const CLICK_MOVE_CSS = 4;
+
+/** How long a left press may last and still be a click, in milliseconds. */
+export const CLICK_HOLD_MS = 400;
+
 /** One of the keys that move the cursor. */
 export type MovementKey = (typeof MOVEMENT_KEYS)[number];
 
@@ -26,6 +32,80 @@ export interface DragStart {
   readonly view: View;
   /** The plane point under the first pixel. */
   readonly point: readonly [number, number, number];
+}
+
+/**
+ * What a left press remembers, so the release can tell a click from an orbit. `moved` is
+ * the largest distance the pointer reached from the press pixel, not the last one: a
+ * press that moves 40 pixels and comes back is an orbit and never selects.
+ */
+export interface PressRecord {
+  /** The press pixel, in CSS pixels of the canvas. */
+  readonly x: number;
+  readonly y: number;
+  /** When the press started, in milliseconds. */
+  readonly startMs: number;
+  /** The largest distance from the press pixel, in CSS pixels. */
+  moved: number;
+}
+
+/** Remembers where and when a left press started. */
+export function beginPress(
+  pixel: { readonly x: number; readonly y: number },
+  nowMs: number,
+): PressRecord {
+  return { x: pixel.x, y: pixel.y, startMs: nowMs, moved: 0 };
+}
+
+/** Adds one pointer position to a press, keeping the largest distance it reached. */
+export function trackPress(
+  press: PressRecord,
+  pixel: { readonly x: number; readonly y: number },
+): void {
+  const moved = Math.hypot(pixel.x - press.x, pixel.y - press.y);
+  if (moved > press.moved) press.moved = moved;
+}
+
+/**
+ * True when a left press is a click and not an orbit. The two limits exist because the
+ * same button does both jobs, as it does in the game. The pixel limit is what separates
+ * a click from a drag on a hand that is not perfectly still. The time limit is what
+ * stops a slow press-and-hold with no movement from selecting when the user meant to
+ * stop and look.
+ */
+export function isClick(press: PressRecord, nowMs: number): boolean {
+  if (press.moved > CLICK_MOVE_CSS) return false;
+  return nowMs - press.startMs <= CLICK_HOLD_MS;
+}
+
+/**
+ * True when a key event is aimed at a field the user types into. The movement keys come
+ * from a listener on the window, so without the guard the HUD's search box would move
+ * the camera as the user types `A`, `S` or `D`.
+ */
+export function fromFormField(target: unknown): boolean {
+  if (typeof target !== 'object' || target === null) return false;
+  const element = target as { tagName?: unknown; isContentEditable?: unknown };
+  if (element.isContentEditable === true) return true;
+  const tag = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : '';
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+/**
+ * Holds a movement key down, unless the event is aimed at a form field. The guard is on
+ * the press alone: a key that goes down in a field starts no hold, so it never moves the
+ * cursor, and a release is always read, so no key is ever left held.
+ */
+export function applyKeyDown(keys: Set<string>, code: string, target: unknown): void {
+  if (fromFormField(target)) return;
+  const key = movementKeyOf(code);
+  if (key !== null) keys.add(key);
+}
+
+/** Lets a movement key up, wherever the release landed. */
+export function applyKeyUp(keys: Set<string>, code: string): void {
+  const key = movementKeyOf(code);
+  if (key !== null) keys.delete(key);
 }
 
 /** Turns yaw into the horizontal direction the camera looks along. */
@@ -150,6 +230,14 @@ export interface Controls {
 export interface ControlsOptions {
   /** Called after every change to the view. */
   readonly onChange?: () => void;
+  /** Called with the release pixel when a left press is a click and not an orbit. */
+  readonly onClick?: (pixel: { readonly x: number; readonly y: number }) => void;
+  /**
+   * Called with the pointer's pixel over the canvas, and with null when the pointer
+   * leaves it. The map keeps the last pixel and runs the hover pick once per frame, so
+   * a pointer that reports at 120 Hz costs one sweep per frame and not one per event.
+   */
+  readonly onPointer?: (pixel: { readonly x: number; readonly y: number } | null) => void;
 }
 
 /** Wires the control scheme to a canvas. */
@@ -162,6 +250,7 @@ export function attachControls(
   let drag: DragStart | null = null;
   let dragPointer: number | null = null;
   let orbitPointer: number | null = null;
+  let press: PressRecord | null = null;
   let lastOrbitX = 0;
   let lastOrbitY = 0;
 
@@ -186,6 +275,7 @@ export function attachControls(
     } else if (event.button === 0) {
       event.preventDefault();
       orbitPointer = event.pointerId;
+      press = beginPress(pixelOf(event), performance.now());
       lastOrbitX = event.clientX;
       lastOrbitY = event.clientY;
       canvas.setPointerCapture(event.pointerId);
@@ -193,18 +283,25 @@ export function attachControls(
   };
 
   const onPointerMove = (event: PointerEvent): void => {
+    const pixel = pixelOf(event);
+    options.onPointer?.(pixel);
+    if (press !== null && event.pointerId === orbitPointer) trackPress(press, pixel);
     if (drag !== null && event.pointerId === dragPointer) {
       event.preventDefault();
-      dragCursor(view, drag, pixelOf(event), viewportOf());
+      dragCursor(view, drag, pixel, viewportOf());
       changed();
     } else if (orbitPointer !== null && event.pointerId === orbitPointer) {
       event.preventDefault();
+      // The orbit is applied as the pointer moves, so a click does not undo the at most
+      // 1.2 degrees the 4 pixels of its own movement turned the camera.
       orbit(view, event.clientX - lastOrbitX, event.clientY - lastOrbitY);
       lastOrbitX = event.clientX;
       lastOrbitY = event.clientY;
       changed();
     }
   };
+
+  const onPointerLeave = (): void => options.onPointer?.(null);
 
   const onPointerUp = (event: PointerEvent): void => {
     if (event.pointerId === dragPointer) {
@@ -213,6 +310,12 @@ export function attachControls(
     }
     if (event.pointerId === orbitPointer) {
       orbitPointer = null;
+      const pixel = pixelOf(event);
+      if (press !== null) {
+        trackPress(press, pixel);
+        if (isClick(press, performance.now())) options.onClick?.(pixel);
+      }
+      press = null;
     }
     if (canvas.hasPointerCapture(event.pointerId)) {
       canvas.releasePointerCapture(event.pointerId);
@@ -230,13 +333,11 @@ export function attachControls(
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    const key = movementKeyOf(event.code);
-    if (key !== null) keys.add(key);
+    applyKeyDown(keys, event.code, event.target);
   };
 
   const onKeyUp = (event: KeyboardEvent): void => {
-    const key = movementKeyOf(event.code);
-    if (key !== null) keys.delete(key);
+    applyKeyUp(keys, event.code);
   };
 
   const onBlur = (): void => keys.clear();
@@ -245,6 +346,7 @@ export function attachControls(
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerLeave);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('keydown', onKeyDown);
@@ -265,6 +367,7 @@ export function attachControls(
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('keydown', onKeyDown);

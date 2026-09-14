@@ -50,10 +50,21 @@ async function loadDemoSystems(map: GalaxyMap): Promise<void> {
 
 function start(target: HTMLCanvasElement): void {
   const global = galaxyMapGlobal();
-  const map: GalaxyMap = createGalaxyMap(
-    target,
-    labelHost === null ? {} : { labelHost: labelHost as HTMLElement },
-  );
+  const map: GalaxyMap = createGalaxyMap(target, {
+    ...(labelHost === null ? {} : { labelHost: labelHost as HTMLElement }),
+    // The demo page is a host application, so it turns the HUD on the way any other
+    // host does, and it adds one footer action to show what `actions` gives a host.
+    hud: {
+      actions: [
+        {
+          label: 'LOG RECORD',
+          onSelect: (system) => {
+            console.info('The demo action read a system.', system);
+          },
+        },
+      ],
+    },
+  });
   window.galaxyMap = map;
   // The entry point itself, so a browser test can build a second map with a canvas of
   // its own and check what the library makes when the host gives no options.
@@ -97,6 +108,13 @@ function start(target: HTMLCanvasElement): void {
   global.labelSampling = () => debug.labelSampling();
   global.resetLabelSampling = () => debug.resetLabelSampling();
   global.regionNameAtScreen = (x, y) => debug.regionNameAtScreen(x, y);
+  global.selectionSampling = () => debug.selectionSampling();
+  global.resetSelectionSampling = () => debug.resetSelectionSampling();
+  global.frameIntervalStats = () => debug.frameIntervalStats();
+  global.resetFrameIntervalStats = () => debug.resetFrameIntervalStats();
+  global.gridVertexCount = () => debug.gridVertexCount();
+  global.gridSpacingLy = () => debug.gridSpacingLy();
+  global.gridPlanes = () => debug.gridPlanes();
   global.regionLinePositions = () => debug.regionLinePositions();
   global.regionLineChains = () => debug.regionLineChains();
   global.compileTestProgram = (vertex, fragment) =>

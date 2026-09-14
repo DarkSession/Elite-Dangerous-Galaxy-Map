@@ -388,18 +388,56 @@ and gives the region overlay three modes.
 
 ## Phase 4: selection and HUD
 
-Change: not yet created.
+Change: `selection-and-hud`. Status: implemented.
 
-Lets the user select a placed system and shows its information in the HUD.
+Lets the user select a placed system, draws a coordinate grid and shows the record in a
+HUD.
 
-- **Picking.** On the CPU: project each real system to the screen and take the nearest
-  within a pixel radius. No GPU id buffer at a few thousand systems.
-- **HUD.** Plain DOM over the canvas. Shows the selected system's name, coordinates and
-  the notable information from its record.
-- **Open questions.**
-  - Whether selection moves the cursor to the system.
-  - Whether a selected system appears in the URL fragment.
-  - Keyboard access to selection.
+- **Picking.** On the CPU, in `src/scene-data/picking.ts`: project each drawn system to
+  the screen and take the nearest inside a pixel radius. The sweep reads the same
+  `markerFlags` array the marker pass reads, so the pick and the screen never disagree.
+  The pointer pick runs once per frame. With 10,000 systems, the name labels on and the
+  pointer on a marker, the pick and the two overlay marks together stay under a mean of
+  0.5 ms per frame and a worst of 1 ms, against a budget of 2 ms. The reading moves from
+  run to run, so the numbers here are the bound the runs hold to and not one run's pair.
+- **Selection.** `setSelection(identity)` takes the `id64`, or the name when the record
+  has none. The handle carries `getSelection`, `onSelectionChange`, `getHover` and
+  `systemAt`. A left click on the canvas selects the system under the pointer. A click
+  that finds no system keeps the selection, because the same button orbits the camera
+  and a click between markers is more often a missed grab.
+- **The coordinate grid.** `src/render/grid-pass.ts` draws lines on the galactic plane,
+  with a spacing that steps with the zoom. The `grid` option and `setGridVisible` turn
+  it on. It draws 516 vertices. Its draw cost is under what the frame timer resolves.
+  The reading with the grid on and the reading with it off differ by less than 0.03 ms
+  at a pitch of 5 degrees, where its fill is worst, and at a pitch of 89. The difference
+  changes sign from run to run, so it is smaller than the spread of the instrument. The
+  budget is 1 ms.
+- **HUD.** Plain DOM in one `div.gm-hud`, built by `src/hud/`, behind a dynamic import,
+  so it is a chunk of its own, about 27 kB, that a host which does not ask for the HUD
+  never loads. It holds the top bar with the region name and the zoom distance, the
+  category browser with a search box, the map option switches, and the information panel
+  with the fields, the description, the thumbnails and a lightbox. It reads the map
+  through the public handle alone, and an ESLint rule stops it importing
+  `src/render/`, `src/scene-data/` or `src/camera/`. Every writer compares before it
+  writes, so a still map makes no DOM write. The HUD holds 464 elements with 10,000
+  systems in one expanded category, because the expanded list draws at most 200 rows.
+- **The record fields the HUD shows.** The reader keeps `allegiance`, `government`,
+  `primaryEconomy`, `security`, `population` and `bodyCount` from a dump, and the host
+  may add `description`, `primaryStar` and `images`. A field the record does not carry
+  leaves no empty row.
+- **Answers to the open questions.**
+  - **Selection moves the cursor.** It puts the cursor on the system and caps the
+    distance at 500 light years. A view already closer than 500 does not change, so a
+    close view stays close.
+  - **The selection does not go in the URL fragment.** The fragment carries the view
+    alone. A link that selects a system would need the host's data set to hold that
+    system, and the library holds no data of its own.
+  - **Every HUD control works from the keyboard.** Each control is a button or an input
+    in the tab order, `Escape` closes the lightbox and then clears the selection, and
+    the lightbox holds the focus while it is open.
+- **One mockup control is not built.** The map options panel of the mockup carries a
+  **Category glow** switch. No spec of this phase states what the switch does to the
+  frame, so the HUD does not draw it. Build it when the look it controls is specified.
 
 ## Phase 5: the library API
 

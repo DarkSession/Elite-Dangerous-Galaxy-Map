@@ -4,6 +4,7 @@ import { cameraPosition, projectionMatrix, viewMatrix } from '../camera/projecti
 import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
+import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import type { RealSystemSet } from '../scene-data/real-systems';
 import { createStarField } from '../scene-data/star-field';
@@ -31,6 +32,8 @@ import {
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
+import { createGridPass, createGridProgram, gridSpacing } from './grid-pass';
+import type { GridPass } from './grid-pass';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
 import {
@@ -127,6 +130,7 @@ export interface PassSwitches {
   points: boolean;
   stars: boolean;
   glow: boolean;
+  grid: boolean;
   regions: boolean;
   systems: boolean;
 }
@@ -186,6 +190,20 @@ export interface Renderer {
   /** How many markers the last frame drew. */
   systemMarkerCount(): number;
   /**
+   * Chooses whether the coordinate grid draws. The grid is off unless the host asks for
+   * it, so no view the map drew before this pass existed changes.
+   */
+  setGridDraw(draw: boolean): void;
+  /** How many vertices the last frame's grid draw issued. */
+  gridVertexCount(): number;
+  /** The spacing of the grid of the last frame, in light years. */
+  gridSpacingLy(): number;
+  /**
+   * The plane offsets of the vertices the last grid draw issued, three floats each. The
+   * browser tests read the drawn lines from it.
+   */
+  gridPlanes(): Float32Array;
+  /**
    * Holds the close fade at a value from 0 to 1. `null` gives the fade back to the zoom
    * distance. A test holds it at 1 to read the field at a close view.
    */
@@ -235,6 +253,7 @@ export function createRenderer(
   const float = gl.getExtension('EXT_color_buffer_float') !== null;
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
+  const gridProgram: Program = createGridProgram(gl);
   const starProgram: Program = createStarProgram(gl);
   const systemProgram: Program = createSystemProgram(gl);
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
@@ -260,6 +279,10 @@ export function createRenderer(
   let starSuppressed = 0;
   let closeHold: number | null = null;
   let nearHold: number | null = null;
+  const gridPass: GridPass = createGridPass(gl, gridProgram);
+  let gridDraw = false;
+  let gridVertices = 0;
+  let gridSpacingOfFrame = 0;
   let regionPass: RegionPass | null = null;
   let regionDraw = true;
   let regionTraced = false;
@@ -274,6 +297,7 @@ export function createRenderer(
     points: true,
     stars: true,
     glow: true,
+    grid: true,
     regions: true,
     systems: true,
   };
@@ -481,11 +505,30 @@ export function createRenderer(
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.tonemap(sceneTarget.texture, look.exposure);
 
+    // The coordinate grid draws over the tone map and before the region overlay and the
+    // markers, so a boundary and a marker both draw over a grid line and the grid adds
+    // no light the tone map reads.
+    gridVertices = 0;
+    const pixelRatio = width / Math.max(1, canvas.clientWidth);
+    gridSpacingOfFrame = gridSpacing(focal / pixelRatio, view.distance);
+    if (passes.grid && gridDraw) {
+      gridVertices = gridPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        cursor: view.cursor,
+        camera,
+        spacing: gridSpacingOfFrame,
+        bounds: galaxyModel.bounds,
+      });
+    } else {
+      // The two probes must agree: a frame with no grid reports no vertices and no
+      // planes, and not the planes of the frame the grid last drew in.
+      gridPass.skip();
+    }
+
     // The region boundaries are an overlay, not scene light. They draw over the
     // finished frame with alpha blending. A fade of 0 draws nothing at all, so the far
     // view is the frame it was before the overlay existed.
     const regions = regionFade(view.distance);
-    const pixelRatio = width / Math.max(1, canvas.clientWidth);
     if (passes.regions && regionDraw && regionPass !== null && regions > 0) {
       regionPass.draw({
         viewProjection: viewProjection as Float32Array,
@@ -581,6 +624,18 @@ export function createRenderer(
     systemMarkerCount(): number {
       return systemMarkers;
     },
+    setGridDraw(draw: boolean): void {
+      gridDraw = draw;
+    },
+    gridVertexCount(): number {
+      return gridVertices;
+    },
+    gridSpacingLy(): number {
+      return gridSpacingOfFrame;
+    },
+    gridPlanes(): Float32Array {
+      return gridPass.lastPlanes();
+    },
     setCloseFade(value: number | null): void {
       closeHold = value;
     },
@@ -617,6 +672,7 @@ export function createRenderer(
       if (next.clouds !== undefined) passes.clouds = next.clouds;
       if (next.points !== undefined) passes.points = next.points;
       if (next.stars !== undefined) passes.stars = next.stars;
+      if (next.grid !== undefined) passes.grid = next.grid;
       if (next.regions !== undefined) passes.regions = next.regions;
       if (next.glow !== undefined) passes.glow = next.glow;
       if (next.systems !== undefined) passes.systems = next.systems;
@@ -693,6 +749,7 @@ export function createRenderer(
       pointPass?.dispose();
       starPass?.dispose();
       systemPass?.dispose();
+      gridPass.dispose();
       regionPass?.dispose();
       cloudPass?.dispose();
       volumePass?.dispose();
@@ -702,6 +759,7 @@ export function createRenderer(
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(starProgram.program);
       gl.deleteProgram(systemProgram.program);
+      gl.deleteProgram(gridProgram.program);
       gl.deleteProgram(regionPrograms.ribbon.program);
       gl.deleteProgram(regionPrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);

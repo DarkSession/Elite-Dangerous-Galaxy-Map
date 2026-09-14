@@ -34,9 +34,10 @@ out float vStyle;
 void main() {
   float range = length(aOffset);
   // A marker draws only while the camera is inside the draw range of its own category.
+  // A range of 0 is the marker the category switch or the name filter took off.
   // A clip-space z over w of 2 is behind the far plane, so the point is clipped and no
   // fragment is written. The cut does not fade: a marker draws in full or not at all.
-  if (range > aStyleRange.y) {
+  if (aStyleRange.y <= 0.0 || range > aStyleRange.y) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     return;

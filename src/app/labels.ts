@@ -616,12 +616,16 @@ export function createLabelOverlay(
         if (wanted.has(label.id)) continue;
         elements.get(label.id)?.remove();
       }
-      host.style.opacity = String(labelFade(view.distance));
+      // The fade goes on each region label and not on the host, because the host also
+      // holds the selection pin, the hover ring and the marker name labels, and those do
+      // not follow the region overlay's fade.
+      const fade = String(labelFade(view.distance));
       for (const label of labels) {
         const element = elements.get(label.id);
         if (element === undefined) continue;
         element.style.left = `${label.left}px`;
         element.style.top = `${label.top}px`;
+        element.style.opacity = fade;
         if (element.parentNode === null) host.append(element);
       }
       shown = labels;

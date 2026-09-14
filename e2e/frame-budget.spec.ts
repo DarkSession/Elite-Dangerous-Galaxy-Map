@@ -241,3 +241,182 @@ test('the accurate region mode is under budget at the closest zooms', async ({
     expect(mean).toBeLessThan(BUDGET_MS);
   }
 });
+
+/** The animation frame interval the map must stay under, in milliseconds. */
+const INTERVAL_BUDGET_MS = 18;
+
+/** The time the hover pick and the overlay marks must stay under, in milliseconds. */
+const SELECTION_BUDGET_MS = 2;
+
+/** Waits for a number of animation frames inside the page. */
+async function waitFrames(page: Page, count: number): Promise<void> {
+  await page.evaluate(async (frames) => {
+    for (let index = 0; index < frames; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+  }, count);
+}
+
+/** What the page reports about the animation frames it drew. */
+interface IntervalStats {
+  readonly frames: number;
+  readonly meanMs: number;
+  readonly worstMs: number;
+}
+
+/**
+ * Resets the interval reading, waits 120 frames and gives back every statistic. The
+ * worst frame and the frame count say what a mean over the budget was: many slightly
+ * late frames are load on the machine, and one long stall is a defect in the page.
+ */
+async function intervalOver120Frames(page: Page): Promise<IntervalStats> {
+  await page.evaluate(() => window.__galaxyMap?.resetFrameIntervalStats?.());
+  await waitFrames(page, 120);
+  return page.evaluate(
+    () =>
+      window.__galaxyMap?.frameIntervalStats?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      },
+  );
+}
+
+// The reading below is the guard on the instrument. A still map draws one frame per
+// display refresh, so a 60 Hz display gives 16.7 ms. A mean under 15 ms means the
+// browser is not pacing animation frames to the display, and every 18 ms budget in this
+// file is void until that is fixed, rather than passing by default.
+test('a still map paces its animation frames to the display', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+
+  const stats = await intervalOver120Frames(page);
+  console.log('the still animation frame interval', stats);
+
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeGreaterThanOrEqual(15);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+test('the selection work stays inside its budget', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  // The cursor goes on one system, so its marker draws at the middle of the screen and
+  // the pointer below hovers it.
+  const position = await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return null;
+    map.setSystemNamesVisible(true);
+    map.setView({ cursor: [...system.position], distance: 500, yaw: 0, pitch: 35 });
+    return system.position;
+  });
+  expect(position).not.toBeNull();
+
+  await page.mouse.move(960, 540);
+  await waitFrames(page, 5);
+  const hovered = await page.evaluate(() => window.galaxyMap?.getHover()?.name ?? null);
+
+  await page.evaluate(() => window.__galaxyMap?.resetSelectionSampling?.());
+  await waitFrames(page, 120);
+  const stats = await page.evaluate(
+    () =>
+      window.__galaxyMap?.selectionSampling?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      },
+  );
+  console.log('the selection work over 120 frames', { hovered, ...stats });
+
+  expect(hovered).not.toBeNull();
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
+});
+
+test('the frame interval holds with the selection work running', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return;
+    map.setSystemNamesVisible(true);
+    map.setView({ cursor: [...system.position], distance: 500, yaw: 0, pitch: 35 });
+  });
+  await page.mouse.move(960, 540);
+  await waitFrames(page, 5);
+
+  const stats = await intervalOver120Frames(page);
+  console.log('the interval with 10,000 systems and the pick', stats);
+
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+test('the frame interval holds with the HUD on', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page, '', { hud: true });
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  // The demo page builds the HUD, so the panels below are the page's own.
+  await expect(page.locator('.gm-hud__category-row[data-name="Empire"]')).toBeVisible();
+  await page.locator('.gm-hud__category-expand[data-name="Empire"]').click();
+  await expect(page.locator('.gm-hud__system-row')).toHaveCount(200);
+  await page.evaluate(() => {
+    const system = window.galaxyMap?.getSystem(0) ?? null;
+    if (system !== null) window.galaxyMap?.setSelection(system.id64 ?? system.name);
+  });
+  await expect(page.locator('.gm-hud__info')).toBeVisible();
+  await waitFrames(page, 10);
+
+  const stats = await intervalOver120Frames(page);
+  console.log('the interval with the HUD on', stats);
+
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+// The grid's cost is fill and not vertices, so it is read at the shallowest pitch, where
+// its far lines crowd the horizon and its near lines cross the whole frame, and again at
+// the steepest, where the whole grid is in view at once.
+test('the grid draws inside its budget', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+
+  for (const pitch of [5, 89]) {
+    const readings = await page.evaluate(async (angle) => {
+      const map = window.galaxyMap;
+      const probe = window.__galaxyMap;
+      if (map === undefined || probe?.measureFrames === undefined) return null;
+      map.setView({ cursor: [0, 0, 0], distance: 4000, yaw: 0, pitch: angle });
+      map.setGridVisible(false);
+      // The first reading after a view change carries the warm-up cost of that view, so
+      // it is thrown away and both readings below start from a warm state.
+      probe.measureFrames(120);
+      const off = probe.measureFrames(300);
+      map.setGridVisible(true);
+      const on = probe.measureFrames(300);
+      const vertices = probe.gridVertexCount?.() ?? -1;
+      map.setGridVisible(false);
+      return { off, on, vertices };
+    }, pitch);
+    console.log(`the grid at pitch ${pitch}`, readings);
+
+    expect(readings).not.toBeNull();
+    expect(readings?.vertices).toBeGreaterThan(0);
+    expect((readings?.on ?? 0) - (readings?.off ?? 0)).toBeLessThanOrEqual(1);
+  }
+});

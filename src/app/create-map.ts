@@ -8,26 +8,44 @@ import type { View } from '../camera/view';
 import { loadDetailGrid } from '../galaxy-model/detail';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import { createGalaxyModel } from '../galaxy-model/model';
+import type { HudHandle, HudOptions } from '../hud/types';
 import { createRenderContext } from '../render/context';
 import { createProgram } from '../render/program';
-import { createRenderer } from '../render/renderer';
+import { createFrameAccumulator, createRenderer } from '../render/renderer';
 import type {
+  FrameAccumulator,
   FrameStats,
   LookSettings,
   PassSwitches,
   Renderer,
 } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
+import { pickSystem } from '../scene-data/picking';
 import { createSystemSet } from '../scene-data/real-systems';
 import type {
   AddReport,
+  Category,
   CategoryReport,
+  RealSystem,
   RealSystemSet,
 } from '../scene-data/real-systems';
 import { coarseRegionIdAt, regionOfId } from '../scene-data/regions';
 import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
 import { createLabelOverlay } from './labels';
 import type { LabelOverlay, SamplingStats } from './labels';
+import { createMarkerOverlay } from './markers';
+import type { MarkerOverlay } from './markers';
+
+// The HUD and a host name a record, an image and a category through the library entry
+// point. The HUD lint rule forbids an import of `src/scene-data/`, so the entry point
+// carries the three types.
+export type { Category, RealSystem, SystemImage } from '../scene-data/real-systems';
+
+/**
+ * How close a selection brings the camera, in light years. A view further out than this
+ * comes in to it. A view already at it or closer keeps the distance it has.
+ */
+export const SELECTION_DISTANCE_LY = 500;
 
 /**
  * What the region overlay draws. `off` draws no boundary and places no label.
@@ -48,6 +66,14 @@ export interface GalaxyMapOptions {
   readonly labelHost?: HTMLElement;
   /** What the region overlay draws. The default is `simplified`. */
   readonly regionMode?: RegionMode;
+  /** True draws the coordinate grid. The grid is off unless the options ask for it. */
+  readonly grid?: boolean;
+  /**
+   * Builds the heads-up display. `true` builds it with its defaults, and an object
+   * names the title, the host and the footer actions. The HUD is off when the options
+   * do not ask for it, and the map then adds no element to the page.
+   */
+  readonly hud?: boolean | HudOptions;
 }
 
 /** A view as a host reads and writes it. */
@@ -98,6 +124,25 @@ export interface GalaxyMapDebug {
   regionSampleTotal(): number;
   labelSampling(): SamplingStats;
   resetLabelSampling(): void;
+  /**
+   * The hover pick, the pin, the ring and the name label placement of the frames the
+   * loop drew since the last reset. The work runs around the draw call, so `frameStats`
+   * does not see it.
+   */
+  selectionSampling(): SamplingStats;
+  resetSelectionSampling(): void;
+  /**
+   * The interval between the animation frames the loop drew since the last reset. It
+   * covers everything the browser does per frame, so it is what shows a dropped frame.
+   */
+  frameIntervalStats(): SamplingStats;
+  resetFrameIntervalStats(): void;
+  /** How many vertices the last frame's grid draw issued. */
+  gridVertexCount(): number;
+  /** The spacing of the grid of the last frame, in light years. */
+  gridSpacingLy(): number;
+  /** The plane offsets of the vertices the last grid draw issued, three floats each. */
+  gridPlanes(): Float32Array;
   compileTestProgram(vertex: string, fragment: string): string | null;
   /** The unmasked renderer string the card reports. */
   readonly renderer: string;
@@ -132,6 +177,54 @@ export interface GalaxyMap {
    * one of the three leaves the mode as it was.
    */
   setRegionMode(mode: RegionMode): void;
+  /** Reads one system of the set as a copy, or null outside the set. */
+  getSystem(index: number): RealSystem | null;
+  /** How many categories the table holds. */
+  categoryCount(): number;
+  /** Reads one category of the table as a copy, or null outside it. */
+  getCategory(index: number): Category | null;
+  /** Turns the markers of a category on or off. An unknown name changes nothing. */
+  setCategoryVisible(name: string, visible: boolean): void;
+  /** True when the markers of a category draw. False for a name the table lacks. */
+  isCategoryVisible(name: string): boolean;
+  /** Keeps the markers whose name holds the text, compared without case. */
+  setNameFilter(text: string): void;
+  /** Reads the filter text. */
+  getNameFilter(): string;
+  /** The system under a canvas pixel in CSS coordinates, or null. */
+  systemAt(x: number, y: number): RealSystem | null;
+  /** Reads the hovered system, or null. */
+  getHover(): RealSystem | null;
+  /** Reads the selected system, or null. */
+  getSelection(): RealSystem | null;
+  /**
+   * Selects a system by its identity, which is the `id64` when the record carries one
+   * and the name when it does not. `null`, and an identity the set does not hold, clear
+   * the selection.
+   */
+  setSelection(identity: string | null): void;
+  /** Calls `listener` after the selection changes. Returns an unsubscribe. */
+  onSelectionChange(listener: (system: RealSystem | null) => void): () => void;
+  /** Turns the marker name labels on or off. They are off when the map starts. */
+  setSystemNamesVisible(on: boolean): void;
+  /** True while the marker name labels draw. */
+  areSystemNamesVisible(): boolean;
+  /** Turns the coordinate grid on or off. */
+  setGridVisible(on: boolean): void;
+  /** True while the coordinate grid draws. */
+  isGridVisible(): boolean;
+  /**
+   * The name of the codex region that holds a point on the galactic plane, or null. The
+   * lookup reads the `x` and the `z` of the point and ignores its `y`, because the
+   * region grid is a map of the plane and a region has no upper or lower bound. It gives
+   * null before the scene data loads.
+   */
+  regionNameAt(point: readonly [number, number, number]): string | null;
+  /**
+   * The HUD handle, or null when the options do not ask for the HUD. The HUD loads by
+   * dynamic import, so the member is null until `ready` settles.
+   */
+  readonly hud: HudHandle | null;
   /** The renderer probes the browser tests read. */
   readonly debug: GalaxyMapDebug;
 }
@@ -171,9 +264,37 @@ export function createGalaxyMap(
   const set: RealSystemSet = createSystemSet();
   const view: View = createDefaultView();
   const listeners = new Set<(view: MapView) => void>();
+  const selectionListeners = new Set<(system: RealSystem | null) => void>();
+
+  // The selection is held as an identity and not as an index, so a record replaced under
+  // the same identity keeps it and an emptied set drops it.
+  let selectedIdentity: string | null = null;
+  let hoverIndex = -1;
+  // The last pointer position over the canvas, in canvas CSS pixels. The hover pick runs
+  // once per frame from it, because a pointer event can arrive faster than a frame.
+  let lastPointer: { x: number; y: number } | null = null;
+
+  // The HUD is behind a dynamic import, so a host that never asks for it does not
+  // download it. The import starts in the same tick the map is built and `ready` waits
+  // for it, so every caller that reads `hud` after `ready` reads the HUD.
+  const hudOptions: HudOptions | null =
+    options.hud === true
+      ? {}
+      : typeof options.hud === 'object' && options.hud !== null
+        ? options.hud
+        : null;
+  const hudModule = hudOptions === null ? null : import('../hud/index');
+  let hud: HudHandle | null = null;
+  let hudDirty = false;
+  let handle: GalaxyMap | null = null;
 
   let renderer: Renderer | null = null;
   let labels: LabelOverlay | null = null;
+  let markers: MarkerOverlay | null = null;
+  let namesOn = false;
+  let gridOn = options.grid === true;
+  const selectionWork: FrameAccumulator = createFrameAccumulator();
+  const frameIntervals: FrameAccumulator = createFrameAccumulator();
   let ownedHost: HTMLElement | null = null;
   let controls: Controls | null = null;
   let regionGrid: CoarseRegionGrid | null = null;
@@ -212,10 +333,75 @@ export function createGalaxyMap(
       height: Math.max(1, canvas.clientHeight),
     };
 
+  /** The identity of a record: the `id64` when it has one, and the name when it does not. */
+  const identityOf = (system: RealSystem): string => system.id64 ?? system.name;
+
+  /** One system of the set as a copy, or null outside the set. */
+  const copyOf = (index: number): RealSystem | null => {
+    const system = set.system(index);
+    return system === null ? null : { ...system };
+  };
+
+  const announceSelection = (): void => {
+    const index =
+      selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity);
+    const system = copyOf(index);
+    for (const listener of selectionListeners) listener(system);
+  };
+
+  /** Puts the selected system at the centre of the screen and caps the distance. */
+  const centreOn = (system: RealSystem): void => {
+    view.cursor = [system.position[0], system.position[1], system.position[2]];
+    view.distance = Math.min(view.distance, SELECTION_DISTANCE_LY);
+    normaliseView(view);
+    announce();
+  };
+
+  /**
+   * Takes an identity. A system moves the view and, when it is not the system already
+   * selected, raises the selection listeners. An identity the set does not hold, and
+   * `null`, clear the selection and leave the view where it is.
+   */
+  const applySelection = (identity: string | null): void => {
+    const index = identity === null ? -1 : set.indexOfIdentity(identity);
+    const system = index < 0 ? null : set.system(index);
+    const next = system === null ? null : identityOf(system);
+    const changed = next !== selectedIdentity;
+    selectedIdentity = next;
+    if (system !== null) centreOn(system);
+    if (changed) announceSelection();
+  };
+
+  /** Drops a selection the set no longer holds, after the data changes. */
+  const syncSelection = (): void => {
+    if (selectedIdentity === null) return;
+    if (set.indexOfIdentity(selectedIdentity) >= 0) return;
+    selectedIdentity = null;
+    announceSelection();
+  };
+
   const drawFrame = (): void => {
     if (renderer === null) return;
     renderer.render(view);
-    labels?.update(view, renderer.viewport(), regionsOn && regionMode !== 'off');
+    const size = renderer.viewport();
+    // The hover pick and the overlay marks are one reading, because the two run together
+    // around the draw call and the budget covers them together.
+    const started = performance.now();
+    // The hover pick runs once per frame and not once per pointer event, and it runs
+    // again here after a camera move, because the marker under a still pointer moves
+    // when the camera does.
+    hoverIndex = lastPointer === null ? -1 : pickSystem(set, view, size, lastPointer);
+    markers?.update({
+      view,
+      viewport: size,
+      set,
+      hoverIndex,
+      selectedIndex:
+        selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity),
+      namesOn,
+    });
+    selectionWork.add(performance.now() - started);
+    labels?.update(view, size, regionsOn && regionMode !== 'off');
   };
 
   const onResize = (): void => renderer?.resize();
@@ -241,8 +427,24 @@ export function createGalaxyMap(
     const host = options.labelHost ?? makeLabelHost(canvas);
     if (host !== null && host !== options.labelHost) ownedHost = host;
     labels = host === null ? null : createLabelOverlay(host);
+    markers = host === null ? null : createMarkerOverlay(host);
+    renderer.setGridDraw(gridOn);
 
-    controls = attachControls(canvas, view, { onChange: announce });
+    controls = attachControls(canvas, view, {
+      onChange: announce,
+      onPointer(pixel: { x: number; y: number } | null): void {
+        lastPointer = pixel;
+      },
+      onClick(pixel: { x: number; y: number }): void {
+        const index = pickSystem(set, view, viewport(), pixel);
+        // A click that finds no system leaves the selection as it is. The user orbits
+        // with the same button, so a click between markers is more often a missed grab
+        // than a request to close the panel.
+        if (index < 0) return;
+        const system = set.system(index);
+        if (system !== null) applySelection(identityOf(system));
+      },
+    });
     window.addEventListener('resize', onResize);
 
     // `dispose` aborts the load, and the abort rejects the promise. That is the map
@@ -291,15 +493,40 @@ export function createGalaxyMap(
     let previous = performance.now();
     const loop = (now: number): void => {
       const seconds = Math.min((now - previous) / 1000, 0.1);
+      frameIntervals.add(now - previous);
       previous = now;
       controls?.update(seconds);
+      refreshHud();
       drawFrame();
       frameHandle = requestAnimationFrame(loop);
     };
     frameHandle = requestAnimationFrame(loop);
   };
 
-  const ready = start();
+  /**
+   * Rebuilds the HUD panels once, after a change to the data. The frame loop calls it,
+   * so a host that adds its systems in many batches pays one rebuild for every batch
+   * inside one frame, and a call that changes nothing pays none. A rebuild replaces
+   * every row, which drops the focus of a keyboard user and the scroll of the expanded
+   * list, so it must not run when the data is the same.
+   */
+  const refreshHud = (): void => {
+    // The frame loop starts before the HUD chunk arrives. The flag holds until the HUD
+    // is there to read it, so a change in that window is not lost.
+    if (!hudDirty || hud === null) return;
+    hudDirty = false;
+    hud.refresh();
+  };
+
+  /** Builds the HUD once its chunk arrives. The map is already drawing by then. */
+  const attachHud = async (): Promise<void> => {
+    if (hudModule === null || hudOptions === null) return;
+    const module = await hudModule;
+    if (disposed || handle === null) return;
+    hud = module.createHud(handle, hudOptions.host ?? canvas.parentElement, hudOptions);
+  };
+
+  const ready = start().then(attachHud);
   // A host that never reads `ready` must not raise an unhandled rejection.
   void ready.catch(() => undefined);
 
@@ -389,6 +616,27 @@ export function createGalaxyMap(
     resetLabelSampling(): void {
       labels?.resetSampling();
     },
+    selectionSampling(): SamplingStats {
+      return selectionWork.read();
+    },
+    resetSelectionSampling(): void {
+      selectionWork.reset();
+    },
+    frameIntervalStats(): SamplingStats {
+      return frameIntervals.read();
+    },
+    resetFrameIntervalStats(): void {
+      frameIntervals.reset();
+    },
+    gridVertexCount(): number {
+      return renderer?.gridVertexCount() ?? 0;
+    },
+    gridSpacingLy(): number {
+      return renderer?.gridSpacingLy() ?? 0;
+    },
+    gridPlanes(): Float32Array {
+      return renderer?.gridPlanes() ?? new Float32Array(0);
+    },
     compileTestProgram(vertex: string, fragment: string): string | null {
       const gl = context.gl;
       if (gl === null) return 'The map has no context.';
@@ -403,18 +651,27 @@ export function createGalaxyMap(
     renderer: context.renderer,
   };
 
-  return {
+  const map: GalaxyMap = {
     addCategories(categories: readonly unknown[]): CategoryReport {
-      return set.addCategories(categories);
+      const report = set.addCategories(categories);
+      if (report.added + report.replaced > 0) hudDirty = true;
+      return report;
     },
     addSystems(records: readonly unknown[]): AddReport {
-      return set.addSystems(records);
+      const report = set.addSystems(records);
+      syncSelection();
+      if (report.added + report.replaced > 0) hudDirty = true;
+      return report;
     },
     clearSystems(): void {
+      if (set.count > 0) hudDirty = true;
       set.clearSystems();
+      syncSelection();
     },
     clearSystemsAndCategories(): void {
+      if (set.count > 0 || set.categoryCount > 0) hudDirty = true;
       set.clearSystemsAndCategories();
+      syncSelection();
     },
     systemCount(): number {
       return set.count;
@@ -432,12 +689,17 @@ export function createGalaxyMap(
       controls?.dispose();
       controls = null;
       window.removeEventListener('resize', onResize);
+      hud?.dispose();
+      hud = null;
       renderer?.dispose();
       renderer = null;
       labels = null;
+      markers?.clear();
+      markers = null;
       ownedHost?.remove();
       ownedHost = null;
       listeners.clear();
+      selectionListeners.clear();
     },
     getView(): MapView {
       return readView();
@@ -468,6 +730,72 @@ export function createGalaxyMap(
       renderer?.setRegionDraw(mode !== 'off', mode === 'accurate');
       drawFrame();
     },
+    getSystem(index: number): RealSystem | null {
+      // The call returns a copy, so a host cannot write the set through the reading.
+      const system = set.system(index);
+      return system === null ? null : { ...system };
+    },
+    categoryCount(): number {
+      return set.categoryCount;
+    },
+    getCategory(index: number): Category | null {
+      const category = set.category(index);
+      return category === null ? null : { ...category };
+    },
+    setCategoryVisible(name: string, visible: boolean): void {
+      set.setCategoryVisible(name, visible);
+    },
+    isCategoryVisible(name: string): boolean {
+      return set.isCategoryVisible(name);
+    },
+    setNameFilter(text: string): void {
+      set.setNameFilter(text);
+    },
+    getNameFilter(): string {
+      return set.getNameFilter();
+    },
+    systemAt(x: number, y: number): RealSystem | null {
+      return copyOf(pickSystem(set, view, viewport(), { x, y }));
+    },
+    getHover(): RealSystem | null {
+      return copyOf(hoverIndex);
+    },
+    getSelection(): RealSystem | null {
+      return copyOf(
+        selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity),
+      );
+    },
+    setSelection(identity: string | null): void {
+      applySelection(identity);
+    },
+    onSelectionChange(listener: (system: RealSystem | null) => void): () => void {
+      selectionListeners.add(listener);
+      return () => {
+        selectionListeners.delete(listener);
+      };
+    },
+    setSystemNamesVisible(on: boolean): void {
+      namesOn = on === true;
+    },
+    areSystemNamesVisible(): boolean {
+      return namesOn;
+    },
+    setGridVisible(on: boolean): void {
+      gridOn = on === true;
+      renderer?.setGridDraw(gridOn);
+    },
+    isGridVisible(): boolean {
+      return gridOn;
+    },
+    regionNameAt(point: readonly [number, number, number]): string | null {
+      if (regionGrid === null) return null;
+      return regionOfId(coarseRegionIdAt(regionGrid, point[0], point[2]))?.name ?? null;
+    },
+    get hud(): HudHandle | null {
+      return hud;
+    },
     debug,
   };
+  handle = map;
+  return map;
 }

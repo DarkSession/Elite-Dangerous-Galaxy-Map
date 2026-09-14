@@ -100,9 +100,34 @@ rejects with the reason. A record with an `id64`, or a name, that the set alread
 replaces the earlier one. The set holds at most 10,000 systems and the category table at
 most 256 categories.
 
+Three of the optional record fields hold what a dump does not carry, so the host adds
+them itself. `description` is a paragraph about the system. `primaryStar` is the class
+of the primary star, for example `K5 V`. `images` is up to 8 pictures, each one a
+`{ url, caption }` object. The library never fetches a picture: the browser loads the
+URL the host gives when the HUD draws the thumbnail.
+
+```ts
+map.addSystems([
+  {
+    name: 'HIP 36823',
+    coords: { x: 570.4, y: 17.5, z: -68.6 },
+    primaryCategory: 'Beacon',
+    primaryStar: 'A3 V',
+    description: 'A Guardian beacon points to a ruins site.',
+    images: [{ url: '/pictures/beacon.jpg', caption: 'The beacon' }],
+  },
+]);
+```
+
 The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCount`,
 `getView`, `setView`, `onViewChange`, `getRegionMode`, `setRegionMode`, `dispose` and a
-`debug` member the browser tests read. The region mode is `off`, `simplified` or
+`debug` member the browser tests read. For the system set it carries `getSystem`,
+`categoryCount`, `getCategory`, `setCategoryVisible`, `isCategoryVisible`,
+`setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
+`getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
+carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
+`isGridVisible` and `regionNameAt`. The `hud` member is the HUD handle, or null when the
+options do not ask for the HUD. The region mode is `off`, `simplified` or
 `accurate`, and it is `simplified` unless the options name another. `simplified` draws
 the smoothed region boundary, `accurate` draws the traced boundary, which is the
 49.3494 light year staircase the region data holds, and `off` draws no boundary and
@@ -120,19 +145,70 @@ of a real system is not drawn. That rule runs in the finest drawn size class alo
 covers the systems near the camera, so a coarser class can still draw a star beside a
 marker further out.
 
+## Selection and the HUD
+
+`setSelection(identity)` selects a system. The identity is the `id64` when the record
+carries one, and the name when it does not. `null`, and an identity the set does not
+hold, clear the selection. A selection moves the view: the cursor goes to the position
+of the system, and the distance drops to 500 light years when it is further out. A
+distance already inside 500 light years does not change, so a close view stays close.
+`onSelectionChange` reports every change, and `getSelection` reads the current one.
+
+`systemAt(x, y)` gives the system under a canvas pixel in CSS coordinates, and
+`getHover` gives the system under the pointer. The map draws a mark around the hovered
+system and a second mark around the selected one.
+
+Two options build the overlays the host does not have to drive itself:
+
+```ts
+const map = createGalaxyMap(canvas, {
+  grid: true,
+  hud: {
+    title: 'GALACTIC CARTOGRAPHICS',
+    actions: [{ label: 'LOG RECORD', onSelect: (system) => console.log(system) }],
+  },
+});
+```
+
+`grid` draws the coordinate grid on the galactic plane. It is off unless the options ask
+for it, and `setGridVisible` turns it on and off later.
+
+`hud` builds the heads-up display. `true` builds it with its defaults, and an object
+names the `title`, the `host` element and the footer `actions`. With no `host` the HUD
+goes in the canvas's parent. Each action carries a `label` and an `onSelect(system)`
+callback, and its button draws in the information panel footer. The HUD is a separate
+chunk that loads by dynamic import, so `map.hud` is null until `ready` settles. The
+handle then carries `element`, `refresh()` and `dispose()`.
+
+A change to the system set or the category table reaches the HUD in the next animation
+frame. The map collects the changes of one turn and rebuilds the rows once, so a host
+that adds its systems in batches pays for one rebuild and not one for each batch. A host
+that reads `hud.element` in the same turn as `addSystems` therefore reads the rows from
+before the call. `hud.refresh()` rebuilds them at once.
+
+The HUD is plain DOM in one `div.gm-hud`, and every one of its rules sits under that
+class. It shows the region name and the zoom distance in the top bar, a category browser
+with a search box, the map option switches, and an information panel for the selected
+system with its fields, description, thumbnails and a lightbox. It reads the map through
+the public handle alone. An ESLint rule stops `src/hud/` importing `src/render/`,
+`src/scene-data/` or `src/camera/`.
+
 ## Controls
 
 | Input           | What it does                                                                                     |
 | --------------- | ------------------------------------------------------------------------------------------------ |
+| Left click      | Selects the system under the pointer. A click that finds no system keeps the selection.          |
 | Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.      |
 | Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.              |
 | Wheel           | Changes the distance by 1.15 per notch, between 10 and 120,000 light years.                      |
 | `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second. |
 | `R` `F`         | Move the cursor up and down at the same speed.                                                   |
+| `Escape`        | Closes the HUD lightbox. With no lightbox open it clears the selection.                          |
 
 The view lives in the URL fragment as `#c=<x>,<y>,<z>&d=<distance>&p=<pitch>&y=<yaw>`,
 in light years and degrees. The page writes it back at most once every 500 ms, so a
-link carries the view.
+link carries the view. The fragment does not carry the selection, because a link that
+selects a system would need the host's data set to hold that system.
 
 ## The galaxy model
 
@@ -173,6 +249,7 @@ src/galaxy-model/   the model port, the parameter file, the detail grid, its typ
 src/scene-data/     the point cloud, the density volume, the workers
 src/render/         the WebGL2 context, the passes, the shaders
 src/camera/         the view state, the projection, the controls
+src/hud/            the heads-up display, its styles and the bundled fonts
 e2e/                the Playwright tests and the baseline image
 tests/fixtures/     the model fixture and the detail fixture
 docs/               the model formulas and the roadmap
@@ -180,4 +257,6 @@ docs/               the model formulas and the roadmap
 
 `src/galaxy-model/` and `src/scene-data/` must not import `src/render/`. An ESLint rule
 holds that line, so a different density source can replace the data layers without a
-change in the renderer.
+change in the renderer. A second rule stops `src/hud/` importing `src/render/`,
+`src/scene-data/` or `src/camera/`, so the HUD reads the map through the public handle
+alone.

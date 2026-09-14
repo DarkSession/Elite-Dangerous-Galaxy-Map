@@ -136,7 +136,19 @@
         "z": 12398.03125
       },
       "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": ["Ruins Gamma"]
+      "secondaryCategories": ["Ruins Gamma"],
+      "primaryStar": "K5 V",
+      "description": "A Guardian ruin of the Alpha layout. The obelisk field is intact, and the relic tower still answers a scan.",
+      "images": [
+        {
+          "url": "/demo-images/ruins-site.svg",
+          "caption": "SITE PLAN"
+        },
+        {
+          "url": "/demo-images/structure-site.svg",
+          "caption": "APPROACH VECTOR"
+        }
+      ]
     },
     {
       "name": "Blaa Hypai XR-I b26-0",
@@ -351,7 +363,15 @@
         "y": -78.6875,
         "z": -155.65625
       },
-      "primaryCategory": "Structure Lacrosse"
+      "primaryCategory": "Structure Lacrosse",
+      "primaryStar": "M2 V",
+      "description": "A Guardian structure of the Lacrosse type. The pylons stand on the second body of the system.",
+      "images": [
+        {
+          "url": "/demo-images/structure-site.svg",
+          "caption": "PYLON CLUSTER"
+        }
+      ]
     },
     {
       "name": "Col 173 Sector BH-K b25-8",
@@ -2058,7 +2078,9 @@
         "y": -143.90625,
         "z": -118.3125
       },
-      "primaryCategory": "Beacon"
+      "primaryCategory": "Beacon",
+      "primaryStar": "A3 V",
+      "description": "A Guardian beacon. It reads a message to a ship that scans it."
     },
     {
       "name": "HIP 39768",

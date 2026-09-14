@@ -1155,3 +1155,102 @@ test('two categories cut at their own ranges in one frame', async ({ page }) => 
   expect(shortOn).toEqual(shortOff);
   expect(longOn).not.toEqual(longOff);
 });
+
+test.describe('the category switch and the name filter', () => {
+  test('a category that is off draws no marker', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    const first = atRange(cursor, 1000, 2000, -400);
+    const second = atRange(cursor, 1000, 2000, 400);
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addCategories(page, [
+      { name: 'Alpha', color: CORE, maxDrawRange: 120000 },
+      { name: 'Beta', color: CORE, maxDrawRange: 120000 },
+    ]);
+    await addSystems(page, [
+      record('First', first, 'Alpha'),
+      record('Second', second, 'Beta'),
+    ]);
+    await setView(page, cursor, 1000);
+    const both = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+
+    await page.evaluate(() => {
+      window.galaxyMap?.setCategoryVisible('Alpha', false);
+    });
+    await drawFrame(page);
+    const one = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+
+    // The first marker's pixel must read as the frame with the whole pass off, and the
+    // second must not, so the switch took one marker away and left the other.
+    const firstOn = await pixelAt(page, first);
+    const secondOn = await pixelAt(page, second);
+    await setPasses(page, { systems: false });
+    const firstOff = await pixelAt(page, first);
+    const secondOff = await pixelAt(page, second);
+    console.log('the category switch', { both, one, firstOn, firstOff });
+
+    expect(both).toBe(2);
+    expect(one).toBe(1);
+    expect(firstOn).toEqual(firstOff);
+    expect(secondOn).not.toEqual(secondOff);
+  });
+
+  test('the filter cuts the markers and the count', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addCategories(page, [{ name: 'Alpha', color: CORE, maxDrawRange: 120000 }]);
+    await addSystems(page, [
+      record('Sol', atRange(cursor, 1000, 2000, -400), 'Alpha'),
+      record('Solati', atRange(cursor, 1000, 2000, 0), 'Alpha'),
+      record('Achenar', atRange(cursor, 1000, 2000, 400), 'Alpha'),
+    ]);
+    await setView(page, cursor, 1000);
+
+    const readCount = async (): Promise<number> =>
+      page.evaluate(() => window.galaxyMap?.debug.systemMarkerCount() ?? -1);
+    const setFilter = async (text: string): Promise<void> => {
+      await page.evaluate((value) => {
+        window.galaxyMap?.setNameFilter(value);
+      }, text);
+      await drawFrame(page);
+    };
+
+    const all = await readCount();
+    await setFilter('sol');
+    const some = await readCount();
+    const filter = await page.evaluate(() => window.galaxyMap?.getNameFilter() ?? '?');
+    await setFilter('');
+    const back = await readCount();
+    console.log('the name filter', { all, some, back, filter });
+
+    expect(all).toBe(3);
+    expect(some).toBe(2);
+    expect(back).toBe(3);
+    expect(filter).toBe('sol');
+  });
+
+  test('the filtered marker leaves the frame it drew in', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    const where = atRange(cursor, 1000, 2000, 0);
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addCategories(page, [{ name: 'Alpha', color: CORE, maxDrawRange: 120000 }]);
+    await addSystems(page, [record('Sol', where, 'Alpha')]);
+    await setView(page, cursor, 1000);
+    const drawn = await pixelAt(page, where);
+
+    await page.evaluate(() => {
+      window.galaxyMap?.setNameFilter('zzz');
+    });
+    await drawFrame(page);
+    const hidden = await pixelAt(page, where);
+    await setPasses(page, { systems: false });
+    const passOff = await pixelAt(page, where);
+    console.log('the filtered marker', { drawn, hidden, passOff });
+
+    expect(drawn).not.toEqual(passOff);
+    expect(hidden).toEqual(passOff);
+  });
+});

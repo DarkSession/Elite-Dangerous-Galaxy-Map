@@ -830,3 +830,64 @@ test.describe('the region mode', () => {
     expect(simplifiedMs).toBeLessThan(500);
   });
 });
+
+test.describe('the region name at a point', () => {
+  test('names the region at a point', async ({ page }) => {
+    await openMap(page);
+    const names = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      return {
+        sol: map.regionNameAt([0, 0, 0]),
+        centre: map.regionNameAt([15, -35, 25895]),
+        outside: map.regionNameAt([400000, 0, 0]),
+      };
+    });
+    console.log('the region name at a point', names);
+
+    expect(names).toEqual({
+      sol: 'Inner Orion Spur',
+      centre: 'Galactic Centre',
+      outside: null,
+    });
+  });
+
+  test('gives the same answer at any height', async ({ page }) => {
+    await openMap(page);
+    const names = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      return {
+        plane: map.regionNameAt([0, 0, 0]),
+        above: map.regionNameAt([0, 20000, 0]),
+      };
+    });
+    console.log('the region name at a height', names);
+
+    expect((names as { plane: string; above: string }).plane).toBe(
+      (names as { plane: string; above: string }).above,
+    );
+  });
+
+  test('answers before the scene data loads', async ({ page }) => {
+    await openMap(page);
+    const reading = await page.evaluate(async () => {
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) return null;
+      const canvas = document.createElement('canvas');
+      canvas.style.width = '320px';
+      canvas.style.height = '240px';
+      document.body.appendChild(canvas);
+      const map = factory(canvas);
+      const before = map.regionNameAt([0, 0, 0]);
+      await map.ready;
+      const after = map.regionNameAt([0, 0, 0]);
+      map.dispose();
+      canvas.remove();
+      return { before, after };
+    });
+    console.log('the region name before the data', reading);
+
+    expect(reading).toEqual({ before: null, after: 'Inner Orion Spur' });
+  });
+});
