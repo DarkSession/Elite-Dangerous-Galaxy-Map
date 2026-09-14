@@ -4,7 +4,7 @@ The map is built in the phases below. Each phase is one OpenSpec change. This do
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-09.
+Last updated: 2026-09-14.
 
 ## Facts that hold for every phase
 
@@ -97,7 +97,7 @@ Draws the galaxy's shape from far away and lets the user move across it.
   20,000, 30,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
-  zooms between 500 and 120,000 light years. Keys `W A S D` move the cursor in the
+  zooms between 10 and 120,000 light years. Phase 3.1 moved the close end from 500. Keys `W A S D` move the cursor in the
   plane and `R F` move the cursor off the plane. The view lives in the URL fragment.
 - **Stack.** TypeScript, Vite, WebGL2 with an in-house wrapper, `gl-matrix`, plain DOM
   for the HUD, Vitest, Playwright with a GPU project, pnpm with the 7-day hold.
@@ -110,8 +110,12 @@ Draws the galaxy's shape from far away and lets the user move across it.
 - **Precision limit.** Camera-relative drawing keeps two points 1/32 light year apart
   within `1e-2 * distance / 2,000` relative of the exact transform. That is the
   `float32` limit, about 2^16 between the distance and the separation at 2,000, and no
-  code change can tighten it. Measured worst case 4.6e-3 at 2,000, 5.3e-2 at 20,000 and
-  0.2 at 120,000; a camera-in-matrix transform is more than 10 times worse.
+  code change can tighten it. The bound falls with the distance, so the closest zoom of
+  10 light years holds 5e-5. Measured worst case 2.8e-5 at 10, 4.6e-3 at 2,000, 5.3e-2
+  at 20,000 and 0.2 at 120,000; a camera-in-matrix transform is more than 10 times
+  worse. The near plane is in the projection matrix, so the sweep reads the near plane
+  the view gives it. Against the fixed near plane of 10 light years the map used before
+  phase 3.1, the worst case at 10 light years is 2.6e-5.
 - **Frame time measurement.** `gl.finish()` alone does not wait in Chromium's
   command-buffer WebGL. `measureFrames` reads one pixel after it to force the round
   trip, so the number is a superset of draw-to-finish.
@@ -259,20 +263,128 @@ gradually as the user zooms in.
 
 ## Phase 3: real systems from data
 
-Change: not yet created.
+Change: `real-systems-from-data`. Status: implemented.
 
-Adds real systems from a JSON data object, a few thousand at most.
+Makes the map a library and draws the host's real systems over the invented galaxy.
 
-- **Record shape.** In-game coordinates, a system name, and additional data for the
-  HUD. The exact fields are not yet decided.
-- **Rendering.** One instanced pass, separate from the decoration stars. At this count
-  no level of detail is needed.
-- **Data path.** The data object is a data source like the density model: it enters as
-  a plain object and leaves the data layer as typed arrays.
-- **Open questions.**
-  - Where the JSON comes from: bundled, fetched at load, or user-supplied.
-  - The record format and how it is validated.
-  - Whether real systems replace the decoration star at the same position.
+- **Entry point.** `createGalaxyMap(canvas, options)` in `src/app/create-map.ts`
+  returns a handle in the same tick. The handle carries `addCategories`, `addSystems`,
+  `clearSystems`, `clearSystemsAndCategories`, `systemCount`, `ready`, `dispose`,
+  `getView`, `setView`, `onViewChange` and `debug`. The library owns the context, the
+  scene data, the view, the controls and the frame loop. `src/app/main.ts` is the demo
+  page alone: it owns the URL fragment, the message box and the test hooks. An ESLint
+  rule fails a read of `window.location` in every file but that page.
+- **Record shape.** A record is what an EDSM or a Spansh dump gives: a `name`, a
+  `coords` object of `x`, `y` and `z`, and the name of a primary category. The reader
+  keeps `id64` as a decimal string, `secondaryCategories`, `allegiance`, `government`,
+  `primaryEconomy`, `security`, `population` and `bodyCount`, and drops every other
+  field. It reports each rejected record with one of six reasons. The
+  identity is the `id64`, or the name when there is none, and a second record with the
+  same identity replaces the first. The set holds at most 10,000 systems, in one
+  `Float64Array` of positions and one `Uint16Array` of category indices.
+- **Category table.** The host groups its systems by category. A category carries a
+  name, an RGB colour and an optional description. The name is the identity, and a
+  category added twice replaces the first and recolours its markers without moving its
+  table index. The table holds at most 256. No call removes one category:
+  `clearSystemsAndCategories` empties the table and the set together, so a system in
+  the set can never name a category the table does not hold.
+- **Marker look.** One point sprite per system, drawn after the tone map and after the
+  region overlay, so nothing can cover a marker and the scene light does not change.
+  The disc is `focalCss * 20 / range` CSS pixels, held between a floor of 7 and a cap
+  of 12, with the primary category's colour in the core and a fixed dark ring of
+  (0.02, 0.04, 0.10) over the outer 2 CSS pixels. A marker draws at every zoom distance
+  from 500 to 120,000 light years and does not fade. Phase 3.1 made the disc one of two
+  styles, took the close end of the zoom to 10, and gave each category a draw range.
+- **Close fade.** The invented star field draws in full at a zoom distance of 2,560
+  light years and adds no light at 640 and below, on a smoothstep between. The light it
+  gives up leaves the frame: the point cloud keeps the handover weight and does not
+  take it back, so both invented sources stand down and the close view holds the host's
+  systems alone. The fade changes the light a star deposits and no count, so the placed
+  count, the drawn count and the star radius do not read it.
+- **The `stars` switch controls one pass.** The handover weight followed the switch, so
+  turning the star pass off handed the point cloud its near field back. It now follows
+  the zoom distance alone while the field stands. Without that, a frame at 640 light
+  years drawn with the pass off cannot match the frame drawn with it on, because the
+  close fade has already taken the field's light and only the point cloud moves. A field
+  that has not loaded still gives the point cloud its near field, so a close view does
+  not start empty. The trade is that the switch no longer conserves light: the reading
+  "The handover keeps the light" holds a margin of 0.0002 against a limit of 0.02, and
+  the unit scenario "The two fades sum to one" is what holds the sum now. No production
+  frame changes, because nothing outside the tests turns the switch off.
+- **Suppression rule.** A decoration star within 3 light years of a real system is not
+  drawn. The rule is a correctness rule, not a speed one: the user cannot tell an
+  invented star from a real one, so an invented star beside a real system reads as a
+  place the user can go to. The radius is about half the mean system spacing at Sol. The sweep runs on the
+  CPU over the base size class alone, from a per-class index of boxel to systems, with
+  a cache keyed by size class and boxel index, so a camera move sweeps only the boxels
+  it brought in. The result reaches the shader as an `R32UI` bit mask of 8 texels per
+  boxel row, and a `uSuppress` uniform of 0 makes the shader read no texel at all. The
+  boxel divides its light over the stars that remain, so suppression changes the
+  brightness of no frame.
+- **The twin outside the base class block.** The base class block spans 8 base boxels
+  per axis and reaches at most 2 base edges past the camera, so a coarser class draws
+  its own star near a real system further out and the two stand together there. The
+  marker is the brighter of the two and the close fade takes the invented star out
+  before the camera reaches it. Suppression in every drawn class would remove the twin
+  at the cost of a sweep of 1,856 boxels instead of 512; the index and the cache carry
+  either rule.
+- **Answers to the phase's open questions.**
+  - The data does not come from the map. The host holds it and passes plain records to
+    `addSystems`, so the map bundles no dump and fetches nothing.
+  - The reader validates each record itself and reports the rejects. It reads the EDSM
+    and Spansh field names and needs no schema from the host.
+  - A real system does replace the decoration star at its position, inside the base
+    size class and within 3 light years.
+
+## Phase 3.1: deep zoom, marker styles and region modes
+
+Change: `deep-zoom-markers-and-region-modes`. Status: implemented.
+
+Takes the zoom to 10 light years, gives a category its own marker look and draw range,
+and gives the region overlay three modes.
+
+- **The zoom reaches 10 light years.** `MIN_DISTANCE` is 10, not 500. The near plane
+  follows the zoom as `min(10, distance / 10)`, so the cursor stays in front of it at
+  every zoom, and 10 light years stays the ceiling. The projection reads the view rather
+  than a constant.
+- **The star field holds below 640 light years.** The handover radii and the boxel list
+  read `max(distance, 640)`, so they freeze at their 640 light year value. The close fade
+  still reads the view's own distance, so the field adds no light below 640. Without the
+  hold the base size class would fall as the camera comes in, and the map would rebuild
+  1,856 boxels for a field that draws nothing.
+- **Two marker styles.** A category carries `markerStyle`, which is `glow` or `disc`.
+  `glow` is the default, so the look of a far view changes: a glow is a soft radial halo
+  with four spikes and no ring, and its sprite is 2.5 times the disc diameter. The alpha
+  rule is `min(1, spikes + max(core, halo))`, and `src/render/system-pass.ts` exports the
+  same rule as `glowAlpha`, so a unit test reads it at its own resolution.
+- **A draw range per category.** `maxDrawRange` is how far the camera may be from a
+  system and still draw its marker, in light years. It is 120,000 by default, which is
+  the far zoom limit, so a marker of a category that names no range draws at every zoom.
+  The cut is by the camera's own distance to each system, it does not fade, and the
+  vertex shader puts a cut marker behind the far plane so no fragment is written.
+- **Three region modes.** `off`, `simplified` and `accurate`, and `simplified` is the
+  default. The handle carries `getRegionMode` and `setRegionMode`, and `GalaxyMapOptions`
+  carries `regionMode`. A mode change binds another vertex array and uploads nothing, so
+  it takes effect in the next frame and does not rebuild the scene data.
+- **Two boundary sets from one trace.** The worker traces the region grid once and sends
+  both sets in one message. The smoothed set is the line the map drew before. The traced
+  set is the 49.3494 light year staircase the region data holds: each chain is packed as
+  it was traced, with the straight runs collapsed to one segment, so it departs from the
+  trace by 0 and keeps every 90 degree turn. It holds 22,718 vertices, which is 266.23
+  KiB, so it is the smaller of the two.
+- **The accurate data is the data already in the tree.** klightspeed's
+  `RegionMapData.json`, which the request named as the accurate source, is the same
+  raster as `@elite-dangerous-almanac/core/astro/codex-region-lookup`: a comparison of
+  20,000 random plane positions gives zero mismatches, and both are the same 2,048 row
+  run-length raster at 4,096/83 light years per cell from the origin (-49,985, -24,105).
+  The accurate mode is therefore not a new source. It is the same source drawn without
+  the smoothing.
+- **Why the traced set matters at close zoom.** One CSS row covers
+  `1.1547 * distance / 1080` light years, so the 49.3494 light year departure of the
+  smoothed line is 92 CSS pixels at a zoom of 500 and about 4,600 at a zoom of 10. It
+  falls under one CSS pixel only above a zoom of about 46,000, and the overlay does not
+  draw above 30,000. The departure is therefore always visible where the user asks which
+  region a system is in.
 
 ## Phase 4: selection and HUD
 
@@ -288,6 +400,35 @@ Lets the user select a placed system and shows its information in the HUD.
   - Whether selection moves the cursor to the system.
   - Whether a selected system appears in the URL fragment.
   - Keyboard access to selection.
+
+## Phase 5: the library API
+
+Change: not yet created.
+
+Makes the public API typed, so the map is usable as a library.
+
+- **The problem.** `addCategories` and `addSystems` take `readonly unknown[]`. The
+  compiler therefore accepts any array, and the consumer finds a misspelt field only in
+  the rejection report at run time. `unknown` at the boundary also hides the accepted
+  shape from the editor, so the README is the only place that states it.
+- **Typed input.** The library exports `CategoryInput` and `SystemRecordInput`, and both
+  methods take an array of the type. The run-time parser stays, because the data comes
+  from a file or a network call that the compiler does not check. The type states the
+  contract and the parser holds it.
+- **The shape follows Spansh and EDSM.** A Spansh dump record and an EDSM system record
+  both carry `name`, `id64` and `coords` with `x`, `y` and `z`. The library keeps those
+  names, so a record from either source passes with no rename. The library adds
+  `primaryCategory` and `secondaryCategories`, which neither source has.
+- **The consumer converts.** The library does not read a Spansh dump, call the EDSM API
+  or hold a schema for either. The consumer reads its own data and builds the input
+  array before the call. This keeps the data source and the drawing layer separate, as
+  every phase does.
+- **Open questions.**
+  - Whether the typed methods replace the `unknown` ones or sit beside them for one
+    release.
+  - Whether the library exports a type guard, so a consumer can filter a parsed dump
+    before the call.
+  - Which other fields of a Spansh record the HUD of phase 4 needs.
 
 ## Sources
 

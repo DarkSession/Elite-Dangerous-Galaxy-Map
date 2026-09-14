@@ -54,5 +54,24 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The library owns no URL. The page parses the fragment and writes it back, so
+    // `window.location` belongs to `src/app/main.ts` alone. A lint rule is what holds
+    // the boundary, because the production build puts the page and the library in one
+    // bundle, where a search of the served source cannot tell them apart.
+    files: ['src/**/*.ts'],
+    ignores: ['src/app/main.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'window',
+          property: 'location',
+          message:
+            'The library must not read or write window.location. The page owns the URL.',
+        },
+      ],
+    },
+  },
   prettier,
 );

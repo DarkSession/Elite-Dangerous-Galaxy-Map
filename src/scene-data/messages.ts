@@ -30,7 +30,10 @@ export type VolumeResponse = DensityVolume;
 
 /** What the region worker sends back: the boundary set and the coarse region grid. */
 export interface RegionLinesResponse {
+  /** The smoothed boundary set, which the `simplified` region mode draws. */
   readonly lines: RegionLines;
+  /** The traced boundary set, which the `accurate` region mode draws. */
+  readonly traced: RegionLines;
   readonly grid: CoarseRegionGrid;
 }
 
@@ -79,6 +82,7 @@ export function regionResponseTransferables(
 ): Transferable[] {
   return [
     ...regionLinesTransferables(response.lines),
+    ...regionLinesTransferables(response.traced),
     ...coarseRegionGridTransferables(response.grid),
   ];
 }
@@ -91,6 +95,7 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...volumeTransferables(scene.volume),
     ...surfaceDetailTransferables(scene.detail),
     ...regionLinesTransferables(scene.regionLines),
+    ...regionLinesTransferables(scene.regionLinesTraced),
     ...coarseRegionGridTransferables(scene.regionGrid),
   ];
 }

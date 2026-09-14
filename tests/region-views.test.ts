@@ -1,16 +1,53 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import { project } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
-import { buildRegionLines } from '../src/scene-data/region-lines';
+import { buildRegionData } from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
-import { SHARP_CORNER, VERTICAL_CROSSING } from '../e2e/region-views';
-import { findSharpCorner, findVerticalCrossing } from './region-views';
+import {
+  NEAR_BOTH_SETS,
+  SHARP_CORNER,
+  TRACED_CORNER,
+  VERTICAL_CROSSING,
+} from '../e2e/region-views';
+import {
+  findPointNearBothSets,
+  findSharpCorner,
+  findTracedCorner,
+  findVerticalCrossing,
+} from './region-views';
 
 let lines: RegionLines;
+let traced: RegionLines;
 
 beforeAll(() => {
-  lines = buildRegionLines();
+  const data = buildRegionData();
+  lines = data.lines;
+  traced = data.traced;
 }, 120000);
+
+/** The shortest distance from a plane point to any segment of a boundary set. */
+function gapToSet(set: RegionLines, point: readonly [number, number, number]): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (let chain = 0; chain < set.chainCount; chain += 1) {
+    const first = set.first[chain] as number;
+    const last = set.last[chain] as number;
+    for (let vertex = first; vertex < last; vertex += 1) {
+      const ax = set.positions[vertex * 3] as number;
+      const az = set.positions[vertex * 3 + 2] as number;
+      const bx = set.positions[(vertex + 1) * 3] as number;
+      const bz = set.positions[(vertex + 1) * 3 + 2] as number;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const span = dx * dx + dz * dz;
+      let part = span === 0 ? 0 : ((point[0] - ax) * dx + (point[2] - az) * dz) / span;
+      if (part < 0) part = 0;
+      if (part > 1) part = 1;
+      const away = Math.hypot(point[0] - (ax + part * dx), point[2] - (az + part * dz));
+      if (away < nearest) nearest = away;
+    }
+  }
+  return nearest;
+}
 
 /** How many CSS pixels the join reading takes around the bend. */
 const JOIN_RADIUS_PIXELS = 8;
@@ -156,5 +193,77 @@ describe('the view at a bend of a chain', () => {
     expect(SHARP_CORNER.clearanceLy / SHARP_CORNER.lightYearsPerPixel).toBeGreaterThan(
       JOIN_RADIUS_PIXELS * 4,
     );
+  });
+});
+
+describe('the point on a chain of both sets', () => {
+  test('is what the search of the two boundary sets gives', () => {
+    expect(findPointNearBothSets(lines, traced)).toEqual(NEAR_BOTH_SETS);
+  });
+
+  test('sits within 25 light years of a chain of each set', () => {
+    expect(gapToSet(lines, NEAR_BOTH_SETS.point)).toBeLessThan(25);
+    expect(gapToSet(traced, NEAR_BOTH_SETS.point)).toBeLessThan(25);
+  });
+
+  test('holds a line across the frame at the closest zoom', () => {
+    // The frame at a zoom of 10 light years covers about 12 light years across the
+    // cursor. The point sits in the middle of a traced segment far longer than that,
+    // so the line leaves the frame on both sides.
+    expect(NEAR_BOTH_SETS.segmentLengthLy).toBeGreaterThan(100);
+    expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(200);
+  });
+});
+
+describe('the view at a 90 degree corner of the traced set', () => {
+  test('is what the search of the traced set gives', () => {
+    expect(findTracedCorner(traced, TRACED_CORNER.viewport)).toEqual(TRACED_CORNER);
+  });
+
+  test('turns by 90 degrees at a vertex of the traced set', () => {
+    const vertex = TRACED_CORNER.vertex;
+    expect(traced.first[TRACED_CORNER.chain] as number).toBeLessThan(vertex);
+    expect(traced.last[TRACED_CORNER.chain] as number).toBeGreaterThan(vertex);
+    expect(traced.positions[vertex * 3] as number).toBe(TRACED_CORNER.bend[0]);
+    expect(traced.positions[vertex * 3 + 2] as number).toBe(TRACED_CORNER.bend[2]);
+    expect(TRACED_CORNER.turnDegrees).toBe(90);
+  });
+
+  test('puts each arm at more than 20 CSS pixels', () => {
+    const perPixel = TRACED_CORNER.lightYearsPerPixel;
+    const vertex = TRACED_CORNER.vertex;
+    const armOf = (step: number): number => {
+      const other = vertex + step;
+      return Math.hypot(
+        (traced.positions[other * 3] as number) - TRACED_CORNER.bend[0],
+        (traced.positions[other * 3 + 2] as number) - TRACED_CORNER.bend[2],
+      );
+    };
+    expect(armOf(-1) / perPixel).toBeGreaterThan(20);
+    expect(armOf(1) / perPixel).toBeGreaterThan(20);
+  });
+
+  test('holds a straight run of the same chain inside the frame', () => {
+    const perPixel = TRACED_CORNER.lightYearsPerPixel;
+    const run = planeGap(TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo);
+    expect(run / perPixel).toBeGreaterThan(30);
+
+    for (const end of [TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo]) {
+      expect(planeGap(TRACED_CORNER.bend, end) / perPixel).toBeGreaterThan(
+        JOIN_RADIUS_PIXELS * 2,
+      );
+      const screen = project(TRACED_CORNER.view as View, end, TRACED_CORNER.viewport);
+      expect(screen.inFront).toBe(true);
+      expect(screen.x).toBeGreaterThan(20);
+      expect(screen.x).toBeLessThan(TRACED_CORNER.viewport.width - 20);
+      expect(screen.y).toBeGreaterThan(20);
+      expect(screen.y).toBeLessThan(TRACED_CORNER.viewport.height - 20);
+    }
+  });
+
+  test('carries no other chain near the reading', () => {
+    expect(
+      TRACED_CORNER.clearanceLy / TRACED_CORNER.lightYearsPerPixel,
+    ).toBeGreaterThan(JOIN_RADIUS_PIXELS * 4);
   });
 });

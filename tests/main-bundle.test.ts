@@ -14,8 +14,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-/** How large the page chunk may be, in bytes. It measured 108,194 bytes after this change. */
-const MAIN_CHUNK_LIMIT = 130_000;
+/**
+ * How large the page chunk may be, in bytes. It measured 108,194 bytes when this test was
+ * written, 124,530 bytes after the phase 3 change, which did not refresh this note, and
+ * 131,090 bytes after the deep zoom change, which added about 6.5 KB for the glow shader,
+ * the region mode and the second boundary set. The guard is for the 199 KiB region cell
+ * lookup: that table in the chunk reads about 330,000 bytes, so the limit fails long
+ * before it. The limit holds 14 per cent of headroom over the reading, which is less than
+ * the 20 per cent the first limit held over its own.
+ */
+const MAIN_CHUNK_LIMIT = 150_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,

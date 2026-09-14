@@ -604,7 +604,7 @@ test('the added passes leave the far view alone', async ({ page }) => {
 
   const withBoth = await frameOf();
   await page.evaluate(() => {
-    window.__galaxyMap?.setPasses?.({ stars: false, regions: false });
+    window.__galaxyMap?.setPasses?.({ stars: false, regions: false, systems: false });
     window.__galaxyMap?.drawNow?.();
   });
   const withoutBoth = await frameOf();

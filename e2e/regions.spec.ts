@@ -3,17 +3,39 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import type { RegionMode } from '../src/app/create-map';
 import { GALACTIC_CENTRE, openMap, projectPoint } from './helpers';
-import { SHARP_CORNER, VERTICAL_CROSSING } from './region-views';
-import type { ChosenView } from './region-views';
+import {
+  NEAR_BOTH_SETS,
+  SHARP_CORNER,
+  TRACED_CORNER,
+  VERTICAL_CROSSING,
+} from './region-views';
+import type { ChosenView, CornerChoice } from './region-views';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
 /** A view inside the band where the overlay draws in full. */
 const MEDIUM_DISTANCE = 10000;
 
-/** The two close views the boundary must still draw at, in light years. */
-const CLOSE_DISTANCES = [1500, 500];
+/** The three close views the boundary must still draw at, in light years. */
+const CLOSE_DISTANCES = [1500, 500, 10];
+
+/** The two modes that draw a line. */
+const DRAWING_MODES: RegionMode[] = ['simplified', 'accurate'];
+
+/**
+ * The view the three modes are compared at. It looks at the 90 degree corner the traced
+ * set holds, from far enough back that the whole corner is in the frame. The two sets
+ * carry the same line along a straight run of the boundary, so a view chosen there
+ * cannot tell `simplified` from `accurate`.
+ */
+const MODE_COMPARISON_VIEW: ChosenView = {
+  cursor: TRACED_CORNER.bend,
+  distance: 2000,
+  yaw: 0,
+  pitch: 35,
+};
 
 /** How many CSS pixels around the corner the join reading takes. */
 const JOIN_RADIUS = 8;
@@ -266,6 +288,24 @@ async function setPasses(page: Page, passes: Record<string, boolean>): Promise<v
   }, passes);
 }
 
+/** Reads the region mode off the handle. */
+async function regionMode(page: Page): Promise<RegionMode | null> {
+  return page.evaluate(() => window.galaxyMap?.getRegionMode() ?? null);
+}
+
+/** Sets the region mode on the handle and draws a frame. */
+async function setRegionMode(page: Page, mode: string): Promise<void> {
+  await page.evaluate((next) => {
+    window.galaxyMap?.setRegionMode(next as RegionMode);
+    window.__galaxyMap?.drawNow?.();
+  }, mode);
+}
+
+/** The text of every region label on the page, in the order the page holds them. */
+async function labelTexts(page: Page): Promise<string[]> {
+  return page.locator('.region-label').allTextContents();
+}
+
 /** Moves the view to a plane point and draws a frame. */
 async function look(
   page: Page,
@@ -387,88 +427,120 @@ test('nothing at the far view', async ({ page }) => {
 
 test('the boundary still draws at the closest zoom', async ({ page }) => {
   await openMap(page);
-  const sample = await boundarySample(page);
 
-  for (const distance of CLOSE_DISTANCES) {
-    await look(page, sample.onBoundary, distance);
-    await setPasses(page, { regions: true });
-    const withOverlay = await canvasDigest(page);
+  // The centre is a plane point a unit test found on a chain of both sets. At a zoom of
+  // 10 light years the frame covers about 12 light years across the cursor, while the
+  // smoothed line may sit 49.3 light years from the traced one, so a point chosen
+  // against one set alone can leave the other set's line outside the frame.
+  for (const mode of DRAWING_MODES) {
+    await setRegionMode(page, mode);
+    for (const distance of CLOSE_DISTANCES) {
+      await look(page, NEAR_BOTH_SETS.point, distance);
+      await setPasses(page, { regions: true });
+      const withOverlay = await canvasDigest(page);
+      await setPasses(page, { regions: false });
+      const withoutOverlay = await canvasDigest(page);
+
+      // Phase 2 removed the lines below 3,000 light years. The smoothed boundary does
+      // not read as a staircase, so they draw here now.
+      expect(withOverlay, `${mode} at ${distance} light years`).not.toBe(
+        withoutOverlay,
+      );
+    }
+  }
+});
+
+for (const mode of DRAWING_MODES) {
+  test(`the ${mode} line is four CSS pixels wide and two-toned`, async ({ page }) => {
+    await openMap(page);
+    await setRegionMode(page, mode);
+    await lookFrom(page, VERTICAL_CROSSING.view);
+    const ratio = await devicePixelRatio(page);
+
+    // The chain stands within 0.03 degrees of vertical at the centre of the frame, so
+    // one row of pixels across the centre cuts it square. The traced line runs through
+    // the same place: the view sits in the middle of a straight run of the boundary,
+    // where the two sets carry the same line.
+    const centre = await projectPoint(page, VERTICAL_CROSSING.point);
+    const row = {
+      x: Math.round(centre.x) - 20,
+      y: Math.round(centre.y),
+      width: 40,
+      height: 1,
+    };
+    const withOverlay = await luminanceRect(page, row);
     await setPasses(page, { regions: false });
-    const withoutOverlay = await canvasDigest(page);
+    const withoutOverlay = await luminanceRect(page, row);
 
-    // Phase 2 removed the lines below 3,000 light years. The smoothed boundary does
-    // not read as a staircase, so they draw here now.
-    expect(withOverlay, `at ${distance} light years`).not.toBe(withoutOverlay);
-  }
-});
+    const changed = withOverlay.map(
+      (value, index) => Math.abs(value - (withoutOverlay[index] as number)) > 0.001,
+    );
+    const runs: { start: number; end: number }[] = [];
+    for (let index = 0; index < changed.length; index += 1) {
+      if (changed[index] !== true) continue;
+      const last = runs[runs.length - 1];
+      if (last !== undefined && last.end === index - 1) last.end = index;
+      else runs.push({ start: index, end: index });
+    }
+    console.log('the width reading', {
+      mode,
+      ratio,
+      runs,
+      withOverlay: withOverlay.map((value) => Number(value.toFixed(3))),
+      withoutOverlay: withoutOverlay.map((value) => Number(value.toFixed(3))),
+    });
 
-test('the line is four CSS pixels wide and two-toned', async ({ page }) => {
-  await openMap(page);
-  await lookFrom(page, VERTICAL_CROSSING.view);
-  const ratio = await devicePixelRatio(page);
+    expect(runs).toHaveLength(1);
+    const run = runs[0] as { start: number; end: number };
+    const widthCss = (run.end - run.start + 1) / ratio;
+    expect(Math.abs(widthCss - 4)).toBeLessThanOrEqual(1);
 
-  // The chain stands within 0.03 degrees of vertical at the centre of the frame, so
-  // one row of pixels across the centre cuts it square.
-  const centre = await projectPoint(page, VERTICAL_CROSSING.point);
-  const row = {
-    x: Math.round(centre.x) - 20,
-    y: Math.round(centre.y),
-    width: 40,
-    height: 1,
-  };
-  const withOverlay = await luminanceRect(page, row);
-  await setPasses(page, { regions: false });
-  const withoutOverlay = await luminanceRect(page, row);
+    const middle = Math.round((run.start + run.end) / 2);
+    expect(withOverlay[middle] as number).toBeGreaterThan(
+      withOverlay[run.start] as number,
+    );
+    expect(withOverlay[middle] as number).toBeGreaterThan(
+      withOverlay[run.end] as number,
+    );
 
-  const changed = withOverlay.map(
-    (value, index) => Math.abs(value - (withoutOverlay[index] as number)) > 0.001,
-  );
-  const runs: { start: number; end: number }[] = [];
-  for (let index = 0; index < changed.length; index += 1) {
-    if (changed[index] !== true) continue;
-    const last = runs[runs.length - 1];
-    if (last !== undefined && last.end === index - 1) last.end = index;
-    else runs.push({ start: index, end: index });
-  }
-  console.log('the width reading', {
-    ratio,
-    runs,
-    withOverlay: withOverlay.map((value) => Number(value.toFixed(3))),
-    withoutOverlay: withoutOverlay.map((value) => Number(value.toFixed(3))),
+    // The outline is the darker of the two colours, so both ends of the run are darker
+    // than the frame under them.
+    expect(withOverlay[run.start] as number).toBeLessThan(
+      withoutOverlay[run.start] as number,
+    );
+    expect(withOverlay[run.end] as number).toBeLessThan(
+      withoutOverlay[run.end] as number,
+    );
   });
+}
 
-  expect(runs).toHaveLength(1);
-  const run = runs[0] as { start: number; end: number };
-  const widthCss = (run.end - run.start + 1) / ratio;
-  expect(Math.abs(widthCss - 4)).toBeLessThanOrEqual(1);
+/** What the join reading gives for one chosen corner. */
+interface JoinReading {
+  /** The largest change the overlay makes within the reach of the bend. */
+  readonly bendChange: number;
+  /** The largest change it makes on the straight run of the same chain. */
+  readonly straightChange: number;
+  /** How many pixels the reading found on the drawn line inside the bend. */
+  readonly insideCount: number;
+  /** How many of those the overlay left unchanged. */
+  readonly unchangedInside: number;
+}
 
-  const middle = Math.round((run.start + run.end) / 2);
-  expect(withOverlay[middle] as number).toBeGreaterThan(
-    withOverlay[run.start] as number,
-  );
-  expect(withOverlay[middle] as number).toBeGreaterThan(withOverlay[run.end] as number);
+/**
+ * Reads the overlay's own contribution around a corner and on a straight run of the same
+ * chain, both from one frame. The overlay draws at less than full opacity, so an absolute
+ * reading would follow the galaxy under it.
+ */
+async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> {
+  await lookFrom(page, choice.view);
 
-  // The outline is the darker of the two colours, so both ends of the run are darker
-  // than the frame under them.
-  expect(withOverlay[run.start] as number).toBeLessThan(
-    withoutOverlay[run.start] as number,
-  );
-  expect(withOverlay[run.end] as number).toBeLessThan(
-    withoutOverlay[run.end] as number,
-  );
-});
-
-test('a join is not brighter than the line', async ({ page }) => {
-  await openMap(page);
-  await lookFrom(page, SHARP_CORNER.view);
-
-  const bend = await projectPoint(page, SHARP_CORNER.bend);
+  const bend = await projectPoint(page, choice.bend);
   const bendLine: { x: number; y: number }[] = [];
-  for (const point of SHARP_CORNER.bendLine) {
+  for (const point of choice.bendLine) {
     bendLine.push(await projectPoint(page, point));
   }
-  const straightFrom = await projectPoint(page, SHARP_CORNER.straightFrom);
-  const straightTo = await projectPoint(page, SHARP_CORNER.straightTo);
+  const straightFrom = await projectPoint(page, choice.straightFrom);
+  const straightTo = await projectPoint(page, choice.straightTo);
 
   // One rectangle holds the bend and the straight run, so both readings come from
   // one frame and the overlay switch moves once.
@@ -487,9 +559,11 @@ test('a join is not brighter than the line', async ({ page }) => {
     height:
       Math.ceil(Math.max(bend.y, straightFrom.y, straightTo.y) + JOIN_RADIUS + 4) - top,
   };
+  await setPasses(page, { regions: true });
   const withOverlay = await luminanceRect(page, rect);
   await setPasses(page, { regions: false });
   const withoutOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: true });
 
   /** The distance from a point to the drawn line inside the reading window. */
   const gapToBendLine = (point: { x: number; y: number }): number => {
@@ -513,8 +587,6 @@ test('a join is not brighter than the line', async ({ page }) => {
     for (let column = 0; column < rect.width; column += 1) {
       const index = row * rect.width + column;
       const point = { x: rect.x + column + 0.5, y: rect.y + row + 0.5 };
-      // The change is the overlay's own contribution. The overlay draws at less than
-      // full opacity, so an absolute reading would follow the galaxy under it.
       const change = Math.abs(
         (withOverlay[index] as number) - (withoutOverlay[index] as number),
       );
@@ -537,18 +609,39 @@ test('a join is not brighter than the line', async ({ page }) => {
       }
     }
   }
+  return { bendChange, straightChange, insideCount, unchangedInside };
+}
+
+test('a join is not brighter than the line', async ({ page }) => {
+  await openMap(page);
+  const reading = await readJoin(page, SHARP_CORNER);
   console.log('the join reading', {
     turnDegrees: SHARP_CORNER.turnDegrees,
-    bendChange,
-    straightChange,
-    insideCount,
-    unchangedInside,
+    ...reading,
   });
 
-  expect(insideCount).toBeGreaterThan(8);
-  expect(unchangedInside).toBe(0);
-  expect(straightChange).toBeGreaterThan(0.05);
-  expect(bendChange).toBeLessThanOrEqual(straightChange);
+  expect(reading.insideCount).toBeGreaterThan(8);
+  expect(reading.unchangedInside).toBe(0);
+  expect(reading.straightChange).toBeGreaterThan(0.05);
+  expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange);
+});
+
+test('a 90 degree corner of the traced set is not brighter than its line', async ({
+  page,
+}) => {
+  await openMap(page);
+  await setRegionMode(page, 'accurate');
+  const reading = await readJoin(page, TRACED_CORNER);
+  console.log('the traced corner reading', {
+    turnDegrees: TRACED_CORNER.turnDegrees,
+    ...reading,
+  });
+
+  expect(TRACED_CORNER.turnDegrees).toBe(90);
+  expect(reading.insideCount).toBeGreaterThan(8);
+  expect(reading.unchangedInside).toBe(0);
+  expect(reading.straightChange).toBeGreaterThan(0.05);
+  expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange);
 });
 
 test('the switch removes both parts', async ({ page }) => {
@@ -576,4 +669,164 @@ test('the switch is inert where nothing draws', async ({ page }) => {
   const withoutOverlay = await canvasDigest(page);
 
   expect(withOverlay).toBe(withoutOverlay);
+});
+
+test.describe('the region mode', () => {
+  test('is on the handle and on neither probe', async ({ page }) => {
+    await openMap(page);
+    const found = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      const debug = (map?.debug ?? {}) as unknown as Record<string, unknown>;
+      const global = (window.__galaxyMap ?? {}) as unknown as Record<string, unknown>;
+      const names = ['getRegionMode', 'setRegionMode', 'regionMode'];
+      return {
+        handle:
+          typeof map?.getRegionMode === 'function' &&
+          typeof map?.setRegionMode === 'function',
+        debug: names.filter((name) => name in debug),
+        global: names.filter((name) => name in global),
+      };
+    });
+    expect(found.handle).toBe(true);
+    expect(found.debug).toEqual([]);
+    expect(found.global).toEqual([]);
+
+    // The pass switch is a renderer probe and the mode is a host setting. One does not
+    // move the other.
+    await setPasses(page, { regions: false });
+    expect(await regionMode(page)).toBe('simplified');
+    await setPasses(page, { regions: true });
+  });
+
+  test('is simplified by default', async ({ page }) => {
+    await openMap(page);
+    expect(await regionMode(page)).toBe('simplified');
+  });
+
+  test('takes the value the options name', async ({ page }) => {
+    await openMap(page);
+    const modes = await page.evaluate(async () => {
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) return null;
+
+      /** Builds a map of its own on a canvas of its own and reads its mode. */
+      const modeOf = async (options?: Record<string, unknown>): Promise<string> => {
+        const canvas = document.createElement('canvas');
+        canvas.style.width = '320px';
+        canvas.style.height = '240px';
+        document.body.appendChild(canvas);
+        const map = factory(canvas, options as never);
+        await map.ready;
+        const mode = map.getRegionMode();
+        map.dispose();
+        canvas.remove();
+        return mode;
+      };
+
+      return {
+        none: await modeOf(),
+        empty: await modeOf({}),
+        accurate: await modeOf({ regionMode: 'accurate' }),
+        off: await modeOf({ regionMode: 'off' }),
+        bad: await modeOf({ regionMode: 'precise' }),
+      };
+    });
+    console.log('the option reading', modes);
+
+    expect(modes).not.toBeNull();
+    expect(modes?.none).toBe('simplified');
+    expect(modes?.empty).toBe('simplified');
+    expect(modes?.accurate).toBe('accurate');
+    expect(modes?.off).toBe('off');
+    // A value the map does not know leaves the default, as a bad value does on the
+    // setter.
+    expect(modes?.bad).toBe('simplified');
+  });
+
+  test('draws a different frame in each of the three modes', async ({ page }) => {
+    await openMap(page);
+    await lookFrom(page, MODE_COMPARISON_VIEW);
+
+    const digests: Record<string, string> = {};
+    for (const mode of ['off', 'simplified', 'accurate']) {
+      await setRegionMode(page, mode);
+      digests[mode] = await canvasDigest(page);
+    }
+    console.log('the mode digests', digests);
+
+    expect(digests['off']).not.toBe(digests['simplified']);
+    expect(digests['off']).not.toBe(digests['accurate']);
+    expect(digests['simplified']).not.toBe(digests['accurate']);
+  });
+
+  test('removes both parts when it is off', async ({ page }) => {
+    await openMap(page, '#c=15,0,25895&d=20000&p=35&y=0');
+    await setRegionMode(page, 'off');
+    const offMode = await canvasDigest(page);
+    expect(await page.locator('.region-label').count()).toBe(0);
+
+    await setRegionMode(page, 'simplified');
+    await setPasses(page, { regions: false });
+    const offSwitch = await canvasDigest(page);
+
+    expect(offMode).toBe(offSwitch);
+  });
+
+  test('keeps its value when it is given a bad one', async ({ page }) => {
+    await openMap(page);
+    await setRegionMode(page, 'accurate');
+    await setRegionMode(page, 'precise');
+    expect(await regionMode(page)).toBe('accurate');
+    await page.evaluate(() => {
+      const map = window.galaxyMap;
+      map?.setRegionMode(undefined as unknown as RegionMode);
+    });
+    expect(await regionMode(page)).toBe('accurate');
+  });
+
+  test('does not change the labels', async ({ page }) => {
+    await openMap(page, '#c=15,0,25895&d=20000&p=35&y=0');
+    await setRegionMode(page, 'simplified');
+    const simplified = await labelTexts(page);
+    await setRegionMode(page, 'accurate');
+    const accurate = await labelTexts(page);
+    console.log('the label reading', { simplified, accurate });
+
+    expect(simplified.length).toBeGreaterThan(0);
+    expect(accurate).toEqual(simplified);
+  });
+
+  test('changes without a second scene data load', async ({ page }) => {
+    // Every scene data load starts its workers. A rebuild would start them again.
+    let workers = 0;
+    page.on('worker', () => {
+      workers += 1;
+    });
+    await openMap(page);
+    await lookFrom(page, MODE_COMPARISON_VIEW);
+    const started = workers;
+    expect(started).toBeGreaterThan(0);
+
+    const first = await canvasDigest(page);
+    const accurateMs = await page.evaluate(() => {
+      const at = performance.now();
+      window.galaxyMap?.setRegionMode('accurate');
+      return performance.now() - at;
+    });
+    const second = await canvasDigest(page);
+    const simplifiedMs = await page.evaluate(() => {
+      const at = performance.now();
+      window.galaxyMap?.setRegionMode('simplified');
+      return performance.now() - at;
+    });
+    const third = await canvasDigest(page);
+    console.log('the mode change reading', { accurateMs, simplifiedMs, workers });
+
+    expect(second).not.toBe(first);
+    expect(third).toBe(first);
+    expect(workers).toBe(started);
+    // A rebuild of the region data takes seconds. Both changes draw one frame.
+    expect(accurateMs).toBeLessThan(500);
+    expect(simplifiedMs).toBeLessThan(500);
+  });
 });

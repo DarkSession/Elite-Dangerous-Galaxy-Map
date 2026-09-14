@@ -6,10 +6,12 @@ import { meanLuminanceFrame, openMap } from './helpers';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
-/** The closest zoom at Sol. */
+/** The close view at Sol, at the zoom distance the map stopped at before this change. */
 const CLOSE_SOL = '#c=0,0,0&d=500&p=35&y=0';
-/** The closest zoom at the galactic centre. */
+/** The same close view at the galactic centre, which is the densest ground. */
 const CLOSE_CENTRE = '#c=15,0,25895&d=500&p=35&y=0';
+/** The closest zoom at Sol. */
+const CLOSEST_SOL = '#c=0,0,0&d=10&p=35&y=0';
 /** The zoom distance at which the field has its worst fill. */
 const WIDE_SOL = '#c=0,0,0&d=4000&p=35&y=0';
 /** The bound the star pass holds to at every view. */
@@ -19,6 +21,49 @@ const STAR_VERTEX_COUNT = 475136;
 async function drawFrame(page: import('@playwright/test').Page): Promise<void> {
   await page.evaluate(() => {
     window.__galaxyMap?.drawNow?.();
+  });
+}
+
+/**
+ * Holds the close fade at a value, or gives it back to the zoom distance with `null`.
+ * The readings below open a view at 500 light years of zoom distance, where the fade
+ * holds the invented field at no light, so they hold the fade at 1 to read the field.
+ */
+async function setCloseFade(
+  page: import('@playwright/test').Page,
+  value: number | null,
+): Promise<void> {
+  await page.evaluate((next) => {
+    window.__galaxyMap?.setCloseFade?.(next);
+    window.__galaxyMap?.drawNow?.();
+  }, value);
+}
+
+/**
+ * The mean absolute difference per colour byte between the frame with the star pass on
+ * and the frame with it off, in 0 to 1. It reads the drawing buffer rather than a
+ * screenshot, so the label overlay does not reach the reading.
+ */
+async function meanPixelDifference(
+  page: import('@playwright/test').Page,
+): Promise<number> {
+  return page.evaluate(() => {
+    const map = window.__galaxyMap;
+    if (map?.readRect === undefined || map.setPasses === undefined) return 0;
+    const canvas = document.getElementById('map');
+    if (!(canvas instanceof HTMLCanvasElement)) return 0;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    map.setPasses({ stars: true });
+    const withStars = map.readRect(0, 0, width, height);
+    map.setPasses({ stars: false });
+    const withoutStars = map.readRect(0, 0, width, height);
+    map.setPasses({ stars: true });
+    let total = 0;
+    for (let index = 0; index < withStars.length; index += 1) {
+      total += Math.abs((withStars[index] as number) - (withoutStars[index] as number));
+    }
+    return total / withStars.length / 255;
   });
 }
 
@@ -147,6 +192,7 @@ test('the star shaders compile', async ({ page }) => {
 
 test('the field alone rises above the background', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
+  await setCloseFade(page, 1);
   await setPasses(page, {
     volume: false,
     clouds: false,
@@ -163,8 +209,26 @@ test('the field alone rises above the background', async ({ page }) => {
   expect(withoutStars.bright - withoutStars.corners).toBeLessThan(0.01);
 });
 
+test('the field adds no light at the close zoom distances', async ({ page }) => {
+  // No hold this time: at 500 light years of zoom distance the close fade is 0, so the
+  // field adds nothing and the frame is the background alone.
+  await openMap(page, CLOSE_SOL);
+  await setPasses(page, {
+    volume: false,
+    clouds: false,
+    glow: false,
+    points: false,
+    stars: true,
+  });
+  const reading = await frameExtremes(page);
+  console.log('the field at the close zoom distance', reading);
+
+  expect(Math.abs(reading.bright - reading.corners)).toBeLessThan(0.01);
+});
+
 test('the field has grain', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
+  await setCloseFade(page, 1);
   const grain = await centreGrain(page, 120);
   console.log('the field grain', grain);
   expect(grain).toBeGreaterThan(0.04);
@@ -172,6 +236,7 @@ test('the field has grain', async ({ page }) => {
 
 test('the switch removes the field', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
+  await setCloseFade(page, 1);
   await setPasses(page, {
     volume: false,
     clouds: false,
@@ -249,10 +314,12 @@ test('the bound holds at every view', async ({ page }) => {
 // canvas alone with `toDataURL` for that, as `e2e/regions.spec.ts` does.
 test('the same view gives the same frame by any route', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
+  await setCloseFade(page, 1);
   await drawFrame(page);
   const direct = await page.locator('#map').screenshot();
 
   await openMap(page, '#c=4000,0,4000&d=8000&p=35&y=0');
+  await setCloseFade(page, 1);
   await page.evaluate(() => {
     window.__galaxyMap?.setView?.({
       cursor: [0, 0, 0],
@@ -265,6 +332,57 @@ test('the same view gives the same frame by any route', async ({ page }) => {
   const reached = await page.locator('#map').screenshot();
 
   expect(Buffer.compare(direct, reached)).toBe(0);
+});
+
+test('the invented field goes as the camera comes in', async ({ page }) => {
+  const views = [
+    '#c=0,0,0&d=2560&p=35&y=0',
+    '#c=0,0,0&d=1280&p=35&y=0',
+    '#c=0,0,0&d=640&p=35&y=0',
+    CLOSEST_SOL,
+  ];
+  const differences: number[] = [];
+  const pairs: [Buffer, Buffer][] = [];
+  for (const where of views) {
+    await openMap(page, where);
+    await setPasses(page, { stars: true });
+    const withStars = await page.locator('#map').screenshot();
+    differences.push(await meanPixelDifference(page));
+    await setPasses(page, { stars: false });
+    const withoutStars = await page.locator('#map').screenshot();
+    pairs.push([withStars, withoutStars]);
+  }
+  console.log('the close fade', differences);
+
+  expect(differences[0] as number).toBeGreaterThan(differences[1] as number);
+  expect(differences[1] as number).toBeGreaterThan(differences[2] as number);
+  expect(differences[2] as number).toBe(0);
+  // The close fade is 0 at 640 light years and below, so the field adds no light at
+  // either of the last two views and each frame with the pass on is the frame with it
+  // off, byte for byte.
+  expect(differences[3] as number).toBe(0);
+  for (const index of [2, 3]) {
+    const pair = pairs[index] as [Buffer, Buffer];
+    expect(Buffer.compare(pair[0], pair[1]), `the view ${views[index]}`).toBe(0);
+  }
+});
+
+test('the point cloud does not take the faded light back', async ({ page }) => {
+  // The densest close view. A point cloud sample handed the field's light would show
+  // here as a saturated block.
+  await openMap(page, CLOSE_CENTRE);
+  await setPasses(page, {
+    volume: false,
+    clouds: false,
+    glow: false,
+    points: true,
+    stars: false,
+  });
+  const faded = await page.locator('#map').screenshot();
+  await setCloseFade(page, 1);
+  const held = await page.locator('#map').screenshot();
+
+  expect(Buffer.compare(faded, held)).toBe(0);
 });
 
 test('the far view is unchanged', async ({ page }) => {
@@ -382,4 +500,292 @@ void main() {
   }
   console.log('hash mismatches', mismatches, 'of 1024');
   expect(mismatches).toBe(0);
+});
+
+/**
+ * The camera position of a view at yaw 0 and pitch 35, in game coordinates. The
+ * suppression rule works in the base size class, and the base class block stands around
+ * the camera and not around the cursor, so a test that wants suppression puts its
+ * systems here. The block reaches at most 2 base edges past the camera, which is 40
+ * light years at a zoom distance of 500 and 80 at 1,000, while the cursor is a whole
+ * zoom distance away.
+ */
+function cameraOf(
+  cursor: [number, number, number],
+  distance: number,
+): [number, number, number] {
+  // `cameraPosition` of src/camera/projection.ts, at yaw 0. The test writes the two
+  // terms out rather than importing the module, because the module reaches the model
+  // parameters and the Playwright loader reads no image file.
+  const pitch = (35 * Math.PI) / 180;
+  return [
+    cursor[0],
+    cursor[1] + Math.sin(pitch) * distance,
+    cursor[2] - Math.cos(pitch) * distance,
+  ];
+}
+
+/**
+ * Adds one category and `count` systems inside a radius of a point, through the handle.
+ * The marker pass stays on, so a reading that times a frame pays for the markers as
+ * well. A reading that must not see a marker switches the pass off itself.
+ */
+async function addSystemsAround(
+  page: import('@playwright/test').Page,
+  centre: [number, number, number],
+  count: number,
+  radius: number,
+): Promise<number> {
+  return page.evaluate(
+    (where) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return -1;
+      map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+      // A fixed generator, so every run adds the same systems.
+      let state = 12345;
+      const unit = (): number => {
+        state = (state * 1103515245 + 12345) & 0x7fffffff;
+        return state / 0x7fffffff;
+      };
+      const records: Record<string, unknown>[] = [];
+      for (let index = 0; index < where.count; index += 1) {
+        records.push({
+          name: `S${index}`,
+          coords: {
+            x: (where.centre[0] as number) + (unit() * 2 - 1) * where.radius,
+            y: (where.centre[1] as number) + (unit() * 2 - 1) * where.radius,
+            z: (where.centre[2] as number) + (unit() * 2 - 1) * where.radius,
+          },
+          primaryCategory: 'Empire',
+        });
+      }
+      map.addSystems(records);
+      return map.systemCount();
+    },
+    { centre, count, radius },
+  );
+}
+
+test('a frame reports the suppressed count', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await drawFrame(page);
+  const empty = await page.evaluate(
+    () => window.__galaxyMap?.starSuppressedCount?.() ?? -1,
+  );
+
+  const added = await addSystemsAround(page, cameraOf([0, 0, 0], 1000), 2000, 80);
+  await drawFrame(page);
+  const loaded = await page.evaluate(
+    () => window.__galaxyMap?.starSuppressedCount?.() ?? -1,
+  );
+  console.log('the suppressed count', { empty, added, loaded });
+
+  expect(added).toBe(2000);
+  expect(empty).toBe(0);
+  expect(loaded).toBeGreaterThan(0);
+});
+
+test('systems lower the sum and not the bound', async ({ page }) => {
+  await openMap(page, CLOSE_SOL);
+  await drawFrame(page);
+  const before = await page.evaluate(() => ({
+    vertices: window.__galaxyMap?.starVertexCount?.() ?? -1,
+    drawn: window.__galaxyMap?.starDrawnCount?.() ?? -1,
+  }));
+
+  await addSystemsAround(page, cameraOf([0, 0, 0], 500), 2000, 80);
+  await drawFrame(page);
+  const after = await page.evaluate(() => ({
+    vertices: window.__galaxyMap?.starVertexCount?.() ?? -1,
+    drawn: window.__galaxyMap?.starDrawnCount?.() ?? -1,
+  }));
+  console.log('the sum and the bound', { before, after });
+
+  expect(before.vertices).toBe(STAR_VERTEX_COUNT);
+  expect(after.vertices).toBe(STAR_VERTEX_COUNT);
+  expect(after.drawn).toBeLessThan(before.drawn);
+});
+
+test('loading systems does not change the galaxy brightness', async ({ page }) => {
+  // The close fade is 0.79 at 2,000 light years, so the field carries most of its light.
+  await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
+  await setPasses(page, { systems: false });
+  const before = await meanLuminanceFrame(page);
+
+  await addSystemsAround(page, cameraOf([0, 0, 0], 2000), 2000, 160);
+  await setPasses(page, { systems: false });
+  const after = await meanLuminanceFrame(page);
+  console.log('the galaxy brightness', { before, after });
+
+  expect(Math.abs(before - after)).toBeLessThanOrEqual(0.002);
+});
+
+test('the same view gives the same frame with systems loaded', async ({ page }) => {
+  await openMap(page, CLOSE_SOL);
+  await addSystemsAround(page, cameraOf([0, 0, 0], 500), 500, 120);
+  await setCloseFade(page, 1);
+  await drawFrame(page);
+  const direct = await page.locator('#map').screenshot();
+
+  await openMap(page, '#c=4000,0,4000&d=8000&p=35&y=0');
+  await addSystemsAround(page, cameraOf([0, 0, 0], 500), 500, 120);
+  await setCloseFade(page, 1);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 500,
+      yaw: 0,
+      pitch: 35,
+    });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const reached = await page.locator('#map').screenshot();
+
+  expect(Buffer.compare(direct, reached)).toBe(0);
+});
+
+test('a real system stays when the invented field goes', async ({ page }) => {
+  for (const where of ['#c=0,0,0&d=640&p=35&y=0', CLOSEST_SOL]) {
+    await openMap(page, where);
+    await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return;
+      map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+      map.addSystems([
+        { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      ]);
+      map.debug.drawNow();
+    });
+
+    const pixel = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [0, 0, 0, 0];
+      const screen = map.debug.project([0, 0, 0]);
+      return map.debug.readPixel(screen.x, screen.y);
+    });
+    console.log(`the marker at the view ${where}`, pixel);
+    for (let channel = 0; channel < 3; channel += 1) {
+      const wanted = [153, 230, 255][channel] as number;
+      expect(Math.abs((pixel[channel] as number) - wanted)).toBeLessThanOrEqual(2);
+    }
+
+    await setPasses(page, { stars: true });
+    const withStars = await page.locator('#map').screenshot();
+    await setPasses(page, { stars: false });
+    const withoutStars = await page.locator('#map').screenshot();
+    expect(Buffer.compare(withStars, withoutStars), `the view ${where}`).toBe(0);
+  }
+});
+
+test('a camera move stays inside the frame budget', async ({ page }) => {
+  // The view sits at 1,000 light years, so the base class is 2 and a base boxel at Sol
+  // places 243 stars rather than 30. The sweep then tests eight times as many stars.
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addSystemsAround(page, cameraOf([0, 0, 0], 1000), 10000, 600);
+
+  const stats = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) return { frames: 0, meanMs: 0, worstMs: 1e9 };
+    map.debug.resetFrameStats();
+    for (let step = 1; step <= 40; step += 1) {
+      map.setView({ cursor: [step * 5, 0, 0] });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+    return map.debug.frameStats();
+  });
+  console.log('the pan', stats);
+
+  expect(stats.frames).toBeGreaterThan(30);
+  expect(stats.worstMs).toBeLessThan(20);
+});
+
+test('a base class change costs one slow frame at most', async ({ page }) => {
+  // The zoom starts at 500 and not at 300, because the field reads the effective zoom
+  // distance, which holds at 640 light years below that. The boundary at 320 is inside
+  // the reachable range now that the zoom goes to 10, but the field does not cross it.
+  // The sweep crosses 640, 1,280 and 2,560.
+  await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
+  await addSystemsAround(page, cameraOf([0, 0, 0], 500), 10000, 600);
+
+  const stats = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) return { frames: 0, meanMs: 0, worstMs: 1e9 };
+    map.debug.resetFrameStats();
+    const steps = 50;
+    for (let step = 1; step <= steps; step += 1) {
+      map.setView({ distance: 500 + ((3000 - 500) * step) / steps });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+    return map.debug.frameStats();
+  });
+  console.log('the zoom', stats);
+
+  expect(stats.frames).toBeGreaterThan(40);
+  expect(stats.worstMs).toBeLessThan(50);
+});
+
+/**
+ * The zoom distances the hold on the effective distance is read at. The field's boxel
+ * table is the same at all four only while the hold stands.
+ */
+const HOLD_DISTANCES = [10, 100, 320, 640];
+
+test('the drawn field does not change below 640', async ({ page }) => {
+  await openMap(page, CLOSE_SOL);
+
+  // The drawn boxel list is camera-relative, so the camera has to hold one position
+  // while the zoom changes. The cursor therefore moves back along the camera direction
+  // by the zoom distance, which leaves the camera at Sol at every reading.
+  const readCounts = async (
+    distance: number,
+  ): Promise<{ vertices: number; drawn: number }> => {
+    await page.evaluate((zoom) => {
+      const pitch = 35;
+      const radians = (pitch * Math.PI) / 180;
+      // `cameraPosition` in src/camera/projection.ts puts the camera at
+      // `cursor + direction * distance`, and at a yaw of 0 the direction is
+      // `[0, sin(pitch), -cos(pitch)]`.
+      const direction: [number, number, number] = [
+        0,
+        Math.sin(radians),
+        -Math.cos(radians),
+      ];
+      window.__galaxyMap?.setView?.({
+        cursor: [-direction[0] * zoom, -direction[1] * zoom, -direction[2] * zoom] as [
+          number,
+          number,
+          number,
+        ],
+        distance: zoom,
+        yaw: 0,
+        pitch,
+      });
+      window.__galaxyMap?.drawNow?.();
+    }, distance);
+    return page.evaluate(() => ({
+      vertices: window.__galaxyMap?.starVertexCount?.() ?? -1,
+      drawn: window.__galaxyMap?.starDrawnCount?.() ?? -1,
+    }));
+  };
+
+  const counts: { vertices: number; drawn: number }[] = [];
+  for (const distance of HOLD_DISTANCES) counts.push(await readCounts(distance));
+  console.log('the held field', { distances: HOLD_DISTANCES, counts });
+
+  // The drawn count is the reading that moves. It is the sum over the drawn boxels, so
+  // it changes as soon as the base size class steps and the field draws another list.
+  const at640 = counts[counts.length - 1] as { vertices: number; drawn: number };
+  expect(at640.drawn).toBeGreaterThan(0);
+  expect(at640.drawn).toBeLessThan(STAR_VERTEX_COUNT);
+  for (let index = 0; index < counts.length; index += 1) {
+    const count = counts[index] as { vertices: number; drawn: number };
+    expect(count.vertices, `at ${HOLD_DISTANCES[index]} light years`).toBe(
+      at640.vertices,
+    );
+    expect(count.drawn, `at ${HOLD_DISTANCES[index]} light years`).toBe(at640.drawn);
+  }
 });

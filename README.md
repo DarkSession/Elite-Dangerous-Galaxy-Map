@@ -3,8 +3,9 @@
 An interactive 3D map of the Elite Dangerous galaxy, drawn in the browser with WebGL2.
 
 Phase 1 draws the far view: the bar, the bulge, the disc, the four spiral arms and the
-dust lanes, from a compact analytic model of the game's stellar-mass distribution. It
-draws no individual stars. Later phases add decoration stars, real systems and a HUD.
+dust lanes, from a compact analytic model of the game's stellar-mass distribution.
+Phase 2 adds the decoration stars of the close view. Phase 3 makes the map a library and
+draws the host's real systems. Phase 4 adds selection and a HUD.
 
 ## Requirements
 
@@ -41,13 +42,91 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
+The dev server puts a demo data set on the map: 15 categories and 381 Guardian systems
+from [src/app/demo-systems.json](src/app/demo-systems.json), which
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names. The demo page adds them with the
+same `addCategories` and `addSystems` calls any host uses. The production build drops
+the data and the code that loads it, so `pnpm preview` and the browser tests open a map
+with an empty set. Open `#c=1500,0,-500&d=3000&p=35&y=0` to see the markers.
+
+## The entry point
+
+`createGalaxyMap(canvas, options)` in
+[src/app/create-map.ts](src/app/create-map.ts) builds a map. It returns a handle in the
+same tick, so the host can add its data before the first frame. The handle's `ready`
+promise settles when the map has loaded its scene data, and it rejects when the browser
+gives no WebGL2 context or the card reports a software renderer.
+
+The host groups its systems by category. A category carries a name, an RGB colour, an
+optional description, an optional marker style and an optional draw range. The name is
+the identity: a category added a second time replaces the first, and the replacement
+carries only the fields it names itself. Add the categories before the systems, because
+the reader rejects a record whose category the table does not hold.
+
+`markerStyle` is `glow` or `disc`, and it is `glow` when the category names none. A glow
+is a soft halo with four spikes and no ring. A disc is a filled circle with a dark ring.
+`maxDrawRange` is how far the camera may be from a system and still draw its marker, in
+light years. It is 120,000 when the category names none, which is the far zoom limit, so
+such a marker draws at every zoom the map reaches.
+
+```ts
+import { createGalaxyMap } from './app/create-map';
+
+const canvas = document.getElementById('map') as HTMLCanvasElement;
+const map = createGalaxyMap(canvas);
+
+map.addCategories([
+  { name: 'Empire', color: [153, 230, 255], description: 'Imperial space' },
+  { name: 'Federation', color: [255, 140, 60], markerStyle: 'disc' },
+  { name: 'Landmark', color: [255, 255, 255], maxDrawRange: 5000 },
+]);
+
+const report = map.addSystems([
+  { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Federation' },
+  {
+    name: 'Achenar',
+    coords: { x: 67.5, y: -119.46, z: 24.84 },
+    primaryCategory: 'Empire',
+  },
+]);
+console.log(report.added, report.replaced, report.rejected.length);
+
+await map.ready;
+```
+
+`addSystems` reads the record shape an EDSM or a Spansh dump gives. It keeps the
+optional fields the HUD needs, drops every other field, and reports each record it
+rejects with the reason. A record with an `id64`, or a name, that the set already holds
+replaces the earlier one. The set holds at most 10,000 systems and the category table at
+most 256 categories.
+
+The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCount`,
+`getView`, `setView`, `onViewChange`, `getRegionMode`, `setRegionMode`, `dispose` and a
+`debug` member the browser tests read. The region mode is `off`, `simplified` or
+`accurate`, and it is `simplified` unless the options name another. `simplified` draws
+the smoothed region boundary, `accurate` draws the traced boundary, which is the
+49.3494 light year staircase the region data holds, and `off` draws no boundary and
+places no label. A mode change takes effect in the next frame and does not rebuild the
+scene data. The library owns the render context, the scene data, the view, the controls and
+the frame loop. It does not read or write the URL: [src/app/main.ts](src/app/main.ts) is
+the demo page, and it owns the fragment, the message box and the test hooks.
+
+A marker draws for every system at every zoom distance, from 10 to 120,000 light years,
+while the camera is inside the draw range of the system's category.
+The invented star field fades out as the camera comes in: it draws in full at a zoom
+distance of 2,560 light years and adds no light at 640 and below, so the close view holds
+the host's systems and nothing the map invented. A decoration star within 3 light years
+of a real system is not drawn. That rule runs in the finest drawn size class alone, which
+covers the systems near the camera, so a coarser class can still draw a star beside a
+marker further out.
+
 ## Controls
 
 | Input           | What it does                                                                                     |
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.      |
 | Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.              |
-| Wheel           | Changes the distance by 1.15 per notch, between 500 and 120,000 light years.                     |
+| Wheel           | Changes the distance by 1.15 per notch, between 10 and 120,000 light years.                      |
 | `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second. |
 | `R` `F`         | Move the cursor up and down at the same speed.                                                   |
 
@@ -89,7 +168,7 @@ GALAXY_MAP_EXTRA_CHROMIUM_ARGS=--disable-gpu pnpm test:e2e e2e/00-renderer.spec.
 ## Layout
 
 ```
-src/app/            bootstrap, error messages, URL fragment
+src/app/            the entry point, the demo page, the URL fragment
 src/galaxy-model/   the model port, the parameter file, the detail grid, its types
 src/scene-data/     the point cloud, the density volume, the workers
 src/render/         the WebGL2 context, the passes, the shaders

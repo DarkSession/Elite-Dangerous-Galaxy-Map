@@ -444,28 +444,49 @@ export function smoothChain(
   return out;
 }
 
-/** Packs the smoothed chains of a trace into the boundary set the renderer reads. */
-export function packRegionLines(
+/**
+ * Drops the nodes of a chain that lie inside a straight run. A node whose edge in and
+ * edge out point the same way lies exactly on the line between its neighbours, so the
+ * line through the nodes that are left passes through the same points as the trace. Both
+ * ends stay, whatever their direction.
+ *
+ * The chain is a run of unit edges, so a direction is a pair of integers and the test is
+ * an equality and not a tolerance. The departure of the packed line from the trace is
+ * therefore 0 and not a small number.
+ */
+export function collapseChain(points: Float64Array): Float64Array {
+  const count = points.length / 2;
+  if (count <= 2) return points.slice();
+  const kept: number[] = [points[0] as number, points[1] as number];
+  for (let index = 1; index < count - 1; index += 1) {
+    const inX = (points[index * 2] as number) - (points[index * 2 - 2] as number);
+    const inZ = (points[index * 2 + 1] as number) - (points[index * 2 - 1] as number);
+    const outX = (points[index * 2 + 2] as number) - (points[index * 2] as number);
+    const outZ = (points[index * 2 + 3] as number) - (points[index * 2 + 1] as number);
+    if (inX === outX && inZ === outZ) continue;
+    kept.push(points[index * 2] as number, points[index * 2 + 1] as number);
+  }
+  kept.push(points[count * 2 - 2] as number, points[count * 2 - 1] as number);
+  return Float64Array.from(kept);
+}
+
+/** Packs a list of chains, each in cells, into the boundary set the renderer reads. */
+export function packChains(
   grid: RegionGrid,
-  trace: RegionTrace,
-  passes: number = REGION_SMOOTH_PASSES,
-  roundPasses: number = REGION_ROUND_PASSES,
+  chains: readonly Float64Array[],
 ): RegionLines {
-  const smoothed = trace.chains.map((chain) =>
-    smoothChain(chainPoints(chain), passes, roundPasses),
-  );
   let vertexCount = 0;
-  for (const chain of smoothed) vertexCount += chain.length / 2;
+  for (const chain of chains) vertexCount += chain.length / 2;
 
   const cell = grid.cell;
   const xLow = grid.origin[0] as number;
   const zLow = grid.origin[1] as number;
   const positions = new Float32Array(vertexCount * 3);
-  const first = new Uint32Array(smoothed.length);
-  const last = new Uint32Array(smoothed.length);
+  const first = new Uint32Array(chains.length);
+  const last = new Uint32Array(chains.length);
   let vertex = 0;
-  for (let index = 0; index < smoothed.length; index += 1) {
-    const chain = smoothed[index] as Float64Array;
+  for (let index = 0; index < chains.length; index += 1) {
+    const chain = chains[index] as Float64Array;
     first[index] = vertex;
     for (let read = 0; read < chain.length; read += 2) {
       positions[vertex * 3] = xLow + (chain[read] as number) * cell;
@@ -476,7 +497,32 @@ export function packRegionLines(
     last[index] = vertex - 1;
   }
 
-  return { chainCount: smoothed.length, vertexCount, positions, first, last };
+  return { chainCount: chains.length, vertexCount, positions, first, last };
+}
+
+/** Packs the smoothed chains of a trace into the boundary set the renderer reads. */
+export function packRegionLines(
+  grid: RegionGrid,
+  trace: RegionTrace,
+  passes: number = REGION_SMOOTH_PASSES,
+  roundPasses: number = REGION_ROUND_PASSES,
+): RegionLines {
+  return packChains(
+    grid,
+    trace.chains.map((chain) => smoothChain(chainPoints(chain), passes, roundPasses)),
+  );
+}
+
+/**
+ * Packs the chains of a trace as they were traced, with the straight runs collapsed. The
+ * result is the staircase the region data is: it departs from the trace by 0 and it keeps
+ * every 90 degree turn.
+ */
+export function packTracedLines(grid: RegionGrid, trace: RegionTrace): RegionLines {
+  return packChains(
+    grid,
+    trace.chains.map((chain) => collapseChain(chainPoints(chain))),
+  );
 }
 
 /** Traces the grid and gives the smoothed boundary set. */
@@ -511,19 +557,29 @@ export function buildCoarseRegionGrid(grid: RegionGrid): CoarseRegionGrid {
 
 /** What one region worker run gives the main thread. */
 export interface RegionData {
-  /** The boundary set the renderer draws. */
+  /** The smoothed boundary set, which the `simplified` mode draws. */
   readonly lines: RegionLines;
+  /** The traced boundary set, which the `accurate` mode draws. */
+  readonly traced: RegionLines;
   /** The coarse region grid the label placement samples. */
   readonly grid: CoarseRegionGrid;
 }
 
-/** Fills the grid, traces it and takes the coarse grid from it, in one call. */
+/**
+ * Fills the grid, traces it and takes the coarse grid from it, in one call. One trace
+ * serves both boundary sets, so the second set costs the region lookups nothing.
+ */
 export function buildRegionData(
   bounds: Range = galaxyModel.bounds,
   size: number = REGION_GRID_SIZE,
 ): RegionData {
   const grid = fillRegionGrid(bounds, size);
-  return { lines: traceRegionLines(grid), grid: buildCoarseRegionGrid(grid) };
+  const trace = traceRegionChains(grid);
+  return {
+    lines: packRegionLines(grid, trace),
+    traced: packTracedLines(grid, trace),
+    grid: buildCoarseRegionGrid(grid),
+  };
 }
 
 /** Fills the grid and traces it in one call. */

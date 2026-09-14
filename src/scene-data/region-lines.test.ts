@@ -3,10 +3,13 @@ import { galaxyModel } from '../galaxy-model/model';
 import { regionLinesTransferables } from './messages';
 import {
   buildCoarseRegionGrid,
+  buildRegionData,
   buildRegionLines,
   chainPoints,
+  collapseChain,
   fillRegionGrid,
   packRegionLines,
+  packTracedLines,
   REGION_CELL_LY,
   REGION_DEPARTURE_LY,
   REGION_GRID_SIZE,
@@ -33,11 +36,13 @@ const DEPARTURE_LIMIT = REGION_DEPARTURE_LY;
 let grid: RegionGrid;
 let trace: RegionTrace;
 let lines: RegionLines;
+let traced: RegionLines;
 
 beforeAll(() => {
   grid = fillRegionGrid();
   trace = traceRegionChains(grid);
   lines = packRegionLines(grid, trace);
+  traced = packTracedLines(grid, trace);
 }, 120000);
 
 /** A small grid with the ids written out, for the rules that need no real data. */
@@ -321,10 +326,14 @@ describe('the chain trace', () => {
     expect(trace.chains.length).toBe(123);
     expect(trace.chains.length).toBeGreaterThanOrEqual(100);
     expect(trace.chains.length).toBeLessThanOrEqual(200);
-    for (let index = 0; index < lines.chainCount; index += 1) {
-      const first = lines.first[index] as number;
-      const last = lines.last[index] as number;
-      expect(last - first + 1).toBeGreaterThanOrEqual(2);
+    expect(lines.chainCount).toBe(trace.chains.length);
+    expect(traced.chainCount).toBe(lines.chainCount);
+    for (const set of [lines, traced]) {
+      for (let index = 0; index < set.chainCount; index += 1) {
+        const first = set.first[index] as number;
+        const last = set.last[index] as number;
+        expect(last - first + 1).toBeGreaterThanOrEqual(2);
+      }
     }
   });
 
@@ -699,4 +708,111 @@ describe('the coarse region grid', () => {
     expect(coarseRegionIdAt(coarse, -1, 0)).toBe(0);
     expect(coarseRegionIdAt(coarse, 5, 25)).toBe(7);
   });
+});
+
+describe('the traced set', () => {
+  test('keeps a node only where the direction changes', () => {
+    // A straight run of five nodes collapses to its two ends, and a corner stays.
+    const straight = Float64Array.from([0, 0, 1, 0, 2, 0, 3, 0, 4, 0]);
+    expect(Array.from(collapseChain(straight))).toEqual([0, 0, 4, 0]);
+
+    const corner = Float64Array.from([0, 0, 1, 0, 2, 0, 2, 1, 2, 2]);
+    expect(Array.from(collapseChain(corner))).toEqual([0, 0, 2, 0, 2, 2]);
+
+    // A chain of two nodes has no interior node to drop.
+    const pair = Float64Array.from([3, 4, 3, 5]);
+    expect(Array.from(collapseChain(pair))).toEqual([3, 4, 3, 5]);
+  });
+
+  test('departs from the traced boundary by nothing', () => {
+    let drawnToTraced = 0;
+    let tracedToDrawn = 0;
+    for (let index = 0; index < trace.chains.length; index += 1) {
+      const nodes = tracedPolyline(grid, index);
+      const drawn = drawnPolyline(traced, index);
+      drawnToTraced = Math.max(
+        drawnToTraced,
+        worstGap(drawn, indexSegments(nodes), 0).measured,
+      );
+      tracedToDrawn = Math.max(
+        tracedToDrawn,
+        worstGap(nodes, indexSegments(drawn), 0).measured,
+      );
+    }
+    console.log('the departure of the traced set', { drawnToTraced, tracedToDrawn });
+    // The packed set holds `float32` coordinates. One step of a `float32` near 50,000 is
+    // 0.0078 light years, so a node can land half a step from where the trace put it and
+    // the departure of an exact packer is not 0 but a fraction of one step.
+    expect(drawnToTraced).toBeLessThanOrEqual(0.01);
+    expect(tracedToDrawn).toBeLessThanOrEqual(0.01);
+  }, 300000);
+
+  test('keeps every turn', () => {
+    let drawnTurn = 0;
+    let drawnLength = 0;
+    let nodeTurn = 0;
+    let nodeLength = 0;
+    for (let index = 0; index < trace.chains.length; index += 1) {
+      const drawn = turnOf(drawnPolyline(traced, index));
+      drawnTurn += drawn.turn;
+      drawnLength += drawn.length;
+      const nodes = turnOf(tracedPolyline(grid, index));
+      nodeTurn += nodes.turn;
+      nodeLength += nodes.length;
+    }
+    const drawnPer = (drawnTurn / drawnLength) * 1000;
+    const nodePer = (nodeTurn / nodeLength) * 1000;
+    console.log('the turn of the traced set', { drawnPer, nodePer });
+
+    // Collapsing the straight runs removes no turn and no length. The two readings part
+    // only by the `float32` rounding of the packed coordinates, so the bound is relative.
+    expect(Math.abs(drawnPer - nodePer) / nodePer).toBeLessThanOrEqual(1e-6);
+    expect(drawnPer).toBeGreaterThan(1000);
+  });
+
+  test('drops the straight runs', () => {
+    let nodeCount = 0;
+    for (const chain of trace.chains) nodeCount += chain.nodes.length / 2;
+    console.log('the traced set holds', traced.vertexCount, 'of', nodeCount, 'nodes', {
+      kiB: traced.positions.byteLength / 1024,
+    });
+
+    // The bound is a range and not the reading, so a package release that redraws a
+    // region fails "The package constants hold" and not this test.
+    expect(traced.vertexCount).toBeGreaterThanOrEqual(15000);
+    expect(traced.vertexCount).toBeLessThanOrEqual(40000);
+    expect(traced.vertexCount).toBeLessThan(nodeCount);
+    expect(traced.vertexCount).toBeLessThan(lines.vertexCount);
+    expect(traced.positions.length).toBe(traced.vertexCount * 3);
+    expect(traced.first.length).toBe(traced.chainCount);
+    expect(traced.last.length).toBe(traced.chainCount);
+  });
+
+  test('draws every chain on the plane', () => {
+    for (let vertex = 0; vertex < traced.vertexCount; vertex += 1) {
+      expect(traced.positions[vertex * 3 + 1]).toBe(0);
+    }
+    let previous = -1;
+    for (let index = 0; index < traced.chainCount; index += 1) {
+      expect(traced.first[index]).toBe(previous + 1);
+      previous = traced.last[index] as number;
+    }
+    expect(previous).toBe(traced.vertexCount - 1);
+  });
+
+  test('comes from the same trace as the smoothed set, and is deterministic', () => {
+    const data = buildRegionData();
+    expect(data.traced.chainCount).toBe(data.lines.chainCount);
+    expect(data.traced.chainCount).toBe(traced.chainCount);
+    expect(data.traced.vertexCount).toBe(traced.vertexCount);
+    expect(new Uint8Array(data.traced.positions.buffer)).toEqual(
+      new Uint8Array(traced.positions.buffer),
+    );
+    expect(new Uint8Array(data.traced.first.buffer)).toEqual(
+      new Uint8Array(traced.first.buffer),
+    );
+    expect(new Uint8Array(data.traced.last.buffer)).toEqual(
+      new Uint8Array(traced.last.buffer),
+    );
+  }, 240000);
 });

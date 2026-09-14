@@ -6,6 +6,7 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import { createGalaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import {
+  baseSizeClass,
   boxelEdge,
   boxelIndexAt,
   boxelOrigin,
@@ -13,22 +14,26 @@ import {
   DRAWN_BOXEL_COUNT,
   listDrawnBoxels,
   MAX_SIZE_CLASS,
+  starPosition,
+  STARS_PER_BOXEL,
 } from './boxel';
 import type { BoxelIndex } from './boxel';
+import { createSystemSet, SUPPRESSION_RADIUS_LY } from './real-systems';
+import type { RealSystemSet } from './real-systems';
+import { MASK_WORDS } from './star-suppression';
 import {
   boxelLight,
   calibration,
   CALIBRATION_AT_PEAK,
   CALIBRATION_AT_SOL,
   createStarField,
-  drawnStarCount,
+  placedStarCount,
   integrateDetailedMassDensity,
   MASS_INTEGRAL,
   PEAK_MASS_DENSITY,
   SOL_MASS_DENSITY,
   starRadius,
-  STARS_PER_BOXEL,
-  systemCount,
+  systemsInVolume,
 } from './star-field';
 
 const pngPath = fileURLToPath(
@@ -53,14 +58,14 @@ function boxelCentre(index: BoxelIndex, sizeClass: number): [number, number, num
 function countAt(position: [number, number, number], sizeClass: number): number {
   const centre = boxelCentre(boxelIndexAt(position, sizeClass), sizeClass);
   const density = model.detailedMassDensity(centre[0], centre[1], centre[2]);
-  return systemCount(density, boxelEdge(sizeClass) ** 3);
+  return systemsInVolume(density, boxelEdge(sizeClass) ** 3);
 }
 
 describe('the calibration', () => {
   test('reproduces the neighbourhood counts at Sol', () => {
     const density = model.detailedMassDensity(0, 0, 0);
-    expect(systemCount(density, 1000)).toBeCloseTo(3.8, 1);
-    expect(Math.abs(systemCount(density, 1000) - 3.8)).toBeLessThan(0.05);
+    expect(systemsInVolume(density, 1000)).toBeCloseTo(3.8, 1);
+    expect(Math.abs(systemsInVolume(density, 1000) - 3.8)).toBeLessThan(0.05);
 
     // The 20 light year boxel that holds Sol.
     expect(Math.abs(countAt([0, 0, 0], 1) - 30)).toBeLessThan(1);
@@ -75,7 +80,7 @@ describe('the calibration', () => {
           const py = y + step / 2;
           const pz = z + step / 2;
           if (px * px + py * py + pz * pz > 100 * 100) continue;
-          total += systemCount(model.detailedMassDensity(px, py, pz), step ** 3);
+          total += systemsInVolume(model.detailedMassDensity(px, py, pz), step ** 3);
         }
       }
     }
@@ -116,19 +121,19 @@ describe('the calibration', () => {
   });
 });
 
-describe('the drawn count', () => {
+describe('the placed count', () => {
   test('holds at the cap of 256', () => {
-    expect(drawnStarCount(0.4)).toBe(0);
-    expect(drawnStarCount(0.6)).toBe(1);
-    expect(drawnStarCount(255.4)).toBe(255);
-    expect(drawnStarCount(256)).toBe(STARS_PER_BOXEL);
-    expect(drawnStarCount(1e9)).toBe(STARS_PER_BOXEL);
+    expect(placedStarCount(0.4)).toBe(0);
+    expect(placedStarCount(0.6)).toBe(1);
+    expect(placedStarCount(255.4)).toBe(255);
+    expect(placedStarCount(256)).toBe(STARS_PER_BOXEL);
+    expect(placedStarCount(1e9)).toBe(STARS_PER_BOXEL);
   });
 
-  test('draws no star in empty space', () => {
+  test('places no star in empty space', () => {
     for (let sizeClass = 0; sizeClass <= MAX_SIZE_CLASS; sizeClass += 1) {
       const count = countAt([0, 20000, 0], sizeClass);
-      expect(drawnStarCount(count), `size class ${sizeClass}`).toBe(0);
+      expect(placedStarCount(count), `size class ${sizeClass}`).toBe(0);
     }
   });
 });
@@ -165,14 +170,14 @@ describe('a boxel light', () => {
       const density = model.detailedMassDensity(centre[0], centre[1], centre[2]);
       const volume = boxelEdge(place.sizeClass) ** 3;
       const light = boxelLight(starLight, density, volume);
-      const drawn = drawnStarCount(systemCount(density, volume));
+      const drawn = placedStarCount(systemsInVolume(density, volume));
       expect(drawn).toBeGreaterThan(0);
       const product = (light / drawn) * drawn;
       expect(Math.abs(product - light) / light).toBeLessThan(1e-6);
     }
 
     // The second boxel is 100 times over the cap, the first is under it.
-    expect(drawnStarCount(countAt([0, 0, 0], 1))).toBeLessThan(STARS_PER_BOXEL);
+    expect(placedStarCount(countAt([0, 0, 0], 1))).toBeLessThan(STARS_PER_BOXEL);
     const core: [number, number, number] = [
       model.centre[0] + 2000,
       model.centre[1],
@@ -184,13 +189,13 @@ describe('a boxel light', () => {
 
 describe('a star radius', () => {
   test('grows with the spacing of the stars the boxel draws', () => {
-    const solDrawn = drawnStarCount(countAt([0, 0, 0], 1));
+    const solDrawn = placedStarCount(countAt([0, 0, 0], 1));
     const core: [number, number, number] = [
       model.centre[0] + 2000,
       model.centre[1],
       model.centre[2],
     ];
-    const coreDrawn = drawnStarCount(countAt(core, 7));
+    const coreDrawn = placedStarCount(countAt(core, 7));
     expect(coreDrawn).toBe(STARS_PER_BOXEL);
     const sol = starRadius(boxelEdge(1), solDrawn);
     const wide = starRadius(boxelEdge(7), coreDrawn);
@@ -265,5 +270,163 @@ describe('the boxel table', () => {
     // A move to the next boxel of the base class reads the set again.
     field.update([24, 4, 4], 500);
     expect(field.recomputeCount).toBe(after + 1);
+  });
+});
+
+describe('suppression in the boxel table', () => {
+  /** The three stars of a boxel that no other star of it comes within the radius of. */
+  function isolatedStars(
+    index: BoxelIndex,
+    sizeClass: number,
+    placed: number,
+  ): [number, number, number][] {
+    const stars: [number, number, number][] = [];
+    for (let star = 0; star < placed; star += 1) {
+      stars.push(starPosition(index, sizeClass, star));
+    }
+    const chosen: [number, number, number][] = [];
+    for (const star of stars) {
+      const near = stars.some(
+        (other) =>
+          other !== star &&
+          Math.hypot(other[0] - star[0], other[1] - star[1], other[2] - star[2]) <=
+            SUPPRESSION_RADIUS_LY,
+      );
+      if (!near) chosen.push(star);
+      if (chosen.length === 3) break;
+    }
+    return chosen;
+  }
+
+  /** The camera and the view the suppression tests read. */
+  const camera: [number, number, number] = [0, 0, 0];
+  const distance = 500;
+
+  /** The table index of the boxel of the base class that holds a position. */
+  function baseRecordOf(position: [number, number, number]): number {
+    const sizeClass = baseSizeClass(distance);
+    const target = boxelIndexAt(position, sizeClass);
+    const boxels = listDrawnBoxels(camera, distance);
+    return boxels.findIndex(
+      (boxel) =>
+        boxel.sizeClass === sizeClass &&
+        boxel.index[0] === target[0] &&
+        boxel.index[1] === target[1] &&
+        boxel.index[2] === target[2],
+    );
+  }
+
+  /** A set that holds the positions a test names. */
+  function setOf(positions: readonly [number, number, number][]): RealSystemSet {
+    const set = createSystemSet();
+    set.addCategories([{ name: 'A', color: [1, 2, 3] }]);
+    set.addSystems(
+      positions.map((position, slot) => ({
+        name: `s${slot}`,
+        coords: { x: position[0], y: position[1], z: position[2] },
+        primaryCategory: 'A',
+        id64: slot + 1,
+      })),
+    );
+    return set;
+  }
+
+  test('writes a mask row for a boxel with a system and a zero row for one without', () => {
+    const sizeClass = baseSizeClass(distance);
+    const solBoxel = boxelIndexAt([0, 0, 0], sizeClass);
+    const empty = createStarField(model, { starLight: 0.4185 });
+    const placed = empty.update(camera, distance).values;
+    const solRecord = baseRecordOf([0, 0, 0]);
+    expect(solRecord).toBeGreaterThanOrEqual(0);
+    const solPlaced = placed[solRecord * 9 + 4] as number;
+    expect(solPlaced).toBeGreaterThan(0);
+
+    const stars = isolatedStars(solBoxel, sizeClass, solPlaced);
+    expect(stars.length).toBe(3);
+    const field = createStarField(model, {
+      starLight: 0.4185,
+      systems: setOf(stars),
+    });
+    const table = field.update(camera, distance);
+
+    let solWords = 0;
+    for (let word = 0; word < MASK_WORDS; word += 1) {
+      if ((table.mask[solRecord * MASK_WORDS + word] as number) !== 0) solWords += 1;
+    }
+    expect(solWords).toBeGreaterThan(0);
+
+    // A boxel of the same class two boxels away holds no system at all.
+    const otherRecord = baseRecordOf([0, 0, 2 * boxelEdge(sizeClass)]);
+    expect(otherRecord).toBeGreaterThanOrEqual(0);
+    for (let word = 0; word < MASK_WORDS; word += 1) {
+      expect(table.mask[otherRecord * MASK_WORDS + word]).toBe(0);
+    }
+  });
+
+  test('does not change a boxel light', () => {
+    const sizeClass = baseSizeClass(distance);
+    const solBoxel = boxelIndexAt([0, 0, 0], sizeClass);
+    const record = baseRecordOf([0, 0, 0]);
+    const empty = createStarField(model, { starLight: 0.4185 });
+    empty.update(camera, distance);
+    const before = empty.record(record);
+
+    const stars = isolatedStars(solBoxel, sizeClass, before.placed);
+    expect(stars.length).toBe(3);
+    const field = createStarField(model, {
+      starLight: 0.4185,
+      systems: setOf(stars),
+    });
+    field.update(camera, distance);
+    const after = field.record(record);
+
+    expect(after.drawn).toBe(before.drawn - 3);
+    expect(after.suppressed).toBe(3);
+    const first = before.lightPerStar * before.drawn;
+    const second = after.lightPerStar * after.drawn;
+    expect(Math.abs(second - first) / first).toBeLessThan(1e-6);
+  });
+
+  test('does not change the star radius', () => {
+    const sizeClass = baseSizeClass(distance);
+    const solBoxel = boxelIndexAt([0, 0, 0], sizeClass);
+    const record = baseRecordOf([0, 0, 0]);
+    const empty = createStarField(model, { starLight: 0.4185 });
+    empty.update(camera, distance);
+    const before = empty.record(record);
+
+    const field = createStarField(model, {
+      starLight: 0.4185,
+      systems: setOf(isolatedStars(solBoxel, sizeClass, before.placed)),
+    });
+    field.update(camera, distance);
+
+    expect(field.record(record).radius).toBe(before.radius);
+    expect(field.record(record).placed).toBe(before.placed);
+  });
+
+  test('reports the drawn count and the suppressed count', () => {
+    const sizeClass = baseSizeClass(distance);
+    const solBoxel = boxelIndexAt([0, 0, 0], sizeClass);
+    const empty = createStarField(model, { starLight: 0.4185 });
+    const before = empty.update(camera, distance);
+    expect(before.suppressedStars).toBe(0);
+
+    const record = baseRecordOf([0, 0, 0]);
+    const placed = empty.record(record).placed;
+    const set = setOf(isolatedStars(solBoxel, sizeClass, placed));
+    const field = createStarField(model, { starLight: 0.4185, systems: set });
+    const after = field.update(camera, distance);
+
+    expect(after.suppressedStars).toBe(3);
+    expect(after.drawnStars).toBe(before.drawnStars - 3);
+  });
+
+  test('sweeps nothing while the system set is empty', () => {
+    const set = createSystemSet();
+    const field = createStarField(model, { starLight: 0.4185, systems: set });
+    const table = field.update(camera, distance);
+    expect(field.sweptCount).toBe(0);
+    expect(table.suppressedStars).toBe(0);
   });
 });

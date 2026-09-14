@@ -3,14 +3,18 @@ import { galaxyModel } from '../galaxy-model/model';
 import {
   cameraPosition,
   inverseViewProjection,
+  nearPlane,
   planePoint,
   planePointFrom,
   project,
   rayDirection,
   rayDirectionFrom,
+  relativeToCamera,
   toWorld,
+  viewProjectionMatrix,
 } from './projection';
-import { createDefaultView } from './view';
+import { ZOOM_PER_NOTCH } from './controls';
+import { createDefaultView, MAX_DISTANCE, MIN_DISTANCE } from './view';
 import type { View } from './view';
 
 const viewport = { width: 1920, height: 1080 };
@@ -113,6 +117,51 @@ describe('the reused inverse', () => {
       for (let axis = 0; axis < 3; axis += 1) {
         expect(shared[axis]).toBe(alone[axis]);
       }
+    }
+  });
+});
+
+describe('the near plane', () => {
+  test('is a tenth of the zoom distance under 100 light years and 10 above', () => {
+    const distances = [10, 50, 100, 500, 20000, 120000];
+    const expected = [1, 5, 10, 10, 10, 10];
+    for (let index = 0; index < distances.length; index += 1) {
+      expect(nearPlane(distances[index] as number)).toBeCloseTo(
+        expected[index] as number,
+        9,
+      );
+    }
+  });
+
+  // The cursor sits exactly one zoom distance from the camera, so a fixed near plane of
+  // 10 light years would clip it at the closest zoom.
+  test('never clips the cursor, at any zoom distance and either pitch limit', () => {
+    const viewport = { width: 1920, height: 1080 };
+    for (const pitch of [5, 89]) {
+      let distance = MAX_DISTANCE;
+      let steps = 0;
+      for (;;) {
+        const view: View = { cursor: [0, 0, 0], distance, yaw: 40, pitch };
+        const screen = project(view, view.cursor, viewport);
+        expect(screen.inFront).toBe(true);
+        // The clip `w` is the distance along the view axis, and the near plane cuts at
+        // `nearPlane(distance)`, so the cursor is in front of it when `w` is larger.
+        const relative = relativeToCamera(view, view.cursor);
+        const matrix = viewProjectionMatrix(view, viewport);
+        const clipW =
+          matrix[3] * relative[0] +
+          matrix[7] * relative[1] +
+          matrix[11] * relative[2] +
+          matrix[15];
+        expect(clipW).toBeGreaterThan(nearPlane(distance));
+        expect(Math.abs(screen.x - viewport.width / 2)).toBeLessThan(1);
+        expect(Math.abs(screen.y - viewport.height / 2)).toBeLessThan(1);
+        if (distance <= MIN_DISTANCE) break;
+        distance = Math.max(MIN_DISTANCE, distance / ZOOM_PER_NOTCH);
+        steps += 1;
+        expect(steps).toBeLessThan(200);
+      }
+      expect(steps).toBe(68);
     }
   });
 });
