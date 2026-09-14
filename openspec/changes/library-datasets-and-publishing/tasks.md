@@ -1,0 +1,369 @@
+## 1. The library build
+
+- [ ] 1.1 Add `src/index.ts`, which re-exports `createGalaxyMap` and the types the
+      requirement "The library build emits a package and no page" lists, and does not
+      export `GalaxyMapDebug`. Verify with a unit test that reads the module's exported
+      names and asserts the list.
+- [ ] 1.2 Add `tsconfig.build.json`, which extends the project configuration, sets
+      `declaration` and `emitDeclarationOnly` and writes to `dist/types`. Verify by
+      running it and reading `dist/types/index.d.ts`.
+- [ ] 1.3 Add `vite.config.lib.ts`: library mode, entry `src/index.ts`, `formats: ['es']`,
+      `outDir: 'dist'`, `publicDir: false` so no file of `public/` is copied into the
+      package, code splitting left on, and `gl-matrix` and
+      `@elite-dangerous-almanac/core` external by a pattern that also matches their
+      subpaths. Set `worker.rollupOptions` as well, because Vite builds a worker through
+      that. Verify the build emits the entry chunk, the three worker chunks, the HUD chunk
+      and the three font assets, and no HTML file and no file of `public/`.
+- [ ] 1.3a Add a test that reads every emitted worker chunk for a bare import. Verify it
+      fails when `@elite-dangerous-almanac/core/astro/codex-region-lookup` is left external
+      in a worker, and passes when the worker bundles it.
+- [ ] 1.4 Point `pnpm build` at the type check, then the Vite library build, then the type
+      emit, in that order, and add `pnpm build:demo-site` for the page build. The Vite
+      build empties `dist/`, so the declarations are written after it. Verify both scripts
+      run clean from a clean tree and `dist/types/index.d.ts` is still there afterwards.
+- [ ] 1.5 Give `package.json` `exports`, `types` and `files`, and drop `private`. Verify a
+      unit test reads the fields and asserts each named path is in the build output.
+- [ ] 1.6 Move `tests/main-bundle.test.ts` onto the library entry chunk, keeping the
+      170,000 byte bound, and add the HUD chunk check. Write the first library readings
+      into the test and into `specs/library-package/spec.md`, which today carries the page
+      build's 152,506 and 27,419. Read them from a fresh build and not from the `dist/` in
+      the tree. Verify the test passes and reports both sizes.
+- [ ] 1.7 Add a test that runs the library build into a temporary directory and asserts no
+      `.html` file, no demo system name and no `galaxy-map-ready` text in any emitted file.
+
+## 2. The typed record input
+
+- [ ] 2.1 Add `CategoryInput` and `SystemRecordInput` to `src/scene-data/real-systems.ts`,
+      with the fields the requirement "The record input is typed" states, each type
+      allowing unknown extra fields and `id64` taking a number, a string or a `bigint`.
+- [ ] 2.2 Change `addCategories` and `addSystems` to take `readonly CategoryInput[]` and
+      `readonly SystemRecordInput[]`, on the reader and on the handle. Verify
+      `pnpm build` type-checks with no cast inside the library.
+- [ ] 2.3 Add a type test that compiles a well-formed record and asserts that a record
+      with no `primaryCategory`, and one whose `coords` hold strings, fail to compile.
+- [ ] 2.4 Verify the run-time reader is unchanged: the existing rejection tests still pass
+      and a cast array with no name still reports `no-name`.
+
+## 3. The demo site build
+
+- [ ] 3.1 Set `base: '/Elite-Dangerous-Galaxy-Map/'` and `build.outDir: 'dist-demo'` in
+      `vite.config.ts`. Verify a unit test reads the built `index.html` for the base path,
+      and a test runs both builds in turn and asserts neither directory overwrites the
+      other.
+- [ ] 3.2 Move the demo data to `demo-data/`, point `src/app/main.ts` and
+      `src/app/demo-systems.test.ts` at the new path, and drop the `import.meta.env.DEV`
+      guard that keeps the data out of the build today. Verify the dev server draws the
+      set, the unit test passes and the library build holds no record from it.
+- [ ] 3.3 Point `playwright.config.ts` at `pnpm build:demo-site && pnpm preview` and set
+      the base URL to `http://localhost:4173/Elite-Dangerous-Galaxy-Map/`. Verify the
+      suite starts and the first test reads `window.galaxyMap`.
+- [ ] 3.4 Make every navigation in `e2e/` relative: `e2e/helpers.ts` and the direct
+      `page.goto` calls in `00-renderer`, `labels`, `systems` and `scene-data`. Verify a
+      unit test finds no `page.goto` call that starts with `/`, and a browser test opens a
+      view fragment and reads back the view it named.
+- [ ] 3.5 Make `openMap` in `e2e/helpers.ts` call `clearSystemsAndCategories()` after
+      `ready` settles, and take an option that keeps the demo set. Verify a browser test
+      reads 0 systems with no option and 212 with it.
+- [ ] 3.6 Audit the suite for tests that need the demo set and pass the option to those
+      alone. About 188 tests read a marker count, a category count or a frame; the 62 of
+      `hud.spec.ts` build their own map and are untouched, and the 7 of `labels.spec.ts`
+      come through task 3.8. Verify the whole suite passes
+      and the far-view baseline image test passes against the committed image with no new
+      baseline.
+- [ ] 3.7 Rewrite the requirement "The demo page loads the Guardian Ruins data set" in the
+      places it reaches the tree: the browser suite may now put the set on the map but no
+      browser test may select a record of it, because the panel would fetch a thumbnail
+      from another host. Verify the search in `e2e/` finds no `ruins.canonn.tech` and no
+      such selection, and the blocked-request scenario still passes.
+- [ ] 3.8 Give the four direct navigators the same start state the helper gives:
+      `00-renderer`, `labels`, `scene-data` and the two direct calls of `systems` open the
+      demo page with their own `page.goto`, so neither the set clear of task 3.5 nor the
+      grid switch-off of task 12.11 reaches them. Route each one through the helper, or
+      give its own opener the same two calls. Verify a unit test finds no `page.goto` of
+      the demo page in `e2e/` outside a helper that carries the start state.
+
+## 4. A system belongs to every category it names
+
+- [ ] 4.1 Change `refreshFlags` in `src/scene-data/real-systems.ts` to set a system's flag
+      when any of its categories is on, keeping the colour and the style of the primary
+      category. Verify with a unit test over a system in two categories, switching each.
+- [ ] 4.2 Add a unit test that measures one sweep over 10,000 systems of 4 categories and
+      asserts it is under 2 milliseconds.
+- [ ] 4.3 Change `readSystems` in `src/hud/categories.ts` to bucket a system into every
+      category it names. Verify the counts and the lists with a browser test over a system
+      in `A` and `B`.
+- [ ] 4.4 Add the browser scenario that reads the three Guardian Ruins rows and asserts
+      the counts add up to more than `systemCount`.
+
+## 5. The copy buttons
+
+- [ ] 5.1 Add the copy button beside the system name and in the position field of
+      `src/hud/info-panel.ts`, each with the accessible names `Copy system name`,
+      `Copy position` and `Copied`.
+- [ ] 5.2 Write the name as it is, and the position as `x / y / z` in whole numbers with
+      no thousands separator, while the panel keeps its separators. Verify with a browser
+      test that reads the clipboard after a click on each.
+- [ ] 5.3 Hold the tick for 1.4 seconds, with one tick at a time and a click on the second
+      button moving it. Verify with a browser test that reads both buttons at once and
+      again after 1.6 seconds.
+- [ ] 5.4 Catch a refused clipboard write, show no tick, throw nothing out of the HUD and
+      change no selection. Verify with a browser test that replaces the write with one
+      that rejects and then draws 10 frames.
+
+## 6. The loading image
+
+- [ ] 6.1 Add `loadingImage` to `GalaxyMapOptions` and show the image in the **canvas's
+      parent**, not in the label host, which a host may supply as an element of its own.
+      Centre it within 1 CSS pixel of the canvas's middle. Verify with a browser test
+      that reads the element's box against the canvas's box.
+- [ ] 6.2 Remove the image when `ready` settles, whether it settles or fails, and on
+      `dispose()`. Verify with a browser test on a map whose start load rejects.
+- [ ] 6.3 Pass the URL through the `safeImageUrl` scheme check, and add no element when
+      the options name no image or the URL is refused. Verify with unit tests over a
+      `javascript:` URL and over no option.
+- [ ] 6.4 Name `public/EDLoader1.svg`, which the repository already holds, as the demo
+      page's `loadingImage` in `src/app/main.ts`, building the URL from
+      `import.meta.env.BASE_URL` so it carries the site's base path, and record the file,
+      its source
+      `https://edassets.org/static/img/svg/EDLoader1.svg` and its terms in
+      `THIRD_PARTY_NOTICES.md`, saying that ED Assets states no licence on it. Verify the
+      demo page shows the loader while the map starts, the built site serves it under its
+      own base path, and the blocked-request browser test records no request to another
+      host.
+
+## 7. The region boundary: the wash and the near fade
+
+- [ ] 7.1 Set the washed tones and the opacity in `src/render/region-pass.ts`: core
+      `(0.505, 0.658, 0.853)`, outline `(0.125, 0.172, 0.267)`, opacity `0.42`. Verify
+      with a unit test that asserts the contrast falls to 51 percent of what it was.
+- [ ] 7.2 Change the coverage target from `R8` to `RG8` and keep the `MAX` blend on both
+      channels. Verify the pass still draws, the join test still passes, and the frame
+      budget scenarios still hold at a 20,000 light year view with a full set.
+- [ ] 7.3 Pass the two endpoint camera distances from `regions.vert` to `regions.frag`,
+      work out the near fade at the pixel's nearest point on the segment, and write it to
+      the green channel. Verify with a unit test over the fade function: 0 at 200 light
+      years and below, 1 at 1,500 and above, smooth between.
+- [ ] 7.4 Multiply the two channels into the alpha in `region-composite.frag`. Verify with
+      the browser scenario that reads the overlay's contribution at 1,500, 500 and 150
+      light years in both modes.
+- [ ] 7.5 Add a chooser to `tests/region-views.ts` that finds a cursor and a yaw for which
+      one chain runs from the lower edge of the frame to the cursor, at a pitch of 5
+      degrees, and export the view it found from `e2e/region-views.ts`. Verify
+      `tests/region-views.test.ts` re-runs the search and reads the same constant.
+- [ ] 7.5a Add the browser scenario that opens that view and asserts the contribution at
+      the lower edge is below a third of the contribution at the cursor, on the same chain.
+- [ ] 7.6 Verify the label overlay does not take the near fade: the existing label
+      scenarios pass at a close zoom.
+- [ ] 7.7 Re-derive the chosen corner views in `tests/region-views.ts`: `findSharpCorner`
+      and `findTracedCorner` hard-code a zoom of 500 light years, where the near fade now
+      draws nothing, so move both to **1,600** and raise the crossing search's lower bound
+      from 600 to 1,500. Verify `tests/region-views.test.ts` passes.
+- [ ] 7.7a Write the new constants into `e2e/region-views.ts`: `SHARP_CORNER` and
+      `TRACED_CORNER` gain the new distance, `lightYearsPerPixel` and chosen vertex.
+      `VERTICAL_CROSSING` sits at 1,875, which is above the fade band, so verify it is
+      unchanged. Rewrite the doc comments of `findSharpCorner`, `findTracedCorner` and
+      `findPointNearBothSets`, which name the 500 and 10 light year zooms the fade removes.
+- [ ] 7.7b Change `CLOSE_DISTANCES` in `e2e/regions.spec.ts` from `[1500, 500, 10]` to the
+      two distances the scenario "The boundary still draws at the closest zoom" now names,
+      4,000 and 1,500. Verify that scenario passes in both modes.
+- [ ] 7.7c Re-run the four-CSS-pixel width scenario and the two join scenarios against the
+      new constants, and verify they pass with the washed tones and the near fade.
+- [ ] 7.8 Record the reversal of the phase 3.1 decision in `docs/roadmap.md`.
+
+## 8. The label glide
+
+- [ ] 8.1 Add `glideAnchor` to `src/app/labels.ts`: move the carried plane point 8 percent
+      of the gap toward the frame's target, and scale the step down when its screen move
+      is over 4 CSS pixels. Verify with unit tests on the step size and the cap.
+- [ ] 8.2 Replace the hold in `labelCandidates` with the glide, dropping a carried point
+      that no longer resolves to its region or no longer projects inside the frame.
+      Verify with a unit test that a dropped point takes the target whole.
+- [ ] 8.3 Add the browser scenario that pushes a label to the frame edge, brings the
+      region back into full view, and asserts the label reaches the region's middle in
+      under half a second.
+- [ ] 8.4 Verify the settled-anchor bound still holds: a camera turn of 0.1 degrees moves
+      the anchor by more than nothing and by less than 8 CSS pixels.
+
+## 9. The three demo data sets
+
+- [ ] 9.1 Split `scripts/build-demo-systems.mjs` into one exported converter per source,
+      with the fetch and the file write in the entry part alone. Verify the Guardian Ruins
+      converter test still passes over its committed fixture.
+- [ ] 9.2 Add the Guardian Structures converter: one record per system, the first site
+      type as `primaryCategory` and the rest as `secondaryCategories`. Verify the
+      conversion rules with a committed fixture extract, as the Guardian Ruins converter
+      does, and verify the 163 systems and 10 categories against the committed
+      `demo-data/guardian-structures.json` that the entry part writes. The repository
+      commits no dump.
+- [ ] 9.3 Add the Notable Systems converter, with the `html` field turned into plain text:
+      tags removed, character references decoded, paragraphs joined by a blank line.
+      Verify with a fixture test that the description holds no `<` or `>` and holds the
+      decoded `&`.
+- [ ] 9.4 Write the three files into `demo-data/`, and verify every record each converter
+      emits passes `addSystems` with no rejection.
+- [ ] 9.5 Record the two new Canonn sources in `THIRD_PARTY_NOTICES.md`. Verify the
+      notices unit test reads `Guardian Structures`, `Notable Systems` and `EDLoader1.svg`
+      beside the four names it reads today.
+
+## 10. The dataset catalog
+
+- [ ] 10.1 Add `src/app/datasets.ts`: the catalog reader with the drop reasons `no-id`,
+      `no-load` and `duplicate-id`, and the 256 entry cap. Verify with a unit test over
+      five entries that reads two kept and three reported.
+- [ ] 10.2 Add `datasets` and `dataset` to `GalaxyMapOptions`, and `getDatasets`,
+      `getLoadedDataset`, `loadDataset` and `onDatasetChange` to the handle. Verify with a
+      unit test that `getDatasets` carries no `load` function.
+- [ ] 10.3 Make `loadDataset` call `load()`, then `clearSystemsAndCategories()`, then
+      `addCategories` and `addSystems`, and clear the selection and the name filter.
+      Verify with browser tests on a good load and on a rejected one, and measure a switch
+      of a full 10,000 system set against the 40 millisecond budget.
+- [ ] 10.4 Add the load counter so a later call wins and an earlier one rejects as
+      cancelled. Verify with the browser scenario over a slow load and a fast one.
+- [ ] 10.5 Load one set at start, from `dataset` or the first entry, and settle `ready`
+      whether or not it succeeds. Verify with a browser test whose start load rejects.
+
+## 11. The dataset field and dialog
+
+- [ ] 11.1 Add the dataset field to `src/hud/top-bar.ts`, beside the region name and not
+      in place of it, and only when the catalog holds an entry. Verify with the browser
+      scenario over a map with a catalog and one without.
+- [ ] 11.2 Add `src/hud/dataset-dialog.ts`: the filter, the list grouped by `collection`
+      with an `OTHER` group, the 120 row cap and the detail pane. Verify with browser
+      tests on the filter and on 130 entries over 3 collections.
+- [ ] 11.3 Add **cancel** and **load dataset**, with `CURRENTLY LOADED` on the loaded
+      entry and no second load while one runs. Verify with browser tests on each button.
+- [ ] 11.4 Hold the focus in the dialog, give it back to the dataset field on close, and
+      put the dialog first in the `Escape` order: dialog, then lightbox, then selection.
+      Verify with browser tests on the focus, on the tab order and on the two-step
+      `Escape` with a dialog open and a system selected.
+- [ ] 11.5 Verify the dialog calls no `load()` to fill itself: a browser test counts the
+      calls after opening, filtering and clicking each entry.
+- [ ] 11.6 Give the demo page the three-entry catalog. Verify the browser scenario that
+      loads each set in turn and reads 212/3, 163/10 and 16/4.
+- [ ] 11.7 Verify `src/hud/` still passes the import rule: it reads the four handle
+      members and imports nothing from `src/render/`, `src/scene-data/` or `src/camera/`.
+
+## 12. The coordinate grid
+
+- [ ] 12.1 Add `onGridChange(fn)` to the handle in `src/app/create-map.ts`, beside
+      `onSelectionChange`. Call every listener inside `setGridVisible`, which is the one
+      member the HUD switch calls as well. Return an unsubscribe. Verify with a unit test
+      that a listener runs on each move, does not run when the switch is set to the value
+      it already holds, and does not run after it unsubscribes.
+- [ ] 12.2 Add the camera distance band to `src/render/grid-pass.ts`:
+      `GRID_NEAR_FULL_LY = 4000`, `GRID_FAR_NONE_LY = 12000` and a pure
+      `gridVisibility(distance)` that smooth steps between them. Multiply it into every
+      level's alpha through one uniform in `grid.frag`. The band reads 1 at 4,000 light
+      years and at every nearer zoom, and 0 at 12,000 and further. Verify with unit tests at
+      3,000, 4,000, 8,000, 12,000 and 60,000 light years.
+- [ ] 12.3 Skip the draw when `gridVisibility` gives 0, so the three probes read what they
+      read for a grid that is off: no vertices, no spacing and no levels. The comment at
+      `src/render/renderer.ts` that states that invariant stays true and does not change.
+      Report the band in the alpha of `gridLevels()`, so the probe reads the alpha the
+      frame holds. Verify with a unit test and with a browser test that reads all three
+      probes at 3,000 and at 60,000 light years, and the alpha of the 1,000 light year
+      level at 8,000 and at 4,000, where the first is half the second.
+- [ ] 12.4 Re-derive the two browser scenarios the band empties, as task 7.7 re-derives the
+      region views:
+      - `e2e/grid.spec.ts` "draws three vertices in one call at every zoom" reads 10, 1,000
+        and 120,000 light years. Move the last reading inside the band, and add a reading at
+        120,000 that asserts 0 vertices, 0 spacing and no levels.
+      - `e2e/grid.spec.ts` "stops at the model bounds" runs at 120,000 light years, where
+        nothing now draws. Move it to 3,000 light years, which is inside the band and not on
+        its endpoint. The cursor clamp still puts the cursor on the upper `x` bound. One CSS
+        pixel covers about 3.2 light years there, against about 128 at 120,000, so the
+        tolerance of 600 light years becomes **30**, about nine CSS pixels. The comment in
+        that test names 192 light years for one pixel at 120,000; the reading is 128, so
+        correct it or drop it with the old view.
+      The `coordinate-grid` delta already holds both readings, and it amends the prose of
+      "The grid draws in one call of three vertices", which read "whatever the zoom
+      distance": a closed band draws no call at all.
+- [ ] 12.5 Add a browser test that reads the drawn pixels at the start view of 60,000 light
+      years with the grid on and with it off, and verify the two frames hold the same
+      pixels, so a wide view carries no grid at all.
+- [ ] 12.6 Carry the model bounds in `GridLabelFrame` and drop a crossing that falls outside
+      them on the game x or z axis, as `grid.frag` already discards such a fragment. Verify
+      with a unit test that the sweep places no label past 50,015 on x or 75,895 on z, and
+      with a browser test at the upper x bound at a zoom of 1,000 light years and a pitch of
+      89 degrees, where the crossing at 51,000 projects inside the frame: no label names an
+      x above the bound, and one names 50,000.
+- [ ] 12.7 Add `GRID_LABEL_MIN_ALPHA = 0.09` and drop a crossing whose level does not read
+      there. Work out the level's drawn alpha at the crossing: project the crossing and the
+      two points one spacing along the game x and z axes, take the greater of the two gaps,
+      read the level's base alpha and screen fade from it, and multiply by
+      `gridVisibility(distance)`, which `GridLabelFrame` carries. Keep the crossing only
+      when the reading holds the floor. 0.09 is what a level gives at 24 CSS pixels with the
+      band open, the middle of the fade band; the floor of 8 CSS pixels is where the alpha
+      reaches 0. Verify with unit tests: a crossing whose two gaps are both under 24 CSS
+      pixels is dropped; one whose x lines are compressed at a grazing pitch but whose z gap
+      holds keeps its label; and at 11,500 light years, where the label level still measures
+      813 CSS pixels but the band reads 0.011, the sweep places no label.
+      Import `gridLevelAlpha` and `gridVisibility` from `src/render/grid-pass.ts` rather
+      than copying 0.18, 8 and 40 into `src/app/`, so one module owns the alpha rule. No
+      lint rule forbids the import; correct the header comment of `src/app/grid-labels.ts`,
+      which says one does. Verify with a unit test that the gate's reading equals
+      `gridLevelAlpha` times `gridVisibility` at the same spacing and distance.
+- [ ] 12.8 Add a browser test at 3,000 light years that reads each placed label's position,
+      reads the drawn pixel there with the grid on, and verifies every label sits on a lit
+      pixel and the count stays under `MAX_GRID_LABELS`. Add a second reading at 11,500
+      light years, inside the band, and verify the overlay holds no label there.
+- [ ] 12.9 Add the grid field to `src/app/url-view.ts`, keeping every signature the existing
+      tests read:
+      - `formatViewFragment(view, grid)` takes a second argument and writes `&g=1` or
+        `&g=0` only when it is a boolean, so a call with one argument still gives
+        `c=0,0,0&d=30000&p=35&y=0`, which `src/app/url-view.test.ts` asserts.
+      - a new `parseGridFragment(fragment)` gives `true`, `false`, or null for a fragment
+        that names no readable `g`.
+      - `createFragmentWriter` takes an optional `grid()` reader in its options and calls it
+        at each write. `parseViewFragment` does not change.
+      Verify with unit tests over the format with and without the argument, the parse of
+      `g=1`, `g=0`, `g=x` and a fragment with no `g`, and one write of the writer.
+- [ ] 12.10 Start the demo page with the grid on in `src/app/main.ts`: pass `grid: true`
+      unless `parseGridFragment` says false, pass the grid reader to the fragment writer,
+      and call `writer.schedule()` from `map.onGridChange`. Read the field in the
+      `hashchange` handler as well, beside the view it already reads, and leave the switch
+      where it is when the fragment names no `g`. Verify with browser tests that a fresh
+      load draws the grid, that `g=0` does not, that the HUD switch writes the field within
+      one 500 ms write, and that a `hashchange` to `g=0` turns the grid off.
+- [ ] 12.11 Turn the grid off in `openMap` in `e2e/helpers.ts`, beside the set clear of task
+      3.5, and keep it on under the option that keeps the demo set. Verify the grid
+      scenarios read the library default, and run `pnpm test:e2e e2e/grid.spec.ts`.
+
+## 13. The pipeline
+
+- [ ] 13.1 Add `.github/workflows/` with the check job: Node 22, pnpm from
+      `packageManager`, a frozen lockfile install, then the lint, the type check, the unit
+      tests, the library build and the demo site build, in that order. Pin every action to
+      a commit SHA with its version in a comment. Verify a unit test reads every `uses:`
+      line and asserts a 40 character SHA.
+- [ ] 13.2 Write the comment that says why the workflow does not run Playwright, and say
+      the same in `README.md`. Verify a unit test asserts no Playwright command is in the
+      file.
+- [ ] 13.3 Add the publish job: on a push to `main` alone, needing the check job, with
+      `contents: read`, `pages: write` and `id-token: write`, and one concurrency group.
+      Verify with unit tests over the condition and the permissions.
+- [ ] 13.4 Upload `dist-demo/` as the Pages artifact and deploy it. Verify a unit test
+      reads the uploaded directory and matches it with the demo site build's `outDir`.
+- [ ] 13.5 **After the merge**: open the published address once the workflow has run on
+      `main`, and verify the map draws, the HUD shows and the dataset field reads
+      `Guardian Ruins`. This task cannot close before the merge, and it is the only one
+      that cannot.
+
+## 14. The documents and the close
+
+- [ ] 14.1 Rename the existing `build:demo` script, which converts the data, to
+      `build:demo-data`, so it is not read as the site build `build:demo-site`. Verify no
+      file still calls the old name.
+- [ ] 14.2 Update `README.md`: the three build scripts, the library entry point, the
+      `datasets` option, the `loadingImage` option, the local browser gate, the URL
+      fragment format, which gains the `g` field, and the coordinate grid default, which
+      the published site now starts on while the library keeps it off.
+- [ ] 14.3 Update `docs/roadmap.md`: phase 5 as done, this phase recorded, the phase 3.1
+      reversal cross-referenced from task 7.8, and the phase 4.1 grid facts the distance
+      band and the two label gates change.
+- [ ] 14.4 Verify the archive order: `flight-markers-and-grid` is archived before this
+      change, because this change rewrites its requirement "The demo page loads the
+      Guardian Ruins data set". Until then `openspec validate` reports that the archive
+      would refuse that block, which is expected.
+- [ ] 14.5 Run `pnpm lint`, `pnpm build`, `pnpm build:demo-site`, `pnpm test` and
+      `pnpm test:e2e`, and verify every one is clean before the implementation gate.

@@ -8,9 +8,9 @@
 <body>
 <x-dc>
 <helmet>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&amp;family=IBM+Plex+Mono:wght@300;400;500&amp;display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; background: #08060a; overflow: hidden; }
   * { box-sizing: border-box; }
@@ -28,7 +28,7 @@
 
   <div style="position: absolute; inset: 0; cursor: grab; overflow: hidden;" onMouseDown="{{ onPanStart }}" onWheel="{{ onWheel }}" onClick="{{ onMapClick }}">
     <div style="{{ worldStyle }}">
-      <img src="uploads/pasted-1789380827969-0.png" alt="galaxy" style="position: absolute; inset: 0; width: 100%; height: 100%; filter: saturate(0.22) brightness(0.78) contrast(1.05); pointer-events: none;" />
+      <img src="uploads/pasted-1789380827969-0.png" alt="galaxy" style="position: absolute; inset: 0; width: 100%; height: 100%; filter: saturate(0.22) brightness(0.78) contrast(1.05); pointer-events: none;">
 
       <sc-if value="{{ showGrid }}" hint-placeholder-val="{{ false }}">
         <div style="position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255,150,60,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,150,60,0.10) 1px, transparent 1px); background-size: 240px 240px;"></div>
@@ -87,19 +87,27 @@
   </div>
 
   <div style="position: absolute; top: 0; left: 0; right: 0; height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; background: linear-gradient(180deg, rgba(12,8,12,0.92) 0%, rgba(12,8,12,0.35) 100%); border-bottom: 1px solid rgba(255,150,60,0.22);">
-    <div style="display: flex; align-items: baseline; gap: 14px;">
-      <div style="font-size: 17px; font-weight: 600; letter-spacing: 4px; color: #ff9a3c;">GALACTIC CARTOGRAPHICS</div>
-      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45);">ORION SECTOR</div>
+    <div style="display: flex; align-items: center; gap: 16px; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 14px; flex: 0 0 auto;">
+        <div style="font-size: 17px; font-weight: 600; letter-spacing: 4px; color: #ff9a3c;">GALACTIC MAP</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45);">{{ datasetRegion }}</div>
+      </div>
+      <div style="width: 1px; height: 26px; flex: 0 0 auto; background: rgba(255,150,60,0.22);"></div>
+      <div style="{{ dsFieldStyle }}" title="{{ datasetTitle }}" style-hover="border-color: rgba(255,150,60,0.75);" onClick="{{ openModal }}">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; letter-spacing: 2px; color: rgba(244,230,216,0.4); white-space: nowrap;">DATASET</div>
+        <div style="font-size: 13px; letter-spacing: 1px; color: #f4e6d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px;">{{ datasetLabel }}</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #ff9a3c; white-space: nowrap;">▾</div>
+      </div>
     </div>
-    <div style="display: flex; align-items: center; gap: 26px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: rgba(244,230,216,0.6);">
-      <div>ZOOM <span style="color: #ff9a3c;">{{ zoomLabel }}</span></div>
-      <div style="padding: 5px 11px; border: 1px solid rgba(255,150,60,0.4); color: #ff9a3c; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ resetView }}">RESET VIEW</div>
+    <div style="display: flex; align-items: center; gap: 18px; flex: 0 0 auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: rgba(244,230,216,0.6);">
+      <div style="white-space: nowrap;">ZOOM <span style="color: #ff9a3c;">{{ zoomLabel }}</span></div>
+      <div style="padding: 5px 11px; border: 1px solid rgba(255,150,60,0.4); color: #ff9a3c; cursor: pointer; white-space: nowrap; flex: 0 0 auto;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ resetView }}">RESET VIEW</div>
     </div>
   </div>
 
   <div style="position: absolute; top: 70px; left: 22px; bottom: 22px; width: 316px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; pointer-events: none;">
 
-    <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto;">
+    <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); display: flex; flex-direction: column; overflow: hidden; min-height: 300px; flex: 1 1 auto;">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid rgba(255,150,60,0.2); background: rgba(255,150,60,0.07);">
         <div style="font-size: 12px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">SYSTEM CATEGORIES</div>
         <div style="display: flex; gap: 6px;">
@@ -108,8 +116,8 @@
         </div>
       </div>
 
-      <div style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.07);">
-        <input type="text" placeholder="SEARCH SYSTEMS" value="{{ query }}" onChange="{{ onQuery }}" style="width: 100%; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 12px; letter-spacing: 2px; padding: 7px 9px; outline: none;" />
+      <div style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto;">
+        <input type="text" placeholder="SEARCH SYSTEMS" value="{{ query }}" onChange="{{ onQuery }}" style="width: 100%; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 12px; letter-spacing: 2px; padding: 7px 9px; outline: none;">
       </div>
 
       <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
@@ -165,15 +173,33 @@
 
   <div style="{{ infoPanelStyle }}">
     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid rgba(255,150,60,0.22); background: rgba(255,150,60,0.07);">
-      <div>
+      <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
         <div style="font-size: 19px; font-weight: 600; letter-spacing: 1.5px; color: #ffb055;">{{ selName }}</div>
+        <div style="{{ copyNameStyle }}" title="{{ copyNameTitle }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ copyName }}">
+          <sc-if value="{{ copyNameDone }}" hint-placeholder-val="{{ false }}">
+            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><polyline points="2,7.5 5.5,11 12,3.5"></polyline></svg>
+          </sc-if>
+          <sc-if value="{{ copyNameIdle }}" hint-placeholder-val="{{ true }}">
+            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.2" y="1.2" width="8" height="8"></rect><rect x="4.8" y="4.8" width="8" height="8"></rect></svg>
+          </sc-if>
+        </div>
       </div>
       <div style="width: 24px; height: 24px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,150,60,0.35); color: #ff9a3c; font-size: 14px; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ closeInfo }}">×</div>
     </div>
     <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 14px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;">
         <div style="border: 1px solid rgba(255,255,255,0.09); padding: 8px 9px;">
-          <div style="font-size: 9px; letter-spacing: 1.5px; color: rgba(244,230,216,0.45);">POSITION (LY)</div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <div style="font-size: 9px; letter-spacing: 1.5px; color: rgba(244,230,216,0.45);">POSITION</div>
+            <div style="{{ copyPosStyle }}" title="{{ copyPosTitle }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ copyPos }}">
+          <sc-if value="{{ copyPosDone }}" hint-placeholder-val="{{ false }}">
+            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><polyline points="2,7.5 5.5,11 12,3.5"></polyline></svg>
+          </sc-if>
+          <sc-if value="{{ copyPosIdle }}" hint-placeholder-val="{{ true }}">
+            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.2" y="1.2" width="8" height="8"></rect><rect x="4.8" y="4.8" width="8" height="8"></rect></svg>
+          </sc-if>
+        </div>
+          </div>
           <div style="color: #f4e6d8; margin-top: 4px; line-height: 1.5;">{{ selPos }}</div>
         </div>
         <div style="border: 1px solid rgba(255,255,255,0.09); padding: 8px 9px;">
@@ -216,6 +242,78 @@
   </div>
 
 
+  <div style="{{ modalStyle }}" onClick="{{ closeModal }}">
+    <div style="width: min(92vw, 960px); max-height: min(82vh, 640px); display: flex; flex-direction: column; background: rgba(12,9,13,0.97); backdrop-filter: blur(14px); border: 1px solid rgba(255,150,60,0.45); box-shadow: 0 30px 90px rgba(0,0,0,0.8);" onClick="{{ stop }}">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid rgba(255,150,60,0.24); background: rgba(255,150,60,0.07);">
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <div style="font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">DATASET LIBRARY</div>
+          
+        </div>
+        <div style="width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,150,60,0.35); color: #ff9a3c; font-size: 15px; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ closeModal }}">×</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); min-height: 0; flex: 1 1 auto;">
+        <div style="display: flex; flex-direction: column; min-height: 0; border-right: 1px solid rgba(255,255,255,0.08);">
+          <div style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;">
+            <input type="text" placeholder="FILTER BY NAME, BODY OR CATEGORY" value="{{ dsQuery }}" onChange="{{ onDsQuery }}" style="width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 11px; letter-spacing: 1.5px; padding: 8px 9px; outline: none;">
+          </div>
+          <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+            <sc-for list="{{ dsGroups }}" as="g" hint-placeholder-count="4">
+              <div>
+                <div style="{{ g.headerStyle }}">
+                  <div style="{{ g.swatchStyle }}"></div>
+                  <div style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ g.name }}</div>
+                  <div style="color: rgba(244,230,216,0.35);">{{ g.count }}</div>
+                </div>
+                <sc-for list="{{ g.rows }}" as="d" hint-placeholder-count="3">
+                  <div style="{{ d.rowStyle }}" style-hover="background: rgba(255,150,60,0.12);" onClick="{{ d.onFocus }}">
+                    <div style="{{ d.labelStyle }}">{{ d.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+            <sc-if value="{{ dsNoResults }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 16px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 1.5px; color: rgba(244,230,216,0.4);">NO MATCHING DATASETS</div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; min-height: 0;">
+          <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 16px 18px;">
+            <div style="font-size: 20px; font-weight: 600; letter-spacing: 1.5px; color: #ffb055; text-wrap: pretty;">{{ focusLabel }}</div>
+
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 18px 0 8px;">CATEGORIES IN THIS DATASET</div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">
+              <sc-for list="{{ focusCats }}" as="fc" hint-placeholder-count="5">
+                <div style="display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid rgba(255,255,255,0.09);">
+                  <div style="{{ fc.swatchStyle }}"></div>
+                  <div style="flex: 1 1 auto; min-width: 0; font-size: 12px; letter-spacing: 1px; color: rgba(244,230,216,0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ fc.name }}</div>
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(244,230,216,0.45);">{{ fc.count }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 18px 0 8px;">SAMPLE SYSTEMS</div>
+            <div style="display: flex; flex-direction: column;">
+              <sc-for list="{{ focusSystems }}" as="fs" hint-placeholder-count="6">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 12px; letter-spacing: 1px; color: rgba(244,230,216,0.8);">
+                  <div style="{{ fs.swatchStyle }}"></div>
+                  <div style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ fs.name }}</div>
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: rgba(244,230,216,0.4);">{{ fs.star }}</div>
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: rgba(244,230,216,0.35); width: 74px; text-align: right;">{{ fs.dist }} LY</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;">
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; padding: 9px 14px; border: 1px solid rgba(255,255,255,0.16); color: rgba(244,230,216,0.65); cursor: pointer;" style-hover="background: rgba(255,255,255,0.08);" onClick="{{ closeModal }}">CANCEL</div>
+            <div style="{{ loadBtnStyle }}" style-hover="background: rgba(255,150,60,0.28);" onClick="{{ loadFocus }}">{{ loadBtnLabel }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div style="{{ lightboxStyle }}" onClick="{{ closeLightbox }}">
     <div style="position: relative; width: min(86vw, 1180px); aspect-ratio: 4 / 3; max-height: 82vh; border: 1px solid rgba(255,150,60,0.45); background-color: #140e12; background-image: repeating-linear-gradient(135deg, rgba(255,150,60,0.12) 0 12px, rgba(255,150,60,0) 12px 26px); box-shadow: 0 0 90px rgba(0,0,0,0.8);">
       <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 3px; color: rgba(244,230,216,0.55);">{{ lightboxCaption }}</div>
@@ -229,38 +327,80 @@
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    const cats = [
-      { id: 'nebula', name: 'Nebulae', color: '#6fd3ff' },
-      { id: 'anomaly', name: 'Anomalies', color: '#c77dff' },
-      { id: 'ruins', name: 'Ancient Ruins', color: '#7dff9e' },
-      { id: 'tourist', name: 'Tourist Beacons', color: '#ffc04d' },
-      { id: 'neutron', name: 'Neutron Route', color: '#ff5d8f' },
-      { id: 'outpost', name: 'Deep Outposts', color: '#ff8a3c' }
-    ];
-    this.cats = cats;
-    this.systems = this.buildSystems(cats);
+    this.catalog = this.buildCatalog();
+    const ds0 = this.catalog[0];
+    this.cats = ds0.cats;
+    this.systems = this.systemsFor(ds0);
     const on = {};
-    cats.forEach(c => { on[c.id] = true; });
+    this.cats.forEach(c => { on[c.id] = true; });
     this.state = {
       z: 0.5, px: 0, py: 0, fitted: false,
       on, expanded: null, query: '',
       selected: null, hover: null,
+      dataset: ds0.id, modalOpen: false, dsQuery: '', dsFocus: ds0.id, copied: null,
       regions: props.regionMode || 'simplified',
       showNames: false, showGlow: true, showGrid: false,
       lightbox: null
     };
   }
 
-  buildSystems(cats) {
-    let s = 20250914;
+  buildCatalog() {
+    let s = 913377;
     const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
-    const pre = ['Col 285 Sector', 'Eol Prou', 'Praea Euq', 'Byeia Eurk', 'Hypoae Bre', 'Skaudai', 'Dryman', 'Phroi Bluae', 'Nyuena', 'Blua Eaec', 'Thaila', 'Oevasy'];
-    const named = [
-      ['Rho Ophiuchi Gate', 'B2 V'], ['Trifid Approach', 'K5 V'], ['Eta Carinae Watch', 'O6 V'],
-      ['Barnard\'s Threshold', 'M4 V'], ['Veil Terminus', 'A3 V'], ['Lagoon Deep', 'F8 V'],
-      ['Cat\'s Paw Anchorage', 'B5 V'], ['Helix Vigil', 'WD', ], ['Pelican Reach', 'G2 V'],
-      ['Statue of Liberty Rim', 'K2 V'], ['Crescent Hollow', 'M1 III'], ['Bubble Edge Relay', 'G8 V']
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const pool = [
+      ['nebula', 'Nebulae', '#6fd3ff'], ['anomaly', 'Anomalies', '#c77dff'], ['ruins', 'Ancient Ruins', '#7dff9e'],
+      ['tourist', 'Tourist Beacons', '#ffc04d'], ['neutron', 'Neutron Route', '#ff5d8f'], ['outpost', 'Deep Outposts', '#ff8a3c'],
+      ['blackhole', 'Black Holes', '#b3a4ff'], ['earthlike', 'Earth-likes', '#78e08f'], ['ammonia', 'Ammonia Worlds', '#ffd166'],
+      ['waterworld', 'Water Worlds', '#63c7ff'], ['geo', 'Geological Sites', '#ff8fa3'], ['bio', 'Biological Signals', '#8ef0c8'],
+      ['thargoid', 'Nonhuman Signals', '#9dff6b'], ['crashsite', 'Crash Sites', '#ff7a5c'], ['station', 'Orbital Stations', '#ffe0a3'],
+      ['mining', 'Mining Reserves', '#c9d6ff'], ['carrier', 'Carrier Anchorages', '#a0f0ff'], ['nav', 'Nav Beacons', '#e5c2ff']
     ];
+    const regions = ['Orion Spur', 'Sanguineous Rim', 'Temple Reach', 'Errant Marches', 'Acheron Belt', 'Void Fringe', 'Norma Arm', 'Perseus Reach', 'Formidine Rift', 'Hawking Gap', 'Dryman Deep', 'Outer Arm Vault'];
+    const kinds = ['Survey', 'Expedition', 'Census', 'Sweep', 'Patrol Log', 'Registry', 'Traverse', 'Catalogue', 'Probe Run', 'Watchlist'];
+    const orgs = ['Pilots Federation', 'Universal Cartographics', 'Canonn', 'Rock Rats', 'Aegis', 'Explorers Guild', 'Deep Survey Office'];
+    const prefixes = ['Col 285 Sector', 'Hyades Sector', 'Pleiades Sector', 'Synuefe', 'Wregoe', 'Blae Drye', 'Nuekau', 'Arietis Sector', 'Eol Prou', 'Praea Euq', 'Skaudai', 'Dryman', 'Gru Hypue', 'Byeia Eurk', 'Hypoae Bre', 'Phroi Bluae', 'Nyuena', 'Blua Eaec', 'Thaila', 'Oevasy', 'Stuemeae', 'Juenae'];
+    const heroA = ['Rho Ophiuchi', 'Trifid', 'Eta Carinae', 'Veil', 'Lagoon', 'Helix', 'Pelican', 'Crescent', 'Ashen', 'Pale', 'Silent', 'Long', 'First', 'Quiet', 'Iron', 'Hollow'];
+    const heroB = ['Gate', 'Approach', 'Watch', 'Terminus', 'Deep', 'Vigil', 'Reach', 'Hollow', 'Relay', 'Signal', 'Choir', 'Shelf', 'Light', 'Anchorage', 'Threshold', 'Halo'];
+    const stars = ['O6 V', 'B2 V', 'A3 V', 'F8 V', 'G2 V', 'K5 V', 'M4 V', 'WD', 'Neutron Star', 'Black Hole', 'T Tauri', 'M1 III'];
+    const out = [];
+    for (let i = 0; i < 124; i++) {
+      const region = regions[i % regions.length];
+      const label = `${region} ${pick(kinds)} ${String(101 + Math.floor(rnd() * 880))}`;
+      const n = 4 + Math.floor(rnd() * 3);
+      const cats = [];
+      const used = {};
+      while (cats.length < n) {
+        const c = pick(pool);
+        if (used[c[0]]) continue;
+        used[c[0]] = 1;
+        cats.push({ id: c[0], name: c[1], color: c[2] });
+      }
+      const count = 22 + Math.floor(rnd() * 58);
+      const x0 = 8 + rnd() * 52, y0 = 10 + rnd() * 44;
+      const pre = [];
+      while (pre.length < 5) { const p = pick(prefixes); if (pre.indexOf(p) < 0) pre.push(p); }
+      const named = [];
+      const nn = 3 + Math.floor(rnd() * 5);
+      while (named.length < nn) named.push([`${pick(heroA)} ${pick(heroB)}`, pick(stars)]);
+      out.push({
+        id: 'ds' + i, label, collection: pick(orgs), region,
+        primary: cats[0],
+        sub: `${cats.length} categories · ${count} systems`,
+        seed: 100003 + i * 7919, count,
+        box: { x0, xw: Math.min(86 - x0, 22 + rnd() * 34), y0, yh: Math.min(84 - y0, 18 + rnd() * 30) },
+        cats, pre, named
+      });
+    }
+    out.sort((a, b) => a.primary.name.localeCompare(b.primary.name) || a.label.localeCompare(b.label));
+    return out;
+  }
+
+  buildSystems(cats, ds) {
+    let s = ds.seed;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const pre = ds.pre;
+    const named = ds.named;
     const notes = [
       'Dense ionised hydrogen shell; hull ablation reported above 40% throttle inside the inner veil. Two survey beacons active.',
       'Persistent non-baryonic signal returns from the second body. Origin unresolved after nine independent passes.',
@@ -272,10 +412,11 @@ class Component extends DCLogic {
     ];
     const caps = ['APPROACH VECTOR', 'ORBITAL PLANE', 'SURFACE SITE', 'PRIMARY STAR', 'BEACON RECORD', 'NEBULA CORE'];
     const out = [];
-    for (let i = 0; i < 52; i++) {
-      const outlier = i >= 46;
-      const x = outlier ? 44 + rnd() * 10 : 26 + rnd() * 41;
-      const y = outlier ? 56 + rnd() * 10 : 16 + rnd() * 33;
+    for (let i = 0; i < ds.count; i++) {
+      const outlier = i >= ds.count - 6;
+      const b = ds.box;
+      const x = outlier ? b.x0 + b.xw * 0.45 + rnd() * 10 : b.x0 + rnd() * b.xw;
+      const y = outlier ? b.y0 + b.yh + rnd() * 8 : b.y0 + rnd() * b.yh;
       const nm = i < named.length ? named[i][0]
         : pre[Math.floor(rnd() * pre.length)] + ' ' + String.fromCharCode(65 + Math.floor(rnd() * 26)) + String.fromCharCode(65 + Math.floor(rnd() * 26)) + '-' + String.fromCharCode(80 + Math.floor(rnd() * 6)) + ' ' + (rnd() < 0.5 ? 'b' : 'd') + Math.floor(rnd() * 30) + '-' + Math.floor(rnd() * 90);
       const star = i < named.length ? named[i][1] : ['K3 V', 'M2 V', 'G1 V', 'F5 V', 'A8 V', 'B9 V', 'T Tauri', 'Neutron Star', 'Black Hole'][Math.floor(rnd() * 9)];
@@ -286,7 +427,7 @@ class Component extends DCLogic {
       const images = [];
       for (let k = 0; k < imgCount; k++) images.push({ caption: caps[Math.floor(rnd() * caps.length)] });
       out.push({
-        id: 'sys' + i, name: nm, x, y, star, cats: cids,
+        id: ds.id + i, name: nm, x, y, star, cats: cids,
         desc: hasDesc ? notes[Math.floor(rnd() * notes.length)] : '',
         images,
         cx: Math.round((x - 46) * 520), cy: Math.round((rnd() - 0.5) * 340), cz: Math.round((30 - y) * 640)
@@ -324,7 +465,8 @@ class Component extends DCLogic {
 
   onKey = (e) => {
     if (e.key !== 'Escape') return;
-    if (this.state.lightbox) this.setState({ lightbox: null });
+    if (this.state.modalOpen) this.setState({ modalOpen: false });
+    else if (this.state.lightbox) this.setState({ lightbox: null });
     else if (this.state.selected) this.setState({ selected: null });
   };
 
@@ -356,6 +498,38 @@ class Component extends DCLogic {
   centre = (sys) => {
     const z = this.state.z;
     this.setState(this.clampView(z, (0.5 - sys.x / 100) * 3840 * z, (0.5 - sys.y / 100) * 1968 * z));
+  };
+
+  copy = (key, text) => {
+    const done = () => {
+      clearTimeout(this._copyT);
+      this.setState({ copied: key });
+      this._copyT = setTimeout(() => this.setState({ copied: null }), 1400);
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, done); return; }
+    } catch (e) {}
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    done();
+  };
+
+  systemsFor(ds) {
+    this._cache = this._cache || {};
+    if (!this._cache[ds.id]) this._cache[ds.id] = this.buildSystems(ds.cats, ds);
+    return this._cache[ds.id];
+  }
+
+  pickDataset = (ds) => {
+    if (this.state.dataset === ds.id) { this.setState({ modalOpen: false }); return; }
+    this.cats = ds.cats;
+    this.systems = this.systemsFor(ds);
+    const on = {};
+    this.cats.forEach(c => { on[c.id] = true; });
+    this.setState({ dataset: ds.id, selected: null, hover: null, expanded: null, query: '', on, lightbox: null, modalOpen: false });
   };
 
   visible() {
@@ -427,6 +601,20 @@ class Component extends DCLogic {
       };
     };
 
+    const cur = this.catalog.find(d => d.id === st.dataset) || this.catalog[0];
+    const focus = this.catalog.find(d => d.id === st.dsFocus) || cur;
+    const focusSys = st.modalOpen ? this.systemsFor(focus) : [];
+    const dq = st.dsQuery.trim().toLowerCase();
+    const dsList = dq ? this.catalog.filter(d => (d.label + ' ' + d.collection + ' ' + d.cats.map(c => c.name).join(' ')).toLowerCase().includes(dq)) : this.catalog;
+    const dsGroups = [];
+    dsList.slice(0, 120).forEach(d => {
+      let g = dsGroups.find(x => x.id === d.primary.id);
+      if (!g) { g = { id: d.primary.id, name: d.primary.name, color: d.primary.color, rows: [] }; dsGroups.push(g); }
+      g.rows.push(d);
+    });
+
+    const copyBtn = (done) => `display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:20px;height:20px;cursor:pointer;border:1px solid ${done ? accent : 'rgba(255,150,60,0.32)'};background:${done ? 'rgba(255,150,60,0.22)' : 'transparent'};color:${done ? accent : 'rgba(244,230,216,0.6)'}`;
+
     const selCats = sel ? sel.cats.map(id => {
       const c = this.catOf(id);
       return { name: c.name, chipStyle: `font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;padding:4px 9px;color:${c.color};border:1px solid ${c.color};background:${c.color}1f` };
@@ -453,6 +641,64 @@ class Component extends DCLogic {
       infoPanelStyle: `position:absolute;top:70px;right:22px;width:380px;max-height:calc(100vh - 120px);display:${sel ? 'flex' : 'none'};flex-direction:column;background:rgba(14,10,14,0.9);backdrop-filter:blur(12px);border:1px solid ${accent}55;box-shadow:0 0 50px rgba(0,0,0,0.6);pointer-events:auto;z-index:20`,
       selName: sel ? sel.name : '',
       selPos: sel ? `${sel.cx.toLocaleString()} / ${sel.cy.toLocaleString()} / ${sel.cz.toLocaleString()}` : '',
+      copyNameDone: st.copied === 'name',
+      copyNameIdle: st.copied !== 'name',
+      copyPosDone: st.copied === 'pos',
+      copyPosIdle: st.copied !== 'pos',
+      copyNameTitle: st.copied === 'name' ? 'Copied' : 'Copy system name',
+      copyPosTitle: st.copied === 'pos' ? 'Copied' : 'Copy position',
+      copyNameStyle: copyBtn(st.copied === 'name'),
+      copyPosStyle: copyBtn(st.copied === 'pos'),
+      copyName: (e) => { e.stopPropagation(); if (sel) this.copy('name', sel.name); },
+      copyPos: (e) => { e.stopPropagation(); if (sel) this.copy('pos', `${sel.cx} / ${sel.cy} / ${sel.cz}`); },
+      datasetLabel: cur.label,
+      datasetSub: cur.sub,
+      datasetTitle: `${cur.label} — ${cur.sub}`,
+      datasetRegion: cur.region.toUpperCase(),
+      dsFieldStyle: `display:flex;align-items:center;gap:10px;min-width:0;padding:5px 11px;cursor:pointer;border:1px solid ${st.modalOpen ? accent : 'rgba(255,150,60,0.3)'};background:${st.modalOpen ? 'rgba(255,150,60,0.16)' : 'rgba(0,0,0,0.3)'}`,
+      openModal: () => this.setState({ modalOpen: true, dsQuery: '', dsFocus: st.dataset }),
+      closeModal: () => this.setState({ modalOpen: false }),
+      stop: (e) => e.stopPropagation(),
+      modalStyle: `position:fixed;inset:0;display:${st.modalOpen ? 'flex' : 'none'};align-items:center;justify-content:center;background:rgba(4,3,6,0.78);backdrop-filter:blur(5px);z-index:70`,
+      dsQuery: st.dsQuery,
+      onDsQuery: (e) => this.setState({ dsQuery: e.target.value }),
+      dsCountLabel: `${dsList.length} OF ${this.catalog.length} DATASETS`,
+      dsNoResults: dsList.length === 0,
+      dsGroups: dsGroups.map(g => ({
+        name: g.name.toUpperCase(),
+        count: g.rows.length,
+        swatchStyle: `width:9px;height:9px;flex:0 0 auto;transform:rotate(45deg);background:${g.color};box-shadow:0 0 8px ${g.color}`,
+        headerStyle: `position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(18,13,19,0.97);border-top:1px solid rgba(255,255,255,0.07);border-bottom:1px solid rgba(255,255,255,0.07);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:${g.color}`,
+        rows: g.rows.map(d => {
+          const isFocus = focus.id === d.id;
+          const isCur = st.dataset === d.id;
+          return {
+            label: d.label, sub: d.sub, org: d.collection,
+            rowStyle: `display:flex;flex-direction:column;gap:2px;padding:8px 12px 8px 20px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);border-left:2px solid ${isCur ? accent : 'transparent'};background:${isFocus ? 'rgba(255,150,60,0.16)' : 'transparent'}`,
+            labelStyle: `font-size:12.5px;letter-spacing:1px;color:${isFocus || isCur ? accent : 'rgba(244,230,216,0.85)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`,
+            subStyle: `font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:1px;color:rgba(244,230,216,${isFocus ? 0.55 : 0.35})`,
+            onFocus: () => this.setState({ dsFocus: d.id })
+          };
+        })
+      })),
+      focusLabel: focus.label,
+      focusMeta: `${focus.collection.toUpperCase()} · ${focus.region.toUpperCase()} · ${focusSys.length || focus.count} SYSTEMS`,
+      focusCats: focus.cats.map(c => ({
+        name: c.name,
+        count: focusSys.filter(s => s.cats.includes(c.id)).length,
+        swatchStyle: `width:11px;height:11px;flex:0 0 auto;transform:rotate(45deg);background:${c.color};box-shadow:0 0 9px ${c.color}`
+      })),
+      focusSystems: focusSys.slice(0, 10).map(s => {
+        const c = focus.cats.find(k => k.id === s.cats[0]) || focus.cats[0];
+        return {
+          name: s.name, star: s.star,
+          dist: Math.round(Math.sqrt(s.cx * s.cx + s.cy * s.cy + s.cz * s.cz)).toLocaleString(),
+          swatchStyle: `width:9px;height:9px;flex:0 0 auto;transform:rotate(45deg);background:${c.color}`
+        };
+      }),
+      loadBtnLabel: st.dataset === focus.id ? 'CURRENTLY LOADED' : 'LOAD DATASET',
+      loadBtnStyle: `font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;padding:9px 16px;cursor:pointer;border:1px solid ${st.dataset === focus.id ? 'rgba(255,150,60,0.3)' : accent};background:rgba(255,150,60,${st.dataset === focus.id ? 0.1 : 0.2});color:${st.dataset === focus.id ? 'rgba(244,230,216,0.5)' : accent}`,
+      loadFocus: () => this.pickDataset(focus),
       selDist: sel ? Math.round(Math.sqrt(sel.cx * sel.cx + sel.cy * sel.cy + sel.cz * sel.cz)).toLocaleString() + ' LY' : '',
       selStar: sel ? sel.star : '',
       selCats,
