@@ -3,17 +3,18 @@
 // this module builds.
 import type { GalaxyModel } from '../galaxy-model/model';
 import {
+  baseSizeClass,
   boxelEdge,
   boxelOrigin,
   boxelSeed,
   buildBoxelBlocks,
   DRAWN_BOXEL_COUNT,
   listDrawnBoxels,
+  STARS_PER_BOXEL,
 } from './boxel';
 import type { BoxelBlock, DrawnBoxel } from './boxel';
-
-/** The largest number of stars one boxel draws. */
-export const STARS_PER_BOXEL = 256;
+import type { RealSystemSet } from './real-systems';
+import { createStarSuppression, MASK_WORDS } from './star-suppression';
 
 /** How many stars the pass draws in one frame, at every view. */
 export const STAR_VERTEX_COUNT = STARS_PER_BOXEL * DRAWN_BOXEL_COUNT;
@@ -73,12 +74,15 @@ export function calibration(density: number): number {
 }
 
 /** How many systems a volume of the model holds at a density. */
-export function systemCount(density: number, volume: number): number {
+export function systemsInVolume(density: number, volume: number): number {
   return density * volume * calibration(density);
 }
 
-/** How many stars a boxel draws. A count that rounds to zero draws no star. */
-export function drawnStarCount(systems: number): number {
+/**
+ * How many stars a boxel places. It does not depend on the real systems. A count that
+ * rounds to zero places no star.
+ */
+export function placedStarCount(systems: number): number {
   const rounded = Math.round(systems);
   if (rounded <= 0) return 0;
   return rounded < STARS_PER_BOXEL ? rounded : STARS_PER_BOXEL;
@@ -103,10 +107,14 @@ export function boxelLight(starLight: number, density: number, volume: number): 
   return starLight * density * volume;
 }
 
-/** The radius of a star, in light years, from the spacing of the stars drawn with it. */
-export function starRadius(edge: number, drawn: number): number {
-  if (drawn <= 0) return 0;
-  return (STAR_RADIUS_FRACTION * edge) / Math.cbrt(drawn);
+/**
+ * The radius of a star, in light years, from the spacing of the stars its boxel
+ * places. The count is the placed count, so a real system near the camera does not
+ * shift the field's grain.
+ */
+export function starRadius(edge: number, placed: number): number {
+  if (placed <= 0) return 0;
+  return (STAR_RADIUS_FRACTION * edge) / Math.cbrt(placed);
 }
 
 /** How finely `integrateDetailedMassDensity` samples the model. */
@@ -191,7 +199,11 @@ export interface StarBoxelRecord {
   readonly origin: readonly [number, number, number];
   /** The boxel's edge, in light years. */
   readonly edge: number;
-  /** How many stars the boxel draws. */
+  /** How many stars the boxel places. It does not depend on the real systems. */
+  readonly placed: number;
+  /** How many of those stars a real system suppresses. */
+  readonly suppressed: number;
+  /** How many stars the boxel draws, which is the placed count less the suppressed. */
   readonly drawn: number;
   /** The light one of those stars carries. */
   readonly lightPerStar: number;
@@ -227,12 +239,23 @@ export interface StarBoxelTable {
   readonly bytes: Uint8Array;
   /** The sum of the drawn counts over the records. */
   readonly drawnStars: number;
+  /** The sum of the suppressed counts over the records. */
+  readonly suppressedStars: number;
+  /**
+   * Eight words of bit mask per record, one bit per placed star. A set bit says that
+   * a real system suppresses that star. A record outside the base size class is zero.
+   */
+  readonly mask: Uint32Array;
+  /** The byte view of the mask, which the renderer uploads. */
+  readonly maskBytes: Uint8Array;
 }
 
 /** What the star field needs to build a table. */
 export interface StarFieldOptions {
   /** The light one boxel carries per unit of mass-code-0 budget. */
   readonly starLight: number;
+  /** The real systems whose invented twins the field drops. */
+  readonly systems?: RealSystemSet | null;
 }
 
 /** The star field, which owns the boxel table and its cache. */
@@ -247,6 +270,8 @@ export interface StarField {
   record(index: number): StarBoxelRecord;
   /** How many times the field has read the density of the drawn set. */
   readonly recomputeCount: number;
+  /** How many boxels the last build swept for suppressed stars. */
+  readonly sweptCount: number;
 }
 
 /** The identity of a drawn set: the base class and the low index of every block. */
@@ -265,6 +290,8 @@ interface BoxelSample {
   readonly originX: number;
   readonly originY: number;
   readonly originZ: number;
+  readonly placed: number;
+  readonly suppressed: number;
   readonly drawn: number;
   readonly lightPerStar: number;
   readonly radius: number;
@@ -281,28 +308,41 @@ export function createStarField(
   options: StarFieldOptions,
 ): StarField {
   const starLight = options.starLight;
+  const systems = options.systems ?? null;
+  const suppression = createStarSuppression(systems);
   const buffer = new ArrayBuffer(DRAWN_BOXEL_COUNT * RECORD_VALUES * 4);
   const values = new Float32Array(buffer);
   const seeds = new Uint32Array(buffer);
   const bytes = new Uint8Array(buffer);
+  const maskBuffer = new ArrayBuffer(DRAWN_BOXEL_COUNT * MASK_WORDS * 4);
+  const mask = new Uint32Array(maskBuffer);
+  const maskBytes = new Uint8Array(maskBuffer);
   let samples: BoxelSample[] = [];
   let key = '';
   let drawnStars = 0;
+  let suppressedStars = 0;
   let recomputeCount = 0;
+  let sweptCount = 0;
 
   const readSet = (
     camera: readonly [number, number, number],
     distance: number,
   ): void => {
     const blocks = buildBoxelBlocks(camera, distance);
-    const nextKey = setKey(blocks);
+    // The real-system set is part of the key, because a change to it changes which
+    // stars the field drops.
+    const nextKey = `${setKey(blocks)}#${systems === null ? 0 : systems.version}`;
     if (nextKey === key) return;
     key = nextKey;
 
+    const base = baseSizeClass(distance);
+    suppression.begin(base);
     const boxels = listDrawnBoxels(camera, distance);
     const next: BoxelSample[] = [];
     let stars = 0;
-    for (const boxel of boxels) {
+    let removed = 0;
+    for (let index = 0; index < boxels.length; index += 1) {
+      const boxel = boxels[index] as DrawnBoxel;
       const edge = boxelEdge(boxel.sizeClass);
       const origin = boxelOrigin(boxel.index, boxel.sizeClass);
       const originX = origin[0];
@@ -315,7 +355,15 @@ export function createStarField(
         originZ + half,
       );
       const volume = edge * edge * edge;
-      const drawn = drawnStarCount(systemCount(density, volume));
+      const placed = placedStarCount(systemsInVolume(density, volume));
+      const suppressed = suppression.write(
+        boxel.index,
+        boxel.sizeClass,
+        placed,
+        mask,
+        index * MASK_WORDS,
+      );
+      const drawn = placed - suppressed;
       const light = boxelLight(starLight, density, volume);
       next.push({
         boxel,
@@ -323,16 +371,25 @@ export function createStarField(
         originX,
         originY,
         originZ,
+        placed,
+        suppressed,
         drawn,
+        // The boxel keeps its light over the stars that remain, so the galaxy holds
+        // its brightness when a host loads data.
         lightPerStar: drawn > 0 ? light / drawn : 0,
-        radius: starRadius(edge, drawn),
+        // The radius reads the placed count, so the field's grain does not shift
+        // when a host loads data near the camera.
+        radius: starRadius(edge, placed),
         zone: model.zone(originX + half, originZ + half),
         seed: boxelSeed(boxel.index, boxel.sizeClass),
       });
       stars += drawn;
+      removed += suppressed;
     }
     samples = next;
     drawnStars = stars;
+    suppressedStars = removed;
+    sweptCount = suppression.sweptCount;
     recomputeCount += 1;
   };
 
@@ -349,16 +406,29 @@ export function createStarField(
         values[base + 1] = sample.originY - (camera[1] as number);
         values[base + 2] = (camera[2] as number) - sample.originZ;
         values[base + 3] = sample.edge;
-        values[base + 4] = sample.drawn;
+        // The shader reads the placed count, not the drawn count: a suppressed star
+        // sits at any index below the placed count, and the mask is what drops it.
+        values[base + 4] = sample.placed;
         values[base + 5] = sample.lightPerStar;
         values[base + 6] = sample.radius;
         values[base + 7] = sample.zone;
         seeds[base + RECORD_SEED_OFFSET] = sample.seed;
       }
-      return { count: samples.length, buffer, values, seeds, bytes, drawnStars };
+      return {
+        count: samples.length,
+        buffer,
+        values,
+        seeds,
+        bytes,
+        drawnStars,
+        suppressedStars,
+        mask,
+        maskBytes,
+      };
     },
     record(index: number): StarBoxelRecord {
       const base = index * RECORD_VALUES;
+      const sample = samples[index];
       return {
         origin: [
           values[base] as number,
@@ -366,7 +436,9 @@ export function createStarField(
           values[base + 2] as number,
         ],
         edge: values[base + 3] as number,
-        drawn: values[base + 4] as number,
+        placed: values[base + 4] as number,
+        suppressed: sample?.suppressed ?? 0,
+        drawn: sample?.drawn ?? 0,
         lightPerStar: values[base + 5] as number,
         radius: values[base + 6] as number,
         zone: values[base + 7] as number,
@@ -375,6 +447,9 @@ export function createStarField(
     },
     get recomputeCount(): number {
       return recomputeCount;
+    },
+    get sweptCount(): number {
+      return sweptCount;
     },
   };
 }

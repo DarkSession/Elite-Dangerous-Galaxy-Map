@@ -5,15 +5,16 @@ import {
   DRAWN_BOXEL_COUNT,
   DRAWN_CLASS_COUNT,
   starSpreadValue,
+  STARS_PER_BOXEL,
 } from '../scene-data/boxel';
 import { DEFAULT_POINT_COUNT } from '../scene-data/point-cloud';
 import {
   RECORD_VALUES,
   starLightConstant,
   STAR_VERTEX_COUNT,
-  STARS_PER_BOXEL,
 } from '../scene-data/star-field';
 import type { StarBoxelTable } from '../scene-data/star-field';
+import { MASK_WORDS } from '../scene-data/star-suppression';
 import { DEFAULT_POINT_BRIGHTNESS, POINT_RADIUS_LY } from './point-pass';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -43,6 +44,12 @@ export const STAR_FADE_NEAR = 4000;
 /** The zoom distance at and above which the field draws nothing, in light years. */
 export const STAR_FADE_FAR = 8000;
 
+/** The zoom distance at and below which the field adds no light, in light years. */
+export const CLOSE_FADE_NEAR = 640;
+
+/** The zoom distance at and above which the field draws in full, in light years. */
+export const CLOSE_FADE_FAR = 2560;
+
 /** The multiple of a boxel edge the field is proved to cover. */
 const COVERED_BOXELS = 3;
 
@@ -58,6 +65,31 @@ function smoothstep(low: number, high: number, value: number): number {
  */
 export function starWeight(distance: number): number {
   return 1 - smoothstep(STAR_FADE_NEAR, STAR_FADE_FAR, distance);
+}
+
+/**
+ * How much of the field's light reaches the frame at a zoom distance, 0 to 1. It is 0
+ * at 640 light years and below and 1 at 2,560 and above. The invented field stands in
+ * for systems the map holds no record of, so it gives way as the camera comes close
+ * enough to read one system from the next.
+ *
+ * The band comes from the base class rule, which steps just above 320, 640, 1,280,
+ * 2,560 and 5,120 light years. `map-navigation` clamps the zoom distance to 500, so
+ * 640 is the lowest boundary the camera reaches and the field is gone over the whole
+ * reachable band below it.
+ */
+export function closeFade(distance: number): number {
+  return smoothstep(CLOSE_FADE_NEAR, CLOSE_FADE_FAR, distance);
+}
+
+/**
+ * The close fade the renderer gives the star pass. A test holds the fade at a value from
+ * 0 to 1 to read the field at a close view; `null` gives the fade back to the zoom
+ * distance. The hold is clamped, so a value outside 0 to 1 cannot change the light.
+ */
+export function heldCloseFade(held: number | null, distance: number): number {
+  if (held === null) return closeFade(distance);
+  return Math.min(1, Math.max(0, held));
 }
 
 /**
@@ -138,7 +170,11 @@ export interface StarPassFrame {
   readonly viewProjection: Float32Array;
   /** Pixels per light year at one light year of range. */
   readonly focal: number;
-  /** How much of the field draws, 0 to 1. */
+  /**
+   * How much of the field's light reaches the frame, 0 to 1. The renderer gives the
+   * handover weight times the close fade, so the faded light leaves the frame rather
+   * than moving to the point cloud.
+   */
   readonly weight: number;
   /** The inner and the outer radius of the handover fade, in light years. */
   readonly handover: readonly [number, number];
@@ -161,6 +197,8 @@ export function createStarProgram(gl: WebGL2RenderingContext): Program {
     'uFocal',
     'uWeight',
     'uHandover',
+    'uMask',
+    'uSuppress',
   ]);
 }
 
@@ -170,9 +208,21 @@ export function createStarProgram(gl: WebGL2RenderingContext): Program {
 export function createStarPass(gl: WebGL2RenderingContext, program: Program): StarPass {
   const vertexArray = gl.createVertexArray();
   const buffer = gl.createBuffer();
-  if (vertexArray === null || buffer === null) {
+  const maskTexture = gl.createTexture();
+  if (vertexArray === null || buffer === null || maskTexture === null) {
     throw new Error('The context gave no buffer for the star field.');
   }
+
+  // One row of eight 32-bit words per boxel, one bit per placed star. The whole
+  // texture is 59 KB, and it is uploaded with the boxel table, so it follows the same
+  // cache.
+  gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R32UI, MASK_WORDS, DRAWN_BOXEL_COUNT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
 
   const stride = RECORD_VALUES * 4;
   gl.bindVertexArray(vertexArray);
@@ -207,7 +257,28 @@ export function createStarPass(gl: WebGL2RenderingContext, program: Program): St
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, frame.table.bytes);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
+      const rows = Math.min(DRAWN_BOXEL_COUNT, frame.table.count);
+      const suppresses = frame.table.suppressedStars > 0;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+      if (suppresses) {
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
+          0,
+          0,
+          0,
+          MASK_WORDS,
+          rows,
+          gl.RED_INTEGER,
+          gl.UNSIGNED_INT,
+          frame.table.mask,
+          0,
+        );
+      }
+
       gl.useProgram(program.program);
+      gl.uniform1i(program.uniforms['uMask'] ?? null, 0);
+      gl.uniform1f(program.uniforms['uSuppress'] ?? null, suppresses ? 1 : 0);
       gl.uniformMatrix4fv(
         program.uniforms['uViewProjection'] ?? null,
         false,
@@ -224,18 +295,14 @@ export function createStarPass(gl: WebGL2RenderingContext, program: Program): St
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(vertexArray);
-      gl.drawArraysInstanced(
-        gl.POINTS,
-        0,
-        STARS_PER_BOXEL,
-        Math.min(DRAWN_BOXEL_COUNT, frame.table.count),
-      );
+      gl.drawArraysInstanced(gl.POINTS, 0, STARS_PER_BOXEL, rows);
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
     },
     dispose(): void {
       gl.deleteBuffer(buffer);
       gl.deleteVertexArray(vertexArray);
+      gl.deleteTexture(maskTexture);
     },
   };
 }

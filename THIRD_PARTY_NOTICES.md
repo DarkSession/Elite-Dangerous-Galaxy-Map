@@ -63,6 +63,49 @@ which permit non-commercial use only:
 The density model in `src/galaxy-model/` is this project's own work. It carries no
 third-party code and no third-party data file.
 
+## The Guardian site records of the demo page
+
+`src/app/demo-systems.json` holds 381 Guardian sites. The demo page loads them as an
+example host data set; the library itself ships no data and fetches none. The records
+come from the [Canonn Research Group](https://canonn.science/) through
+[CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), which is under the
+**MIT** licence. The file is a conversion of three of that project's data sets:
+`guardian_ruins.json`, `guardian_structures.json` and `guardian_beacons.json`. The
+conversion keeps each system's name, its coordinates and its site types, and drops
+every other field.
+
+The category names, the colours and the descriptions in that file are this project's
+own. Canonn's own map gives each category a random colour on each load.
+
+The MIT licence text, with the copyright line the project's `LICENSE` carries:
+
+```
+MIT License
+
+Copyright (c) 2017 Canonn - Science
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+The sites are places in the game's galaxy, so the Frontier Developments terms above
+also apply to them.
+
 ## The procedural naming tables
 
 `astro/galaxy-grid` also reaches the almanac's procedural naming tables, which come

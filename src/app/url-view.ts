@@ -62,23 +62,21 @@ export interface FragmentWriter {
 
 /** Options for `createFragmentWriter`. */
 export interface FragmentWriterOptions {
-  /** Writes the fragment. The default replaces the fragment of the page URL. */
-  readonly write?: (fragment: string) => void;
+  /**
+   * Writes the fragment. The caller gives it, because the page owns the URL and the
+   * library must not read or write `window.location`.
+   */
+  readonly write: (fragment: string) => void;
   /** Reads the clock. The default is `Date.now`. */
   readonly now?: () => number;
-}
-
-function defaultWrite(fragment: string): void {
-  const url = `${window.location.pathname}${window.location.search}#${fragment}`;
-  window.history.replaceState(null, '', url);
 }
 
 /** Writes the view to the URL fragment at most once every 500 ms. */
 export function createFragmentWriter(
   view: View,
-  options: FragmentWriterOptions = {},
+  options: FragmentWriterOptions,
 ): FragmentWriter {
-  const write = options.write ?? defaultWrite;
+  const write = options.write;
   const now = options.now ?? Date.now;
   let lastWrite = Number.NEGATIVE_INFINITY;
   let timer: ReturnType<typeof setTimeout> | null = null;

@@ -30,11 +30,25 @@ export interface GalaxyMapGlobal {
     stars?: boolean;
     glow?: boolean;
     regions?: boolean;
+    systems?: boolean;
   }) => void;
   /** How many vertices the last frame's star draw issued. */
   starVertexCount?: () => number;
   /** The sum of the drawn counts over the last frame's boxels. */
   starDrawnCount?: () => number;
+  /** The sum of the suppressed counts over the last frame's boxels. */
+  starSuppressedCount?: () => number;
+  /** How many markers the last frame drew. */
+  systemMarkerCount?: () => number;
+  /**
+   * Holds the close fade at a value from 0 to 1, or gives it back to the zoom distance
+   * with `null`. A test holds it at 1 to read the invented field at a close view.
+   */
+  setCloseFade?: (value: number | null) => void;
+  /** The mean and the worst frame time in ms, with the frames they cover. */
+  frameStats?: () => { frames: number; meanMs: number; worstMs: number };
+  /** Starts the frame time mean again. */
+  resetFrameStats?: () => void;
   /** The boundary vertices the page drew, as `x`, `y`, `z` per vertex. */
   regionLinePositions?: () => Float32Array;
   /**

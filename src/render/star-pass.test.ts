@@ -18,6 +18,7 @@ import {
   listBlockBoxels,
   listDrawnBoxels,
   starOffsets,
+  STARS_PER_BOXEL,
 } from '../scene-data/boxel';
 import {
   buildSurfaceTable,
@@ -27,10 +28,12 @@ import {
 } from '../scene-data/point-cloud';
 import type { SurfaceTable } from '../scene-data/point-cloud';
 import { SeededRandom } from '../scene-data/random';
-import { MASS_INTEGRAL, STARS_PER_BOXEL } from '../scene-data/star-field';
+import { MASS_INTEGRAL } from '../scene-data/star-field';
 import { DEFAULT_POINT_BRIGHTNESS, POINT_RADIUS_LY } from './point-pass';
 import {
+  closeFade,
   handoverRadii,
+  heldCloseFade,
   MAX_STAR_PIXELS,
   MIN_STAR_PIXELS,
   pointFade,
@@ -285,16 +288,71 @@ describe('the brightness spread', () => {
 
 describe('the handover', () => {
   test('gives the two fades a sum of one', () => {
+    // The sum is 1 where the close fade is 1. Below 2,560 light years the close fade
+    // takes light out of the frame, and the test below reads that band.
     let worst = 0;
-    for (const distance of [500, 2000, 4000, 6000, 8000]) {
+    for (const distance of [2560, 4000, 6000, 8000]) {
       const weight = starWeight(distance);
       const radii = handoverRadii(distance);
+      expect(closeFade(distance)).toBe(1);
       for (let range = 0; range <= 20000; range += 25) {
-        const sum = starFade(weight, radii, range) + pointFade(weight, radii, range);
+        const sum =
+          starFade(weight * closeFade(distance), radii, range) +
+          pointFade(weight, radii, range);
         worst = Math.max(worst, Math.abs(sum - 1));
       }
     }
     expect(worst).toBeLessThan(1e-6);
+  });
+
+  test('takes light out of the frame at the close zoom distances', () => {
+    for (const distance of [500, 640, 1000, 2000]) {
+      const weight = starWeight(distance);
+      const radii = handoverRadii(distance);
+      const close = closeFade(distance);
+      for (let range = 0; range <= 20000; range += 25) {
+        const handover = starFade(weight, radii, range);
+        // The point pass reads the handover weight alone, so its factor is the one it
+        // holds when the close fade is 1.
+        expect(pointFade(weight, radii, range)).toBeCloseTo(1 - handover, 12);
+        // The star pass reads the product, so the frame loses the faded light.
+        expect(starFade(weight * close, radii, range)).toBeCloseTo(
+          close * handover,
+          12,
+        );
+      }
+    }
+  });
+
+  test('holds at the value a test sets and returns to the zoom distance', () => {
+    expect(heldCloseFade(1, 500)).toBe(1);
+    expect(heldCloseFade(0.25, 4000)).toBe(0.25);
+    expect(heldCloseFade(null, 500)).toBe(closeFade(500));
+    expect(heldCloseFade(null, 1000)).toBe(closeFade(1000));
+    expect(heldCloseFade(null, 4000)).toBe(1);
+    // A value outside 0 to 1 cannot change the light.
+    expect(heldCloseFade(4, 500)).toBe(1);
+    expect(heldCloseFade(-1, 4000)).toBe(0);
+  });
+
+  test('follows the zoom distance', () => {
+    const readings: [number, number][] = [
+      [500, 0],
+      [640, 0],
+      [1000, 0.092],
+      [1280, 0.259],
+      [2560, 1],
+      [4000, 1],
+    ];
+    for (const [distance, wanted] of readings) {
+      expect(closeFade(distance)).toBeCloseTo(wanted, 3);
+    }
+    let last = 0;
+    for (let distance = 0; distance <= 8000; distance += 10) {
+      const value = closeFade(distance);
+      expect(value).toBeGreaterThanOrEqual(last);
+      last = value;
+    }
   });
 
   test('puts the fade band inside the covered sphere', () => {

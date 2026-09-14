@@ -13,6 +13,12 @@ uniform mat4 uViewProjection;
 uniform float uFocal;
 uniform float uWeight;
 uniform vec2 uHandover;
+// One row of eight 32-bit words per boxel, one bit per placed star. A set bit says
+// that a real system stands where the star would, so the field does not draw it.
+uniform highp usampler2D uMask;
+// 0 when no boxel of the frame suppresses a star. The shader then makes no fetch at
+// all, so a page with no real system draws the frame it drew before the mask existed.
+uniform float uSuppress;
 
 out float vTint;
 out float vBrightness;
@@ -34,12 +40,22 @@ float unitOf(uint bits) {
 }
 
 void main() {
-  // A star index at or above the boxel's drawn count gets no size and a position the
-  // near plane clips away.
+  // A star index at or above the boxel's placed count gets no size and a position the
+  // near plane clips away. The count is the placed count and not the drawn count,
+  // because a suppressed star sits at any index below it and the mask is what drops it.
   if (float(gl_VertexID) >= aShape.y) {
     gl_PointSize = 0.0;
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
+  }
+
+  if (uSuppress > 0.0) {
+    uint word = texelFetch(uMask, ivec2(gl_VertexID >> 5, gl_InstanceID), 0).r;
+    if ((word & (1u << uint(gl_VertexID & 31))) != 0u) {
+      gl_PointSize = 0.0;
+      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      return;
+    }
   }
 
   uint first = mixBits(aSeed + uint(gl_VertexID) * 0x9e3779b1u);

@@ -5,6 +5,7 @@ import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
 import type { GalaxyModel } from '../galaxy-model/model';
+import type { RealSystemSet } from '../scene-data/real-systems';
 import { createStarField } from '../scene-data/star-field';
 import type { StarField } from '../scene-data/star-field';
 import type {
@@ -53,10 +54,13 @@ import {
   createStarPass,
   createStarProgram,
   handoverRadii,
+  heldCloseFade,
   STAR_LIGHT,
   starWeight,
 } from './star-pass';
 import type { StarPass } from './star-pass';
+import { createSystemPass, createSystemProgram } from './system-pass';
+import type { SystemPass } from './system-pass';
 import {
   createVolumePass,
   createVolumeProgram,
@@ -68,6 +72,53 @@ import type { VolumePass } from './volume-pass';
 /** The largest device pixel ratio the canvas follows. */
 export const MAX_DEVICE_PIXEL_RATIO = 2;
 
+/** What the frames the loop drew have cost since the last reset. */
+export interface FrameStats {
+  /** How many frames the loop drew. */
+  readonly frames: number;
+  /** The mean draw time of one frame, in milliseconds. */
+  readonly meanMs: number;
+  /** The time of the longest single frame, in milliseconds. */
+  readonly worstMs: number;
+}
+
+/** Adds up the draw times of the frames the loop draws. */
+export interface FrameAccumulator {
+  /** Adds one frame time, in milliseconds. */
+  add(ms: number): void;
+  /** Reads the count, the mean and the worst. */
+  read(): FrameStats;
+  /** Starts the count again. */
+  reset(): void;
+}
+
+/**
+ * Creates the frame time accumulator. It is built like the label sweep's `sampling`, so
+ * the two report the same three numbers. It times the draw call alone: the frame budget
+ * requirement forbids a wait for the card in the normal loop, so these numbers are not
+ * on the same scale as `measureFrames`.
+ */
+export function createFrameAccumulator(): FrameAccumulator {
+  let frames = 0;
+  let totalMs = 0;
+  let worstMs = 0;
+  return {
+    add(ms: number): void {
+      frames += 1;
+      totalMs += ms;
+      if (ms > worstMs) worstMs = ms;
+    },
+    read(): FrameStats {
+      return { frames, meanMs: frames === 0 ? 0 : totalMs / frames, worstMs };
+    },
+    reset(): void {
+      frames = 0;
+      totalMs = 0;
+      worstMs = 0;
+    },
+  };
+}
+
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
@@ -76,6 +127,7 @@ export interface PassSwitches {
   stars: boolean;
   glow: boolean;
   regions: boolean;
+  systems: boolean;
 }
 
 /** How bright the map draws. */
@@ -109,12 +161,30 @@ export interface Renderer {
   setStarField(model: GalaxyModel): void;
   /** Uploads the region boundary set. Call it in its own animation frame. */
   setRegionLines(lines: RegionLines): void;
+  /**
+   * Takes the real-system set the star field suppresses by and the marker pass draws.
+   * The set is live: the renderer reads its version each frame.
+   */
+  setSystems(set: RealSystemSet | null): void;
   /** How many vertices the last frame's star draw issued. */
   starVertexCount(): number;
   /** The sum of the drawn counts over the last frame's boxels. */
   starDrawnCount(): number;
-  /** Draws one frame. */
+  /** The sum of the suppressed counts over the last frame's boxels. */
+  starSuppressedCount(): number;
+  /** How many markers the last frame drew. */
+  systemMarkerCount(): number;
+  /**
+   * Holds the close fade at a value from 0 to 1. `null` gives the fade back to the zoom
+   * distance. A test holds it at 1 to read the field at a close view.
+   */
+  setCloseFade(value: number | null): void;
+  /** Draws one frame and adds its time to the frame statistics. */
   render(view: View): void;
+  /** The mean and the worst frame time since the last reset. */
+  frameStats(): FrameStats;
+  /** Starts the frame time mean again. */
+  resetFrameStats(): void;
   /** Draws frames and returns the mean draw-to-finish time in milliseconds. */
   measureFrames(view: View, count: number): number;
   /** Chooses which passes draw. */
@@ -145,6 +215,7 @@ export function createRenderer(
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
   const starProgram: Program = createStarProgram(gl);
+  const systemProgram: Program = createSystemProgram(gl);
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
@@ -159,8 +230,14 @@ export function createRenderer(
   let pointPass: PointPass | null = null;
   let starPass: StarPass | null = null;
   let starField: StarField | null = null;
+  let systemSet: RealSystemSet | null = null;
+  let systemPass: SystemPass | null = null;
+  let systemMarkers = 0;
+  let starModel: GalaxyModel | null = null;
   let starVertices = 0;
   let starStars = 0;
+  let starSuppressed = 0;
+  let closeHold: number | null = null;
   let regionPass: RegionPass | null = null;
   let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
@@ -174,6 +251,7 @@ export function createRenderer(
     stars: true,
     glow: true,
     regions: true,
+    systems: true,
   };
   const look: LookSettings = {
     emission: DEFAULT_EMISSION,
@@ -185,6 +263,8 @@ export function createRenderer(
     glowTint: DEFAULT_GLOW_TINT,
     glowClamp: DEFAULT_GLOW_CLAMP,
   };
+
+  const frames: FrameAccumulator = createFrameAccumulator();
 
   const viewProjection = mat4.create();
   const inverseViewProjection = mat4.create();
@@ -320,10 +400,22 @@ export function createRenderer(
     // shares sum to 1 at every range and the total light does not change.
     const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
     const handover = handoverRadii(view.distance);
-    const drawsStars = passes.stars && starPass !== null && starField !== null;
-    const weight = drawsStars ? starWeight(view.distance) : 0;
+    // The weight follows the zoom distance alone while the field stands. The star
+    // switch does not change it, so a frame drawn with the star pass off holds the same
+    // point cloud as the frame drawn with it on. A field that has not loaded yet is the
+    // one case that gives the point cloud its near field back, so the first frames of a
+    // close view are not empty.
+    const hasField = starPass !== null && starField !== null;
+    const drawsStars = passes.stars && hasField;
+    const weight = hasField ? starWeight(view.distance) : 0;
+    // The close fade takes the field's light out of the frame as the camera comes in. It
+    // multiplies the star pass's weight alone: the point pass keeps the handover weight,
+    // so the light the field gives up leaves the frame rather than moving to the cloud.
+    const close = heldCloseFade(closeHold, view.distance);
     starVertices = 0;
     starStars = 0;
+    starSuppressed = 0;
+    systemMarkers = 0;
 
     if (passes.points && pointPass !== null) {
       pointPass.draw({
@@ -337,18 +429,21 @@ export function createRenderer(
     }
 
     // A weight of 0 draws nothing, so above 8,000 light years the frame is the one the
-    // far view drew before the star field existed.
+    // far view drew before the star field existed. The guard reads the handover weight
+    // alone and not the product, so the field still builds its table and the sweep still
+    // runs below 640 light years, where the close fade holds the light at 0.
     if (drawsStars && weight > 0 && starPass !== null && starField !== null) {
       const table = starField.update(camera, view.distance);
       starPass.draw({
         viewProjection: viewProjection as Float32Array,
         focal,
-        weight,
+        weight: weight * close,
         handover,
         table,
       });
       starVertices = starPass.vertexCount;
       starStars = table.drawnStars;
+      starSuppressed = table.suppressedStars;
     }
 
     // The tone map writes the frame the user sees.
@@ -362,12 +457,25 @@ export function createRenderer(
     // finished frame with alpha blending. A fade of 0 draws nothing at all, so the far
     // view is the frame it was before the overlay existed.
     const regions = regionFade(view.distance);
+    const pixelRatio = width / Math.max(1, canvas.clientWidth);
     if (passes.regions && regionPass !== null && regions > 0) {
       regionPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
-        pixelRatio: width / Math.max(1, canvas.clientWidth),
+        pixelRatio,
+      });
+    }
+
+    // The markers draw last, over the tone map and over the boundary overlay, so no
+    // other pass can cover one and a marker adds no light the tone map reads.
+    if (passes.systems && systemPass !== null && systemSet !== null) {
+      systemMarkers = systemPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        focal,
+        pixelRatio,
+        set: systemSet,
       });
     }
   };
@@ -402,8 +510,25 @@ export function createRenderer(
     },
     setStarField(model: GalaxyModel): void {
       starPass?.dispose();
-      starField = createStarField(model, { starLight: STAR_LIGHT });
+      starModel = model;
+      starField = createStarField(model, {
+        starLight: STAR_LIGHT,
+        systems: systemSet,
+      });
       starPass = createStarPass(gl, starProgram);
+    },
+    setSystems(set: RealSystemSet | null): void {
+      systemSet = set;
+      systemPass?.dispose();
+      systemPass = set === null ? null : createSystemPass(gl, systemProgram);
+      // The field holds the set it was made with, so a set that arrives after the model
+      // needs a new field. The model is the only other input, so this costs one build.
+      if (starModel !== null) {
+        starField = createStarField(starModel, {
+          starLight: STAR_LIGHT,
+          systems: set,
+        });
+      }
     },
     starVertexCount(): number {
       return starVertices;
@@ -411,8 +536,25 @@ export function createRenderer(
     starDrawnCount(): number {
       return starStars;
     },
+    starSuppressedCount(): number {
+      return starSuppressed;
+    },
+    systemMarkerCount(): number {
+      return systemMarkers;
+    },
+    setCloseFade(value: number | null): void {
+      closeHold = value;
+    },
     render(view: View): void {
+      const start = performance.now();
       drawFrame(view);
+      frames.add(performance.now() - start);
+    },
+    frameStats(): FrameStats {
+      return frames.read();
+    },
+    resetFrameStats(): void {
+      frames.reset();
     },
     measureFrames(view: View, count: number): number {
       if (count < 1) return 0;
@@ -435,6 +577,7 @@ export function createRenderer(
       if (next.stars !== undefined) passes.stars = next.stars;
       if (next.regions !== undefined) passes.regions = next.regions;
       if (next.glow !== undefined) passes.glow = next.glow;
+      if (next.systems !== undefined) passes.systems = next.systems;
     },
     look,
     viewport,
@@ -507,6 +650,7 @@ export function createRenderer(
     dispose(): void {
       pointPass?.dispose();
       starPass?.dispose();
+      systemPass?.dispose();
       regionPass?.dispose();
       cloudPass?.dispose();
       volumePass?.dispose();
@@ -515,6 +659,7 @@ export function createRenderer(
       glowPass.dispose();
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(starProgram.program);
+      gl.deleteProgram(systemProgram.program);
       gl.deleteProgram(regionPrograms.ribbon.program);
       gl.deleteProgram(regionPrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);

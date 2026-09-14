@@ -26,6 +26,9 @@ export const MAX_BASE_SIZE_CLASS = 4;
  */
 export const BASE_CLASS_DISTANCE = 320;
 
+/** The largest number of stars one boxel draws. */
+export const STARS_PER_BOXEL = 256;
+
 /** How many boxels a block holds on one axis. */
 export const BLOCK_BOXELS_PER_AXIS = 8;
 
