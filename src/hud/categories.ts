@@ -18,15 +18,57 @@ import {
 /** How long the box waits before it gives the text to the filter, in milliseconds. */
 export const FILTER_DELAY_MS = 150;
 
-/** The most system rows one expanded list holds. */
+/**
+ * The most system rows the open lists hold together. The open lists share it, so the
+ * HUD's node count follows neither the size of the set nor the count of open lists.
+ */
 export const MAX_SYSTEM_ROWS = 200;
 
 /** What the panel keeps about one system, so it does not read the set again. */
 interface Entry {
   readonly name: string;
   readonly identity: string;
-  /** The distance from Sol in light years, which does not change as the user flies. */
-  readonly distance: number;
+}
+
+/** One category and the names of the systems it holds, as `matchingCategories` reads it. */
+export interface CategorySystems {
+  readonly name: string;
+  readonly systems: readonly string[];
+}
+
+/**
+ * The categories that hold at least one system the filter keeps. A search opens every
+ * one of them, so the answer to a search is never inside a folded row.
+ *
+ * The comparison is the one the map itself makes: the text is not trimmed and the match
+ * is not case sensitive. A trim here would open a row whose marker the map does not draw.
+ */
+export function matchingCategories(
+  filter: string,
+  groups: readonly CategorySystems[],
+): Set<string> {
+  const text = filter.toLowerCase();
+  const open = new Set<string>();
+  for (const group of groups) {
+    const holds = group.systems.some((name) => name.toLowerCase().includes(text));
+    if (holds) open.add(group.name);
+  }
+  return open;
+}
+
+/**
+ * The rows one open list shows. `openCount` is the count of open lists and `index` is
+ * the place of this list among them, in the panel's own order.
+ *
+ * The open lists share the budget, at `floor(200 / open)` rows each. Where that share is
+ * 0, which a filter that matches in more than 200 categories reaches, the first 200 open
+ * lists hold one row each and every open list past the 200th holds none.
+ */
+export function rowShare(openCount: number, index: number): number {
+  if (openCount <= 0) return 0;
+  const share = Math.floor(MAX_SYSTEM_ROWS / openCount);
+  if (share > 0) return share;
+  return index < MAX_SYSTEM_ROWS ? 1 : 0;
 }
 
 /** The elements of one category row. */
@@ -102,16 +144,43 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
 
   const groups: Group[] = [];
   const byCategory = new Map<string, Entry[]>();
-  let expanded: string | null = null;
+  // The categories whose lists are open. It is state and not a reading of the filter
+  // text: a change of the text writes it, the expand button writes it, and a rebuild of
+  // the panel only reads it. The panel is rebuilt on every camera move, so a set worked
+  // out from the text on each rebuild would undo the user's fold on the next frame.
+  const open = new Set<string>();
+  // The category the user last expanded by hand. Clearing the box gives the panel back
+  // to that one, and to none where the user expanded none.
+  let handExpanded: string | null = null;
   let dataSignature = '';
   let filterSignature = '';
   let filterTimer: number | null = null;
 
-  /** Gives the box's text to the filter and renders the list again. */
+  /**
+   * Writes the open set from the filter text. A text that is not empty opens every
+   * category that holds a match, including one the user turned off, because a click on
+   * one of its rows turns it back on. An empty text gives the panel back to the one
+   * category the user last expanded by hand.
+   */
+  function seedOpen(filter: string): void {
+    open.clear();
+    if (filter === '') {
+      if (handExpanded !== null) open.add(handExpanded);
+      return;
+    }
+    const held: CategorySystems[] = groups.map((group) => ({
+      name: group.name,
+      systems: (byCategory.get(group.name) ?? []).map((entry) => entry.name),
+    }));
+    for (const name of matchingCategories(filter, held)) open.add(name);
+  }
+
+  /** Gives the box's text to the filter and renders the lists again. */
   const applyFilter = (): void => {
     filterTimer = null;
     map.setNameFilter(search.value);
-    renderExpandedList();
+    seedOpen(map.getNameFilter());
+    renderOpenLists();
   };
 
   search.addEventListener('input', () => {
@@ -142,11 +211,9 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     for (let index = 0; index < count; index += 1) {
       const system = map.getSystem(index);
       if (system === null) continue;
-      const position = system.position;
       const entry: Entry = {
         name: system.name,
         identity: system.id64 ?? system.name,
-        distance: Math.hypot(position[0], position[1], position[2]),
       };
       // The system goes in every category it names. The row's switch brings the
       // system back through any of them, so the row's count and its list say so.
@@ -155,7 +222,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     }
   }
 
-  /** The systems of the expanded category the filter keeps, in order of name. */
+  /** The systems of one category the filter keeps, in order of name. */
   function entriesOf(name: string): Entry[] {
     const held = byCategory.get(name) ?? [];
     // The text is not trimmed, because the map compares the filter text as the host
@@ -169,22 +236,41 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     return kept;
   }
 
-  /** Fills the list of the expanded category, and empties every other list. */
-  function renderExpandedList(): void {
+  /**
+   * Fills the list of every open category and empties every other list.
+   *
+   * The open lists share the row budget, at `floor(200 / open)` rows each, so the HUD's
+   * node count does not follow the count of open lists. Where that share is 0, which a
+   * filter matching in more than 200 categories reaches, the first 200 open lists in the
+   * panel's own order hold one row each and the rest hold none. A list that holds no row
+   * still says how many systems it has, so the user narrows the filter to read it.
+   */
+  function renderOpenLists(): void {
+    const openCount = groups.reduce(
+      (count, group) => (open.has(group.name) ? count + 1 : count),
+      0,
+    );
+    let openIndex = 0;
     for (const group of groups) {
-      const open = group.name === expanded;
-      setAttribute(group.expand, 'aria-expanded', open ? 'true' : 'false');
-      setAttribute(group.expand, 'aria-label', open ? 'Hide systems' : 'List systems');
-      setAttribute(group.expand, 'title', open ? 'Hide systems' : 'List systems');
-      setShown(group.list, open);
-      if (!open) {
+      const isOpen = open.has(group.name);
+      setAttribute(group.expand, 'aria-expanded', isOpen ? 'true' : 'false');
+      setAttribute(
+        group.expand,
+        'aria-label',
+        isOpen ? 'Hide systems' : 'List systems',
+      );
+      setAttribute(group.expand, 'title', isOpen ? 'Hide systems' : 'List systems');
+      setShown(group.list, isOpen);
+      if (!isOpen) {
         if (group.list.childElementCount > 0) {
           replaceChildrenKeepingFocus(group.list, []);
         }
         continue;
       }
+      const cap = rowShare(openCount, openIndex);
+      openIndex += 1;
       const entries = entriesOf(group.name);
-      const shown = Math.min(entries.length, MAX_SYSTEM_ROWS);
+      const shown = Math.min(entries.length, cap);
       const children: HTMLElement[] = [];
       for (let index = 0; index < shown; index += 1) {
         const entry = entries[index] as Entry;
@@ -193,10 +279,6 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         row.dataset['identity'] = entry.identity;
         const name = make(doc, 'span', 'gm-hud__system-name');
         name.textContent = entry.name;
-        // The distance is an attribute the style sheet draws, and not an element. The
-        // list holds 200 rows, and the HUD's node count budget does not carry a third
-        // element per row.
-        row.dataset['distance'] = formatWhole(entry.distance);
         row.append(name);
         row.addEventListener('click', () => {
           // The row turns its category on, because a row of a category the user closed
@@ -222,7 +304,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   function rebuild(): void {
     // The mark is read before the first replace and restored after the last one. The new
     // groups hold empty system lists, so a focused system row finds its place only after
-    // `renderExpandedList` fills them.
+    // `renderOpenLists` fills them.
     const mark = focusMark(element);
     readSystems();
     groups.length = 0;
@@ -256,8 +338,19 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       expand.dataset['name'] = category.name;
       expand.appendChild(makeExpandIcon(doc));
       expand.addEventListener('click', () => {
-        expanded = expanded === category.name ? null : category.name;
-        renderExpandedList();
+        const name = category.name;
+        if (open.has(name)) {
+          open.delete(name);
+          if (handExpanded === name) handExpanded = null;
+        } else {
+          // At most one category is open while the box is empty. While it holds text
+          // the button adds or removes one name, so a list the user folds during a
+          // search stays folded until the text changes again.
+          if (map.getNameFilter() === '') open.clear();
+          open.add(name);
+          handExpanded = name;
+        }
+        renderOpenLists();
       });
 
       line.append(row, expand);
@@ -274,13 +367,12 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         color: category.color,
       });
     }
-    if (expanded !== null && !groups.some((group) => group.name === expanded)) {
-      expanded = null;
-    }
     replaceChildrenKeepingFocus(list, children);
     dataSignature = `${map.categoryCount()}:${map.systemCount()}`;
     filterSignature = map.getNameFilter();
-    renderExpandedList();
+    // The rebuild reads the open set and never writes it. A name of a category that is
+    // gone opens no list, because the render reads the groups the panel holds.
+    renderOpenLists();
     restoreFocus(element, mark);
   }
 
@@ -320,7 +412,10 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       const nextFilter = map.getNameFilter();
       if (nextFilter !== filterSignature) {
         filterSignature = nextFilter;
-        renderExpandedList();
+        // A host that writes the filter changes the text, so the open set follows it as
+        // it follows the search box.
+        seedOpen(nextFilter);
+        renderOpenLists();
         return;
       }
       update();

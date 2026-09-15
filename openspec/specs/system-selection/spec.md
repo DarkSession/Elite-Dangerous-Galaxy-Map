@@ -98,8 +98,11 @@ canvas.
 
 **The selection follows a click.** A left click, which `map-navigation` defines as a press
 that stays within 4 CSS pixels and releases within 400 ms, SHALL select the system under
-the release pixel. A click that finds no system SHALL leave the selection as it is. The
-user orbits with the same button, so a click that lands between markers is far more often
+the release pixel. **A tap** SHALL select in the same way. `map-navigation` defines a tap as
+a touch that stays within **10 CSS pixels** and releases within 400 ms, and states why the
+move limit is wider for a finger than for a mouse. A click that finds no system SHALL
+leave the selection as it is. The user orbits with the same button, so a click that lands
+between markers is far more often
 a missed grab than a request to close the panel. The panel's close button and the `Escape`
 key clear the selection, and `map-hud` states both.
 
@@ -173,9 +176,6 @@ selection to the system already selected.
 - **WHEN** the browser test selects a system, turns its category off, draws a frame and
   reads `getSelection` and the marker count
 - **THEN** the selection still names the system and the marker count does not hold it
-
-
-
 
 ### Requirement: A selection centres the camera and caps the distance at 500 light years
 

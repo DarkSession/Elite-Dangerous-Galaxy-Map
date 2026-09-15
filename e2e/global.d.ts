@@ -29,6 +29,8 @@ declare global {
     __selectionLog?: (string | null)[];
     /** The second map the HUD tests build, with the HUD on. */
     __hudMap?: GalaxyMap;
+    /** The map the touch tests build, over a canvas that states no `touch-action`. */
+    __touchMap?: GalaxyMap;
     /** The second map the dataset tests build, with a catalog of their own. */
     __datasetMap?: GalaxyMap;
     /** The ids of the entries whose `load()` the dataset tests' catalog called. */

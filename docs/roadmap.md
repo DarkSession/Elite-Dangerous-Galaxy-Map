@@ -659,7 +659,9 @@ one soft band inside a zoom band, and shows a system position at full precision.
 - **The overlay draws in a zoom band.** Nothing at 5,000 light years and below, full from
   10,000 to 20,000, nothing again at 30,000 and above. The lines and the labels take the
   same band. Below it the HUD's top bar names the region under the cursor, and the handle
-  answers for any plane point with `regionNameAt`.
+  answers for any plane point with `regionNameAt`. Phase 5.2 replaces the close end of
+  this band for the **lines** with a fade on the range of each pixel. The labels keep the
+  band.
 - **The panel shows a position at full precision.** `POSITION` shows each coordinate to at
   most 3 decimal places, with the trailing zeros dropped and the thousands separators
   kept. The copy text uses the same digits with no separators. The game resolves a
@@ -668,6 +670,78 @@ one soft band inside a zoom band, and shows a system position at full precision.
 - **The far view did not move.** The background reading is read and never written back
   into the scene, so the committed baseline image is byte-identical: 0 of 3,686,400 bytes
   differ.
+
+## Phase 5.2: touch, the HUD panels and the overlay limits
+
+Change: `touch-controls-hud-and-overlay-limits`. Status: implemented.
+
+Gives the canvas a touch gesture set, moves three HUD readings, makes the region label
+filter read elapsed time, replaces the close end of the overlay's zoom band with a range
+fade per pixel, and ties a grid coordinate label to its own line.
+
+- **Touch is a gesture set of its own.** One finger moves the cursor in the galactic
+  plane, two fingers pinch to zoom and drag to orbit, and a tap selects. A one-finger drag
+  orbited before, so this is breaking for a touch user. The reducer `touchGesture(state,
+  reading)` in `src/camera/controls.ts` holds the whole rule and takes no DOM, because
+  `vitest.config.ts` sets `environment: 'node'`. `attachControls` turns a `PointerEvent`
+  into a reading and writes the view the reducer gives. A second Playwright project,
+  `chromium-touch`, runs `e2e/touch.spec.ts` on a touch context, and it runs
+  `e2e/00-renderer.spec.ts` as well, so the new context asserts the hardware renderer as
+  `chromium-gpu` does.
+- **The HUD panels.** `POSITION` takes both columns of the field grid, so the longest text
+  of the panel no longer wraps. `DISTANCE FROM SOL` and `RANGE` share the row under it. The
+  system row holds the name alone. Every category that holds a match opens by itself while
+  the search box is not empty, and clearing the box gives the panel back to the one
+  category the user opened by hand.
+- **The row budget is shared.** The 200 system rows are a budget over every open list
+  together, at `floor(200 / open)` rows each. Where more than 200 lists are open, the first
+  200 show one row each and the rest show none.
+- **The label filter reads elapsed time.** Every share, cap and floor is a rate per second,
+  in the half-life form `1 - 0.5 ** (seconds * 1000 / halfLifeMs)`, so a label moves the
+  same way at 30, 60 and 144 frames a second. The anchor keeps its cap of 1,200 CSS pixels
+  a second. A **drift cap** goes on the smoothed target: the target may move at most
+  `carry + 120 * seconds` CSS pixels on the screen in a frame, where `carry` is how far the
+  map moved the point the filter already held. A label therefore travels with the map for
+  free and drifts over it at 120 CSS pixels a second at most. The cap is solved by
+  bisection on the real projection, because the plane point that gives a wanted screen
+  move has no closed form. The handover from the region's centre to the frame's own samples
+  takes a hysteresis band of `ANCHOR_REACH_SHARE`, 0.25 of the frame, so it does not cross
+  back and forth. A frame that writes the view rather than moving it — `setView`, the
+  landing of a selection flight, a view read from the URL fragment — drops the carried
+  target and takes this frame's own target whole.
+- **The boundary fades by the range of each pixel.** A fragment of a line draws nothing
+  within 10,000 light years of the camera and in full beyond 20,000, on a smooth step
+  between. The composite reads the plane point of each pixel through
+  `uInverseViewProjection` and `uPlaneY`, so one line fades along its own length and a line
+  near the horizon still draws while the line under the camera is gone. The fade holds its
+  own constants, `REGION_RANGE_NONE` and `REGION_RANGE_FULL`, and does not reuse the close
+  fade the phase before it removed. The zoom band that took the whole overlay away below
+  5,000 light years goes; the far end, from 20,000 to 30,000, stays. The region **labels**
+  keep the zoom band, because a label names the region the view sits in and is not a line
+  on the plane.
+- **The blur runs at every zoom in `accurate`.** The kernel's standard deviation is
+  `max(radius / 3, 1)` CSS pixels, so a small radius still smooths, and the tap count is
+  `2 * ceil(3 * sigma) + 1`. The radius reads the traced cell at
+  `max(cursorDistance, 10,000)` light years: the cursor, with a floor at the nearest range
+  the fade draws.
+- **A grid coordinate label follows its own line.** The label's opacity is multiplied by
+  `alpha / GRID_MAX_ALPHA`, the drawn alpha of its level at its crossing over the alpha at
+  the cursor. The placement already reads that alpha for its gate, so the rule adds no
+  work. The gate at `GRID_LABEL_MIN_ALPHA` of 0.09 floors the factor at 0.2.
+  `debug.gridLabelReadings()` reports the text, the place, the alpha and the opacity of
+  every label the overlay holds, so a browser test reads the rule and not a screenshot.
+- **The browser reading views moved.** The three searches that are governed by the range
+  fade read at a range of at least 20,000 light years and a zoom of exactly 20,000, and
+  their viewports rise with the zoom so that one CSS pixel covers the light years it
+  covered before. `tests/region-views.test.ts` asserts the count each search holds: 23 and
+  2 straight runs for the width search over the smoothed and the traced set, 6,713 bends
+  for the join search, 10 lattice nodes for the traced corner search and 4,605 plane points
+  for the both-sets search.
+- **The tests that read an absolute pixel turn the overlay off.** The pass now draws at
+  every zoom under 30,000 light years, where it drew nothing below 5,000. Seventeen browser
+  tests outside `e2e/regions.spec.ts` read an absolute pixel value at such a zoom, and each
+  one whose reading is not about the overlay switches the overlay off. `e2e/look.spec.ts`
+  holds none of them, so the committed baseline image does not move.
 
 ## Sources
 

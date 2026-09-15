@@ -342,34 +342,51 @@ centre is not one pixel wide in one column and two in the next.
 
 #### Scenario: The overlays draw over the grid
 
-- **WHEN** the browser test opens a view that shows a region boundary crossing a grid line at
-  a zoom of about **8,000 light years**, reads the same rectangle in **four** frames, with
-  neither overlay, with the grid alone, with the boundary alone and with the two together, and
-  takes two pixels from those readings: the **crossing**, which is the pixel where the product
-  of the grid's own contribution and the boundary's own contribution is largest, and the
-  **comparison**, which is the nearest pixel that carries the same grid contribution within a
-  tenth and no boundary contribution at all
+- **WHEN** the browser test opens a view at a zoom of about **8,000 light years** at a pitch
+  of **5 degrees**, which shows a region boundary crossing a grid line at a place whose plane
+  point is at least **20,000 light years** from the camera, reads the same rectangle in
+  **four** frames, with neither overlay, with the grid alone, with the boundary alone and with
+  the two together, and takes two pixels from those readings: the **crossing**, which among
+  the pixels **whose own plane point is beyond 20,000 light years** is the one where the
+  product of the grid's own contribution and the boundary's own contribution is largest, and
+  the **comparison**, which is the nearest pixel that carries the same grid contribution
+  within a tenth and no boundary contribution at all
 - **THEN** the grid's contribution at the crossing, which is the frame with both overlays less
-  the frame with the boundary alone, is between **0.45 and 0.85** of the grid's contribution at
+  the frame with the boundary alone, is between **0.30 and 0.75** of the grid's contribution at
   the comparison pixel, which is the frame with the grid alone less the frame with neither.
   The reading is taken on the channel that carries the largest grid contribution.
 
+  The pitch is 5 degrees because the boundary takes a **range fade** per pixel, nothing
+  under 10,000 light years and full at 20,000. At a pitch of 89 degrees every pixel reads a
+  plane point about 8,000 light years from the camera, so the boundary would draw nothing
+  anywhere in the frame and the reading could not be taken. A pitch of 5 degrees reaches
+  toward the horizon, where the plane is tens of thousands of light years off and the
+  boundary draws in full.
+
   The scenario reads the **order** and nothing else. The boundary draws after the grid at an
-  alpha of `0.55 * regionFade(8000)`, which is 0.357, so it keeps `1 - 0.357`, that is 0.643,
-  of whatever the grid put down under it. If the grid drew last, the grid's contribution would
-  be the same at both pixels and the ratio would be 1. The band is wide because the boundary's
-  own alpha at the crossing is not always its largest, and because the background moves a
-  little between the two pixels; it is narrow enough that the wrong order cannot pass.
+  alpha of `0.55` times its own coverage alpha: the zoom fade is 1 at 8,000 light years and the
+  range fade is 1 beyond 20,000, so neither fade takes any of it. Where the coverage alpha is 1 the boundary keeps `1 - 0.55`, that is 0.45, of whatever
+  the grid put down under it. If the grid drew last, the grid's contribution would be the same
+  at both pixels and the ratio would be 1. The band is wide because the boundary's own alpha at
+  the crossing is not always its largest, and because the background moves a little between the
+  two pixels; it is narrow enough that the wrong order cannot pass.
+
+  **The measured ratio is 0.40.** The view the test finds holds 35 rows whose plane point is
+  beyond 20,000 light years, the reading falls on the blue channel, and the grid moves that
+  channel by 2 of 255 at the crossing against 5 at the comparison pixel. The band above is
+  the bound the reading must fall inside, and 0.45 is the figure the rule gives at full
+  coverage: the crossing pixel does not carry the boundary's full coverage alpha, so the
+  measured ratio sits a little under it.
 
   An earlier form of this scenario compared the crossing pixel's distance to the two frames.
   That reading does not hold the order: it puts the grid's contribution on one side and the
   boundary's on the other, so it compares the **strength** of the two overlays and passes at
   either order. Where no grid line meets the boundary it also passes on zero.
 
-  The zoom is stated because the two overlays now draw in bands that barely meet. The grid
-  band leaves 0.50 of its alpha at 8,000 light years and none at 12,000; the region band
-  leaves 0.65 of its opacity at 8,000 and none at 5,000. 8,000 is where the product of the two
-  is largest, and it is the only part of the zoom range where this reading can be taken at all
+  The zoom is stated because the grid draws in a band of its own: it leaves 0.50 of its alpha
+  at 8,000 light years and none at 12,000. The boundary now has no close end to its zoom band,
+  so the pair meets over the whole of the grid's band, and 8,000 light years is kept because it
+  is the reading this scenario was taken at
 
 #### Scenario: The grid draws under a marker
 
@@ -441,7 +458,6 @@ centre is not one pixel wide in one column and two in the next.
 - **WHEN** the browser test turns the grid on at a view where a line of the label level
   runs down the frame, and reads the light the grid adds across that line on 20 rows
 - **THEN** every row holds the same total within 10 per cent, at a device pixel ratio of 1
-
 
 ### Requirement: The grid reports what it drew
 
@@ -565,12 +581,28 @@ years. The `x` and the `z` are on the crossings, and the `y` is one number for t
 grid, so it is stated once. The lower edge is the free edge: the HUD's top bar covers the
 top, its category browser the left and its information panel the right.
 
+**A label SHALL NOT draw stronger than the line it names.** The label's opacity SHALL be
+multiplied by `alpha / 0.45`, where `alpha` is the drawn alpha of the label level at the
+crossing, the reading the gate above already takes, and 0.45 is `GRID_MAX_ALPHA`, the alpha
+a level draws at when it is fully bold with the camera distance band open.
+
+A label level's spacing on the screen is at least 400 CSS pixels at the cursor, so the level
+is fully bold there and the factor is 1: a label at the cursor keeps the whole of its own
+opacity and nothing changes for it. The factor falls away from the cursor, where the
+projection closes the lines up toward the horizon and the level's alpha falls with them.
+
+Without the factor a label draws at a fixed 0.80 while its line draws at 0.09, which is the
+gate. The number is then nearly nine times the strength of the line it names, and the grid
+reads as a field of numbers with a few faint lines behind them. The gate is the floor of the
+factor as well as of the line: 0.09 over 0.45 is 0.2, so no label draws below a fifth of its
+own opacity, and no label is drawn that the factor would take below that.
+
 **A label SHALL follow the background under it, by the same rule the lines follow.** A
 number in `rgba(255, 196, 140, 0.86)` over a hard black shadow is a HUD label pasted on the
 sky. The label SHALL read the background reading at the centre of its own box and take:
 
-- an **opacity** of `0.80 * (1 - (1 - 0.45) * merge)`, where `merge` is the same
-  `smoothstep(0.08, 0.55, L)` the lines use;
+- an **opacity** of `0.80 * (alpha / 0.45) * (1 - (1 - 0.45) * merge)`, where `merge` is the
+  same `smoothstep(0.08, 0.55, L)` the lines use;
 - a **colour** of `mix(rgb(255, 196, 140), background, 0.35 * merge)`.
 
 The floor is **0.45** and not the lines' 0.30, and the tint reaches 0.35 and not 0.60,
@@ -584,6 +616,11 @@ second outline that no part of the picture carries.
 
 Every label SHALL leave the overlay when the grid switch goes off, and when the camera
 distance band gives 0.
+
+**The page SHALL expose the readings of the labels of the last frame**, each one holding the
+label's text, its position in CSS pixels, the drawn alpha of its level at its crossing and
+the opacity the label was given. The factor is a ratio of two numbers, and only one of them
+reaches a pixel of the frame, so a test cannot read it from the picture alone.
 
 #### Scenario: A crossing label reads its own coordinates
 
@@ -619,9 +656,10 @@ distance band gives 0.
 
 #### Scenario: A label recedes over a bright background
 
-- **WHEN** the browser test turns the grid on at a zoom of **2,000 light years** in the same
-  **two** views the line scenarios use, one over the galactic core and one over the dark
-  space between the arms, and reads the opacity of a crossing label in each
+- **WHEN** the browser test turns the grid on at a zoom of **2,000 light years** at a pitch
+  of **89 degrees** in the same **two** views the line scenarios use, one over the galactic
+  core and one over the dark space between the arms, and reads the opacity of the crossing
+  label **nearest the centre of the canvas** in each
 - **THEN** the opacity over the core is between 0.40 and 0.55 of 0.80, the opacity over the
   dark space is above 0.75 of 0.80, and neither label carries a pure black shadow.
 
@@ -630,7 +668,12 @@ distance band gives 0.
   rows is 1,000 light years, whose spacing on the screen is about 468 CSS pixels, so a
   1920 wide frame holds about four crossings and the level draws at 0.45 alpha, well above
   the 0.09 gate. At a zoom of 4,000, where the line scenarios read, the label level is
-  10,000 light years and about 2,338 CSS pixels, and the frame may hold no crossing at all
+  10,000 light years and about 2,338 CSS pixels, and the frame may hold no crossing at all.
+
+  The pitch and the nearest label are what hold the line factor at 1, so this scenario reads
+  the background rule alone. Looking down from 89 degrees the projection is nearly flat over
+  the frame, and the crossing at the middle carries the level's full 0.45 alpha. A label far
+  out at a low pitch carries less, which is what the scenario below reads
 
 #### Scenario: A label and its line recede together
 
@@ -666,6 +709,23 @@ distance band gives 0.
   5 degrees, which reaches furthest toward the horizon, reads each crossing label's
   position and reads the drawn pixel there
 - **THEN** every label sits on a pixel the grid lit
+
+
+#### Scenario: A label does not draw stronger than its line
+
+- **WHEN** the browser test turns the grid on at a zoom of 3,000 light years at a pitch of
+  **5 degrees**, which reaches furthest toward the horizon, over the dark space between the
+  arms, and reads for every crossing label its own opacity and the drawn alpha of the level
+  at its crossing
+- **THEN** every label's opacity is `0.80 * alpha / 0.45` times its background weight, within
+  0.01; the label nearest the top of the frame has a lower opacity than the label nearest the
+  centre; and no label's opacity is above 0.80
+
+#### Scenario: The factor is 1 at the cursor
+
+- **WHEN** a unit test reads the label opacity factor at the drawn alpha a fully bold level
+  gives with the band open, which is 0.45, and at the gate of 0.09
+- **THEN** the first factor is 1 and the second is 0.2
 
 ### Requirement: The grid holds the frame budget
 

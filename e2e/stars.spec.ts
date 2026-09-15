@@ -200,6 +200,7 @@ test('the field alone rises above the background', async ({ page }) => {
     clouds: false,
     glow: false,
     points: false,
+    regions: false,
     stars: true,
   });
   const withStars = await frameExtremes(page);
@@ -220,6 +221,7 @@ test('the field adds no light at the close zoom distances', async ({ page }) => 
     clouds: false,
     glow: false,
     points: false,
+    regions: false,
     stars: true,
   });
   const reading = await frameExtremes(page);
@@ -230,6 +232,9 @@ test('the field adds no light at the close zoom distances', async ({ page }) => 
 
 test('the field has grain', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
+  // The region overlay draws at every zoom under 30,000 light years now, so a test that
+  // reads an absolute pixel and does not read the overlay turns the overlay off.
+  await setPasses(page, { regions: false });
   await setCloseFade(page, 1);
   const grain = await centreGrain(page, 120);
   console.log('the field grain', grain);
@@ -244,6 +249,7 @@ test('the switch removes the field', async ({ page }) => {
     clouds: false,
     glow: false,
     points: false,
+    regions: false,
     stars: true,
   });
   const withStars = await meanLuminanceFrame(page);

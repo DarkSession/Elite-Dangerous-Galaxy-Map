@@ -49,9 +49,9 @@ import type {
   DatasetState,
 } from './datasets';
 import { createGridLabelOverlay } from './grid-labels';
-import type { GridLabelOverlay } from './grid-labels';
-import { createLabelOverlay } from './labels';
-import type { LabelOverlay, SamplingStats } from './labels';
+import type { GridLabelOverlay, GridLabelPlaced } from './grid-labels';
+import { createLabelOverlay, STILL_FRAME } from './labels';
+import type { FrameTiming, LabelOverlay, SamplingStats } from './labels';
 import { createMarkerOverlay } from './markers';
 import type { MarkerOverlay } from './markers';
 
@@ -202,6 +202,13 @@ export interface GalaxyMapDebug {
    * reading is empty in a frame the grid did not draw in.
    */
   gridLevels(): GridLevelReading[];
+  /**
+   * The crossing labels of the last frame, each with its text, its box in CSS pixels,
+   * the drawn alpha of its level at its crossing and the opacity it was given. The
+   * opacity is a product of two numbers and only one of them reaches a pixel, so a test
+   * cannot read the line factor from the picture alone.
+   */
+  gridLabelReadings(): GridLabelPlaced[];
   /**
    * The width and the height of the background reading's own target, and `[0, 0]`
    * before the first frame that builds one. It reports the storage and not the last
@@ -449,6 +456,12 @@ export function createGalaxyMap(
     readonly startMs: number;
   } | null = null;
 
+  // True where the view was written and not moved: `setView`, the landing of a selection
+  // flight, and a view a host read from the URL fragment, which reaches the map through
+  // `setView`. The next draw reads the flag and clears it, because a write of the view
+  // draws no frame of its own. The label filter takes its target whole on such a frame.
+  let jumped = false;
+
   let renderer: Renderer | null = null;
   let labels: LabelOverlay | null = null;
   let markers: MarkerOverlay | null = null;
@@ -459,6 +472,9 @@ export function createGalaxyMap(
   const frameIntervals: FrameAccumulator = createFrameAccumulator();
   let ownedHost: HTMLElement | null = null;
   let controls: Controls | null = null;
+  // What the canvas carried as its own `touch-action` before the map wrote one. `dispose`
+  // puts it back, so a host gets the canvas it gave.
+  let heldTouchAction: string | null = null;
   let regionGrid: CoarseRegionGrid | null = null;
   let regionLines: RegionLines | null = null;
   let regionsOn = true;
@@ -595,7 +611,13 @@ export function createGalaxyMap(
     }
     const elapsed = nowMs - flight.startMs;
     const next = flightAt(flight.from, flight.to, elapsed);
-    if (elapsed >= FLIGHT_MS) flight = null;
+    // The landing is a jump and the frames before it are not. A flight in progress moves
+    // the view, so the labels ride it; the landing writes the end view, and a label that
+    // held its target across it would walk the width of the screen to catch up.
+    if (elapsed >= FLIGHT_MS) {
+      flight = null;
+      jumped = true;
+    }
     takeView(next);
   };
 
@@ -655,7 +677,19 @@ export function createGalaxyMap(
     console.warn('The map dropped a dataset entry.', reject);
   }
 
-  const drawFrame = (): void => {
+  /**
+   * Draws one frame.
+   *
+   * `timing` is the time the frame covers and whether the caller wrote the view rather
+   * than moved it. **Every call outside the frame loop passes `STILL_FRAME`**, which is
+   * 0 seconds: such a call redraws the frame the loop last built, and a redraw must not
+   * advance the label filter. A new call site follows the same rule.
+   *
+   * A jump is a write of the view and not a movement of it. `jumped` holds the flag from
+   * the write until the next draw reads it, because `setView` and the landing of a
+   * selection flight both write the view without drawing.
+   */
+  const drawFrame = (timing: FrameTiming = STILL_FRAME): void => {
     if (renderer === null) return;
     renderer.render(view);
     const size = renderer.viewport();
@@ -676,7 +710,11 @@ export function createGalaxyMap(
       namesOn,
     });
     selectionWork.add(performance.now() - started);
-    labels?.update(view, size, regionsOn && regionMode !== 'off');
+    labels?.update(view, size, regionsOn && regionMode !== 'off', {
+      seconds: timing.seconds,
+      jump: timing.jump || jumped,
+    });
+    jumped = false;
     // The grid labels read the label level the grid pass drew, so a label and its lines
     // never disagree. A frame with the grid off reports a spacing of 0, which clears the
     // labels with the same call.
@@ -721,6 +759,13 @@ export function createGalaxyMap(
     markers = host === null ? null : createMarkerOverlay(host);
     gridLabels = host === null ? null : createGridLabelOverlay(host);
     renderer.setGridDraw(gridOn);
+
+    // The browser gives every touch to the map, and scrolls, pans and zooms nothing of
+    // its own. The style is inline and not a rule in a style sheet: the host owns the
+    // canvas and may load a reset sheet that sets `touch-action: auto`, and the only
+    // sheet the library injects belongs to the HUD, which is opt-in.
+    heldTouchAction = canvas.style.touchAction;
+    canvas.style.touchAction = 'none';
 
     controls = attachControls(canvas, view, {
       onChange: announce,
@@ -794,7 +839,7 @@ export function createGalaxyMap(
       advanceFlight(performance.now());
       controls?.update(seconds);
       refreshHud();
-      drawFrame();
+      drawFrame({ seconds, jump: false });
       frameHandle = requestAnimationFrame(loop);
     };
     frameHandle = requestAnimationFrame(loop);
@@ -949,6 +994,9 @@ export function createGalaxyMap(
     gridLevels(): GridLevelReading[] {
       return renderer?.gridLevels() ?? [];
     },
+    gridLabelReadings(): GridLabelPlaced[] {
+      return gridLabels?.readings() ?? [];
+    },
     backgroundSize(): [number, number] {
       return renderer?.backgroundSize() ?? [0, 0];
     },
@@ -1018,6 +1066,10 @@ export function createGalaxyMap(
       if (renderer !== null) lastStats = renderer.frameStats();
       controls?.dispose();
       controls = null;
+      if (heldTouchAction !== null) {
+        canvas.style.touchAction = heldTouchAction;
+        heldTouchAction = null;
+      }
       window.removeEventListener('resize', onResize);
       hud?.dispose();
       hud = null;
@@ -1049,6 +1101,7 @@ export function createGalaxyMap(
       if (next.yaw !== undefined) view.yaw = next.yaw;
       if (next.pitch !== undefined) view.pitch = next.pitch;
       normaliseView(view);
+      jumped = true;
       announce();
     },
     onViewChange(listener: (view: MapView) => void): () => void {

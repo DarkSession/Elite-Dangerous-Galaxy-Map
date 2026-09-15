@@ -90,6 +90,10 @@ export interface PlacedLabel extends LabelBox {
   readonly plane: PlanePoint;
   /** The smoothed target the anchor moves toward, so the next frame can carry it. */
   readonly target: PlanePoint;
+  /** Where that smoothed target projected, so the next frame reads how far it moved. */
+  readonly targetScreen: AnchorPoint | null;
+  /** True where the centre rule named the target, which the handover band reads. */
+  readonly centre: boolean;
 }
 
 /**
@@ -144,6 +148,10 @@ export interface LabelCandidate {
   readonly plane: PlanePoint;
   /** The smoothed target the anchor moves toward, so the next frame can carry it. */
   readonly target: PlanePoint;
+  /** Where that smoothed target projected, so the next frame reads how far it moved. */
+  readonly targetScreen: AnchorPoint | null;
+  /** True where the centre rule named the target, which the handover band reads. */
+  readonly centre: boolean;
   /** Where the label sits, in CSS pixels from the top left. */
   readonly anchor: AnchorPoint;
 }
@@ -326,6 +334,10 @@ export interface LabelMemory {
   readonly anchors: HeldAnchors;
   /** The smoothed target each of those moved toward. */
   readonly targets: HeldAnchors;
+  /** Where each of those smoothed targets projected, in CSS pixels. */
+  readonly targetScreens: ReadonlyMap<number, AnchorPoint>;
+  /** The regions whose target the centre rule named. */
+  readonly centres: ReadonlySet<number>;
 }
 
 /** No label in the frame before, which is what a first frame reads. */
@@ -333,7 +345,63 @@ export const NO_LABEL_MEMORY: LabelMemory = {
   previous: new Set<number>(),
   anchors: new Map<number, PlanePoint>(),
   targets: new Map<number, PlanePoint>(),
+  targetScreens: new Map<number, AnchorPoint>(),
+  centres: new Set<number>(),
 };
+
+/** What the placement reads about the frame it runs, beside the frame's own samples. */
+export interface FrameTiming {
+  /**
+   * The time this frame covers, in seconds. Every rate of the placement reads it, so a
+   * label moves the same distance in a second at every frame rate.
+   *
+   * **Every call outside the frame loop passes 0.** Such a call redraws the frame the
+   * loop last built, and a redraw must not advance a filter.
+   */
+  readonly seconds: number;
+  /**
+   * True where the caller wrote the view rather than moved it. A write of the view is
+   * another place, not a movement to it, so the drift cap does not hold a target across
+   * one: the frame's own target is taken whole.
+   */
+  readonly jump: boolean;
+}
+
+/** A frame that advances no filter, which every call outside the frame loop passes. */
+export const STILL_FRAME: FrameTiming = { seconds: 0, jump: false };
+
+/**
+ * The memory of one frame, built from the labels it placed. The overlay hands it to the
+ * next frame, so the placement itself holds no state.
+ */
+export function rememberLabels(
+  labels: readonly Pick<
+    LabelCandidate,
+    'id' | 'plane' | 'target' | 'targetScreen' | 'centre'
+  >[],
+): LabelMemory {
+  const targetScreens = new Map<number, AnchorPoint>();
+  const centres = new Set<number>();
+  for (const label of labels) {
+    if (label.targetScreen !== null) targetScreens.set(label.id, label.targetScreen);
+    if (label.centre) centres.add(label.id);
+  }
+  return {
+    previous: new Set(labels.map((label) => label.id)),
+    anchors: new Map(labels.map((label) => [label.id, label.plane])),
+    targets: new Map(labels.map((label) => [label.id, label.target])),
+    targetScreens,
+    centres,
+  };
+}
+
+/** The target of one region, and which of the two rules named it. */
+export interface RegionTarget {
+  /** The plane point the label belongs on. */
+  readonly point: PlanePoint;
+  /** True where the region's own centre named it, false where the frame's samples did. */
+  readonly centre: boolean;
+}
 
 /** What the frame's own samples say about a region, for `regionTarget`. */
 export interface RegionSamples {
@@ -380,7 +448,8 @@ export function regionTarget(
   samples: FrameSamples,
   viewport: Viewport,
   frame: RegionSamples,
-): PlanePoint {
+  held = false,
+): RegionTarget {
   const centre = { x: region.centroid[0], z: region.centroid[1] };
   const onCentre = samples.regionAtPlane(centre.x, centre.z) === id;
   const where = onCentre ? samples.toScreen(centre.x, centre.z) : null;
@@ -388,23 +457,32 @@ export function regionTarget(
   // says nothing useful: holding a projection that is far away inside the inset gives a
   // corner of the frame, and a corner carries nothing about where the region is. The
   // frame shows only a part of the region then, and its own samples answer that below.
+  //
+  // The rule is taken up inside the frame and held, once taken up, until the centre
+  // leaves the frame grown by `ANCHOR_REACH_SHARE` on each side. The two rules can name
+  // points most of a frame apart, and without the band a centre that sits on the frame
+  // edge changes the rule in every other frame.
+  const bandX = held ? viewport.width * ANCHOR_REACH_SHARE : 0;
+  const bandY = held ? viewport.height * ANCHOR_REACH_SHARE : 0;
   const inFrame =
     where !== null &&
-    where.x >= 0 &&
-    where.y >= 0 &&
-    where.x <= viewport.width &&
-    where.y <= viewport.height;
+    where.x >= -bandX &&
+    where.y >= -bandY &&
+    where.x <= viewport.width + bandX &&
+    where.y <= viewport.height + bandY;
   if (where !== null && inFrame) {
-    const held = {
+    const inset = {
       x: clamp(where.x, LABEL_INSET, viewport.width - LABEL_INSET),
       y: clamp(where.y, LABEL_INSET, viewport.height - LABEL_INSET),
     };
-    if (held.x === where.x && held.y === where.y) return centre;
+    if (inset.x === where.x && inset.y === where.y) return { point: centre, centre: true };
 
     // The centre has no room. Read the held point back to the plane, which is the least
     // move that gives the label room.
-    const moved = samples.toPlane(held.x, held.y);
-    if (moved !== null && samples.regionAtPlane(moved.x, moved.z) === id) return moved;
+    const moved = samples.toPlane(inset.x, inset.y);
+    if (moved !== null && samples.regionAtPlane(moved.x, moved.z) === id) {
+      return { point: moved, centre: true };
+    }
 
     // The held point is over another region. The search goes out from the centre on the
     // screen, and takes the first point that is on the region and has room. It measures
@@ -416,16 +494,19 @@ export function regionTarget(
     // the box rule moves the box into the frame, so the label stays on the middle of its
     // region and stays readable.
     const near = nearestOnScreen(samples, id, where, viewport, TARGET_MOVE_PIXELS);
-    if (near !== null) return near;
-    return centre;
+    if (near !== null) return { point: near, centre: true };
+    return { point: centre, centre: true };
   }
 
   if (samples.regionAtPlane(frame.meanX, frame.meanZ) === id) {
-    return { x: frame.meanX, z: frame.meanZ };
+    return { point: { x: frame.meanX, z: frame.meanZ }, centre: false };
   }
   return {
-    x: samples.planeX[frame.sampleIndex] as number,
-    z: samples.planeZ[frame.sampleIndex] as number,
+    point: {
+      x: samples.planeX[frame.sampleIndex] as number,
+      z: samples.planeZ[frame.sampleIndex] as number,
+    },
+    centre: false,
   };
 }
 
@@ -574,9 +655,9 @@ function nearestOnScreen(
 }
 
 /**
- * The share of the gap to this frame's target that the smoothed target takes.
+ * The time over which the smoothed target closes half the gap to the frame's own target,
+ * in milliseconds.
  *
- * The target of a frame is the mean of the plane positions of the samples a region holds.
  * The sample grid is fixed on the screen, so it slides over the plane while the camera
  * moves and samples cross region edges. That makes the target of a frame step: over a
  * drag of 30 light years a frame it moves 3.3 CSS pixels in a middle frame, and it
@@ -587,94 +668,154 @@ function nearestOnScreen(
  * other. Smoothing the target first separates them: the anchor then follows a line that
  * already moves smoothly, and it can follow it at speed.
  *
- * This is the share at the gap the grid gives a still region. `targetShare` grows it with
- * the gap, and the smoothed target holds about seven frames at this end of the range. Over
- * the same drag it cuts the change of step of the label from 0.45 CSS pixels in a middle
+ * A half-life of 71 milliseconds gives a share of 0.150 over a frame of 16.667
+ * milliseconds, which is the share this rule held per frame. Over a drag of 30 light
+ * years a frame it cuts the change of step of the label from 0.45 CSS pixels in a middle
  * frame to 0.09, and the worst frame from 2.9 to 0.8.
  */
-export const TARGET_SHARE = 0.15;
+export const TARGET_HALF_LIFE_MS = 71;
+
+/** The share of the gap the smoothed target takes over a frame of `seconds`. */
+export function targetShare(seconds: number): number {
+  return 1 - 0.5 ** ((seconds * 1000) / TARGET_HALF_LIFE_MS);
+}
 
 /**
- * The screen gap, in CSS pixels, at which the smoothing is gone and the target is taken
- * whole. Below it the share of the gap the smoothed target takes grows with the gap.
+ * How far the smoothed target may move over the map in one second, in CSS pixels.
  *
- * Smoothing holds a label back where the target really moves. The figure is 120 because
- * it must separate two moves that the smoothing must answer differently. A camera that
- * jumps moves the target of a label 145 CSS pixels, and that label must go at once. The
- * step the sample grid gives a still region is a few pixels, and that one reads better
- * smoothed over seven frames.
- *
- * The share grows over the range and does not step at one figure. A step is a gate, and a
- * gate that fires puts the label somewhere else in one frame, which is the jump this
- * whole filter is there to stop.
+ * A label rides the map. The move the map itself makes under the label is free, and this
+ * is the whole of what the label may add to it. A label can therefore never cross the
+ * frame while the galaxy under it holds still, and it can never overtake the galaxy by
+ * more than a fifth of a 1080 row frame in a second.
  */
-export const TARGET_RESET_PIXELS = 120;
+export const TARGET_DRIFT_PIXELS = 120;
 
-/**
- * The share of the gap that the smoothed target takes, for a screen gap of `gap`.
- *
- * At a gap of the size the sample grid gives a still region the share is near
- * `TARGET_SHARE`, and the smoothed target holds about seven frames. At
- * `TARGET_RESET_PIXELS` the share is 1 and the target is taken whole.
- *
- * The share follows the cube of the reach, and not the reach itself. A share that follows
- * the reach gives too much of a gap of 30 or 60 pixels to the label at once: the worst
- * frame of a drag went from 5.8 CSS pixels to 10.9 in the measure. The cube holds the
- * smoothing over the whole range a drag works in, and opens it only near the figure where
- * the target has really moved.
- */
-export function targetShare(gap: number): number {
-  const reach = Math.min(1, gap / TARGET_RESET_PIXELS);
-  return TARGET_SHARE + (1 - TARGET_SHARE) * reach ** 3;
+/** How many times the drift cut halves its range while it solves the share. */
+const DRIFT_PASSES = 24;
+
+/** What the smoothed target of one region reads. */
+export interface TargetFilter {
+  /**
+   * The plane point the frame before carried, or undefined to take the target whole.
+   * The caller passes it only while it still sits on the region, still projects inside
+   * the frame and the frame is not a view jump.
+   */
+  readonly carried?: PlanePoint | undefined;
+  /**
+   * Where that carried point projected in the frame before, in CSS pixels. The drift cap
+   * reads it to tell the map's own motion from the label's drift over the map.
+   */
+  readonly carriedScreen?: AnchorPoint | undefined;
+  /** The target this frame's own rules name. */
+  readonly target: PlanePoint;
+  /** A plane point projected to the screen. */
+  readonly toScreen: (x: number, z: number) => AnchorPoint | null;
+  /** True where a plane point sits on the label's own region. */
+  readonly onRegion: (x: number, z: number) => boolean;
+  /** The time this frame covers, in seconds. */
+  readonly seconds: number;
 }
 
 /**
  * The target the anchor moves toward: this frame's target, smoothed against the one the
- * frame before carried. The caller passes `carried` only while it still sits on the
- * region and still projects inside the frame.
+ * frame before carried.
  *
- * `target` is taken whole when there is nothing carried, and when the two are
- * `TARGET_RESET_PIXELS` or more apart on the screen. `targetShare` sets the share
- * between: the wider the gap, the more of it the smoothed target takes.
+ * `target` is taken whole when there is nothing carried. Otherwise the smoothed target
+ * takes `targetShare` of the gap, and the **drift cap** holds what that share may do: the
+ * move of the smoothed target on the screen is at most `carry + TARGET_DRIFT_PIXELS *
+ * seconds` CSS pixels, where `carry` is how far the map moved the carried point between
+ * the frame before and this frame. Where the share asks for more, the move is cut to that
+ * bound along the line to the frame's own target.
+ *
+ * The cut is solved on the projection and not on the plane, because a plane step of a
+ * fixed size covers a different number of pixels at every zoom and the projection is not
+ * linear.
  *
  * Where the smoothed point falls on another region, the carried point is kept. A region
  * can show as two separated patches, and the point between this frame's target and the
  * one before then falls in the gap. Taking this frame's target instead would carry the
  * label to the other patch in one frame, which is the jump the smoothing is there to
- * stop. Holding the carried point keeps the label on the patch it is on until the target
- * is near enough to move to.
+ * stop.
  */
-export function smoothTarget(
-  carried: PlanePoint | undefined,
-  target: PlanePoint,
-  toScreen: (x: number, z: number) => AnchorPoint | null,
-  onRegion: (x: number, z: number) => boolean,
-): PlanePoint {
+export function smoothTarget(filter: TargetFilter): PlanePoint {
+  const { carried, target, toScreen, onRegion, seconds } = filter;
   if (carried === undefined) return target;
   const from = toScreen(carried.x, carried.z);
   const to = toScreen(target.x, target.z);
   if (from === null || to === null) return target;
-  const share = targetShare(Math.hypot(to.x - from.x, to.y - from.y));
-  if (share >= 1) return target;
 
-  const smoothed = {
+  const before = filter.carriedScreen ?? from;
+  const carry = Math.hypot(from.x - before.x, from.y - before.y);
+  const limit = carry + TARGET_DRIFT_PIXELS * seconds;
+
+  const pointAt = (share: number): PlanePoint => ({
     x: carried.x + (target.x - carried.x) * share,
     z: carried.z + (target.z - carried.z) * share,
+  });
+  const moveOf = (share: number): number => {
+    const point = pointAt(share);
+    const where = toScreen(point.x, point.z);
+    if (where === null) return Infinity;
+    return Math.hypot(where.x - before.x, where.y - before.y);
   };
+
+  let share = targetShare(seconds);
+  if (share > 0 && moveOf(share) > limit) {
+    // A share of 0 moves the target to where it already is, so it always holds the
+    // bound. The share that reaches the bound lies between that and the share asked for.
+    let low = 0;
+    let high = share;
+    for (let pass = 0; pass < DRIFT_PASSES; pass += 1) {
+      const middle = (low + high) / 2;
+      if (moveOf(middle) > limit) high = middle;
+      else low = middle;
+    }
+    share = low;
+  }
+  if (share <= 0) return carried;
+
+  const smoothed = pointAt(share);
   return onRegion(smoothed.x, smoothed.z) ? smoothed : carried;
 }
 
-/**
- * The share of the gap to the target that the anchor closes in one frame, at full speed.
- *
- * The share is high, so a label that must really move goes where it belongs at once: 0.5
- * closes half the gap in one frame and 97 percent of it in five, which is 83
- * milliseconds at 60 frames a second.
- */
-export const ANCHOR_SHARE = 0.5;
 
-/** How far the anchor goes on the screen in one frame, in CSS pixels. */
-export const ANCHOR_MAX_PIXELS = 20;
+/**
+ * The time over which the anchor closes half the gap to its target, in milliseconds.
+ *
+ * The rate is high, so a label that must really move goes where it belongs at once: a
+ * half-life of 16.667 milliseconds closes half the gap over a frame of 60 a second, which
+ * is the share of 0.5 this rule held per frame, and 97 percent of the gap in 83
+ * milliseconds.
+ */
+export const ANCHOR_HALF_LIFE_MS = 16.667;
+
+/** The share of the gap the anchor closes over a frame of `seconds`, at full speed. */
+export function anchorShare(seconds: number): number {
+  return 1 - 0.5 ** ((seconds * 1000) / ANCHOR_HALF_LIFE_MS);
+}
+
+/** How far the anchor goes on the screen in one second, in CSS pixels. */
+export const ANCHOR_MAX_SPEED = 1200;
+
+/** How far the anchor goes on the screen over a frame of `seconds`, in CSS pixels. */
+export function anchorCap(seconds: number): number {
+  return ANCHOR_MAX_SPEED * seconds;
+}
+
+/**
+ * The least the anchor goes on the screen in one second, in CSS pixels, while it is not
+ * already there.
+ *
+ * Speed falls with the gap, so without a floor the last few pixels take hundreds of
+ * frames. The floor is small enough to stay under the noise and large enough to close a
+ * 20 pixel gap in a second.
+ */
+export const ANCHOR_LEAST_SPEED = 24;
+
+/** The least the anchor goes over a frame of `seconds`, in CSS pixels. */
+export function anchorFloor(seconds: number): number {
+  return ANCHOR_LEAST_SPEED * seconds;
+}
 
 /**
  * The screen gap, in CSS pixels, at which the anchor reaches full speed. Below it the
@@ -699,16 +840,6 @@ export const ANCHOR_MAX_PIXELS = 20;
 export const ANCHOR_FULL_SPEED_PIXELS = 48;
 
 /**
- * The least the anchor goes on the screen in one frame, in CSS pixels, while it is not
- * already there.
- *
- * Speed falls with the gap, so without a floor the last few pixels take hundreds of
- * frames. The floor is small enough to stay under the noise and large enough to close a
- * 20 pixel gap in a second.
- */
-export const ANCHOR_LEAST_PIXELS = 0.4;
-
-/**
  * How far past each edge of the frame a carried point stays in reach, as a share of the
  * frame. A wheel held down changes the camera distance by 15 percent in a frame, which
  * moves the anchor of a label at the edge a little past it; that point must be kept and
@@ -726,13 +857,14 @@ const STEP_TOLERANCE = 0.05;
 const REGION_PASSES = 6;
 
 /**
- * How far the anchor goes on the screen in one frame, in CSS pixels, for a gap of `gap`.
+ * How far the anchor goes on the screen over a frame of `seconds`, in CSS pixels, for a
+ * gap of `gap`.
  */
-export function anchorStep(gap: number): number {
-  const speed = gap * ANCHOR_SHARE * Math.min(1, gap / ANCHOR_FULL_SPEED_PIXELS);
+export function anchorStep(gap: number, seconds: number): number {
+  const speed = gap * anchorShare(seconds) * Math.min(1, gap / ANCHOR_FULL_SPEED_PIXELS);
   return Math.min(
-    ANCHOR_MAX_PIXELS,
-    Math.max(Math.min(gap, ANCHOR_LEAST_PIXELS), speed),
+    anchorCap(seconds),
+    Math.max(Math.min(gap, anchorFloor(seconds)), speed),
   );
 }
 
@@ -755,6 +887,7 @@ export function filterAnchor(
   carried: PlanePoint,
   target: PlanePoint,
   toScreen: (x: number, z: number) => AnchorPoint | null,
+  seconds: number,
   onRegion: (x: number, z: number) => boolean = () => true,
 ): PlanePoint {
   const from = toScreen(carried.x, carried.z);
@@ -763,7 +896,10 @@ export function filterAnchor(
 
   const gap = Math.hypot(to.x - from.x, to.y - from.y);
   if (gap === 0) return carried;
-  const want = anchorStep(gap);
+  const want = anchorStep(gap, seconds);
+  // A frame that covers no time moves no label. Every call outside the frame loop passes
+  // 0 seconds, so a redraw holds the picture the loop last built.
+  if (want <= 0) return carried;
 
   // The share of the plane gap that moves the anchor `want` pixels on the screen. The
   // projection is not linear, so the first guess is only a guess, and it is wrong in both
@@ -849,6 +985,7 @@ export function labelCandidates(
   regions: readonly Region[] = REGIONS,
   memory: LabelMemory = NO_LABEL_MEMORY,
   measure?: (name: string) => LabelSize,
+  timing: FrameTiming = STILL_FRAME,
 ): LabelCandidate[] {
   if (samples.count === 0) return [];
   const byId = new Map(regions.map((region) => [region.id, region]));
@@ -933,23 +1070,35 @@ export function labelCandidates(
     // the galaxy, so a label on it does not move over the map at all: its projection
     // slides with the camera and nothing else moves it. The frame's own samples are read
     // only where the centre is not there to use.
-    const found = regionTarget(id, region, samples, viewport, {
-      meanX: (sumPlaneX[id] as number) / (counts[id] as number),
-      meanZ: (sumPlaneZ[id] as number) / (counts[id] as number),
-      sampleIndex: index,
-    });
+    const found = regionTarget(
+      id,
+      region,
+      samples,
+      viewport,
+      {
+        meanX: (sumPlaneX[id] as number) / (counts[id] as number),
+        meanZ: (sumPlaneZ[id] as number) / (counts[id] as number),
+        sampleIndex: index,
+      },
+      memory.centres.has(id),
+    );
     // The box must not cross the edge of the region, or the label reads as belonging to
     // the region beside it.
     const target =
       measure === undefined
-        ? found
-        : fitInsideRegion(found, id, measure(region.name), samples, viewport);
+        ? found.point
+        : fitInsideRegion(found.point, id, measure(region.name), samples, viewport);
 
     // The target is smoothed against the one the frame before carried, so the anchor
     // follows a line that already moves smoothly. A carried target that no longer sits
     // on its region, or that goes out of reach of the frame, is dropped by the same two
     // rules the carried anchor follows below.
-    let held = memory.targets.get(id);
+    //
+    // A frame the caller marks as a view jump drops the carried target and takes this
+    // frame's own target whole. A jump is another place and not a movement to it, so a
+    // target held from the frame before would make the label walk the width of the
+    // screen to catch up.
+    let held = timing.jump ? undefined : memory.targets.get(id);
     if (held !== undefined) {
       const where = samples.toScreen(held.x, held.z);
       if (
@@ -960,12 +1109,14 @@ export function labelCandidates(
         held = undefined;
       }
     }
-    const smoothed = smoothTarget(
-      held,
+    const smoothed = smoothTarget({
+      carried: held,
+      carriedScreen: held === undefined ? undefined : memory.targetScreens.get(id),
       target,
-      samples.toScreen,
-      (x, z) => samples.regionAtPlane(x, z) === id,
-    );
+      toScreen: samples.toScreen,
+      onRegion: (x, z) => samples.regionAtPlane(x, z) === id,
+      seconds: timing.seconds,
+    });
 
     // A point is carried from the frame before while it stays in front of the camera and
     // in reach of the frame. The filter, and not a gate, holds it on its own region: the
@@ -987,6 +1138,7 @@ export function labelCandidates(
           carried,
           smoothed,
           samples.toScreen,
+          timing.seconds,
           (x, z) => samples.regionAtPlane(x, z) === id,
         );
       }
@@ -1000,6 +1152,8 @@ export function labelCandidates(
       count: counts[id] as number,
       plane,
       target: smoothed,
+      targetScreen: samples.toScreen(smoothed.x, smoothed.z),
+      centre: found.centre,
       // The drawn anchor is held inside the frame, and not inside the inset. The inset
       // is where the target rule puts a label that must move, and to hold the drawn
       // anchor there as well pins a label near the edge to one place on the screen while
@@ -1057,6 +1211,7 @@ export function chooseLabels(
   measure: (name: string) => LabelSize,
   regions: readonly Region[] = REGIONS,
   memory: LabelMemory = NO_LABEL_MEMORY,
+  timing: FrameTiming = STILL_FRAME,
 ): PlacedLabel[] {
   const placed: PlacedLabel[] = [];
   for (const candidate of labelCandidates(
@@ -1065,6 +1220,7 @@ export function chooseLabels(
     regions,
     memory,
     measure,
+    timing,
   )) {
     if (placed.length >= MAX_LABELS) break;
     const box = labelBox(candidate.anchor, measure(candidate.name), viewport);
@@ -1074,6 +1230,8 @@ export function chooseLabels(
       name: candidate.name,
       plane: candidate.plane,
       target: candidate.target,
+      targetScreen: candidate.targetScreen,
+      centre: candidate.centre,
       ...box,
     });
   }
@@ -1094,8 +1252,15 @@ export interface SamplingStats {
 export interface LabelOverlay {
   /** Takes the coarse region grid the sweep reads. Nothing is placed before it. */
   setGrid(grid: CoarseRegionGrid): void;
-  /** Places the labels of a view, or clears them when the switch is off. */
-  update(view: View, viewport: Viewport, on: boolean): void;
+  /**
+   * Places the labels of a view, or clears them when the switch is off.
+   *
+   * `timing.seconds` is the time the frame covers, and every rate of the filter reads
+   * it. **Every call outside the frame loop passes 0**, so a redraw holds the labels
+   * where the loop last put them. `timing.jump` is true where the caller wrote the view
+   * rather than moved it.
+   */
+  update(view: View, viewport: Viewport, on: boolean, timing: FrameTiming): void;
   /** The sample counts of the last frame the sweep ran, by region id. */
   lastCounts(): {
     readonly id: number;
@@ -1169,7 +1334,7 @@ export function createLabelOverlay(
     setGrid(next: CoarseRegionGrid): void {
       grid = next;
     },
-    update(view: View, viewport: Viewport, on: boolean): void {
+    update(view: View, viewport: Viewport, on: boolean, timing: FrameTiming): void {
       let labels: PlacedLabel[] = [];
       if (on && grid !== null && labelFade(view.distance) > 0) {
         // The reading covers the sweep and the placement, which is the whole cost the
@@ -1179,7 +1344,7 @@ export function createLabelOverlay(
         const started = performance.now();
         const samples = sampleFrame(view, viewport, grid, pool);
         last = samples;
-        labels = chooseLabels(samples, viewport, measure, regions, memory);
+        labels = chooseLabels(samples, viewport, measure, regions, memory, timing);
         const elapsed = performance.now() - started;
         frames += 1;
         totalMs += elapsed;
@@ -1203,11 +1368,7 @@ export function createLabelOverlay(
         if (element.parentNode === null) host.append(element);
       }
       shown = labels;
-      memory = {
-        previous: wanted,
-        anchors: new Map(labels.map((label) => [label.id, label.plane])),
-        targets: new Map(labels.map((label) => [label.id, label.target])),
-      };
+      memory = rememberLabels(labels);
     },
     lastCounts(): { id: number; name: string; count: number }[] {
       const samples = last;

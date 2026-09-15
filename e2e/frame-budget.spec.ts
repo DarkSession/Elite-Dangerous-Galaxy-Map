@@ -228,10 +228,11 @@ test('the closest zoom is under budget with every marker in range', async ({
 
 // The traced boundary set is the one the `accurate` mode draws. It holds 22,718 vertices
 // against the smoothed set's 68,672, over the same 123 instanced calls, so it is the
-// cheaper of the two. The views are at a corner of it, at the close end of the band the
-// overlay draws in: 5,200 light years, where the cap holds the blur radius at its largest
-// of 8 CSS pixels and the kernel at its widest of 17 taps, and 10,000, where the fade
-// reaches full opacity.
+// cheaper of the two. The views are at a corner of it, at close zooms. The pass now draws
+// at every zoom under 30,000 light years, so 4,000 is in the list. The radius rule reads
+// the cell at `max(cursorDistance, 10000)`, so every zoom of 10,000 and below gives the
+// same widest radius of 4.62 CSS pixels at this height, which is 11 taps on each of the
+// two blur passes. 10,000 light years is where the range fade reaches full opacity.
 test('the accurate region mode is under budget at the close end of the band', async ({
   page,
 }) => {
@@ -242,7 +243,7 @@ test('the accurate region mode is under budget at the close end of the band', as
   });
   expect(await page.evaluate(() => window.galaxyMap?.getRegionMode())).toBe('accurate');
 
-  for (const distance of [5200, 10000]) {
+  for (const distance of [4000, 10000]) {
     const mean = await measureView(page, TRACED_CORNER.bend, distance);
     console.log(`the accurate overlay at distance ${distance}: ${mean.toFixed(3)} ms`);
     expect(mean).toBeGreaterThan(0);
@@ -254,13 +255,13 @@ test('the accurate region mode is under budget at the close end of the band', as
   await page.evaluate(() => {
     window.__galaxyMap?.setPasses?.({ regions: false });
   });
-  const off = await measureView(page, TRACED_CORNER.bend, 5200);
+  const off = await measureView(page, TRACED_CORNER.bend, 4000);
   await page.evaluate(() => {
     window.__galaxyMap?.setPasses?.({ regions: true });
   });
-  const on = await measureView(page, TRACED_CORNER.bend, 5200);
+  const on = await measureView(page, TRACED_CORNER.bend, 4000);
   console.log(
-    `the accurate overlay at 5,200 light years: ${off.toFixed(3)} ms off, ` +
+    `the accurate overlay at 4,000 light years: ${off.toFixed(3)} ms off, ` +
       `${on.toFixed(3)} ms on`,
   );
   expect(on - off).toBeLessThanOrEqual(1);

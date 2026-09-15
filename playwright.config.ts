@@ -10,6 +10,16 @@ const extraArguments = (process.env['GALAXY_MAP_EXTRA_CHROMIUM_ARGS'] ?? '')
   .split(',')
   .filter((argument) => argument.length > 0);
 
+/** The flags that put the host's card behind WebGL. Both projects take them. */
+const launchArguments = [
+  '--no-sandbox',
+  '--use-gl=angle',
+  '--use-angle=vulkan',
+  '--ignore-gpu-blocklist',
+  '--enable-gpu-rasterization',
+  ...extraArguments,
+];
+
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: false,
@@ -26,19 +36,27 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-gpu',
+      // The touch spec needs a touch-capable context, which the project below gives it.
+      // Every other spec runs here, so `e2e/look.spec.ts` and its committed baseline
+      // image are read by one project alone.
+      testIgnore: 'touch.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chromium',
-        launchOptions: {
-          args: [
-            '--no-sandbox',
-            '--use-gl=angle',
-            '--use-angle=vulkan',
-            '--ignore-gpu-blocklist',
-            '--enable-gpu-rasterization',
-            ...extraArguments,
-          ],
-        },
+        launchOptions: { args: launchArguments },
+      },
+    },
+    {
+      // `devices['Desktop Chrome']` sets `hasTouch: false`, so a touch context is a
+      // project of its own. It shares the GPU launch arguments and runs the renderer
+      // check, so the new context asserts hardware rendering as `chromium-gpu` does.
+      name: 'chromium-touch',
+      testMatch: ['00-renderer.spec.ts', 'touch.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chromium',
+        hasTouch: true,
+        launchOptions: { args: launchArguments },
       },
     },
   ],

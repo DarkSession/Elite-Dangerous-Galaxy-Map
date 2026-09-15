@@ -587,11 +587,14 @@ test.describe('the grid look', () => {
   });
 
   test('draws under the region boundary', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=8000&p=89&y=0');
-    // 8,000 light years is where the product of the two bands is largest: the grid band
-    // leaves 0.50 of its alpha there and none at 12,000, and the region band leaves
-    // 0.65 of its opacity there and none at 5,000.
-    await setView(page, [0, 0, 0], 8000, 89);
+    // 8,000 light years is where the grid band still leaves 0.50 of its alpha, and none
+    // at 12,000. The pitch is 5 degrees and not 89, because the boundary takes a range
+    // fade per pixel now: it draws nothing under 10,000 light years and in full beyond
+    // 20,000. At 89 degrees every pixel reads a plane point about 8,000 light years from
+    // the camera and the boundary would draw nowhere in the frame. A pitch of 5 reaches
+    // toward the horizon, where the plane is tens of thousands of light years off.
+    await openMap(page, '#c=0,0,0&d=8000&p=5&y=0');
+    await setView(page, [0, 0, 0], 8000, 5);
 
     const order = await page.evaluate(() => {
       const map = window.galaxyMap;
@@ -624,18 +627,60 @@ test.describe('the grid look', () => {
       };
 
       // The crossing is the pixel where the product of the grid's own contribution and
-      // the boundary's own contribution is largest.
-      let crossing = -1;
-      let bestProduct = 0;
+      // the boundary's own contribution is largest, among the pixels whose own plane
+      // point lies beyond the far end of the boundary's range fade. Nearer than that the
+      // boundary draws less than its full alpha, and the ratio below would read the fade
+      // and not the order of the two passes.
+      const view = map.getView();
+      const yaw = (view.yaw * Math.PI) / 180;
+      const pitch = (view.pitch * Math.PI) / 180;
+      const flat = Math.cos(pitch);
+      const camera: [number, number, number] = [
+        view.cursor[0] - flat * Math.sin(yaw) * view.distance,
+        view.cursor[1] + Math.sin(pitch) * view.distance,
+        view.cursor[2] - flat * Math.cos(yaw) * view.distance,
+      ];
+      const rangeAt = (at: number): number => {
+        const pixel = at / 4;
+        const point = map.debug.planePointAt(
+          left + (pixel % side),
+          top + Math.floor(pixel / side),
+        );
+        if (point === null) return 0;
+        return Math.hypot(
+          point[0] - camera[0],
+          point[1] - camera[1],
+          point[2] - camera[2],
+        );
+      };
+
+      const products: { at: number; product: number }[] = [];
       for (let at = 0; at < without.length; at += 4) {
         const product =
           magnitude(gridOnly, without, at) * magnitude(lines, without, at);
-        if (product > bestProduct) {
-          bestProduct = product;
-          crossing = at;
-        }
+        if (product > 0) products.push({ at, product });
       }
-      if (crossing < 0) return null;
+      products.sort((first, second) => second.product - first.product);
+      let crossing = -1;
+      let rows = 0;
+      for (const candidate of products) {
+        if (rangeAt(candidate.at) <= 20000) continue;
+        crossing = candidate.at;
+        break;
+      }
+      // The strip of rows that read beyond the range fade, so a failure says whether the
+      // view holds the strip at all or only holds no crossing inside it.
+      for (let row = 0; row < side; row += 1) {
+        if (rangeAt(row * side * 4) > 20000) rows += 1;
+      }
+      if (crossing < 0) {
+        return {
+          error:
+            `no pixel of the rectangle carries both overlays beyond 20,000 light ` +
+            `years: ${products.length} pixels carry both, and ${rows} of the ` +
+            `${side} rows read beyond the fade`,
+        } as const;
+      }
 
       // The channel that carries the largest grid contribution there.
       let channel = 0;
@@ -680,21 +725,27 @@ test.describe('the grid look', () => {
       const full =
         (gridOnly[comparison + channel] as number) -
         (without[comparison + channel] as number);
-      return { channel, target, kept, full, ratio: kept / full };
+      return { channel, target, kept, full, rows, ratio: kept / full };
     });
     console.log('the boundary over the grid', order);
 
+    expect(order).not.toBeNull();
     const read = order as NonNullable<typeof order>;
+    expect('error' in read ? read.error : '').toBe('');
+    if ('error' in read) return;
     // The boundary draws after the grid, so it keeps only a part of what the grid put
     // down under it. If the grid drew last the ratio would be 1.
-    expect(read.ratio).toBeGreaterThanOrEqual(0.45);
-    expect(read.ratio).toBeLessThanOrEqual(0.85);
+    expect(read.ratio).toBeGreaterThanOrEqual(0.3);
+    expect(read.ratio).toBeLessThanOrEqual(0.75);
   });
 });
 
 test.describe('the background reading', () => {
   test('follows the picture in the two views', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
     await setGrid(page, true);
 
     const readings = await page.evaluate(
@@ -785,6 +836,9 @@ test.describe('the background reading', () => {
 
   test('holds still under the grain', async ({ page }) => {
     await openMap(page, '#c=0,0,10000&d=4000&p=89&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
     await setGrid(page, true);
 
     const steps = await page.evaluate(() => {
@@ -912,6 +966,9 @@ test.describe('the grid and the background', () => {
 
   test('recedes over a bright background', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
     const core = await changeAt(page, CORE_VIEW, 4000);
     const dark = await changeAt(page, DARK_VIEW, 4000);
     console.log('the grid over the two views', { core, dark });
@@ -954,6 +1011,9 @@ test.describe('the grid and the background', () => {
 
   test('recedes a label over a bright background', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=2000&p=89&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
     await setGrid(page, true);
 
     /** The opacity and the shadow of the crossing label nearest the frame centre. */
@@ -1409,5 +1469,122 @@ test.describe('the grid labels and their lines', () => {
       const x = Number(text.split(', ')[0]);
       expect(x).toBeLessThanOrEqual(reading.cursorX);
     }
+  });
+});
+
+test.describe('the grid label readings', () => {
+  test('match the labels the overlay holds', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=3000&p=5&y=0');
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 3000, 5);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      const canvas = document.querySelector('canvas');
+      if (map === undefined || !(canvas instanceof HTMLCanvasElement)) return null;
+      const box = canvas.getBoundingClientRect();
+      const elements = [...document.querySelectorAll('.gm-grid-label')].map(
+        (element) => {
+          const at = element.getBoundingClientRect();
+          return {
+            text: element.textContent ?? '',
+            left: at.left - box.left,
+            top: at.top - box.top,
+            opacity: Number((element as HTMLElement).style.opacity),
+          };
+        },
+      );
+      return { elements, readings: map.debug.gridLabelReadings() };
+    });
+    expect(reading).not.toBeNull();
+    const read = reading as NonNullable<typeof reading>;
+    console.log('the grid label readings', read.readings.length);
+
+    expect(read.readings.length).toBeGreaterThan(0);
+    expect(read.readings.length).toBe(read.elements.length);
+    for (let index = 0; index < read.readings.length; index += 1) {
+      const held = read.readings[index] as (typeof read.readings)[0];
+      const element = read.elements[index] as (typeof read.elements)[0];
+      expect(held.text).toBe(element.text);
+      expect(held.left).toBeCloseTo(element.left, 1);
+      expect(held.top).toBeCloseTo(element.top, 1);
+      expect(held.opacity).toBeCloseTo(element.opacity, 2);
+    }
+  });
+
+  test('a label does not draw stronger than its line', async ({ page }) => {
+    // The dark space between the arms, at the pitch that reaches furthest toward the
+    // horizon. The background takes nothing off a label there, so the reading is of the
+    // line factor alone.
+    await openMap(page, '#c=-40000,0,20000&d=3000&p=5&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
+    await setGrid(page, true);
+    await setView(page, [-40000, 0, 20000], 3000, 5);
+    // The background reading is one frame behind the picture, so a few real frames put
+    // the reading of this view under the labels.
+    await page.waitForTimeout(300);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      const held = map.debug.gridLabelReadings();
+      const background = map.debug.backgroundReading();
+      const canvas = document.querySelector('canvas');
+      if (background === null || !(canvas instanceof HTMLCanvasElement)) return null;
+      const box = canvas.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll('.gm-grid-label')].map((element) => {
+        const at = element.getBoundingClientRect();
+        return {
+          x: at.left + at.width / 2 - box.left,
+          y: at.top + at.height / 2 - box.top,
+        };
+      });
+      // The same background weight rule the module uses, read at the centre of the
+      // label's own box.
+      const weightAt = (x: number, y: number): number => {
+        const column = Math.floor((x / 1920) * background.width);
+        const row = Math.floor((y / 1080) * background.height);
+        const texel = background.texels[row * background.width + column];
+        if (texel === undefined) return 1;
+        const merge = Math.min(
+          1,
+          Math.max(0, (texel.luminance - 0.08) / (0.55 - 0.08)),
+        );
+        const smooth = merge * merge * (3 - 2 * merge);
+        return 1 - (1 - 0.45) * smooth;
+      };
+      return held.map((label, index) => {
+        const centre = boxes[index] ?? { x: label.left, y: label.top };
+        return {
+          text: label.text,
+          top: label.top,
+          alpha: label.alpha,
+          opacity: label.opacity,
+          weight: weightAt(centre.x, centre.y),
+        };
+      });
+    });
+    expect(reading).not.toBeNull();
+    const labels = reading as NonNullable<typeof reading>;
+    console.log('the label opacity against its line', labels.slice(0, 6));
+
+    expect(labels.length).toBeGreaterThan(1);
+    for (const label of labels) {
+      const want = ((0.8 * label.alpha) / 0.45) * label.weight;
+      expect(Math.abs(label.opacity - want)).toBeLessThanOrEqual(0.01);
+      expect(label.opacity).toBeLessThanOrEqual(0.8);
+      // No label is placed below the gate, so the line factor never goes under 0.2.
+      expect(label.alpha).toBeGreaterThanOrEqual(0.09);
+    }
+    const highest = labels.reduce((best, label) =>
+      label.top < best.top ? label : best,
+    );
+    const middle = labels.reduce((best, label) =>
+      Math.abs(label.top - 540) < Math.abs(best.top - 540) ? label : best,
+    );
+    console.log('the highest and the middle label', { highest, middle });
+    expect(highest.opacity).toBeLessThan(middle.opacity);
   });
 });
