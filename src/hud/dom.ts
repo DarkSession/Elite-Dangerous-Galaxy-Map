@@ -54,6 +54,24 @@ export function formatWhole(value: number): string {
   return Math.round(value).toLocaleString('en-US');
 }
 
+/**
+ * One game coordinate, to at most 3 decimal places. The trailing zeros and the trailing
+ * point go, so a whole coordinate shows no decimal point. With `separators` the whole
+ * part takes thousands separators, for example `-9,530.938`; without them the value
+ * reads as a plain number, which is the form the copy button writes.
+ *
+ * The game resolves a position to 1/32 of a light year, which is 0.03125. Three decimal
+ * places do not reproduce that value, which needs five, but they separate every position
+ * the game can give: the step is 0.03125 and the rounding is 0.001, so no two game
+ * positions round to the same three decimal places.
+ */
+export function formatCoordinate(value: number, separators: boolean): string {
+  return value.toLocaleString('en-US', {
+    maximumFractionDigits: 3,
+    useGrouping: separators,
+  });
+}
+
 /** A distance in whole light years with the unit, for example `1,500 LY`. */
 export function formatLightYears(value: number): string {
   return `${formatWhole(value)} LY`;

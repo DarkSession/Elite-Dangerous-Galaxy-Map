@@ -228,9 +228,11 @@ test('the closest zoom is under budget with every marker in range', async ({
 
 // The traced boundary set is the one the `accurate` mode draws. It holds 22,718 vertices
 // against the smoothed set's 68,672, over the same 123 instanced calls, so it is the
-// cheaper of the two. The views are at a corner of it, inside the band where the overlay
-// draws in full, at the two closest zooms.
-test('the accurate region mode is under budget at the closest zooms', async ({
+// cheaper of the two. The views are at a corner of it, at the close end of the band the
+// overlay draws in: 5,200 light years, where the cap holds the blur radius at its largest
+// of 8 CSS pixels and the kernel at its widest of 17 taps, and 10,000, where the fade
+// reaches full opacity.
+test('the accurate region mode is under budget at the close end of the band', async ({
   page,
 }) => {
   test.setTimeout(180000);
@@ -240,16 +242,35 @@ test('the accurate region mode is under budget at the closest zooms', async ({
   });
   expect(await page.evaluate(() => window.galaxyMap?.getRegionMode())).toBe('accurate');
 
-  for (const distance of [500, 10]) {
+  for (const distance of [5200, 10000]) {
     const mean = await measureView(page, TRACED_CORNER.bend, distance);
     console.log(`the accurate overlay at distance ${distance}: ${mean.toFixed(3)} ms`);
     expect(mean).toBeGreaterThan(0);
     expect(mean).toBeLessThan(BUDGET_MS);
   }
+
+  // The overlay's own cost at the widest kernel, against the same view with the pass
+  // switched off.
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ regions: false });
+  });
+  const off = await measureView(page, TRACED_CORNER.bend, 5200);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ regions: true });
+  });
+  const on = await measureView(page, TRACED_CORNER.bend, 5200);
+  console.log(
+    `the accurate overlay at 5,200 light years: ${off.toFixed(3)} ms off, ` +
+      `${on.toFixed(3)} ms on`,
+  );
+  expect(on - off).toBeLessThanOrEqual(1);
 });
 
 /** The animation frame interval the map must stay under, in milliseconds. */
 const INTERVAL_BUDGET_MS = 18;
+
+/** The longest single animation frame interval the map may take, in milliseconds. */
+const WORST_INTERVAL_MS = 33;
 
 /** The time the hover pick and the overlay marks must stay under, in milliseconds. */
 const SELECTION_BUDGET_MS = 2;
@@ -452,6 +473,51 @@ test('the grid labels hold the frame rate', async ({ page }) => {
   expect(labels).toBeGreaterThan(0);
   expect(stats.frames).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+// The read of the background reading back to the processor runs on the main thread, so
+// the animation frame interval is the instrument that sees it. The camera moves in every
+// frame of the reading below, so the map draws a new picture each time and the read has
+// a new reading to take.
+test('reading the background back does not stall the frame', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+
+  await page.evaluate(() => {
+    window.galaxyMap?.setView({ cursor: [0, 0, 0], distance: 4000, yaw: 0, pitch: 5 });
+    window.galaxyMap?.setGridVisible(true);
+  });
+  await waitFrames(page, 10);
+
+  const stats = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    for (let frame = 0; frame < 120; frame += 1) {
+      map?.setView({ cursor: [frame * 20, 0, 0], distance: 4000, yaw: 0, pitch: 5 });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    }
+    return (
+      window.__galaxyMap?.frameIntervalStats?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      }
+    );
+  });
+  const size = await page.evaluate(
+    () => window.galaxyMap?.debug.backgroundSize() ?? [0, 0],
+  );
+  console.log('the interval with the background read back', { size, ...stats });
+
+  // The reading has to be in the path, or the measurement says nothing.
+  expect(size).toEqual([120, 68]);
+  expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+  expect(stats.worstMs).toBeLessThanOrEqual(WORST_INTERVAL_MS);
 });
 
 // The flight moves the view every frame for 350 ms, so it writes a new view matrix, a

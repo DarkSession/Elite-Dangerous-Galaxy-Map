@@ -4,18 +4,26 @@ import type { View } from '../camera/view';
 import { gridLevelAlpha, gridVisibility } from '../render/grid-pass';
 import { MODEL_BOUNDS } from '../scene-data/real-systems';
 import {
+  createGridLabelOverlay,
   crossingLabelText,
   GRID_CANDIDATE_COUNT,
   GRID_LABEL_MIN_ALPHA,
   GRID_LABEL_SPAN,
   gridLabelAlpha,
+  gridLabelBackground,
+  gridLabelColour,
+  gridLabelOpacity,
   gridLabelPlacements,
+  GRID_LABEL_OPACITY,
+  GRID_LABEL_SHADOW,
   labelBoxAt,
   MAX_GRID_LABELS,
   planeLabelBox,
   planeLabelText,
   PLANE_LABEL_BOTTOM_CSS,
 } from './grid-labels';
+import type { GridLabelReading } from './grid-labels';
+import { GRID_LABEL_MERGE_FLOOR } from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 
 const VIEWPORT = { width: 1920, height: 1080 };
@@ -88,6 +96,7 @@ describe('the candidate set', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 0,
     };
     expect(gridLabelPlacements(frame)).toEqual([]);
@@ -105,6 +114,7 @@ describe('the crossing labels', () => {
       view: viewAt([1200, 0, 2400], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -125,6 +135,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -139,6 +150,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -153,6 +165,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -172,6 +185,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 3000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 10000,
     };
 
@@ -218,6 +232,7 @@ describe('the model bounds', () => {
       view: viewAt([BOUNDS.x[1], 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -243,6 +258,7 @@ describe('the model bounds', () => {
       view: viewAt([0, 0, 75000], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -294,6 +310,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 21,
     };
     const gaps = screenGaps(tight.view, 21, 0, 0);
@@ -314,6 +331,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 1000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 1000,
     };
 
@@ -330,6 +348,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 3000, 35),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 10000,
     };
 
@@ -353,6 +372,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 3000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 10000,
     };
 
@@ -377,12 +397,14 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 11500),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 10000,
     };
     const near = {
       view: viewAt([0, 0, 0], 3000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      background: null,
       spacingLy: 10000,
     };
 
@@ -394,5 +416,157 @@ describe('the drawn alpha gate', () => {
     );
     expect(gridLabelPlacements(far)).toEqual([]);
     expect(gridLabelPlacements(near).length).toBeGreaterThan(0);
+  });
+});
+
+/** One style write a fake element took. */
+interface StyleWrite {
+  readonly name: string;
+  readonly value: string;
+}
+
+/** A fake element, so the overlay can be read with no browser. */
+interface FakeElement {
+  className: string;
+  textContent: string | null;
+  parentNode: unknown;
+  readonly writes: StyleWrite[];
+  readonly style: {
+    getPropertyValue(name: string): string;
+    setProperty(name: string, value: string): void;
+  };
+  remove(): void;
+}
+
+/** A fake host, with the one document member `createGridLabelOverlay` reads. */
+function fakeHost(): { host: HTMLElement; made: FakeElement[] } {
+  const made: FakeElement[] = [];
+  const makeElement = (): FakeElement => {
+    const held = new Map<string, string>();
+    const writes: StyleWrite[] = [];
+    const element: FakeElement = {
+      className: '',
+      textContent: null,
+      parentNode: null,
+      writes,
+      style: {
+        getPropertyValue(name: string): string {
+          return held.get(name) ?? '';
+        },
+        setProperty(name: string, value: string): void {
+          held.set(name, value);
+          writes.push({ name, value });
+        },
+      },
+      remove(): void {
+        element.parentNode = null;
+      },
+    };
+    made.push(element);
+    return element;
+  };
+  const host = {
+    ownerDocument: { createElement: (): FakeElement => makeElement() },
+    append(...children: FakeElement[]): void {
+      for (const child of children) child.parentNode = host;
+    },
+  };
+  return { host: host as unknown as HTMLElement, made };
+}
+
+/** A reading of one flat colour, at the size the frame's viewport holds. */
+function flatReading(
+  width: number,
+  height: number,
+  colour: readonly [number, number, number],
+): GridLabelReading {
+  const pixels = new Uint8Array(width * height * 4);
+  for (let at = 0; at < pixels.length; at += 4) {
+    pixels[at] = colour[0];
+    pixels[at + 1] = colour[1];
+    pixels[at + 2] = colour[2];
+    pixels[at + 3] = 255;
+  }
+  return { width, height, pixels };
+}
+
+describe('the label background', () => {
+  test('falls back to a weight of 1 outside the reading', () => {
+    const reading = flatReading(4, 4, [255, 255, 255]);
+
+    for (const point of [
+      { x: -1, y: 10 },
+      { x: 10, y: -1 },
+      { x: VIEWPORT.width, y: 10 },
+      { x: 10, y: VIEWPORT.height },
+    ]) {
+      const background = gridLabelBackground(reading, point.x, point.y, VIEWPORT);
+      expect(background.luminance).toBe(0);
+      expect(gridLabelOpacity(background.luminance)).toBeCloseTo(GRID_LABEL_OPACITY, 9);
+      expect(gridLabelColour(background)).toBe('rgb(255, 196, 140)');
+    }
+
+    // A map with no reading yet reads the same way.
+    const none = gridLabelBackground(null, 960, 540, VIEWPORT);
+    expect(none.luminance).toBe(0);
+    expect(gridLabelOpacity(none.luminance)).toBeCloseTo(GRID_LABEL_OPACITY, 9);
+  });
+
+  test('reads the texel under the point', () => {
+    const reading = flatReading(4, 4, [240, 235, 230]);
+    const background = gridLabelBackground(reading, 960, 540, VIEWPORT);
+
+    expect(background.r).toBe(240);
+    expect(background.luminance).toBeGreaterThan(0.9);
+    // The tint is at its maximum there, so the colour sits 0.35 of the way over.
+    expect(gridLabelColour(background)).toBe('rgb(250, 210, 172)');
+    expect(gridLabelOpacity(background.luminance)).toBeCloseTo(
+      GRID_LABEL_OPACITY * GRID_LABEL_MERGE_FLOOR,
+      9,
+    );
+  });
+});
+
+describe('the label overlay', () => {
+  test('writes no style twice over two frames with one reading', () => {
+    const { host, made } = fakeHost();
+    const overlay = createGridLabelOverlay(host);
+    const frame = {
+      view: viewAt([0, 0, 0], 1000),
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      background: flatReading(120, 68, [200, 190, 180]),
+      spacingLy: 1000,
+    };
+
+    overlay.update(frame);
+    expect(overlay.labelCount()).toBeGreaterThan(0);
+    for (const element of made) element.writes.length = 0;
+
+    overlay.update(frame);
+
+    const second = made.reduce((sum, element) => sum + element.writes.length, 0);
+    expect(second).toBe(0);
+  });
+
+  test('carries a soft dark shadow and no pure black', () => {
+    const { host, made } = fakeHost();
+    const overlay = createGridLabelOverlay(host);
+
+    overlay.update({
+      view: viewAt([0, 0, 0], 1000),
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      background: null,
+      spacingLy: 1000,
+    });
+
+    expect(made.length).toBeGreaterThan(0);
+    for (const element of made) {
+      const shadow = element.style.getPropertyValue('text-shadow');
+      expect(shadow).toBe(GRID_LABEL_SHADOW);
+      expect(shadow).not.toContain('#000');
+      expect(shadow).not.toContain('rgb(0, 0, 0)');
+    }
   });
 });

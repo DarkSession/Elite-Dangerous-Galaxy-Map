@@ -41,6 +41,13 @@ import {
 } from './grid-pass';
 import type { GridLevelReading, GridPass } from './grid-pass';
 export type { GridLevelReading } from './grid-pass';
+import { createBackgroundPass } from './background-pass';
+import type {
+  BackgroundFrame,
+  BackgroundPass,
+  BackgroundReading,
+} from './background-pass';
+export type { BackgroundFrame, BackgroundReading } from './background-pass';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
 import {
@@ -50,6 +57,8 @@ import {
   DEFAULT_GLOW_WEIGHT,
 } from './glow-pass';
 import type { GlowPass } from './glow-pass';
+import { createReducePass } from './reduce';
+import type { ReducePass } from './reduce';
 import {
   createPointPass,
   createPointProgram,
@@ -214,6 +223,30 @@ export interface Renderer {
    */
   gridLevels(): GridLevelReading[];
   /**
+   * The width and the height of the background reading's own target, and `[0, 0]`
+   * before the first frame that builds one. It reports the storage and not the last
+   * reading, so a test can hold the rule that a frame without the grid takes none.
+   */
+  backgroundSize(): [number, number];
+  /**
+   * The width and the height of the region overlay's coverage buffer, and null before
+   * the first frame that draws the overlay. The buffer holds the full drawing buffer
+   * size, which the blur of the overlay needs.
+   */
+  regionCoverageSize(): [number, number] | null;
+  /**
+   * The background reading of the last frame, read straight off the card, or null in a
+   * frame that built none. The read waits for the card, so it is a test probe and not
+   * the path the labels take.
+   */
+  backgroundReading(): BackgroundReading | null;
+  /**
+   * The background reading of an earlier frame, as the read-back through the pixel
+   * buffer gave it, or null while none has landed. The coordinate labels read it, so a
+   * label's opacity may be one frame behind the picture.
+   */
+  backgroundFrame(): BackgroundFrame | null;
+  /**
    * Holds the close fade at a value from 0 to 1. `null` gives the fade back to the zoom
    * distance. A test holds it at 1 to read the field at a close view.
    */
@@ -275,7 +308,15 @@ export function createRenderer(
 
   const halfTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
   const sceneTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
-  const glowPass: GlowPass = createGlowPass(gl, triangle.vertexArray, float);
+  const reduce: ReducePass = createReducePass(gl, triangle.vertexArray);
+  const glowPass: GlowPass = createGlowPass(gl, triangle.vertexArray, float, reduce);
+  // The reading holds no storage until the first frame that builds one, so a view that
+  // draws no grid pays nothing for it.
+  const backgroundPass: BackgroundPass = createBackgroundPass(
+    gl,
+    triangle.vertexArray,
+    reduce,
+  );
 
   let pointPass: PointPass | null = null;
   let starPass: StarPass | null = null;
@@ -293,6 +334,7 @@ export function createRenderer(
   let gridDraw = false;
   let gridVertices = 0;
   let gridSpacingOfFrame = 0;
+  let backgroundOfFrame = false;
   let gridLevelsOfFrame: GridLevelReading[] = [];
   let regionPass: RegionPass | null = null;
   let regionDraw = true;
@@ -526,7 +568,15 @@ export function createRenderer(
     // further, full at 4,000 and nearer. A band of 0 draws nothing at all, so the pass
     // does not run and the three probes read what they read for a grid that is off.
     const band = gridVisibility(view.distance);
-    if (passes.grid && gridDraw && band > 0) {
+    backgroundOfFrame = passes.grid && gridDraw && band > 0;
+    if (backgroundOfFrame) {
+      // The reading is built from the scene target and not from the frame the user
+      // sees, so the region overlay and the markers are not in it: the grid merges with
+      // the galaxy and not with the other overlays.
+      backgroundPass.render(sceneTarget.texture, width, height, look.exposure);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
+
       gridSpacingOfFrame = gridLabelLevel(focalCss, view.distance);
       gridLevelsOfFrame = gridLevelReadings(focalCss, view.distance);
       gridVertices = gridPass.draw({
@@ -536,6 +586,7 @@ export function createRenderer(
         pixelRatio,
         bounds: galaxyModel.bounds,
         band,
+        background: backgroundPass.texture,
       });
     } else {
       // The three probes must agree: a frame with no grid reports no vertices, no
@@ -554,6 +605,8 @@ export function createRenderer(
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio,
+        focalCss,
+        distance: view.distance,
         traced: regionTraced,
       });
     }
@@ -653,6 +706,18 @@ export function createRenderer(
     },
     gridLevels(): GridLevelReading[] {
       return gridLevelsOfFrame;
+    },
+    backgroundSize(): [number, number] {
+      return backgroundPass.size();
+    },
+    regionCoverageSize(): [number, number] | null {
+      return regionPass?.coverageSize() ?? null;
+    },
+    backgroundReading(): BackgroundReading | null {
+      return backgroundOfFrame ? backgroundPass.read() : null;
+    },
+    backgroundFrame(): BackgroundFrame | null {
+      return backgroundPass.frame();
     },
     setCloseFade(value: number | null): void {
       closeHold = value;
@@ -774,6 +839,8 @@ export function createRenderer(
       detailTexture?.dispose();
       shapeTexture.dispose();
       glowPass.dispose();
+      backgroundPass.dispose();
+      reduce.dispose();
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(starProgram.program);
       gl.deleteProgram(systemProgram.program);

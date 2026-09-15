@@ -154,6 +154,14 @@ scene data. The library owns the render context, the scene data, the view, the c
 the frame loop. It does not read or write the URL: [src/app/main.ts](src/app/main.ts) is
 the demo page, and it owns the fragment, the message box and the test hooks.
 
+The boundary is one warm cream band with a soft edge, and it draws inside a band of zoom
+distance: nothing at 5,000 light years and below, rising to full at 10,000, full from
+10,000 to 20,000, and nothing again at 30,000 and above. The region labels take the same
+band, so a name never outlives its boundary. Below 5,000 light years the HUD's top bar
+still names the region under the cursor, and `regionNameAt` answers for any point on the
+plane. In `accurate` the map blurs the boundary by the staircase's own cell measured on
+the screen, so a 90 degree corner draws as a round turn.
+
 A marker draws for every system at every zoom distance, from 10 to 120,000 light years,
 while the camera is inside the draw range of the system's category.
 The invented star field fades out as the camera comes in: it draws in full at a zoom
@@ -196,6 +204,13 @@ the library default stays off, because a host that embeds the map in its own pag
 not ask for a coordinate grid. The grid fades in by the camera's distance to the cursor:
 it draws nothing at 12,000 light years and further, and it draws in full at 4,000 and
 nearer.
+
+The grid also follows the picture under it. The map reads the local brightness of the
+galaxy it drew, and each line and each coordinate number takes its strength and its
+colour from that reading. A line over the dark space between the arms keeps its full
+strength. The same line over the bright core keeps a part of it and takes the
+background's hue, so the grid reads as part of the picture and not as a layer on top of
+it.
 
 `loadingImage` is a URL. The library puts the picture in the canvas's parent, centred on
 the canvas, and it removes the picture when `ready` settles, whether it settles or

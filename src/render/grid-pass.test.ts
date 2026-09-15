@@ -16,8 +16,18 @@ import {
   GRID_NEAR_FULL_LY,
   gridScreenSpacing,
   gridLevelWidth,
+  GRID_BG_HIGH,
+  GRID_BG_LOW,
+  GRID_LABEL_MERGE_FLOOR,
+  GRID_LABEL_TINT_MAX,
+  GRID_LINE_MERGE_FLOOR,
+  GRID_LINE_TINT_MAX,
+  gridBackgroundTint,
+  gridBackgroundWeight,
 } from './grid-pass';
 import type { GridLevelReading } from './grid-pass';
+import { createGridProgram } from './grid-pass';
+import fragmentSource from './shaders/grid.frag?raw';
 
 /** The CSS pixels per light year at one light year of range, for a viewport height. */
 function focalCss(rows: number): number {
@@ -153,6 +163,65 @@ describe('the camera distance band', () => {
   });
 });
 
+describe('the background merge', () => {
+  test('is one rule for the weight and the tint', () => {
+    const floors = [GRID_LINE_MERGE_FLOOR, GRID_LABEL_MERGE_FLOOR];
+    const maxima = [GRID_LINE_TINT_MAX, GRID_LABEL_TINT_MAX];
+    const luminances = [0.0, GRID_BG_LOW, 0.3, GRID_BG_HIGH, 0.9];
+
+    for (const floor of floors) {
+      // The weight is 1 at the low edge and below, and its own floor at the high edge
+      // and above. It never goes under the floor.
+      expect(gridBackgroundWeight(0.0, floor)).toBeCloseTo(1, 9);
+      expect(gridBackgroundWeight(GRID_BG_LOW, floor)).toBeCloseTo(1, 9);
+      expect(gridBackgroundWeight(GRID_BG_HIGH, floor)).toBeCloseTo(floor, 9);
+      expect(gridBackgroundWeight(0.9, floor)).toBeCloseTo(floor, 9);
+      let before = gridBackgroundWeight(luminances[0] as number, floor);
+      for (const luminance of luminances.slice(1)) {
+        const weight = gridBackgroundWeight(luminance, floor);
+        expect(weight).toBeLessThanOrEqual(before + 1e-9);
+        expect(weight).toBeGreaterThanOrEqual(floor - 1e-9);
+        before = weight;
+      }
+    }
+
+    for (const maximum of maxima) {
+      expect(gridBackgroundTint(0.0, maximum)).toBeCloseTo(0, 9);
+      expect(gridBackgroundTint(GRID_BG_LOW, maximum)).toBeCloseTo(0, 9);
+      expect(gridBackgroundTint(GRID_BG_HIGH, maximum)).toBeCloseTo(maximum, 9);
+      expect(gridBackgroundTint(0.9, maximum)).toBeCloseTo(maximum, 9);
+      let before = gridBackgroundTint(luminances[0] as number, maximum);
+      for (const luminance of luminances.slice(1)) {
+        const tint = gridBackgroundTint(luminance, maximum);
+        expect(tint).toBeGreaterThanOrEqual(before - 1e-9);
+        expect(tint).toBeLessThanOrEqual(maximum + 1e-9);
+        before = tint;
+      }
+    }
+  });
+
+  test('recedes a label and its line together', () => {
+    // The label keeps more of itself, but only where the merge acts at all.
+    const table: [number, number, number][] = [
+      [0.02, 1.0, 1.0],
+      [0.2, 0.911, 0.886],
+      [0.3, 0.751, 0.683],
+      [0.8, 0.45, 0.3],
+    ];
+    for (const [luminance, label, line] of table) {
+      const labelWeight = gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR);
+      const lineWeight = gridBackgroundWeight(luminance, GRID_LINE_MERGE_FLOOR);
+      expect(labelWeight).toBeCloseTo(label, 3);
+      expect(lineWeight).toBeCloseTo(line, 3);
+      if (luminance <= GRID_BG_LOW) {
+        expect(labelWeight).toBeCloseTo(lineWeight, 9);
+      } else {
+        expect(labelWeight).toBeGreaterThan(lineWeight);
+      }
+    }
+  });
+});
+
 describe('the screen spacing', () => {
   test('is the focal length times the spacing over the range', () => {
     const focal = focalCss(1080);
@@ -272,6 +341,7 @@ const FRAME = {
   pixelRatio: 1,
   bounds: MODEL_BOUNDS,
   band: 1,
+  background: {} as WebGLTexture,
 };
 
 describe('the grid draw', () => {
@@ -304,6 +374,52 @@ describe('the grid draw', () => {
       expect(phases[level * 2] as number).toBeLessThan(spacing);
       expect(phases[level * 2 + 1] as number).toBeGreaterThanOrEqual(0);
       expect(phases[level * 2 + 1] as number).toBeLessThan(spacing);
+    }
+  });
+});
+
+/** A context that also lets a program compile and link, so the names can be read. */
+function programContext(): { gl: WebGL2RenderingContext; of(name: string): Call[] } {
+  const fake = fakeContext();
+  const calls: Call[] = [];
+  const gl = new Proxy(fake.gl, {
+    get(target, key): unknown {
+      if (key === 'createShader' || key === 'createProgram') {
+        return (): unknown => ({ name: String(key) });
+      }
+      if (key === 'getShaderParameter' || key === 'getProgramParameter') {
+        return (): boolean => true;
+      }
+      if (key === 'getUniformLocation') {
+        return (...args: unknown[]): unknown => {
+          calls.push({ name: 'getUniformLocation', args });
+          return {};
+        };
+      }
+      return Reflect.get(target, key) as unknown;
+    },
+  }) as WebGL2RenderingContext;
+  return {
+    gl,
+    of(name: string): Call[] {
+      return calls.filter((call) => call.name === name);
+    },
+  };
+}
+
+describe('the merge uniforms', () => {
+  test('are declared by the program and read by the shader', () => {
+    const fake = programContext();
+    createGridProgram(fake.gl);
+    const declared = fake
+      .of('getUniformLocation')
+      .map((call) => call.args[1] as string);
+
+    for (const name of ['uBackground', 'uMergeRange', 'uMergeFloor', 'uTintMax']) {
+      expect(declared).toContain(name);
+      expect(new RegExp(`uniform [a-zA-Z0-9]+ ${name};`).test(fragmentSource)).toBe(
+        true,
+      );
     }
   });
 });

@@ -1,209 +1,23 @@
-## Purpose
+## REMOVED Requirements
 
-Names the part of the galaxy the view sits in. The 42 galactic codex regions draw
-their boundaries on the galactic plane and carry a text label each, so the user can
-tell the Inner Orion Spur from the Galactic Centre without leaving the map.
+### Requirement: The boundaries draw on the galactic plane in a zoom band
 
-## Requirements
+**Reason**: Three of its rules are replaced at once, so the block is replaced rather than
+edited. The two-tone ribbon of a light core inside a dark outline becomes one soft warm
+band. The per-pixel fade over the camera's distance to the line, from 200 to 1,500 light
+years, becomes a fade over the zoom distance that empties the overlay below 5,000 light
+years. The coverage the pass writes now passes through a blur, which rounds the 90 degree
+corners of the traced set. The requirement "The boundaries draw as one soft band inside a
+zoom band" states all three.
 
-### Requirement: The region data comes from the almanac
+**Migration**: Nothing outside the map reads this. The pass is internal, the region mode
+and the `regions` switch keep their names and their meanings, and no public call changes.
+What changes for a user is the picture: no boundary below 5,000 light years, and one soft
+band rather than a cored ribbon above it. `tests/region-views.ts` and `e2e/region-views.ts`
+hold view constants this requirement chose, and the new requirement states that they are
+searched again at a zoom of 10,000 light years or more.
 
-The map SHALL read the 42 galactic codex regions from
-`@elite-dangerous-almanac/core`, pinned to an exact version. Each region SHALL carry an
-id from 1 to 42, a name, a footprint area, axis-aligned bounds on the galactic plane
-and a centroid on the galactic plane. A plane position SHALL resolve to one region or
-to none, on the grid of 4,096/83 light years the game uses.
-
-The map SHALL depend on two constants of the package: the galaxy origin
-(-49,985, -40,985, -24,105) and the sector edge of 1,280 light years. A unit test SHALL
-assert both, so a release of the package that changes them fails the suite rather than
-the map.
-
-#### Scenario: The region list
-
-- **WHEN** a unit test reads the region list
-- **THEN** it holds 42 regions, their ids run from 1 to 42 without a gap, and every
-  name is a non-empty string
-
-#### Scenario: Known positions resolve
-
-- **WHEN** a unit test resolves the regions at (0, 0, 0) and at (15, -35, 25,895)
-- **THEN** the first is `Inner Orion Spur` and the second is `Galactic Centre`
-
-#### Scenario: The package constants hold
-
-- **WHEN** a unit test reads the galaxy origin and the sector edge from the package
-- **THEN** the origin is (-49,985, -40,985, -24,105) and the edge is 1,280 light years
-
-
-### Requirement: The boundary set is traced from the region grid
-
-The map SHALL build the region boundary sets off the main thread. The build SHALL
-resolve the region at the centre of every cell of the 49.3494 light year grid over the
-model bounds in `x` and `z`, which is 2,027 by 2,027 cells, and SHALL emit a line
-segment on the edge between two neighbouring cells that hold different region ids. A
-cell that resolves to no region SHALL count as an id of its own, so the rim of the
-mapped grid draws.
-
-The unit edges SHALL then be linked into **chains**. A chain SHALL follow the boundary
-through every lattice node that carries exactly two edges, and SHALL end at a node that
-carries any other number, which is a node where three or more regions meet. Each chain
-SHALL therefore separate exactly one pair of region ids, and no edge SHALL belong to two
-chains.
-
-The build SHALL emit **two** sets from that one trace, and SHALL emit them in one message:
-the **smoothed set** the `simplified` mode draws and the **traced set** the `accurate`
-mode draws. One trace serves both, so the second set costs the region lookups nothing.
-
-**The traced set.** Each chain SHALL be packed as it was traced, with no average, no
-vertex reduction to a tolerance and no corner rounding. A run of unit edges that continue
-in the same direction SHALL be packed as one segment, because the middle nodes of such a
-run lie exactly on the line between its ends. The packed line SHALL therefore pass through
-every lattice node where the traced boundary turns, and its departure from the traced
-boundary SHALL be **0** to the resolution of a `float32` coordinate.
-
-The traced set is the staircase the region data is. Its turn measures 1,062.75 degrees for
-each 1,000 light years of drawn length over the whole set, and its vertices turn by 90
-degrees. Both bounds the smoothed set holds are therefore broken on purpose, and no bound
-on turn applies to this set.
-
-Collapsing the straight runs SHALL take the set to **between 15,000 and 40,000 vertices**,
-which is at most 469 KiB, so it uploads once as the smoothed set does. On the pinned
-version of `@elite-dangerous-almanac/core` the trace holds 38,686 nodes and the set holds
-22,718 vertices, which is 266.23 KiB, so the traced set is the smaller of the two. The
-bound is a range and the two figures are a reading, as they are for the smoothed set: the
-region cells come from the pinned package, so a release that redraws a region moves both
-readings without any defect in this map. The scenario "The package constants hold", of the
-requirement "The region data comes from the almanac", is where a package release is meant
-to fail the suite.
-
-**The smoothed set.** Each chain SHALL be smoothed, and the smoothing SHALL meet three
-bounds at once.
-
-The drawn chain SHALL stay within **one grid cell, 49.3494 light years**, of the traced
-boundary, measured both ways: every point of the drawn chain is within that distance of
-the traced boundary, and every point of the traced boundary is within that distance of
-the drawn chain. One cell is the resolution of the source raster, so the line claims no
-accuracy the data does not have.
-
-The drawn set SHALL also read as a line and not as a staircase. The measure is the sum
-of the absolute turn angle at the vertices, for each 1,000 light years of drawn length,
-and it SHALL meet two bounds:
-
-- Over the whole set, taking the total turn over the total length, **at most 60 degrees
-  for each 1,000 light years**.
-- For **each chain on its own**, taking that chain's turn over that chain's length, at
-  most **100 degrees for each 1,000 light years**.
-
-The second bound is needed because the first is length-weighted, so the few longest
-chains set it and a short chain could wander freely inside it. The user looks at one
-boundary at a time, so the property has to hold for one boundary at a time.
-
-The traced staircase measures 1,062.75 degrees per 1,000 light years over the whole set.
-A rule that only rounds the corners of the staircase does not meet either bound: it
-leaves the direction changes in place. The bounds are what separate a smoothed line from
-a rounded staircase, and they are the reason the departure bound is one cell rather than
-half of one. At a zoom of 500 light years one CSS pixel is 0.53 light years, so half a
-cell is already 47 pixels; tightening the departure below the resolution of the data buys
-nothing there and costs the straightness the user sees. The `accurate` mode is what serves
-a user who wants the departure at 0 and will take the steps for it.
-
-The drawn line SHALL also carry no visible corner. **No vertex of a drawn chain SHALL
-turn by more than 20 degrees.** The two bounds above measure how far the line wanders
-over a distance; this one measures the line at a single point, and it is a separate
-property. A line can hold both of the bounds above and still read as a polygon: measured
-on a build that met them, the segments had a median length of 284 light years and 377
-vertices turned by more than 20 degrees, the worst by 98.4. At the closest zoom a 284
-light year segment crosses more than a frame, so such a vertex reads as a hard corner
-rather than as a curve.
-
-Both sets SHALL be typed arrays only and transferable without copying. Each SHALL hold
-the vertices of every chain in one array of three `float32` per vertex, with the first and
-last index of each chain, so a vertex shared by two segments is stored once. Both SHALL
-hold the same chain count, so a chain of one set is the same boundary as the chain of the
-same index in the other.
-
-#### Scenario: The boundary is a small number of chains
-
-- **WHEN** a unit test builds the two boundary sets
-- **THEN** each holds between 100 and 200 chains, the two counts are equal, and every
-  chain of each has at least two vertices
-
-#### Scenario: A chain separates one pair of regions
-
-- **WHEN** a unit test walks every chain of the untouched trace and reads the pair of
-  region ids on the two sides of each of its edges
-- **THEN** every edge of a chain carries the same pair, and no two chains share an edge
-
-#### Scenario: The drawn line stays near the boundary
-
-- **WHEN** a unit test measures, for every chain of the smoothed set, the largest distance
-  from a point of the drawn chain to the traced boundary and the largest distance from a
-  point of the traced boundary to the drawn chain
-- **THEN** both are at most 49.3494 light years
-
-#### Scenario: The traced set departs by nothing
-
-- **WHEN** a unit test measures the same two distances for every chain of the traced set
-- **THEN** both are 0 within 0.01 light years. The packed set holds `float32` coordinates,
-  and one step of a `float32` near 50,000 is 0.0078 light years, so a node lands up to half
-  a step from where the trace put it and the departure of an exact packer is a fraction of
-  one step rather than 0. On the pinned package the reading is 0.0040
-
-#### Scenario: The traced set keeps every turn
-
-- **WHEN** a unit test adds the absolute turn angle at every vertex of the traced set and
-  divides by its drawn length
-- **THEN** the ratio equals the ratio of the untouched trace within 1e-6 of it, so
-  collapsing the straight runs removed no turn, and it is above 1,000 degrees for each
-  1,000 light years. The bound is relative because the two readings part only by the
-  `float32` rounding of the packed coordinates. On the pinned package the reading is
-  1,062.75
-
-#### Scenario: The traced set drops the straight runs
-
-- **WHEN** a unit test reads the vertex count of the traced set and the node count of the
-  untouched trace
-- **THEN** the set holds between 15,000 and 40,000 vertices, it holds fewer than the trace
-  has nodes, and it is smaller than the smoothed set. On the pinned package the readings
-  are 38,686 nodes and 22,718 vertices, which is 266.23 KiB
-
-#### Scenario: The drawn line reads as a line
-
-- **WHEN** a unit test adds the absolute turn angle at every vertex of every chain of the
-  smoothed set and divides by the drawn length of the whole set, and then measures the same
-  ratio for each chain on its own
-- **THEN** the whole set is at most 60 degrees for each 1,000 light years, no single
-  chain is above 100, and the same whole-set measure over the traced staircase is more
-  than 1,000
-
-#### Scenario: The drawn line carries no visible corner
-
-- **WHEN** a unit test measures the turn angle at every vertex of every chain of the
-  smoothed set
-- **THEN** no vertex turns by more than 20 degrees
-
-#### Scenario: The set is small enough to upload once
-
-- **WHEN** a unit test reads the vertex count of the smoothed set
-- **THEN** it is between 20,000 and 120,000 vertices, which is at most 1.4 MiB of vertex
-  data. Holding the corner bound costs vertices, because a corner is only removed by
-  putting points around it. A set that meets the bounds above needs far fewer vertices than
-  a rounded staircase does, because it has far fewer direction changes to carry. The floor
-  guards against a set so reduced that it holds the departure bound only by cutting chains
-  to a few long chords; the departure bound alone does not catch that, because a chord
-  across a gentle curve can stay inside one cell
-
-#### Scenario: The set is deterministic
-
-- **WHEN** a unit test builds both boundary sets twice
-- **THEN** the arrays of each build are byte-identical to the arrays of the other
-
-#### Scenario: The set is transferable
-
-- **WHEN** a test posts both boundary sets through a `MessageChannel` with their buffers in
-  the transfer list
-- **THEN** the receiver gets equal contents for both and every sender buffer has length 0
+## ADDED Requirements
 
 ### Requirement: The boundaries draw as one soft band inside a zoom band
 
@@ -683,6 +497,8 @@ not three.
 - **WHEN** the browser test opens a view at 1920x1080 in `accurate` at a zoom of 5,200
   light years and reads `measureFrames` with the overlay off and with it on
 - **THEN** the two readings differ by 1 ms or less
+
+## MODIFIED Requirements
 
 ### Requirement: A region in view carries a label
 
@@ -1178,56 +994,6 @@ user sees at those zooms.
 - **THEN** the page holds no region label, `frames` is 0 and both `meanMs` and `worstMs` are
   0, so the sweep ran in no frame of the sixty
 
-### Requirement: The region overlay has a switch
-
-The renderer SHALL expose a `regions` switch beside the switches for the volume, the
-clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
-lines and the labels.
-
-#### Scenario: The switch removes both parts
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
-  switches the regions off and takes a second screenshot
-- **THEN** the page holds no region label after the switch, and the second screenshot
-  differs from the first, because the first draws boundary lines
-
-#### Scenario: The switch is inert where nothing draws
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
-  fade in distance, and takes a screenshot with the regions on and one with them off
-- **THEN** the two image files are byte-identical
-
-
-### Requirement: The region data carries its attribution
-
-The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
-region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
-region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If **either build** carries the package's procedural
-naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
-
-The repository now emits two builds, the library and the demo site, so the search reads
-both. The demo site is the one the public loads, and the library is the one another project
-installs, so a table that reaches either one reaches a user.
-
-The file SHALL also name the sources the demo site adds: the two further Canonn Research
-Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
-from `public/`.
-
-#### Scenario: The notice names every source
-
-- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
-  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
-  `Notable Systems`
-
-#### Scenario: The bundle carries no unlicensed table
-
-- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
-  for the package's procedural naming tables
-- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
-  BSD 3-Clause text in full
-
 ### Requirement: The region overlay has three modes
 
 The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
@@ -1338,38 +1104,3 @@ band inside a zoom band" records that trade and why it was taken.
 - **WHEN** the browser test sets the mode to `accurate`, then calls `setRegionMode` with
   the string `precise` and with `undefined`, and reads the mode
 - **THEN** it is still `accurate`
-### Requirement: The handle reports the region at a plane point
-
-The handle SHALL carry `regionNameAt(point)`, which takes a position in game coordinates
-and returns the name of the codex region that holds it, or null.
-
-The lookup SHALL read the `x` and `z` of the point and SHALL ignore its `y`, because the
-region grid is a map of the galactic plane and a region has no upper or lower bound. A
-point outside the grid SHALL give null, and so SHALL a point inside it that the grid marks
-as no region.
-
-The call SHALL give null before the scene data has loaded, rather than throw, because the
-handle answers in the same tick the map is created and the grid arrives later.
-
-The HUD names the region under the cursor in its top bar, which `map-hud` states. Before
-this requirement the only way to ask was `debug.regionNameAtScreen`, and `debug` is not
-part of the supported surface.
-
-#### Scenario: The call names the region at a point
-
-- **WHEN** a browser test waits for `ready` and calls `regionNameAt` with Sol
-  (0, 0, 0), with the galactic centre (15, -35, 25895), and with a point far outside the
-  grid at (400000, 0, 0)
-- **THEN** the first gives `Inner Orion Spur`, the second gives `Galactic Centre`, and the
-  third gives null
-
-#### Scenario: The height of the point does not change the answer
-
-- **WHEN** a browser test calls `regionNameAt` with (0, 0, 0) and with (0, 20000, 0)
-- **THEN** the two readings are equal
-
-#### Scenario: The call answers before the data loads
-
-- **WHEN** a browser test builds a second map through `window.galaxyMapFactory` and calls
-  `regionNameAt` with Sol before `ready` settles
-- **THEN** the call returns null and does not throw

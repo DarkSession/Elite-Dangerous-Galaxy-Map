@@ -14,6 +14,7 @@ import { createRenderContext } from '../render/context';
 import { createProgram } from '../render/program';
 import { createFrameAccumulator, createRenderer } from '../render/renderer';
 import type {
+  BackgroundReading,
   FrameAccumulator,
   FrameStats,
   GridLevelReading,
@@ -201,6 +202,23 @@ export interface GalaxyMapDebug {
    * reading is empty in a frame the grid did not draw in.
    */
   gridLevels(): GridLevelReading[];
+  /**
+   * The width and the height of the background reading's own target, and `[0, 0]`
+   * before the first frame that builds one. It reports the storage and not the last
+   * reading, so a frame without the grid can be held to taking none.
+   */
+  backgroundSize(): [number, number];
+  /**
+   * The width and the height of the region overlay's coverage buffer, and null before
+   * the first frame that draws the overlay. The buffer holds the full drawing buffer
+   * size, which the blur of the overlay needs.
+   */
+  regionCoverageSize(): [number, number] | null;
+  /**
+   * The background reading of the last frame, and null in a frame that built none. The
+   * read waits for the card, so it is a probe and not the path the labels take.
+   */
+  backgroundReading(): BackgroundReading | null;
   /**
    * The milliseconds left in the running selection flight, and 0 when none runs. The
    * browser tests read the flight from it.
@@ -659,6 +677,10 @@ export function createGalaxyMap(
       viewport: size,
       spacingLy: renderer.gridSpacingLy(),
       bounds: MODEL_BOUNDS,
+      // The read-back of an earlier frame. A label's opacity is one frame behind the
+      // picture, which a person does not see, and a read that waits for the card costs
+      // more than the pass it reads.
+      background: renderer.backgroundFrame(),
     });
   };
 
@@ -917,6 +939,15 @@ export function createGalaxyMap(
     },
     gridLevels(): GridLevelReading[] {
       return renderer?.gridLevels() ?? [];
+    },
+    backgroundSize(): [number, number] {
+      return renderer?.backgroundSize() ?? [0, 0];
+    },
+    regionCoverageSize(): [number, number] | null {
+      return renderer?.regionCoverageSize() ?? null;
+    },
+    backgroundReading(): BackgroundReading | null {
+      return renderer?.backgroundReading() ?? null;
     },
     selectionFlightMs(): number {
       if (flight === null) return 0;

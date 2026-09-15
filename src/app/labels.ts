@@ -13,7 +13,12 @@ import {
 } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
-import { REGION_FADE_IN_FAR, REGION_FADE_IN_NEAR } from '../render/region-pass';
+import {
+  REGION_CLOSE_FULL,
+  REGION_CLOSE_NONE,
+  REGION_FADE_IN_FAR,
+  REGION_FADE_IN_NEAR,
+} from '../render/region-pass';
 import {
   coarseRegionIdAt,
   insideCoarseRegionGrid,
@@ -155,11 +160,15 @@ function smoothstep(low: number, high: number, value: number): number {
 }
 
 /**
- * How much of the label overlay draws at a zoom distance, 0 to 1. The labels follow the
- * fade in of the boundary lines, and they do not fade out at close zoom.
+ * How much of the label overlay draws at a zoom distance, 0 to 1. The labels take the
+ * same band the boundary lines take, so a name and the boundary beside it always read at
+ * the same strength. The constants come from the region pass, so no copy is made.
  */
 export function labelFade(distance: number): number {
-  return 1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance);
+  return (
+    smoothstep(REGION_CLOSE_NONE, REGION_CLOSE_FULL, distance) *
+    (1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance))
+  );
 }
 
 /**

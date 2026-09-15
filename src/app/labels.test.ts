@@ -441,11 +441,15 @@ describe('the placement', () => {
 });
 
 describe('the label fade', () => {
-  test('follows the fade in of the lines and does not fade out', () => {
+  test('takes the same band of zoom distance the boundary lines take', () => {
     expect(labelFade(30000)).toBe(0);
     expect(labelFade(60000)).toBe(0);
     expect(labelFade(20000)).toBe(1);
-    expect(labelFade(500)).toBe(1);
+    expect(labelFade(10000)).toBe(1);
+    expect(labelFade(7500)).toBeCloseTo(0.5, 12);
+    expect(labelFade(5000)).toBe(0);
+    expect(labelFade(4000)).toBe(0);
+    expect(labelFade(500)).toBe(0);
     expect(labelFade(25000)).toBeGreaterThan(0);
     expect(labelFade(25000)).toBeLessThan(1);
   });

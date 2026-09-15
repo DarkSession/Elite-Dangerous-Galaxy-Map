@@ -38,6 +38,16 @@ uniform float uFadeLines;
 // The camera distance band, from 0 to 1. It multiplies every level's alpha, so a wide
 // view draws no grid at all. The processor works it out once for the frame.
 uniform float uBand;
+// The background reading, a sixteenth of the frame on each axis, tone mapped. The grid
+// follows what it draws over: a fixed alpha makes one line read the same over the dark
+// space between the arms and over the cream core.
+uniform sampler2D uBackground;
+// The background luminances the merge runs between.
+uniform vec2 uMergeRange;
+// How much of the alpha is left over the brightest background.
+uniform float uMergeFloor;
+// How far the colour moves toward the background over the brightest background.
+uniform float uTintMax;
 uniform float uSpacing[LEVEL_COUNT];
 uniform vec2 uPhase[LEVEL_COUNT];
 
@@ -110,5 +120,16 @@ void main() {
     plane.y >= uBoundsZ.x && plane.y <= uBoundsZ.y;
   if (!inside || alpha <= 0.0) discard;
 
-  fragColor = vec4(uColor, alpha);
+  // The merge with the background under this pixel. The reading is a sixteenth of the
+  // frame on each axis and the sampler filters it, so the weight changes smoothly and a
+  // line does not step where two texels meet.
+  vec3 background = texture(uBackground, vNdc * 0.5 + 0.5).rgb;
+  float backgroundLuminance = dot(background, vec3(0.2126, 0.7152, 0.0722));
+  float merge = smoothstep(uMergeRange.x, uMergeRange.y, backgroundLuminance);
+  // The floor is not zero. A grid the user cannot find over the core is not a
+  // coordinate grid.
+  float weight = 1.0 - (1.0 - uMergeFloor) * merge;
+  vec3 colour = mix(uColor, background, uTintMax * merge);
+
+  fragColor = vec4(colour, alpha * weight);
 }

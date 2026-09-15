@@ -3,6 +3,7 @@ import type { GalaxyMap, RealSystem } from '../app/create-map';
 import {
   cssColor,
   cssColorAlpha,
+  formatCoordinate,
   formatLightYears,
   formatWhole,
   make,
@@ -37,13 +38,22 @@ export interface InfoPanel {
   dispose(): void;
 }
 
+/** The three game coordinates, each with the digits the field shows. */
+function positionText(
+  position: readonly [number, number, number],
+  separators: boolean,
+): string {
+  const parts = position.map((value) => formatCoordinate(value, separators));
+  return `${parts[0]} / ${parts[1]} / ${parts[2]}`;
+}
+
 /**
- * The three game coordinates as whole numbers with no thousands separator. The panel
- * shows the position with its separators, because a separator is for reading, and the
- * copy is for pasting into a field that takes a number.
+ * The three game coordinates with no thousands separator. The panel shows the position
+ * with its separators, because a separator is for reading, and the copy is for pasting
+ * into a field that takes a number.
  */
 function copyPosition(position: readonly [number, number, number]): string {
-  return `${Math.round(position[0])} / ${Math.round(position[1])} / ${Math.round(position[2])}`;
+  return positionText(position, false);
 }
 
 /** The fields the record carries, in the order the panel shows them. */
@@ -52,7 +62,7 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
   const fields: Field[] = [
     {
       label: 'POSITION',
-      value: `${formatWhole(position[0])} / ${formatWhole(position[1])} / ${formatWhole(position[2])}`,
+      value: positionText(position, true),
       copy: copyPosition(position),
     },
     { label: 'DISTANCE FROM SOL', value: formatLightYears(distanceFromSol(position)) },
