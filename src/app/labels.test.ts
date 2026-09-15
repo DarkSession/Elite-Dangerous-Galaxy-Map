@@ -1606,7 +1606,8 @@ describe('the label walk under a zoom', () => {
       drag.push({ cursor: [frame * 60, 0, 20000], distance: 6000, yaw: 0, pitch: 35 });
     }
     const dragged = drift(drag);
-    // Wheel notches, each a change of distance of 15 percent in one frame.
+    // Steps of 15 percent of the distance, each in one frame. The wheel glides and
+    // moves less than this in a frame, so the step is an upper bound on a notch.
     const zoomed = drift(notches(28, 6));
     // A wheel that a person holds down, with no still frame between the notches.
     const held = drift(notches(28, 0));

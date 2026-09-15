@@ -136,6 +136,11 @@ export interface GalaxyMapGlobal {
   }[];
   /** The milliseconds left in the running selection flight, and 0 when none runs. */
   selectionFlightMs?: () => number;
+  /**
+   * The distance in light years the zoom glide moves toward, and null when no glide
+   * runs.
+   */
+  zoomTargetLy?: () => number | null;
 }
 
 declare global {

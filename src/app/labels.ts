@@ -710,7 +710,7 @@ export const ANCHOR_LEAST_PIXELS = 0.4;
 
 /**
  * How far past each edge of the frame a carried point stays in reach, as a share of the
- * frame. A wheel notch changes the camera distance by 15 percent in one frame, which
+ * frame. A wheel held down changes the camera distance by 15 percent in a frame, which
  * moves the anchor of a label at the edge a little past it; that point must be kept and
  * walked back, or the label jumps. A camera that jumps to another view leaves the anchor
  * a whole frame away or more, and to walk that back at the cap reads as a crawl.

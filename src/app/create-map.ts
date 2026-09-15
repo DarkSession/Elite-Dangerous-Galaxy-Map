@@ -224,6 +224,11 @@ export interface GalaxyMapDebug {
    * browser tests read the flight from it.
    */
   selectionFlightMs(): number;
+  /**
+   * The distance in light years the zoom glide moves toward, and null when no glide
+   * runs. The browser tests read it to wait for the camera to settle.
+   */
+  zoomTargetLy(): number | null;
   compileTestProgram(vertex: string, fragment: string): string | null;
   /** The unmasked renderer string the card reports. */
   readonly renderer: string;
@@ -521,6 +526,9 @@ export function createGalaxyMap(
 
   /** Writes a view into the live view and raises the listeners. */
   const takeView = (next: View): void => {
+    // The write takes the distance, so the zoom glide ends here and keeps no target of
+    // its own. Only the wheel glides.
+    controls?.endZoom();
     view.cursor = [next.cursor[0], next.cursor[1], next.cursor[2]];
     view.distance = next.distance;
     view.yaw = next.yaw;
@@ -717,6 +725,7 @@ export function createGalaxyMap(
     controls = attachControls(canvas, view, {
       onChange: announce,
       onInput: endFlight,
+      reducedMotion,
       onPointer(pixel: { x: number; y: number } | null): void {
         lastPointer = pixel;
       },
@@ -954,6 +963,9 @@ export function createGalaxyMap(
       const left = FLIGHT_MS - (performance.now() - flight.startMs);
       return left > 0 ? left : 0;
     },
+    zoomTargetLy(): number | null {
+      return controls?.zoomTargetLy() ?? null;
+    },
     compileTestProgram(vertex: string, fragment: string): string | null {
       const gl = context.gl;
       if (gl === null) return 'The map has no context.';
@@ -1028,8 +1040,10 @@ export function createGalaxyMap(
       return readView();
     },
     setView(next: Partial<MapView>): void {
-      // A host that writes the view has taken the camera, so the flight ends here.
+      // A host that writes the view has taken the camera, so the flight and the zoom
+      // glide both end here.
       endFlight();
+      controls?.endZoom();
       if (next.cursor !== undefined) view.cursor = [...next.cursor];
       if (next.distance !== undefined) view.distance = next.distance;
       if (next.yaw !== undefined) view.yaw = next.yaw;

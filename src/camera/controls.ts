@@ -11,6 +11,21 @@ export const ORBIT_DEGREES_PER_PIXEL = 0.3;
 /** The factor one wheel notch applies to the distance. */
 export const ZOOM_PER_NOTCH = 1.15;
 
+/**
+ * How long the zoom glide takes to close half of the gap to its target, in
+ * milliseconds. With the floor below, one notch lands in 217 milliseconds at 60 frames
+ * a second, which is the time a region label takes to settle.
+ */
+export const ZOOM_HALF_LIFE_MS = 50;
+
+/**
+ * The least speed of the zoom glide, in wheel notches a second. The halving alone never
+ * reaches the target, so the floor is what lands the glide. With the half life above,
+ * one notch lands in 217 milliseconds at 60 frames a second, which is the time a region
+ * label takes to settle.
+ */
+export const ZOOM_LEAST_NOTCHES_PER_SECOND = 2;
+
 /** The share of the distance the keys move the cursor in one second. */
 export const MOVE_FRACTION_PER_SECOND = 0.25;
 
@@ -127,11 +142,28 @@ export function orbit(view: View, deltaX: number, deltaY: number): void {
 }
 
 /**
- * Applies wheel notches. A positive count is a forward notch, which moves the camera
- * toward the cursor.
+ * The target distance wheel notches ask for, from the target the map already holds. A
+ * positive count is a forward notch, which moves the camera toward the cursor.
  */
-export function zoomByNotches(view: View, notches: number): void {
-  view.distance = clampDistance(view.distance / Math.pow(ZOOM_PER_NOTCH, notches));
+export function zoomTarget(distance: number, notches: number): number {
+  return clampDistance(distance / Math.pow(ZOOM_PER_NOTCH, notches));
+}
+
+/**
+ * The distance one frame of the zoom glide gives. The step is taken in log distance, so
+ * the zoom moves by a constant factor for each unit of time. The gap falls by half every
+ * `ZOOM_HALF_LIFE_MS`, and the camera moves by at least
+ * `ZOOM_LEAST_NOTCHES_PER_SECOND` notches a second. Where the step reaches the target,
+ * the function returns the target itself, so the glide lands on it exactly.
+ */
+export function zoomStep(distance: number, target: number, seconds: number): number {
+  const gap = Math.log(target) - Math.log(distance);
+  const size = Math.abs(gap);
+  const fall = 1 - Math.pow(0.5, (seconds * 1000) / ZOOM_HALF_LIFE_MS);
+  const least = ZOOM_LEAST_NOTCHES_PER_SECOND * Math.log(ZOOM_PER_NOTCH) * seconds;
+  const step = Math.max(size * fall, least);
+  if (step >= size) return target;
+  return distance * Math.exp(gap < 0 ? -step : step);
 }
 
 /** Turns a wheel event delta into notches. A forward notch is positive. */
@@ -218,7 +250,10 @@ export function movementKeyOf(code: string): MovementKey | null {
 
 /** What `attachControls` gives back. */
 export interface Controls {
-  /** Applies the keys that are down. Call it once per frame. */
+  /**
+   * Steps the zoom glide and applies the keys that are down. Call it once per frame.
+   * It raises the view change listeners once in each frame that moves the view.
+   */
   update(seconds: number): void;
   /**
    * True while the user holds a movement key. The map reads it before it advances a
@@ -227,6 +262,16 @@ export interface Controls {
   isMoving(): boolean;
   /** True while the user drags or orbits. */
   isInteracting(): boolean;
+  /**
+   * The distance in light years the zoom glide moves toward, and null when no glide
+   * runs. A browser test reads it to wait for the camera to settle.
+   */
+  zoomTargetLy(): number | null;
+  /**
+   * Drops the zoom target and leaves the view where it had reached. The map calls it
+   * wherever something else writes the distance, so only the wheel glides.
+   */
+  endZoom(): void;
   /** Removes every listener. */
   dispose(): void;
 }
@@ -252,6 +297,12 @@ export interface ControlsOptions {
    * the view the flight had reached and the user is never held.
    */
   readonly onInput?: () => void;
+  /**
+   * True while the browser asks for less movement. The map reads the setting at each
+   * notch and not once at start up, so a user who changes it does not reload. Where it
+   * is true, a wheel notch writes the distance at once and no glide runs.
+   */
+  readonly reducedMotion?: () => boolean;
 }
 
 /** Wires the control scheme to a canvas. */
@@ -267,6 +318,9 @@ export function attachControls(
   let press: PressRecord | null = null;
   let lastOrbitX = 0;
   let lastOrbitY = 0;
+  // The distance the zoom glide moves toward, and null when no glide runs. The name is
+  // `target` and not `zoomTarget`, which is the module function the wheel calls.
+  let target: number | null = null;
 
   const changed = (): void => options.onChange?.();
 
@@ -340,8 +394,17 @@ export function attachControls(
   const onWheel = (event: WheelEvent): void => {
     event.preventDefault();
     options.onInput?.();
-    zoomByNotches(view, notchesFromWheel(event.deltaY, event.deltaMode));
-    changed();
+    const notches = notchesFromWheel(event.deltaY, event.deltaMode);
+    if (options.reducedMotion?.() === true) {
+      view.distance = zoomTarget(view.distance, notches);
+      target = null;
+      changed();
+      return;
+    }
+    // The notch divides the target the map already holds, so a held wheel keeps the
+    // 1.15 step and loses nothing to the camera's own lag. The event moves no view, so
+    // it raises no listener: the frame step raises them while it moves the distance.
+    target = zoomTarget(target ?? view.distance, notches);
   };
 
   const onContextMenu = (event: MouseEvent): void => {
@@ -379,20 +442,39 @@ export function attachControls(
 
   return {
     update(seconds: number): void {
-      if (!moving()) return;
-      // The hook fires each frame the key is held, and not on the `keydown` alone. A
-      // user who holds the key before the map starts a selection flight sends no new
-      // `keydown` until the auto-repeat of the browser, so this call ends a flight that
-      // starts later in the same frame.
-      options.onInput?.();
-      moveByKeys(view, keys, seconds);
-      changed();
+      let moved = false;
+      if (target !== null) {
+        const next = zoomStep(view.distance, target, seconds);
+        if (next === target) target = null;
+        // A frame of no time gives a step of zero, and a frame that moves nothing must
+        // raise no listener.
+        if (next !== view.distance) moved = true;
+        view.distance = next;
+      }
+      if (moving()) {
+        // The hook fires each frame the key is held, and not on the `keydown` alone. A
+        // user who holds the key before the map starts a selection flight sends no new
+        // `keydown` until the auto-repeat of the browser, so this call ends a flight
+        // that starts later in the same frame.
+        options.onInput?.();
+        moveByKeys(view, keys, seconds);
+        moved = true;
+      }
+      // The listeners are raised once at the end, so a user who holds a key during a
+      // glide does not get two calls with two different views in one frame.
+      if (moved) changed();
     },
     isMoving(): boolean {
       return moving();
     },
     isInteracting(): boolean {
       return drag !== null || orbitPointer !== null;
+    },
+    zoomTargetLy(): number | null {
+      return target;
+    },
+    endZoom(): void {
+      target = null;
     },
     dispose(): void {
       canvas.removeEventListener('pointerdown', onPointerDown);
