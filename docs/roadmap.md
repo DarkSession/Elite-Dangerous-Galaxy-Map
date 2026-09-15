@@ -394,6 +394,14 @@ and gives the region overlay three modes.
   light years. A user at the closest zoom can therefore no longer read which side of a
   boundary a system sits on. The trade buys this: the staircase of the traced set, which is
   about 4,600 CSS pixels at a zoom of 10, is off the screen at the zoom where it is worst.
+- **Reversed again: the overlay draws inside a zoom band, as one soft band.** Phase 5.1
+  takes the near fade out and puts a zoom band in its place: the overlay draws nothing at
+  5,000 light years and below, rises to full at 10,000, holds to 20,000 and falls to
+  nothing at 30,000. The two-tone ribbon with its dark outline becomes one warm cream band
+  of 6 CSS pixels with a soft edge. In `accurate` the coverage passes through a separable
+  blur whose radius is the traced set's own 49.3494 light year cell measured on the screen,
+  capped at 8 CSS pixels, so the 90 degree corners of the staircase draw as round turns.
+  The region labels take the same band, so a name never outlives its boundary.
 
 ## Phase 4: selection and HUD
 
@@ -489,6 +497,14 @@ coordinate grid as a plane fill with six decade levels, and replaces the demo da
 - **The grid costs no measurable fill.** At 1920x1080 the draw time with the grid on is
   0.966 ms against 0.954 ms with it off at a pitch of 5 degrees, and 0.728 ms against
   0.686 ms at a pitch of 89. Both differences are under 0.05 ms, against a budget of 1 ms.
+- **Phase 5.1 gives the grid a background reading.** The renderer tone-maps the scene
+  target once at full resolution, then halves it four times into a texture of
+  `ceil(width / 16) x ceil(height / 16)`, which is 120 by 68 at 1920x1080. `grid.frag`
+  samples that texture and `src/app/grid-labels.ts` reads the same numbers at each label's
+  own box, so a line and the number on it take the same weight. The draw time with the
+  reading in the path is 1.029 ms against 0.957 ms with the grid off at a pitch of 5
+  degrees, and 0.736 ms against 0.666 ms at a pitch of 89, so the chain holds the 1 ms
+  bound.
 - **The grid carries coordinates.** `src/app/grid-labels.ts` places a DOM label on each
   crossing of the label level, which is the smallest level at least 400 CSS pixels apart
   at the cursor. It sweeps 289 candidates, drops the ones outside the viewport or behind
@@ -574,7 +590,10 @@ and publishes the demo site.
 - **The region boundary is washed out and fades near the camera.** The fade reads the
   camera's own distance to the drawn line, per fragment. Phase 3.1 records the reversal
   it makes: the traced staircase is off the screen at the zoom where it is worst, and the
-  overlay is empty at a zoom of 10 light years.
+  overlay is empty at a zoom of 10 light years. **Phase 5.1 removes this fade.** Its zoom
+  band empties the overlay below 5,000 light years, which is far above every distance the
+  fade acted at, so the fade has nothing left to do. The coverage buffer goes back to one
+  channel.
 - **The coordinate grid is reachable, bounded and remembered.** The demo site starts the
   grid on and the library default stays off. The URL fragment carries the switch as `g=1`
   or `g=0`, and the handle gains `onGridChange`, because the grid is not view state and
@@ -591,6 +610,61 @@ and publishes the demo site.
   suite fails a run that falls back to SwiftShader or llvmpipe, and a GitHub-hosted
   runner carries no GPU. A run without a card skips the suite; it does not run it against
   a software renderer.
+
+## Phase 5.1: the overlay blend and the position precision
+
+Change: `overlay-blend-and-precision`. Status: implemented.
+
+Makes the coordinate grid follow the background under it, redraws the region boundary as
+one soft band inside a zoom band, and shows a system position at full precision.
+
+- **The frame carries a background reading.** `src/render/background-pass.ts` tone-maps
+  the scene target once at full resolution with the frame's own exposure, then halves it
+  four times into a texture a sixteenth of the frame on each axis. The order matters. An
+  average in linear light first lets one star sprite dominate the linear mean of its whole
+  16 by 16 block: over the disc at a zoom of 4,000 light years, with the camera moving
+  4.67 CSS pixels a frame, that order moves the texel under a fixed point by 0.2417
+  between two frames and this order by 0.0232. The reading holds the region overlay and
+  the markers out, because it is built from the scene target and not from the frame the
+  user sees.
+- **The processor copy is one frame late.** The pass copies the reading into a
+  `PIXEL_PACK_BUFFER`, places a fence, and reads it on a later frame, so no frame waits
+  for the card. Two buffers ping-pong, so the frame that writes one never reads it. A
+  label's opacity is therefore one frame behind the picture, which a frame of 16.7 ms
+  hides. `debug.backgroundReading()` reads the small target synchronously, because a test
+  must see the frame it just drew.
+- **The grid merges with the picture.** `merge = smoothstep(0.08, 0.55, L)`, where `L` is
+  the reading's luminance under the pixel. A line keeps `1 - 0.70 * merge` of its level's
+  alpha and takes `0.60 * merge` of the background's colour. A coordinate number keeps
+  more, at a floor of 0.45 and a tint of 0.35, because text needs more contrast than a
+  line. One function in `src/render/grid-pass.ts` holds the rule, the shader takes it
+  through uniforms and the label module calls it, so no second copy of the constants
+  exists. Measured at a zoom of 3,000 light years at 1920x1080: a line of the label level
+  moves a channel by 110 of 255 over the dark space between the arms and by 15 of 255 over
+  the core, where the reading is 0.0446 and 0.6814.
+- **The boundary is one soft band.** The tone is `(0.86, 0.74, 0.60)` at an opacity of
+  0.55, the half width is 3 CSS pixels, and the coverage is a triangular ridge in a
+  single-channel buffer at the full drawing buffer size. The dark outline is gone. In
+  `accurate` the coverage passes through a separable Gaussian of standard deviation
+  `radius / 3` CSS pixels, sampled one CSS pixel apart, with `2 * ceil(radius) + 1` taps
+  and never more than 17. The radius is the traced set's own cell of 49.3494 light years
+  measured on the screen at the cursor, capped at 8 CSS pixels, and the blur runs only at
+  a radius of 3 and above. `simplified` never blurs, because the smoothed set has no
+  staircase. The blurred coverage is divided by the same kernel's response at the ridge,
+  so the band's opacity holds at every radius. Its width does grow with the radius, from
+  3.0 to 3.5 CSS pixels unblurred to 4.65 at a zoom of 10,000 light years at 1,080 rows.
+- **The overlay draws in a zoom band.** Nothing at 5,000 light years and below, full from
+  10,000 to 20,000, nothing again at 30,000 and above. The lines and the labels take the
+  same band. Below it the HUD's top bar names the region under the cursor, and the handle
+  answers for any plane point with `regionNameAt`.
+- **The panel shows a position at full precision.** `POSITION` shows each coordinate to at
+  most 3 decimal places, with the trailing zeros dropped and the thousands separators
+  kept. The copy text uses the same digits with no separators. The game resolves a
+  position to 1/32 of a light year, which the record already holds. `DISTANCE FROM SOL`
+  and `RANGE` still read whole light years.
+- **The far view did not move.** The background reading is read and never written back
+  into the scene, so the committed baseline image is byte-identical: 0 of 3,686,400 bytes
+  differ.
 
 ## Sources
 

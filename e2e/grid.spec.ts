@@ -18,6 +18,29 @@ const SCENE_OFF = {
 /** The galactic centre in game coordinates. */
 const GALACTIC_CENTRE: [number, number, number] = [15, -35, 25895];
 
+/**
+ * The two views the background merge scenarios read, one over the galactic core and one
+ * over the dark space between the arms. One frame at 4,000 light years does not hold
+ * both, so the pair is two views and not one.
+ *
+ * The readings the pair gave at 1920x1080, from `backgroundReading()`:
+ *
+ * | view | zoom  | mean luminance | luminance at the crossing | blue at it |
+ * | ---- | ----- | -------------- | ------------------------- | ---------- |
+ * | core | 4,000 | 0.652          | 0.684                     | 163 of 255 |
+ * | core | 2,000 | 0.662          | 0.673                     | 161 of 255 |
+ * | dark | 4,000 | 0.058          | 0.045                     | 16 of 255  |
+ * | dark | 2,000 | 0.050          | 0.041                     | 15 of 255  |
+ *
+ * Both cursors sit on a crossing of the 10,000 light year level and of the 1,000 light
+ * year level, so the label level carries a line through the middle of the frame at both
+ * zooms.
+ */
+const CORE_VIEW: [number, number, number] = [0, 0, 20000];
+
+/** The dark view of the pair. It sits 40,432 light years from the galactic centre. */
+const DARK_VIEW: [number, number, number] = [-40000, 0, 20000];
+
 /** Replaces the view and draws one frame. */
 async function setView(
   page: Page,
@@ -474,7 +497,10 @@ test.describe('the grid look', () => {
     }, GALACTIC_CENTRE);
     console.log('the grid over the core', reading);
 
-    expect((reading as NonNullable<typeof reading>).best).toBeGreaterThanOrEqual(12);
+    // The bound was 12 of 255 before the merge. Over a background of 0.55 luminance and
+    // above the merge leaves 0.30 of the level's alpha, so the same line moves a channel
+    // by about a third of what it moved. The floor is what holds this bound above zero.
+    expect((reading as NonNullable<typeof reading>).best).toBeGreaterThanOrEqual(4);
   });
 
   test('antialiases a line across its width', async ({ page }) => {
@@ -527,7 +553,7 @@ test.describe('the grid look', () => {
     }
   });
 
-  test('draws under the marker and the region boundary', async ({ page }) => {
+  test('draws under the marker', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
     await page.evaluate(() => {
       window.galaxyMap?.addCategories([
@@ -540,6 +566,8 @@ test.describe('the grid look', () => {
     await setView(page, [0, 0, 0], 1000, 35);
 
     // The marker sits at the cursor, which is the crossing of two lines of the grid.
+    // The view is close, where the grid band is full and the background under it is
+    // dark, so the merge takes nothing off the line and the reading does not move.
     const marker = await page.evaluate(() => {
       const map = window.galaxyMap;
       if (map === undefined) return null;
@@ -554,57 +582,433 @@ test.describe('the grid look', () => {
     });
     console.log('the marker over the grid', marker);
 
-    const boundary = await page.evaluate(() => {
-      const map = window.galaxyMap;
-      if (map === undefined) return null;
-      map.setView({ cursor: [0, 0, 0], distance: 6000, yaw: 0, pitch: 89 });
-      const side = 600;
-      const left = 660;
-      const top = 240;
-      map.setGridVisible(false);
-      map.debug.setPasses({ regions: false });
-      const without = map.debug.readRect(left, top, side, side);
-      map.debug.setPasses({ regions: true });
-      const lines = map.debug.readRect(left, top, side, side);
-      // The most opaque boundary pixel is the one the overlay changed the most.
-      let best = -1;
-      let bestGap = 0;
-      for (let index = 0; index < lines.length; index += 4) {
-        let gap = 0;
-        for (let channel = 0; channel < 3; channel += 1) {
-          gap += Math.abs(
-            (lines[index + channel] as number) - (without[index + channel] as number),
-          );
-        }
-        if (gap > bestGap) {
-          bestGap = gap;
-          best = index;
-        }
-      }
-      if (best < 0) return null;
-      map.setGridVisible(true);
-      map.debug.drawNow();
-      const withGrid = map.debug.readRect(left, top, side, side);
-      return {
-        gap: bestGap,
-        lines: [lines[best], lines[best + 1], lines[best + 2]],
-        withGrid: [withGrid[best], withGrid[best + 1], withGrid[best + 2]],
-      };
-    });
-    console.log('the boundary over the grid', boundary);
-
     const markerRead = marker as NonNullable<typeof marker>;
     expect(markerRead.on).toEqual(markerRead.off);
+  });
 
-    const boundaryRead = boundary as NonNullable<typeof boundary>;
-    expect(boundaryRead.gap).toBeGreaterThan(20);
-    for (let channel = 0; channel < 3; channel += 1) {
-      expect(
-        Math.abs(
-          (boundaryRead.withGrid[channel] as number) -
-            (boundaryRead.lines[channel] as number),
-        ),
-      ).toBeLessThanOrEqual(2);
+  test('draws under the region boundary', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=8000&p=89&y=0');
+    // 8,000 light years is where the product of the two bands is largest: the grid band
+    // leaves 0.50 of its alpha there and none at 12,000, and the region band leaves
+    // 0.65 of its opacity there and none at 5,000.
+    await setView(page, [0, 0, 0], 8000, 89);
+
+    const order = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      const side = 800;
+      const left = 560;
+      const top = 140;
+      const read = (grid: boolean, regions: boolean): Uint8Array => {
+        map.setGridVisible(grid);
+        map.debug.setPasses({ regions });
+        map.debug.drawNow();
+        return map.debug.readRect(left, top, side, side);
+      };
+      // The four frames: neither overlay, the grid alone, the boundary alone and both.
+      const without = read(false, false);
+      const gridOnly = read(true, false);
+      const lines = read(false, true);
+      const withGrid = read(true, true);
+      map.debug.setPasses({ regions: true });
+
+      const magnitude = (frame: Uint8Array, base: Uint8Array, at: number): number => {
+        let best = 0;
+        for (let channel = 0; channel < 3; channel += 1) {
+          best = Math.max(
+            best,
+            Math.abs((frame[at + channel] as number) - (base[at + channel] as number)),
+          );
+        }
+        return best;
+      };
+
+      // The crossing is the pixel where the product of the grid's own contribution and
+      // the boundary's own contribution is largest.
+      let crossing = -1;
+      let bestProduct = 0;
+      for (let at = 0; at < without.length; at += 4) {
+        const product =
+          magnitude(gridOnly, without, at) * magnitude(lines, without, at);
+        if (product > bestProduct) {
+          bestProduct = product;
+          crossing = at;
+        }
+      }
+      if (crossing < 0) return null;
+
+      // The channel that carries the largest grid contribution there.
+      let channel = 0;
+      let bestGrid = 0;
+      for (let index = 0; index < 3; index += 1) {
+        const gap = Math.abs(
+          (gridOnly[crossing + index] as number) -
+            (without[crossing + index] as number),
+        );
+        if (gap > bestGrid) {
+          bestGrid = gap;
+          channel = index;
+        }
+      }
+
+      // The comparison is the nearest pixel that carries the same grid contribution
+      // within a tenth and no boundary contribution at all.
+      const pixel = crossing / 4;
+      const crossingX = pixel % side;
+      const crossingY = Math.floor(pixel / side);
+      const target = magnitude(gridOnly, without, crossing);
+      let comparison = -1;
+      let bestRange = Infinity;
+      for (let at = 0; at < without.length; at += 4) {
+        if (magnitude(lines, without, at) !== 0) continue;
+        const grid = magnitude(gridOnly, without, at);
+        if (Math.abs(grid - target) > 0.1 * target) continue;
+        const other = at / 4;
+        const dx = (other % side) - crossingX;
+        const dy = Math.floor(other / side) - crossingY;
+        const range = dx * dx + dy * dy;
+        if (range < bestRange) {
+          bestRange = range;
+          comparison = at;
+        }
+      }
+      if (comparison < 0) return null;
+
+      const kept =
+        (withGrid[crossing + channel] as number) -
+        (lines[crossing + channel] as number);
+      const full =
+        (gridOnly[comparison + channel] as number) -
+        (without[comparison + channel] as number);
+      return { channel, target, kept, full, ratio: kept / full };
+    });
+    console.log('the boundary over the grid', order);
+
+    const read = order as NonNullable<typeof order>;
+    // The boundary draws after the grid, so it keeps only a part of what the grid put
+    // down under it. If the grid drew last the ratio would be 1.
+    expect(read.ratio).toBeGreaterThanOrEqual(0.45);
+    expect(read.ratio).toBeLessThanOrEqual(0.85);
+  });
+});
+
+test.describe('the background reading', () => {
+  test('follows the picture in the two views', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    await setGrid(page, true);
+
+    const readings = await page.evaluate(
+      (views) => {
+        const map = window.galaxyMap;
+        if (map === undefined) return [];
+        const out: unknown[] = [];
+        for (const cursor of views) {
+          map.setView({
+            cursor: cursor as [number, number, number],
+            distance: 4000,
+            yaw: 0,
+            pitch: 89,
+          });
+          map.debug.drawNow();
+          const reading = map.debug.backgroundReading();
+          if (reading === null) {
+            out.push(null);
+            continue;
+          }
+          let sum = 0;
+          let worstChannel = 0;
+          let worstLuminance = 0;
+          for (const texel of reading.texels) {
+            sum += texel.luminance;
+            for (const channel of [texel.r, texel.g, texel.b]) {
+              worstChannel = Math.max(worstChannel, Math.abs(channel - 0.5));
+            }
+            const own = 0.2126 * texel.r + 0.7152 * texel.g + 0.0722 * texel.b;
+            worstLuminance = Math.max(worstLuminance, Math.abs(own - texel.luminance));
+          }
+          out.push({
+            width: reading.width,
+            height: reading.height,
+            mean: sum / reading.texels.length,
+            worstChannel,
+            worstLuminance,
+          });
+        }
+        return out;
+      },
+      [CORE_VIEW, DARK_VIEW] as unknown as number[][],
+    );
+    console.log('the reading of the two views', readings);
+
+    const [core, dark] = readings as {
+      width: number;
+      height: number;
+      mean: number;
+      worstChannel: number;
+      worstLuminance: number;
+    }[];
+    for (const reading of [core, dark]) {
+      expect(reading.width).toBe(120);
+      expect(reading.height).toBe(68);
+      // Every channel of every texel sits between 0 and 1, so no reading is above 0.5
+      // away from the middle of that range.
+      expect(reading.worstChannel).toBeLessThanOrEqual(0.5);
+      expect(reading.worstLuminance).toBeLessThan(1e-6);
+    }
+    expect(core.mean).toBeGreaterThanOrEqual(0.55);
+    expect(dark.mean).toBeLessThanOrEqual(0.1);
+  });
+
+  test('holds no reading and no storage with the grid off', async ({ page }) => {
+    // The fragment carries `g=0`, so the page draws its first frame with the grid
+    // already off. The demo site turns the grid on at start, and one frame with it on
+    // builds the target. The test reads the storage and not only the last reading, so
+    // it has to open on a page that never drew the grid.
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0&g=0');
+    await setGrid(page, false);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      map.debug.drawNow();
+      return {
+        texels: map.debug.backgroundReading(),
+        size: map.debug.backgroundSize(),
+      };
+    });
+    console.log('the reading with the grid off', reading);
+
+    const read = reading as NonNullable<typeof reading>;
+    expect(read.texels).toBeNull();
+    expect(read.size).toEqual([0, 0]);
+  });
+
+  test('holds still under the grain', async ({ page }) => {
+    await openMap(page, '#c=0,0,10000&d=4000&p=89&y=0');
+    await setGrid(page, true);
+
+    const steps = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [];
+      const out: number[] = [];
+      // The camera has to move. No shader of this map takes a time uniform and the tone
+      // map's dither is a fixed hash of the pixel, so 30 still frames are the same
+      // bytes. 20 light years at this zoom is 4.67 CSS pixels, about three tenths of a
+      // 16 pixel reading texel.
+      for (let frame = 0; frame < 30; frame += 1) {
+        map.setView({
+          cursor: [frame * 20, 0, 10000],
+          distance: 4000,
+          yaw: 0,
+          pitch: 89,
+        });
+        map.debug.drawNow();
+        const reading = map.debug.backgroundReading();
+        if (reading === null) return [];
+        const column = Math.floor((960 / 1920) * reading.width);
+        const row = Math.floor((540 / 1080) * reading.height);
+        const texel = reading.texels[row * reading.width + column];
+        if (texel === undefined) return [];
+        out.push(texel.luminance);
+      }
+      return out;
+    });
+    let worst = 0;
+    for (let frame = 1; frame < steps.length; frame += 1) {
+      worst = Math.max(
+        worst,
+        Math.abs((steps[frame] as number) - (steps[frame - 1] as number)),
+      );
+    }
+    console.log('the reading under a fixed point', { frames: steps.length, worst });
+
+    expect(steps).toHaveLength(30);
+    // The bound is 0.05 and not 0.02. No order of the chain reaches 0.02: a box average
+    // has a hard edge, so a bright star sprite counts in full inside a texel and not at
+    // all outside it. The measured worst step is 0.2417 with the average in linear light
+    // and 0.0232 with the tone map first. 0.05 is what holds the reading inside the 0.08
+    // to 0.55 merge band, where a step of the reading moves the weight.
+    expect(worst).toBeLessThan(0.05);
+  });
+});
+
+test.describe('the grid and the background', () => {
+  /** The change the grid makes at the cursor's crossing, channel by channel. */
+  async function changeAt(
+    page: Page,
+    cursor: readonly [number, number, number],
+    distance: number,
+  ): Promise<{
+    pointL: number;
+    pointB: number;
+    mean: number;
+    best: number;
+    change: [number, number, number];
+  }> {
+    return page.evaluate(
+      (input) => {
+        const map = window.galaxyMap;
+        if (map === undefined) throw new Error('no map');
+        map.setGridVisible(true);
+        map.setView({
+          cursor: input.cursor as [number, number, number],
+          distance: input.distance,
+          yaw: 0,
+          pitch: 89,
+        });
+        map.debug.drawNow();
+        const reading = map.debug.backgroundReading();
+        if (reading === null) throw new Error('no reading');
+        const screen = map.debug.project(input.cursor as [number, number, number]);
+        const column = Math.floor((screen.x / 1920) * reading.width);
+        const row = Math.floor((screen.y / 1080) * reading.height);
+        const texel = reading.texels[row * reading.width + column];
+        if (texel === undefined) throw new Error('no texel');
+        let sum = 0;
+        for (const one of reading.texels) sum += one.luminance;
+
+        const side = 7;
+        const left = Math.round(screen.x) - 3;
+        const top = Math.round(screen.y) - 3;
+        const withGrid = map.debug.readRect(left, top, side, side);
+        map.setGridVisible(false);
+        map.debug.drawNow();
+        const without = map.debug.readRect(left, top, side, side);
+        map.setGridVisible(true);
+        map.debug.drawNow();
+
+        let best = 0;
+        let bestAt = 0;
+        for (let at = 0; at < withGrid.length; at += 4) {
+          let magnitude = 0;
+          for (let channel = 0; channel < 3; channel += 1) {
+            magnitude = Math.max(
+              magnitude,
+              Math.abs(
+                (withGrid[at + channel] as number) - (without[at + channel] as number),
+              ),
+            );
+          }
+          if (magnitude > best) {
+            best = magnitude;
+            bestAt = at;
+          }
+        }
+        return {
+          pointL: texel.luminance,
+          pointB: Math.round(texel.b * 255),
+          mean: sum / reading.texels.length,
+          best,
+          change: [
+            (withGrid[bestAt] as number) - (without[bestAt] as number),
+            (withGrid[bestAt + 1] as number) - (without[bestAt + 1] as number),
+            (withGrid[bestAt + 2] as number) - (without[bestAt + 2] as number),
+          ] as [number, number, number],
+        };
+      },
+      { cursor, distance },
+    );
+  }
+
+  test('recedes over a bright background', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    const core = await changeAt(page, CORE_VIEW, 4000);
+    const dark = await changeAt(page, DARK_VIEW, 4000);
+    console.log('the grid over the two views', { core, dark });
+
+    // The premises of the pair, read through `backgroundReading()`.
+    expect(core.pointL).toBeGreaterThan(0.55);
+    expect(dark.pointL).toBeLessThan(0.1);
+    // The line's own blue is 60 of 255, so the dark view's blue has to be under it for
+    // the line's blue to rise there.
+    expect(dark.pointB).toBeLessThan(60);
+
+    // The reading is a magnitude. `rgb(255, 154, 60)` has a luminance of 0.662 and the
+    // tone-mapped core reads about 0.93, so a line over the core removes light.
+    expect(core.best).toBeGreaterThanOrEqual(2);
+    expect(dark.best).toBeGreaterThanOrEqual(2);
+    const ratio = core.best / dark.best;
+    expect(ratio).toBeGreaterThanOrEqual(0.02);
+    expect(ratio).toBeLessThanOrEqual(0.2);
+  });
+
+  test('takes the background hue over the core', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    const core = await changeAt(page, CORE_VIEW, 4000);
+    const dark = await changeAt(page, DARK_VIEW, 4000);
+    console.log('the change channel by channel', {
+      core: core.change,
+      dark: dark.change,
+    });
+
+    // Over the dark space every channel rises and red rises the most.
+    for (const channel of dark.change) expect(channel).toBeGreaterThan(0);
+    expect(dark.change[0]).toBeGreaterThan(dark.change[1]);
+    expect(dark.change[0]).toBeGreaterThan(dark.change[2]);
+
+    // Over the core no channel rises by more than 2 of 255, and blue falls. Taking 0.60
+    // of the background's hue leaves the line its warmth, so blue is where it reads.
+    for (const channel of core.change) expect(channel).toBeLessThanOrEqual(2);
+    expect(core.change[2]).toBeLessThan(0);
+  });
+
+  test('recedes a label over a bright background', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=2000&p=89&y=0');
+    await setGrid(page, true);
+
+    /** The opacity and the shadow of the crossing label nearest the frame centre. */
+    const labelAt = async (
+      cursor: readonly [number, number, number],
+    ): Promise<{ opacity: number; shadow: string; count: number }> => {
+      await page.evaluate((where) => {
+        window.galaxyMap?.setView({
+          cursor: where as [number, number, number],
+          distance: 2000,
+          yaw: 0,
+          pitch: 89,
+        });
+      }, cursor);
+      // The reading goes back to the processor without waiting for the card, so the
+      // labels of a frame read the reading of the frame before. A few real frames put
+      // the reading of this view under the labels.
+      await page.waitForTimeout(300);
+      return page.evaluate(() => {
+        const labels = [
+          ...document.querySelectorAll('.gm-grid-label'),
+        ] as HTMLElement[];
+        let best: HTMLElement | null = null;
+        let bestRange = Infinity;
+        for (const label of labels) {
+          const box = label.getBoundingClientRect();
+          const dx = box.left + box.width / 2 - 960;
+          const dy = box.top + box.height / 2 - 540;
+          const range = dx * dx + dy * dy;
+          if (range < bestRange) {
+            bestRange = range;
+            best = label;
+          }
+        }
+        if (best === null) return { opacity: -1, shadow: '', count: labels.length };
+        return {
+          opacity: Number(best.style.opacity),
+          shadow: best.style.textShadow,
+          count: labels.length,
+        };
+      });
+    };
+
+    const core = await labelAt(CORE_VIEW);
+    const dark = await labelAt(DARK_VIEW);
+    console.log('the label opacity in the two views', { core, dark });
+
+    expect(core.count).toBeGreaterThan(0);
+    expect(dark.count).toBeGreaterThan(0);
+    expect(core.opacity).toBeGreaterThanOrEqual(0.4 * 0.8);
+    expect(core.opacity).toBeLessThanOrEqual(0.55 * 0.8);
+    expect(dark.opacity).toBeGreaterThan(0.75 * 0.8);
+    for (const shadow of [core.shadow, dark.shadow]) {
+      expect(shadow).not.toContain('#000');
+      expect(shadow).not.toContain('rgb(0, 0, 0)');
     }
   });
 });

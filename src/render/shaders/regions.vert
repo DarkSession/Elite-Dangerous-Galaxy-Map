@@ -9,13 +9,8 @@
 //
 // The positions are relative to the chunk origin, and the chunk offset carries the
 // camera subtraction the CPU makes in float64. The sum of the two is therefore the
-// point seen from the camera, and its length is the camera's distance to that point.
-// The shader passes both endpoints in that frame, with the clip `w` of each, so the
-// fragment shader can work out the point of the segment its own pixel draws. It needs
-// the `w` values because the place along the segment the fragment shader finds is a
-// screen position, and a screen position does not run along a segment at an even rate:
-// the set holds 145 segments longer than 1,000 light years, where an even mix of the
-// two ends would name a point hundreds of light years from the one the pixel draws.
+// point seen from the camera. The shader passes the two screen positions of the
+// segment, and the fragment shader measures its own pixel against them.
 precision highp float;
 
 layout(location = 0) in vec3 aStart;
@@ -32,11 +27,6 @@ uniform float uHalfWidth;
 
 flat out vec2 vStart;
 flat out vec2 vEnd;
-// Each endpoint of the segment seen from the camera, in light years.
-flat out vec3 vStartPoint;
-flat out vec3 vEndPoint;
-// The clip `w` of each endpoint, which the perspective correction needs.
-flat out vec2 vWeights;
 
 void main() {
   vec3 startPoint = uChunkOffset + aStart;
@@ -54,9 +44,6 @@ void main() {
     // draws nothing.
     vStart = vec2(0.0);
     vEnd = vec2(0.0);
-    vStartPoint = vec3(0.0);
-    vEndPoint = vec3(0.0);
-    vWeights = vec2(1.0);
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -65,11 +52,9 @@ void main() {
   if (nearSide <= 0.0) {
     float cut = min(nearSide / (nearSide - farSide) + 0.001, 1.0);
     near = mix(near, far, cut);
-    startPoint = mix(startPoint, endPoint, cut);
   } else if (farSide <= 0.0) {
     float cut = min(farSide / (farSide - nearSide) + 0.001, 1.0);
     far = mix(far, near, cut);
-    endPoint = mix(endPoint, startPoint, cut);
   }
 
   vec2 start = (near.xy / near.w * 0.5 + 0.5) * uTargetSize;
@@ -85,8 +70,5 @@ void main() {
 
   vStart = start;
   vEnd = end;
-  vStartPoint = startPoint;
-  vEndPoint = endPoint;
-  vWeights = vec2(near.w, far.w);
   gl_Position = vec4(pixel / uTargetSize * 2.0 - 1.0, 0.0, 1.0);
 }

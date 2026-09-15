@@ -18,7 +18,14 @@ import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/proje
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import type { Range } from '../galaxy-model/types';
-import { gridLevelAlpha, gridVisibility } from '../render/grid-pass';
+import {
+  gridBackgroundTint,
+  gridBackgroundWeight,
+  GRID_LABEL_MERGE_FLOOR,
+  GRID_LABEL_TINT_MAX,
+  gridLevelAlpha,
+  gridVisibility,
+} from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
 
@@ -45,6 +52,34 @@ export const GRID_LABEL_MIN_ALPHA = 0.09;
  * rate the shader takes as a derivative and not a secant over a whole spacing.
  */
 const JACOBIAN_STEP = 1e-3;
+
+/** The colour of a label over a dark background, red, green and blue from 0 to 255. */
+export const GRID_LABEL_COLOR: readonly [number, number, number] = [255, 196, 140];
+
+/**
+ * The opacity of a label over a dark background. It is below the 0.86 the label carried
+ * before the merge, because the label no longer stands over a hard outline.
+ */
+export const GRID_LABEL_OPACITY = 0.8;
+
+/**
+ * The shadow of a label: a soft dark glow and not a hard black outline. A pure black
+ * shadow draws a second outline that no part of the picture carries.
+ */
+export const GRID_LABEL_SHADOW =
+  '0 0 10px rgba(12, 6, 2, 0.75), 0 1px 2px rgba(12, 6, 2, 0.55)';
+
+/**
+ * Writes one style property only when it differs. The overlay writes every property of
+ * every label in each frame, and a write of the value an element already holds is a DOM
+ * change the browser records. `src/hud/dom.ts` holds the same three lines for the HUD
+ * panels. The two are not shared, because the HUD is an opt-in module in its own chunk
+ * and the library must not pull it into the core one.
+ */
+function setStyle(element: HTMLElement, name: string, value: string): void {
+  if (element.style.getPropertyValue(name) === value) return;
+  element.style.setProperty(name, value);
+}
 
 /** How far above the lower edge of the canvas the plane label sits, in CSS pixels. */
 export const PLANE_LABEL_BOTTOM_CSS = 22;
@@ -90,6 +125,17 @@ export function planeLabelBox(text: string, viewport: Viewport): LabelBox {
   };
 }
 
+/**
+ * The background reading of an earlier frame, as the renderer read it back. A label's
+ * opacity is therefore one frame behind the picture, which a person does not see.
+ */
+export interface GridLabelReading {
+  readonly width: number;
+  readonly height: number;
+  /** Four bytes for each texel, row by row, with the top row first. */
+  readonly pixels: Uint8Array;
+}
+
 /** What one grid label update reads. */
 export interface GridLabelFrame {
   readonly view: View;
@@ -98,6 +144,72 @@ export interface GridLabelFrame {
   readonly spacingLy: number;
   /** The galaxy model bounds, which the grid lines stop at. */
   readonly bounds: Range;
+  /** The background reading, or null while the map has none. */
+  readonly background: GridLabelReading | null;
+}
+
+/** The background under one point of the canvas, each channel from 0 to 255. */
+export interface GridLabelBackground {
+  readonly luminance: number;
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
+/**
+ * The background under a point of the canvas, in CSS pixels. A point outside the reading
+ * reads a luminance of 0, whose weight is 1, so a label the reading does not cover keeps
+ * all of itself and takes none of the background's hue.
+ */
+export function gridLabelBackground(
+  reading: GridLabelReading | null,
+  x: number,
+  y: number,
+  viewport: Viewport,
+): GridLabelBackground {
+  const outside = { luminance: 0, r: 0, g: 0, b: 0 };
+  if (reading === null || reading.width <= 0 || reading.height <= 0) return outside;
+  if (x < 0 || y < 0 || x >= viewport.width || y >= viewport.height) return outside;
+  const column = Math.min(
+    reading.width - 1,
+    Math.floor((x / viewport.width) * reading.width),
+  );
+  const row = Math.min(
+    reading.height - 1,
+    Math.floor((y / viewport.height) * reading.height),
+  );
+  const at = (row * reading.width + column) * 4;
+  const r = reading.pixels[at];
+  const g = reading.pixels[at + 1];
+  const b = reading.pixels[at + 2];
+  if (r === undefined || g === undefined || b === undefined) return outside;
+  return {
+    luminance: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255,
+    r,
+    g,
+    b,
+  };
+}
+
+/**
+ * The opacity of a label over a background of this luminance. The floor of the label's
+ * weight is above the line's, because text needs more contrast than a line.
+ */
+export function gridLabelOpacity(luminance: number): number {
+  return GRID_LABEL_OPACITY * gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR);
+}
+
+/** The colour of a label over a background, as a CSS `rgb` value. */
+export function gridLabelColour(background: GridLabelBackground): string {
+  const tint = gridBackgroundTint(background.luminance, GRID_LABEL_TINT_MAX);
+  const mix = (own: number, under: number): number =>
+    Math.round(own + (under - own) * tint);
+  const colour: [number, number, number] = [
+    mix(GRID_LABEL_COLOR[0], background.r),
+    mix(GRID_LABEL_COLOR[1], background.g),
+    mix(GRID_LABEL_COLOR[2], background.b),
+  ];
+  return `rgb(${colour[0]}, ${colour[1]}, ${colour[2]})`;
 }
 
 /** One crossing label the frame places. */
@@ -258,18 +370,32 @@ export interface GridLabelOverlay {
 function makeLabel(document: Document, className: string): HTMLElement {
   const element = document.createElement('div');
   element.className = className;
-  const style = element.style;
-  style.position = 'absolute';
-  style.pointerEvents = 'none';
-  style.whiteSpace = 'nowrap';
-  style.boxSizing = 'border-box';
-  style.height = `${LABEL_HEIGHT_CSS}px`;
-  style.padding = '1px 4px';
-  style.font = `10px/${LABEL_HEIGHT_CSS - 2}px 'IBM Plex Mono', ui-monospace, monospace`;
-  style.letterSpacing = '1px';
-  style.color = 'rgba(255, 196, 140, 0.86)';
-  style.textShadow = '0 0 8px #000, 0 1px 3px #000';
+  setStyle(element, 'position', 'absolute');
+  setStyle(element, 'pointer-events', 'none');
+  setStyle(element, 'white-space', 'nowrap');
+  setStyle(element, 'box-sizing', 'border-box');
+  setStyle(element, 'height', `${LABEL_HEIGHT_CSS}px`);
+  setStyle(element, 'padding', '1px 4px');
+  setStyle(
+    element,
+    'font',
+    `10px/${LABEL_HEIGHT_CSS - 2}px 'IBM Plex Mono', ui-monospace, monospace`,
+  );
+  setStyle(element, 'letter-spacing', '1px');
+  setStyle(element, 'text-shadow', GRID_LABEL_SHADOW);
   return element;
+}
+
+/** Writes the place and the merge of one label, and writes nothing that does not move. */
+function placeLabel(
+  element: HTMLElement,
+  box: LabelBox,
+  background: GridLabelBackground,
+): void {
+  setStyle(element, 'left', `${box.left}px`);
+  setStyle(element, 'top', `${box.top}px`);
+  setStyle(element, 'opacity', `${gridLabelOpacity(background.luminance)}`);
+  setStyle(element, 'color', gridLabelColour(background));
 }
 
 /**
@@ -310,8 +436,17 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
         const element = labelAt(index);
         if (element.textContent !== placement.text)
           element.textContent = placement.text;
-        element.style.left = `${placement.box.left}px`;
-        element.style.top = `${placement.box.top}px`;
+        // A label follows the background under the centre of its own box, by the same
+        // rule the lines follow, so a number and the line it sits on never disagree.
+        const centreX = placement.box.left + placement.box.width / 2;
+        const centreY = placement.box.top + placement.box.height / 2;
+        const background = gridLabelBackground(
+          frame.background,
+          centreX,
+          centreY,
+          frame.viewport,
+        );
+        placeLabel(element, placement.box, background);
         if (element.parentNode === null) host.append(element);
       }
       for (let index = placements.length; index < shown; index += 1) {
@@ -322,8 +457,13 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
       const text = planeLabelText(frame.view.cursor[1]);
       const box = planeLabelBox(text, frame.viewport);
       if (plane.textContent !== text) plane.textContent = text;
-      plane.style.left = `${box.left}px`;
-      plane.style.top = `${box.top}px`;
+      const planeBackground = gridLabelBackground(
+        frame.background,
+        box.left + box.width / 2,
+        box.top + box.height / 2,
+        frame.viewport,
+      );
+      placeLabel(plane, box, planeBackground);
       if (plane.parentNode === null) host.append(plane);
     },
     labelCount(): number {

@@ -28,6 +28,8 @@ interface LabelReading {
   readonly top: number;
   readonly width: number;
   readonly height: number;
+  /** The opacity of the element, which carries the zoom fade. */
+  readonly opacity: number;
 }
 
 /** One region the last sweep of the page found, with the samples it holds. */
@@ -48,6 +50,7 @@ async function readLabels(page: Page): Promise<LabelReading[]> {
         top: box.top,
         width: box.width,
         height: box.height,
+        opacity: Number(getComputedStyle(element).opacity),
       };
     }),
   );
@@ -207,7 +210,9 @@ test.describe('the labels at 1280 by 720', () => {
   });
 
   test('the region the camera is inside is named at every zoom', async ({ page }) => {
-    for (const distance of [20000, 10000, 4000, 1000, 500]) {
+    // Every zoom is every zoom the overlay draws in. The band takes the labels away
+    // below 5,000 light years, and the HUD's top bar names the region there instead.
+    for (const distance of [20000, 15000, 10000]) {
       await openView(page, `#c=0,0,0&d=${distance}&p=35&y=0`);
       const labels = await readLabels(page);
       const spur = labels.find((label) => label.name === 'Inner Orion Spur');
@@ -217,14 +222,49 @@ test.describe('the labels at 1280 by 720', () => {
       ).toBeDefined();
       expect(insideViewport(spur as LabelReading, 1280, 720)).toBe(true);
     }
+
+    // 7,500 light years is the middle of the smooth step, so the name is on the page
+    // at part of its strength.
+    await openView(page, '#c=0,0,0&d=7500&p=35&y=0');
+    const fading = await readLabels(page);
+    const spur = fading.find((label) => label.name === 'Inner Orion Spur');
+    expect(spur, 'no Inner Orion Spur label at 7,500 light years').toBeDefined();
+    console.log('the label opacity at 7,500 light years', (spur as LabelReading).opacity);
+    expect((spur as LabelReading).opacity).toBeGreaterThan(0.2);
+    expect((spur as LabelReading).opacity).toBeLessThan(0.8);
+
+    await openView(page, '#c=0,0,0&d=4000&p=35&y=0');
+    expect(await readLabels(page)).toEqual([]);
+  });
+
+  test('the sweep does not run below the band', async ({ page }) => {
+    await openView(page, '#c=0,0,0&d=4000&p=35&y=0');
+    // The counter is cumulative, so it is reset after the view is set. An earlier frame
+    // would otherwise leave the count above 0.
+    await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
+    await page.evaluate(async () => {
+      for (let frame = 0; frame < 60; frame += 1) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+    });
+    const sampling = await page.evaluate(
+      () =>
+        window.__galaxyMap?.labelSampling?.() ?? { frames: -1, meanMs: -1, worstMs: -1 },
+    );
+    console.log('the sampling below the band', sampling);
+
+    expect(await readLabels(page)).toEqual([]);
+    expect(sampling.frames).toBe(0);
+    expect(sampling.meanMs).toBe(0);
+    expect(sampling.worstMs).toBe(0);
   });
 
   test('a region with nothing on screen carries no label', async ({ page }) => {
-    await openView(page, '#c=0,0,0&d=500&p=35&y=0');
+    await openView(page, '#c=0,0,0&d=12000&p=35&y=0');
     const labels = await readLabels(page);
     const shown = await readRegionsOnScreen(page);
     console.log(
-      'the regions the frame shows at 500 light years',
+      'the regions the frame shows at 12,000 light years',
       Array.from(shown),
       'and the labels',
       labels.map((label) => label.name),
@@ -238,38 +278,37 @@ test.describe('the labels at 1280 by 720', () => {
   test('the camera keeps the label of the region it sits in when it turns away', async ({
     page,
   }) => {
-    await openView(page, '#c=0,0,0&d=500&p=35&y=0');
-    const toward = await readLabels(page);
-    const towardCounts = await readSampleCounts(page);
-    console.log(
-      'the samples looking toward the centroid',
-      towardCounts.map((row) => `${row.name} ${row.count}`),
-    );
-    expect(toward.map((label) => label.name)).toEqual(['Inner Orion Spur']);
+    // The view moved from 500 light years to 12,000, because the fade places no label
+    // at 500. The shares are measured by the test and not written into it, because the
+    // shares at the new distance are not the shares the old one gave.
+    for (const yaw of [0, 180]) {
+      await openView(page, `#c=0,0,0&d=12000&p=35&y=${yaw}`);
+      const labels = await readLabels(page);
+      const counts = await readSampleCounts(page);
+      const total = await readSampleTotal(page);
+      const share = (name: string): number =>
+        (100 * (counts.find((row) => row.name === name)?.count ?? 0)) / total;
+      console.log(
+        `the samples at a yaw of ${yaw}, of`,
+        total,
+        'landed:',
+        counts.map((row) => `${row.name} ${row.count} ${share(row.name).toFixed(1)}%`),
+      );
 
-    await openView(page, '#c=0,0,0&d=500&p=35&y=180');
-    const away = await readLabels(page);
-    const awayCounts = await readSampleCounts(page);
-    const total = await readSampleTotal(page);
-    const share = (name: string): number =>
-      (100 * (awayCounts.find((row) => row.name === name)?.count ?? 0)) / total;
-    console.log(
-      'the samples looking away, of',
-      total,
-      'landed:',
-      awayCounts.map(
-        (row) => `${row.name} ${row.count} ${share(row.name).toFixed(1)}%`,
-      ),
-    );
-    // The expected names are written out rather than read back from the counts the
-    // label code made, so this test can fail. The three are the regions that clear the
-    // 1 percent rule in that frame: 91.3, 7.5 and 1.2 percent.
-    expect(away.map((label) => label.name)).toContain('Inner Orion Spur');
-    for (const label of away) {
-      expect(
-        ['Inner Orion Spur', 'Sanguineous Rim', 'Elysian Shore'],
-        `${label.name} is none of the three regions the frame shows`,
-      ).toContain(label.name);
+      expect(labels.map((label) => label.name)).toContain('Inner Orion Spur');
+      for (const label of labels) {
+        expect(
+          share(label.name),
+          `${label.name} holds under 1 percent of the samples`,
+        ).toBeGreaterThanOrEqual(1);
+      }
+      for (const row of counts) {
+        if (share(row.name) < 5) continue;
+        expect(
+          labels.map((label) => label.name),
+          `${row.name} holds ${share(row.name).toFixed(1)} percent and carries no label`,
+        ).toContain(row.name);
+      }
     }
   });
 

@@ -390,6 +390,21 @@ The field grid SHALL hold **two columns**, as the mockup draws it, and the posit
 SHALL carry the mockup's label `POSITION`. An odd count of fields leaves the last field
 alone on its row, and that field SHALL take both columns, so the grid shows no empty cell.
 
+**The position SHALL NOT be rounded to a whole light year.** Each of the three game
+coordinates SHALL be shown to at most **3 decimal places**, with the trailing zeros dropped
+and a thousands separator on the whole part. A coordinate that is a whole number SHALL show
+no decimal point.
+
+The game resolves a position to 1/32 of a light year, which is 0.03125. Three decimal places
+do not reproduce that value, which needs five, but they **separate** every position the game
+can give: the step is 0.03125 and the rounding is 0.001, so no two game positions round to
+the same three decimal places. The record carries the value the host's dump gave, in
+`float64`, and the panel SHALL show that value and not the whole number it rounds to.
+
+`DISTANCE FROM SOL` and `RANGE` SHALL NOT change. They are distances the user reads to judge
+a journey, not the identity of a place, and a whole light year is the right resolution for
+them.
+
 The **range from the camera** follows the view, so the panel SHALL rewrite it at most 10
 times a second, by the same rule as the top bar. Every other field changes only with the
 selection.
@@ -404,9 +419,10 @@ The close button SHALL clear the selection.
 
 **The copy buttons.** The name's button SHALL write the system's name to the clipboard.
 The position's button SHALL write the three game coordinates as
-`x / y / z`, each a whole number with no thousands separator, so what is copied can be
-pasted into a field that takes a number. The panel keeps showing the position with its
-thousands separators: the separator is for reading and the copy is for pasting.
+`x / y / z`, each with the same digits the field shows and no thousands separator, so what
+is copied can be pasted into a field that takes a number. The panel keeps showing the
+position with its thousands separators: the separator is for reading and the copy is for
+pasting.
 
 A button that has just written SHALL show a tick for **1.4 seconds** and then show its
 copy mark again. Only one button SHALL show a tick at a time. A click on one while the
@@ -432,6 +448,29 @@ SHALL NOT let a failure in it stop the frame loop.
 - **THEN** the panel is shown, the header holds the name, the grid holds the position, the
   distance from Sol, the range from the camera, the allegiance and the population, there
   is no primary star field, and the description is shown
+
+#### Scenario: The position keeps its fraction
+
+- **WHEN** the browser test selects a record at `x = -9530.9375`, `y = -910.28125` and
+  `z = 19808.125`, and reads the position field
+- **THEN** it reads `-9,530.938 / -910.281 / 19,808.125`
+
+#### Scenario: A whole coordinate shows no decimal point
+
+- **WHEN** the browser test selects a record at `x = 100`, `y = 0` and `z = -25.5`, and
+  reads the position field
+- **THEN** it reads `100 / 0 / -25.5`
+
+#### Scenario: The distance fields stay whole
+
+- **WHEN** the browser test selects the record of the scenario above and reads
+  `DISTANCE FROM SOL` and `RANGE`
+- **THEN** both hold a whole number of light years and the unit `LY`, and neither holds a
+  decimal point.
+
+  The record sits 103 light years from Sol and the selection holds the camera within 500,
+  so neither field passes 1,000 and neither shows a thousands separator. The separator is
+  what the scenario "The position keeps its fraction" reads, in `-9,530.938`
 
 #### Scenario: An odd count of fields leaves no empty cell
 
@@ -484,9 +523,16 @@ SHALL NOT let a failure in it stop the frame loop.
 
 #### Scenario: The position button copies three whole numbers
 
-- **WHEN** the browser test selects a system at (1234.5, -20, 25895), clicks the copy
-  button in the position field, and reads the clipboard
-- **THEN** the clipboard reads `1235 / -20 / 25895`
+- **WHEN** the browser test selects a system at (1235, -20, 25895), clicks the copy button
+  in the position field, and reads the clipboard
+- **THEN** the clipboard reads `1235 / -20 / 25895`, and the field beside it reads
+  `1,235 / -20 / 25,895`
+
+#### Scenario: The position button copies a fraction
+
+- **WHEN** the browser test selects a system at (1234.5, -20, 25895), clicks the copy button
+  in the position field, and reads the clipboard
+- **THEN** the clipboard reads `1234.5 / -20 / 25895`
 
 #### Scenario: The tick shows and goes
 
@@ -507,7 +553,6 @@ SHALL NOT let a failure in it stop the frame loop.
   system, clicks both copy buttons, and then draws 10 frames
 - **THEN** neither button shows a tick, the panel still shows the record, and the frames
   draw
-
 ### Requirement: The images open in a lightbox
 
 The panel SHALL show each image of the record as a thumbnail in a grid of two columns,

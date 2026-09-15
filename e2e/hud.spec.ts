@@ -1047,6 +1047,54 @@ test.describe('the information panel', () => {
     await expect(hud(page).locator('.gm-hud__chip')).toHaveText(['Alpha']);
   });
 
+  test('the position keeps its fraction', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Fractional', [-9530.9375, -910.28125, 19808.125], 'Alpha'),
+    ]);
+    await select(page, 'Fractional');
+
+    const value = await fieldValue(page, 'POSITION').textContent();
+    console.log('the position field of a fractional record', value);
+
+    expect(value).toBe('-9,530.938 / -910.281 / 19,808.125');
+  });
+
+  test('a whole coordinate shows no decimal point', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Half', [100, 0, -25.5], 'Alpha')]);
+    await select(page, 'Half');
+
+    const value = await fieldValue(page, 'POSITION').textContent();
+    console.log('the position field of a part whole record', value);
+
+    expect(value).toBe('100 / 0 / -25.5');
+  });
+
+  test('the distance fields stay whole', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Half', [100, 0, -25.5], 'Alpha')]);
+    await select(page, 'Half');
+    // The selection flies the camera in and caps the distance at 500 light years. The
+    // panel rewrites the range at 10 times a second, so the reading waits for both.
+    await expect
+      .poll(() => page.evaluate(() => window.__hudMap?.getView().distance ?? -1))
+      .toBeLessThanOrEqual(500);
+    await page.waitForTimeout(200);
+
+    const fromSol = await fieldValue(page, 'DISTANCE FROM SOL').textContent();
+    const range = await fieldValue(page, 'RANGE').textContent();
+    console.log('the distance fields', { fromSol, range });
+
+    // The record sits 103 light years from Sol and the camera is within 500, so neither
+    // field passes 1,000 and neither shows a separator.
+    expect(fromSol).toMatch(/^\d+ LY$/);
+    expect(range).toMatch(/^\d+ LY$/);
+  });
+
   test('an odd count of fields leaves no empty cell', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -1203,7 +1251,7 @@ test.describe('the copy buttons', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openHud(page);
     await addCategories(page, ['Alpha']);
-    await addSystems(page, [record('Marked', [1234.5, -20, 25895], 'Alpha')]);
+    await addSystems(page, [record('Marked', [1235, -20, 25895], 'Alpha')]);
     await select(page, 'Marked');
     // The panel keeps the thousands separators. The copy drops them, so what is copied
     // pastes into a field that takes a number.
@@ -1216,6 +1264,20 @@ test.describe('the copy buttons', () => {
     console.log('the clipboard after the position copy', text);
 
     expect(text).toBe('1235 / -20 / 25895');
+  });
+
+  test('the position button copies a fraction', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Marked', [1234.5, -20, 25895], 'Alpha')]);
+    await select(page, 'Marked');
+
+    await copyButton(page, 'position').click();
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    console.log('the clipboard after the fraction copy', text);
+
+    expect(text).toBe('1234.5 / -20 / 25895');
   });
 
   test('the tick shows and goes', async ({ page, context }) => {

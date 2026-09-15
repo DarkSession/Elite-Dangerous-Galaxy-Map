@@ -54,11 +54,55 @@ export const GRID_LABEL_CSS = 400;
 /** The colour of a grid line, red, green and blue from 0 to 255. */
 export const GRID_COLOR: readonly [number, number, number] = [255, 154, 60];
 
+/** The background luminance below which the grid keeps all of itself. */
+export const GRID_BG_LOW = 0.08;
+
+/** The background luminance at which the merge is complete. */
+export const GRID_BG_HIGH = 0.55;
+
+/** How much of a line's alpha is left over the brightest background. */
+export const GRID_LINE_MERGE_FLOOR = 0.3;
+
+/**
+ * How much of a label's opacity is left over the brightest background. It is above the
+ * line's floor because text needs more contrast than a line to stay readable.
+ */
+export const GRID_LABEL_MERGE_FLOOR = 0.45;
+
+/** How far a line's colour moves toward the background over the brightest background. */
+export const GRID_LINE_TINT_MAX = 0.6;
+
+/** How far a label's colour moves toward the background, which is less than a line's. */
+export const GRID_LABEL_TINT_MAX = 0.35;
+
 /** The smooth step of `smoothstep(low, high, value)`. */
 export function smoothStep(low: number, high: number, value: number): number {
   if (high <= low) return value >= high ? 1 : 0;
   const part = Math.min(1, Math.max(0, (value - low) / (high - low)));
   return part * part * (3 - 2 * part);
+}
+
+/**
+ * How much of its own strength the grid keeps over a background of this luminance. A
+ * fixed alpha makes one line read the same over the dark space between the arms and
+ * over the cream core, so the grid sits on the picture rather than in it. The weight is
+ * 1 at a luminance of 0.08 and below, and falls to `floor` at 0.55 and above.
+ *
+ * One rule, one owner: `grid.frag` takes the two edges and the floor as uniforms, and
+ * `src/app/grid-labels.ts` calls this function, so a number and the line it sits on
+ * cannot disagree.
+ */
+export function gridBackgroundWeight(luminance: number, floor: number): number {
+  return 1 - (1 - floor) * smoothStep(GRID_BG_LOW, GRID_BG_HIGH, luminance);
+}
+
+/**
+ * How far the grid's colour moves toward the background's own colour, from 0 to
+ * `maximum`. Over the bright core a line takes most of the background's hue, so it
+ * reads as a change of brightness in the picture and not as a foreign orange stripe.
+ */
+export function gridBackgroundTint(luminance: number, maximum: number): number {
+  return maximum * smoothStep(GRID_BG_LOW, GRID_BG_HIGH, luminance);
 }
 
 /**
@@ -192,6 +236,11 @@ export interface GridPassFrame {
    * renderer reads it from `gridVisibility` and does not draw at all when it is 0.
    */
   readonly band: number;
+  /**
+   * The background reading, a sixteenth of the frame on each axis. The shader samples it
+   * with linear filtering, so the merge changes smoothly across the frame.
+   */
+  readonly background: WebGLTexture;
 }
 
 /** The coordinate grid pass. */
@@ -217,6 +266,10 @@ export function createGridProgram(gl: WebGL2RenderingContext): Program {
     'uFadeRange',
     'uFadeLines',
     'uBand',
+    'uBackground',
+    'uMergeRange',
+    'uMergeFloor',
+    'uTintMax',
     'uSpacing[0]',
     'uPhase[0]',
   ]);
@@ -297,6 +350,14 @@ export function createGridPass(
       );
       gl.uniform1f(program.uniforms['uFadeLines'] ?? null, GRID_FADE_LINES);
       gl.uniform1f(program.uniforms['uBand'] ?? null, frame.band);
+      // The merge with the background. The constants live here and the shader is given
+      // them, so no second copy of the rule exists.
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, frame.background);
+      gl.uniform1i(program.uniforms['uBackground'] ?? null, 0);
+      gl.uniform2f(program.uniforms['uMergeRange'] ?? null, GRID_BG_LOW, GRID_BG_HIGH);
+      gl.uniform1f(program.uniforms['uMergeFloor'] ?? null, GRID_LINE_MERGE_FLOOR);
+      gl.uniform1f(program.uniforms['uTintMax'] ?? null, GRID_LINE_TINT_MAX);
       gl.uniform1fv(program.uniforms['uSpacing[0]'] ?? null, spacings);
       gl.uniform2fv(program.uniforms['uPhase[0]'] ?? null, phases);
 

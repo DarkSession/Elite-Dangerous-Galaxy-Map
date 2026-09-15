@@ -3,16 +3,15 @@ import { project } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
 import { buildRegionData } from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
-import { regionNearFade } from '../src/render/region-pass';
 import {
-  FADING_RUN,
   NEAR_BOTH_SETS,
   SHARP_CORNER,
+  SMOOTHED_CROSSING,
   TRACED_CORNER,
-  VERTICAL_CROSSING,
+  TRACED_CROSSING,
 } from '../e2e/region-views';
+import type { CrossingChoice } from '../e2e/region-views';
 import {
-  findFadingRun,
   findPointNearBothSets,
   findSharpCorner,
   findTracedCorner,
@@ -27,6 +26,12 @@ beforeAll(() => {
   lines = data.lines;
   traced = data.traced;
 }, 120000);
+
+/** The galactic centre in game coordinates, as the browser helpers hold it. */
+const GALACTIC_CENTRE: readonly [number, number, number] = [15, -35, 25895];
+
+/** How far a reading must sit from the galactic centre, in light years. */
+const CENTRE_FLOOR_LY = 5000;
 
 /** The shortest distance from a plane point to any segment of a boundary set. */
 function gapToSet(set: RegionLines, point: readonly [number, number, number]): number {
@@ -52,9 +57,6 @@ function gapToSet(set: RegionLines, point: readonly [number, number, number]): n
   return nearest;
 }
 
-/** How many CSS pixels the join reading takes around the bend. */
-const JOIN_RADIUS_PIXELS = 8;
-
 function planeGap(
   a: readonly [number, number, number],
   b: readonly [number, number, number],
@@ -62,67 +64,88 @@ function planeGap(
   return Math.hypot(a[0] - b[0], a[2] - b[2]);
 }
 
-describe('the view where a chain crosses the frame', () => {
-  test('is what the search of the boundary set gives', () => {
-    expect(findVerticalCrossing(lines, VERTICAL_CROSSING.viewport)).toEqual(
-      VERTICAL_CROSSING,
-    );
-  });
+/** How far a plane point sits from the galactic centre, in light years. */
+function radiusOf(point: readonly [number, number, number]): number {
+  return Math.hypot(point[0] - GALACTIC_CENTRE[0], point[2] - GALACTIC_CENTRE[2]);
+}
 
-  test('crosses within 5 degrees of vertical', () => {
-    const view = VERTICAL_CROSSING.view as View;
-    const from = project(
-      view,
-      [
-        lines.positions[VERTICAL_CROSSING.from * 3] as number,
-        0,
-        lines.positions[VERTICAL_CROSSING.from * 3 + 2] as number,
-      ],
-      VERTICAL_CROSSING.viewport,
-    );
-    const to = project(
-      view,
-      [
-        lines.positions[VERTICAL_CROSSING.to * 3] as number,
-        0,
-        lines.positions[VERTICAL_CROSSING.to * 3 + 2] as number,
-      ],
-      VERTICAL_CROSSING.viewport,
-    );
-    const lean =
-      (Math.atan2(Math.abs(to.x - from.x), Math.abs(to.y - from.y)) * 180) / Math.PI;
-    expect(lean).toBeLessThan(5);
-    expect(VERTICAL_CROSSING.angleFromVertical).toBeCloseTo(lean, 6);
+/**
+ * The premises of one crossing view. The search runs once for each set, because a
+ * near-vertical straight run of the smoothed set is not one of the traced staircase.
+ */
+function crossingTests(
+  name: string,
+  setOf: () => RegionLines,
+  choice: CrossingChoice,
+): void {
+  describe(`the view where a chain of ${name} crosses the reading row`, () => {
+    test('is what the search of the boundary set gives', () => {
+      expect(
+        findVerticalCrossing(setOf(), choice.viewport, choice.view.distance),
+      ).toEqual(choice);
+    });
 
-    // The run leaves the frame at the top and at the bottom, so the chain crosses the
-    // whole frame and the reading row meets it.
-    expect(Math.min(from.y, to.y)).toBeLessThanOrEqual(0);
-    expect(Math.max(from.y, to.y)).toBeGreaterThanOrEqual(
-      VERTICAL_CROSSING.viewport.height,
-    );
-  });
+    test('crosses within 5 degrees of vertical', () => {
+      const set = setOf();
+      const view = choice.view as View;
+      const from = project(
+        view,
+        [
+          set.positions[choice.from * 3] as number,
+          0,
+          set.positions[choice.from * 3 + 2] as number,
+        ],
+        choice.viewport,
+      );
+      const to = project(
+        view,
+        [
+          set.positions[choice.to * 3] as number,
+          0,
+          set.positions[choice.to * 3 + 2] as number,
+        ],
+        choice.viewport,
+      );
+      const lean =
+        (Math.atan2(Math.abs(to.x - from.x), Math.abs(to.y - from.y)) * 180) / Math.PI;
+      expect(lean).toBeLessThan(5);
+      expect(choice.angleFromVertical).toBeCloseTo(lean, 6);
 
-  test('sits on the drawn line at the centre of the frame', () => {
-    const centre = project(
-      VERTICAL_CROSSING.view as View,
-      VERTICAL_CROSSING.point,
-      VERTICAL_CROSSING.viewport,
-    );
-    expect(centre.x).toBeCloseTo(VERTICAL_CROSSING.viewport.width / 2, 4);
-    expect(centre.y).toBeCloseTo(VERTICAL_CROSSING.viewport.height / 2, 4);
-  });
+      // The run reaches 100 CSS pixels above and below the reading row, which is the
+      // middle of the frame, so the row cuts the drawn line square.
+      const row = choice.viewport.height / 2;
+      expect(Math.min(from.y, to.y)).toBeLessThanOrEqual(row - 100);
+      expect(Math.max(from.y, to.y)).toBeGreaterThanOrEqual(row + 100);
+    });
 
-  test('carries no other part of the boundary near the reading', () => {
-    // The reading takes a row of a few tens of pixels. The nearest other part of the
-    // boundary is far outside it.
-    const pixels = VERTICAL_CROSSING.clearanceLy / VERTICAL_CROSSING.lightYearsPerPixel;
-    expect(pixels).toBeGreaterThan(60);
+    test('sits on the drawn line at the centre of the frame', () => {
+      const centre = project(choice.view as View, choice.point, choice.viewport);
+      expect(centre.x).toBeCloseTo(choice.viewport.width / 2, 4);
+      expect(centre.y).toBeCloseTo(choice.viewport.height / 2, 4);
+    });
+
+    test('carries no other part of the boundary near the reading', () => {
+      // The reading takes a row of a few tens of pixels. The nearest other part of the
+      // boundary is far outside it.
+      const pixels = choice.clearanceLy / choice.lightYearsPerPixel;
+      expect(pixels).toBeGreaterThan(60);
+    });
+
+    test('sits away from the galactic core', () => {
+      // The band lightens what it crosses, which it cannot do over the core itself.
+      expect(radiusOf(choice.point)).toBeGreaterThan(CENTRE_FLOOR_LY);
+    });
   });
-});
+}
+
+crossingTests('the smoothed set', () => lines, SMOOTHED_CROSSING);
+crossingTests('the traced set', () => traced, TRACED_CROSSING);
 
 describe('the view at a bend of a chain', () => {
   test('is what the search of the boundary set gives', () => {
-    expect(findSharpCorner(lines, SHARP_CORNER.viewport)).toEqual(SHARP_CORNER);
+    expect(
+      findSharpCorner(lines, SHARP_CORNER.viewport, SHARP_CORNER.view.distance),
+    ).toEqual(SHARP_CORNER);
   });
 
   test('turns at least 30 degrees within the reading reach', () => {
@@ -149,7 +172,7 @@ describe('the view at a bend of a chain', () => {
     expect(planeGap(bend, to) / perPixel).toBeGreaterThanOrEqual(
       SHARP_CORNER.reachPixels,
     );
-    expect(SHARP_CORNER.reachPixels).toBe(JOIN_RADIUS_PIXELS);
+    expect(SHARP_CORNER.reachPixels).toBe(8);
   });
 
   test('names a run of the boundary set, in order, that holds the bend', () => {
@@ -176,13 +199,13 @@ describe('the view at a bend of a chain', () => {
   test('holds a straight run of the same chain inside the frame', () => {
     const perPixel = SHARP_CORNER.lightYearsPerPixel;
     const run = planeGap(SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo);
-    expect(run / perPixel).toBeGreaterThan(30);
+    // The window of 16 to 40 CSS pixels gives a run of 8 to 24.
+    expect(run / perPixel).toBeGreaterThanOrEqual(8);
 
-    // The run sits outside the reading window and inside the frame.
+    // The run sits outside the reading window and inside the frame. The reading excludes
+    // 1.5 times its own reach, which is 12 CSS pixels here.
     for (const end of [SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo]) {
-      expect(planeGap(SHARP_CORNER.bend, end) / perPixel).toBeGreaterThan(
-        JOIN_RADIUS_PIXELS * 2,
-      );
+      expect(planeGap(SHARP_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(16);
       const screen = project(SHARP_CORNER.view as View, end, SHARP_CORNER.viewport);
       expect(screen.inFront).toBe(true);
       expect(screen.x).toBeGreaterThan(20);
@@ -194,14 +217,16 @@ describe('the view at a bend of a chain', () => {
 
   test('carries no other chain near the reading', () => {
     expect(SHARP_CORNER.clearanceLy / SHARP_CORNER.lightYearsPerPixel).toBeGreaterThan(
-      JOIN_RADIUS_PIXELS * 4,
+      20,
     );
   });
 });
 
 describe('the point on a chain of both sets', () => {
   test('is what the search of the two boundary sets gives', () => {
-    expect(findPointNearBothSets(lines, traced)).toEqual(NEAR_BOTH_SETS);
+    expect(
+      findPointNearBothSets(lines, traced, { width: 1280, height: 720 }, 12000),
+    ).toEqual(NEAR_BOTH_SETS);
   });
 
   test('sits within 25 light years of a chain of each set', () => {
@@ -209,18 +234,25 @@ describe('the point on a chain of both sets', () => {
     expect(gapToSet(traced, NEAR_BOTH_SETS.point)).toBeLessThan(25);
   });
 
-  test('holds a line across the frame at the closest zoom', () => {
-    // The frame at a zoom of 10 light years covers about 12 light years across the
-    // cursor. The point sits in the middle of a traced segment far longer than that,
-    // so the line leaves the frame on both sides.
+  test('holds a line across the frame over the close end of the band', () => {
+    // The fade scenario reads the point at 12,000 light years and below, where one CSS
+    // pixel covers 19.2 light years at 1280x720. The point sits in the middle of a
+    // traced segment far longer than the frame, so the line leaves it on both sides, and
+    // the nearest other chain stays 20 CSS pixels away.
     expect(NEAR_BOTH_SETS.segmentLengthLy).toBeGreaterThan(100);
-    expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(200);
+    expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(385);
+  });
+
+  test('sits away from the galactic core', () => {
+    expect(radiusOf(NEAR_BOTH_SETS.point)).toBeGreaterThan(CENTRE_FLOOR_LY);
   });
 });
 
 describe('the view at a 90 degree corner of the traced set', () => {
   test('is what the search of the traced set gives', () => {
-    expect(findTracedCorner(traced, TRACED_CORNER.viewport)).toEqual(TRACED_CORNER);
+    expect(
+      findTracedCorner(traced, TRACED_CORNER.viewport, TRACED_CORNER.view.distance),
+    ).toEqual(TRACED_CORNER);
   });
 
   test('turns by 90 degrees at a vertex of the traced set', () => {
@@ -230,9 +262,12 @@ describe('the view at a 90 degree corner of the traced set', () => {
     expect(traced.positions[vertex * 3] as number).toBe(TRACED_CORNER.bend[0]);
     expect(traced.positions[vertex * 3 + 2] as number).toBe(TRACED_CORNER.bend[2]);
     expect(TRACED_CORNER.turnDegrees).toBe(90);
+    expect(TRACED_CORNER.reachPixels).toBe(6);
   });
 
-  test('puts each arm at more than 20 CSS pixels', () => {
+  test('puts each arm at more than 48 CSS pixels', () => {
+    // The comparison run reaches 40 CSS pixels from the node, so a shorter arm would put
+    // its far end past the next node and off the straight line.
     const perPixel = TRACED_CORNER.lightYearsPerPixel;
     const vertex = TRACED_CORNER.vertex;
     const armOf = (step: number): number => {
@@ -242,19 +277,20 @@ describe('the view at a 90 degree corner of the traced set', () => {
         (traced.positions[other * 3 + 2] as number) - TRACED_CORNER.bend[2],
       );
     };
-    expect(armOf(-1) / perPixel).toBeGreaterThan(20);
-    expect(armOf(1) / perPixel).toBeGreaterThan(20);
+    expect(armOf(-1) / perPixel).toBeGreaterThan(48);
+    expect(armOf(1) / perPixel).toBeGreaterThan(48);
   });
 
   test('holds a straight run of the same chain inside the frame', () => {
     const perPixel = TRACED_CORNER.lightYearsPerPixel;
     const run = planeGap(TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo);
-    expect(run / perPixel).toBeGreaterThan(30);
+    // The window of 12 to 40 CSS pixels gives a run of 28, less a float remainder of
+    // about 4e-15, because the two ends are built from the same reading of a pixel.
+    expect(run / perPixel).toBeGreaterThanOrEqual(28 - 1e-9);
 
+    // The reading excludes 1.5 times its own reach, which is 9 CSS pixels here.
     for (const end of [TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo]) {
-      expect(planeGap(TRACED_CORNER.bend, end) / perPixel).toBeGreaterThan(
-        JOIN_RADIUS_PIXELS * 2,
-      );
+      expect(planeGap(TRACED_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(12);
       const screen = project(TRACED_CORNER.view as View, end, TRACED_CORNER.viewport);
       expect(screen.inFront).toBe(true);
       expect(screen.x).toBeGreaterThan(20);
@@ -267,73 +303,10 @@ describe('the view at a 90 degree corner of the traced set', () => {
   test('carries no other chain near the reading', () => {
     expect(
       TRACED_CORNER.clearanceLy / TRACED_CORNER.lightYearsPerPixel,
-    ).toBeGreaterThan(JOIN_RADIUS_PIXELS * 4);
-  });
-});
-
-describe('the view where one line fades along its own length', () => {
-  test('is what the search of the boundary set gives', () => {
-    expect(findFadingRun(lines, FADING_RUN.viewport)).toEqual(FADING_RUN);
+    ).toBeGreaterThan(20);
   });
 
-  test('puts the cursor on the drawn line at the centre of the frame', () => {
-    const vertex = FADING_RUN.cursorVertex;
-    expect(lines.positions[vertex * 3] as number).toBe(FADING_RUN.cursor[0]);
-    expect(lines.positions[vertex * 3 + 2] as number).toBe(FADING_RUN.cursor[2]);
-    const centre = project(
-      FADING_RUN.view as View,
-      FADING_RUN.cursor,
-      FADING_RUN.viewport,
-    );
-    expect(centre.x).toBeCloseTo(FADING_RUN.viewport.width / 2, 4);
-    expect(centre.y).toBeCloseTo(FADING_RUN.viewport.height / 2, 4);
-  });
-
-  test('puts the lower reading on the same chain in the lower tenth', () => {
-    expect(FADING_RUN.lowerFrom).toBeGreaterThanOrEqual(
-      lines.first[FADING_RUN.chain] as number,
-    );
-    expect(FADING_RUN.lowerTo).toBeGreaterThanOrEqual(
-      lines.first[FADING_RUN.chain] as number,
-    );
-    // The reading sits on the segment between the two vertices the choice names.
-    const from: [number, number, number] = [
-      lines.positions[FADING_RUN.lowerFrom * 3] as number,
-      0,
-      lines.positions[FADING_RUN.lowerFrom * 3 + 2] as number,
-    ];
-    const to: [number, number, number] = [
-      lines.positions[FADING_RUN.lowerTo * 3] as number,
-      0,
-      lines.positions[FADING_RUN.lowerTo * 3 + 2] as number,
-    ];
-    const span = planeGap(from, to);
-    expect(
-      planeGap(from, FADING_RUN.lower) + planeGap(FADING_RUN.lower, to),
-    ).toBeCloseTo(span, 3);
-
-    const screen = project(
-      FADING_RUN.view as View,
-      FADING_RUN.lower,
-      FADING_RUN.viewport,
-    );
-    expect(screen.inFront).toBe(true);
-    expect(screen.y).toBeGreaterThan(0.9 * FADING_RUN.viewport.height);
-    expect(screen.y).toBeLessThanOrEqual(FADING_RUN.viewport.height);
-    expect(screen.x).toBeGreaterThan(0);
-    expect(screen.x).toBeLessThan(FADING_RUN.viewport.width);
-  });
-
-  test('draws the line in full at the cursor and an eighth of it at the edge', () => {
-    expect(FADING_RUN.cursorFade).toBe(regionNearFade(FADING_RUN.cursorRangeLy));
-    expect(FADING_RUN.lowerFade).toBe(regionNearFade(FADING_RUN.lowerRangeLy));
-    expect(FADING_RUN.cursorFade).toBe(1);
-    expect(FADING_RUN.lowerFade).toBeGreaterThan(0);
-    // The browser scenario holds the lower reading to under a third of the cursor one.
-    expect(FADING_RUN.lowerFade).toBeLessThan(FADING_RUN.cursorFade / 3);
-  });
-
-  test('carries no other chain near either reading', () => {
-    expect(FADING_RUN.clearancePixels).toBeGreaterThan(24);
+  test('sits away from the galactic core', () => {
+    expect(radiusOf(TRACED_CORNER.bend)).toBeGreaterThan(CENTRE_FLOOR_LY);
   });
 });

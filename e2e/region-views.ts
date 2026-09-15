@@ -1,11 +1,18 @@
 // The views and the points the boundary line tests read.
 //
 // Five scenarios of the galactic regions spec need a view or a point chosen from the
-// boundary sets and not by hand: one where a chain crosses the frame within 5 degrees of
-// vertical, one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
-// pixels, one plane point that sits on a chain of both sets, one lattice node where the
-// traced line turns by 90 degrees, and one where a chain runs from the lower edge of the
-// frame to the cursor.
+// boundary sets and not by hand: one where a chain of the smoothed set crosses the
+// reading row within 5 degrees of vertical, one where a chain of the traced set does the
+// same, one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
+// pixels, one lattice node where the traced line turns by 90 degrees, and one plane point
+// that sits on a chain of both sets.
+//
+// The crossing search runs once for each set, because a near-vertical straight run of the
+// smoothed set is not one of the traced staircase, and the width scenario reads each mode
+// over its own view.
+//
+// Every view sits at a zoom of 10,000 light years or more, which is inside the band the
+// overlay draws in.
 // `tests/region-views.test.ts` builds the boundary set, runs the search in
 // `tests/region-views.ts`, and fails if these constants are not what it gives.
 //
@@ -74,37 +81,6 @@ export interface CornerChoice {
   readonly lightYearsPerPixel: number;
 }
 
-/**
- * A view where one chain runs from the lower edge of the frame up to the cursor, at a
- * pitch of 5 degrees. The camera is far from the cursor and near the lower edge, so the
- * near fade takes the same line out along its own length.
- */
-export interface FadingRunChoice {
-  readonly view: ChosenView;
-  readonly viewport: ChosenViewport;
-  /** The chain the reading follows. */
-  readonly chain: number;
-  /** The vertex the cursor sits on. */
-  readonly cursorVertex: number;
-  /** The two vertices of the segment the lower reading sits on. */
-  readonly lowerFrom: number;
-  readonly lowerTo: number;
-  /** The cursor, at the centre of the frame and on the drawn line. */
-  readonly cursor: [number, number, number];
-  /** Where the chain crosses the lower tenth of the frame, in game coordinates. */
-  readonly lower: [number, number, number];
-  /** The camera's distance to each reading point, in light years. */
-  readonly cursorRangeLy: number;
-  readonly lowerRangeLy: number;
-  /** How much of the line the near fade draws at each reading point, 0 to 1. */
-  readonly cursorFade: number;
-  readonly lowerFade: number;
-  /** How far the nearest other chain is from either reading, in CSS pixels. */
-  readonly clearancePixels: number;
-  /** How many light years one CSS pixel covers at the cursor. */
-  readonly lightYearsPerPixel: number;
-}
-
 /** A plane point that sits on a chain of both boundary sets. */
 export interface BothSetsChoice {
   /** The point, in game coordinates, on the plane `y = 0`. */
@@ -121,39 +97,60 @@ export interface BothSetsChoice {
   readonly clearanceLy: number;
 }
 
-/** The view the width reading takes. */
-export const VERTICAL_CROSSING: CrossingChoice = {
+/** The view the width reading of the smoothed set takes. */
+export const SMOOTHED_CROSSING: CrossingChoice = {
   view: {
-    cursor: [400.7349548339844, 0, 10118.80712890625],
-    distance: 1875,
-    yaw: 179.9,
+    cursor: [425.40960693359375, 0, -21390.783203125],
+    distance: 10000,
+    yaw: 90,
     pitch: 89,
   },
-  viewport: { width: 1280, height: 720 },
+  viewport: { width: 1920, height: 1080 },
+  chain: 2,
+  from: 1503,
+  to: 1505,
+  point: [425.40960693359375, 0, -21390.783203125],
+  angleFromVertical: 0.00018084706696939738,
+  clearanceLy: 1860.6261597048726,
+  lightYearsPerPixel: 10.691671651659735,
+};
+
+/** The view the width reading of the traced set takes. */
+export const TRACED_CROSSING: CrossingChoice = {
+  view: {
+    cursor: [400.7349548339844, 0, 10266.85546875],
+    distance: 10000,
+    yaw: 0,
+    pitch: 89,
+  },
+  viewport: { width: 1920, height: 1080 },
   chain: 38,
-  from: 22256,
-  to: 22288,
-  point: [400.7349548339844, 0, 10118.80712890625],
-  angleFromVertical: 0.013647897608527493,
-  clearanceLy: 1505.149929083743,
-  lightYearsPerPixel: 3.007032652029301,
+  from: 8227,
+  to: 8228,
+  point: [400.7349548339844, 0, 10266.85546875],
+  angleFromVertical: 0,
+  clearanceLy: 1653.205078125,
+  lightYearsPerPixel: 10.691671651659735,
 };
 
 /** The view the join reading takes. */
 export const SHARP_CORNER: CornerChoice = {
   view: {
-    cursor: [-10512.755859375, 0, 72350.390625],
-    distance: 1600,
+    cursor: [-10509.220703125, 0, 72352.921875],
+    distance: 12000,
     yaw: 0,
     pitch: 89,
   },
-  viewport: { width: 1280, height: 720 },
+  viewport: { width: 1920, height: 1080 },
   chain: 122,
-  vertex: 67641,
-  turnDegrees: 70.49047061761893,
+  vertex: 67643,
+  turnDegrees: 86.936662546233,
   reachPixels: 8,
-  bend: [-10512.755859375, 0, 72350.390625],
+  bend: [-10509.220703125, 0, 72352.921875],
   bendLine: [
+    [-10447.4931640625, 0, 72007.9609375],
+    [-10509.9990234375, 0, 72297.15625],
+    [-10513.9580078125, 0, 72316.375],
     [-10515.623046875, 0, 72325.8828125],
     [-10516.556640625, 0, 72332.8984375],
     [-10516.7578125, 0, 72337.421875],
@@ -171,76 +168,69 @@ export const SHARP_CORNER: CornerChoice = {
     [-10496.134765625, 0, 72355.328125],
     [-10493.0068359375, 0, 72355.4296875],
     [-10489.853515625, 0, 72355.609375],
+    [-10486.6748046875, 0, 72355.859375],
+    [-10483.470703125, 0, 72356.1796875],
+    [-10480.2412109375, 0, 72356.5703125],
+    [-10476.9873046875, 0, 72357.0390625],
+    [-10473.70703125, 0, 72357.578125],
+    [-10470.40234375, 0, 72358.1796875],
+    [-10466.9208984375, 0, 72358.9140625],
+    [-10463.263671875, 0, 72359.765625],
+    [-10459.4296875, 0, 72360.7421875],
+    [-10455.419921875, 0, 72361.84375],
+    [-10451.234375, 0, 72363.0625],
+    [-10446.8720703125, 0, 72364.40625],
+    [-10442.333984375, 0, 72365.875],
+    [-10437.619140625, 0, 72367.4609375],
+    [-10433.048828125, 0, 72368.9765625],
+    [-10428.6240234375, 0, 72370.421875],
+    [-10424.3427734375, 0, 72371.7890625],
+    [-10420.2060546875, 0, 72373.0859375],
+    [-10416.212890625, 0, 72374.3046875],
+    [-10412.365234375, 0, 72375.4453125],
+    [-10408.662109375, 0, 72376.5234375],
   ],
-  straightFrom: [-10470.40234375, 0, 72358.1796875],
-  straightTo: [-10349.3173828125, 0, 72390.765625],
-  clearanceLy: 6416.077178934423,
-  lightYearsPerPixel: 2.5660011963983367,
-};
-
-/**
- * The plane point the closest zoom reading takes. It sits on a chain of the smoothed set
- * and on the chain of the same index of the traced set, so both modes draw a line through
- * the centre of the frame down to a zoom of 10 light years.
- */
-export const NEAR_BOTH_SETS: BothSetsChoice = {
-  point: [400.7349548339844, 0, 10266.85546875],
-  chain: 38,
-  segmentLengthLy: 3306.41015625,
-  smoothedGapLy: 0,
-  tracedGapLy: 0,
-  clearanceLy: 1653.197566902373,
+  straightFrom: [-10420.7060546875, 0, 71892.6015625],
+  straightTo: [-10447.4931640625, 0, 72007.9609375],
+  clearanceLy: 6420.418048697758,
+  lightYearsPerPixel: 12.830005981991683,
 };
 
 /** The view the 90 degree corner reading of the traced set takes. */
 export const TRACED_CORNER: CornerChoice = {
   view: {
-    cursor: [400.7349548339844, 0, 11920.060546875],
-    distance: 1600,
+    cursor: [400.7349548339844, 0, -4760.0361328125],
+    distance: 10000,
     yaw: 0,
     pitch: 89,
   },
-  viewport: { width: 1280, height: 720 },
-  chain: 38,
-  vertex: 8228,
+  viewport: { width: 1920, height: 1080 },
+  chain: 9,
+  vertex: 3514,
   turnDegrees: 90,
-  reachPixels: 8,
-  bend: [400.7349548339844, 0, 11920.060546875],
+  reachPixels: 6,
+  bend: [400.7349548339844, 0, -4760.0361328125],
   bendLine: [
-    [400.7349548339844, 0, 11908.060546875],
-    [400.7349548339844, 0, 11920.060546875],
-    [388.7349548339844, 0, 11920.060546875],
+    [400.7349548339844, 0, -4824.186162722458],
+    [400.7349548339844, 0, -4760.0361328125],
+    [336.5849249240259, 0, -4760.0361328125],
   ],
-  straightFrom: [340.7349548339844, 0, 11920.060546875],
-  straightTo: [260.7349548339844, 0, 11920.060546875],
-  clearanceLy: 1898.5086612424732,
-  lightYearsPerPixel: 2.5660011963983367,
+  straightFrom: [272.43489501406754, 0, -4760.0361328125],
+  straightTo: [-26.931911232405014, 0, -4760.0361328125],
+  clearanceLy: 3306.40966796875,
+  lightYearsPerPixel: 10.691671651659735,
 };
 
 /**
- * The view the fading run reading takes. One chain of the smoothed set runs from the
- * cursor at the centre of the frame down to the lower tenth of it. The camera is 3,000
- * light years from the cursor and 487 from the lower reading, so the near fade draws the
- * line in full at the one and at an eighth of that at the other.
+ * The plane point the close end reading takes. It sits on a chain of the smoothed set and
+ * on the chain of the same index of the traced set, so both modes draw a line through the
+ * centre of the frame over the whole close end of the zoom band.
  */
-export const FADING_RUN: FadingRunChoice = {
-  view: {
-    cursor: [396.1371765136719, 0, 11707.0009765625],
-    distance: 3000,
-    yaw: 359.9148389128297,
-    pitch: 5,
-  },
-  viewport: { width: 1280, height: 720 },
-  chain: 38,
-  cursorVertex: 22288,
-  lowerFrom: 22272,
-  lowerTo: 22271,
-  cursor: [396.1371765136719, 0, 11707.0009765625],
-  lower: [400.7349548339844, 0, 9129.521523455454],
-  cursorRangeLy: 3000,
-  lowerRangeLy: 487.2057547014851,
-  cursorFade: 1,
-  lowerFade: 0.12486040136955275,
-  clearancePixels: 7375.902703326462,
-  lightYearsPerPixel: 4.811252243246881,
+export const NEAR_BOTH_SETS: BothSetsChoice = {
+  point: [425.40960693359375, 0, -21390.783203125],
+  chain: 2,
+  segmentLengthLy: 4392.0963134765625,
+  smoothedGapLy: 0,
+  tracedGapLy: 0,
+  clearanceLy: 3578.171421264255,
 };
