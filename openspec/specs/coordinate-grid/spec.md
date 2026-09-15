@@ -50,6 +50,23 @@ on the plane. A level therefore reaches 100 of its own lines each side of the cu
 no further, so the 10 light year level covers 1,000 light years and the 1,000 light year
 level covers 100,000.
 
+**The grid fades in as the camera comes near.** The alpha of every level SHALL be
+multiplied by a band over the camera's distance to the cursor: 0 at **12,000** light years
+and further, 1 at **4,000** and nearer, with a smooth step between, so the band reads 0.5
+at 8,000. The reading SHALL be the camera's distance to the cursor, one value for the whole
+frame, and SHALL NOT be each fragment's own range to the camera: a band by fragment range
+would open the grid under the camera at every zoom.
+
+The grid is a tool for reading a neighbourhood, and at a wide view its coarse levels lie
+over the whole galaxy. At the start view of 60,000 light years and 1,080 CSS rows the
+10,000 light year level measures 156 CSS pixels across at an alpha of 0.25, which washes
+the galaxy disc with ten lines each way. The near end of the band is the zoom at which the
+1,000 light year level carries the frame: 234 CSS pixels at 4,000 light years.
+
+**Where the band gives 0 the grid SHALL draw nothing at all**, and the pass SHALL NOT
+draw. The probes then read what they read for a grid that is switched off, which "The grid
+reports what it drew" states, and the coordinate labels leave the overlay with the lines.
+
 **The colour** SHALL be `rgb(255, 154, 60)`, which is the colour the grid draws in today.
 
 **Where two levels cover one point**, the alpha SHALL be the larger of the two and not
@@ -100,8 +117,9 @@ whose `x` or whose `z` lies outside the bounds carries no line.
 #### Scenario: The grid stops at the model bounds
 
 - **WHEN** the browser test moves the cursor to the model's upper `x` bound at a zoom of
-  120,000 light years and reads the frame
-- **THEN** no grid line draws beyond that bound
+  3,000 light years and reads the frame
+- **THEN** no grid line draws more than 30 light years beyond that bound, which is about
+  nine CSS pixels at that zoom
 
 #### Scenario: A crossing is no brighter than its lines
 
@@ -111,12 +129,28 @@ whose `x` or whose `z` lies outside the bounds carries no line.
 - **THEN** the reading at the crossing is not above the larger of the other two, within
   one 8-bit step
 
+#### Scenario: The band follows the camera distance
+
+- **WHEN** a unit test reads the band at the camera distances 3,000, 4,000, 8,000, 12,000
+  and 60,000 light years
+- **THEN** the readings are 1, 1, 0.5, 0 and 0
+
+#### Scenario: A wide view draws no grid
+
+- **WHEN** the browser test opens the start view of 60,000 light years, reads the frame
+  with the grid switch on, and reads it again with the switch off
+- **THEN** the two frames hold the same pixels
 
 ### Requirement: The grid draws in one call of three vertices
 
-The grid SHALL draw in **one** call, of **3** vertices, whatever the zoom distance, the
-pitch and the size of the host's data set. Three vertices are one triangle that covers the
-frame; the plane, the levels and the lines are all worked out for each fragment.
+The grid SHALL draw in **one** call, of **3** vertices, at every zoom the camera distance
+band leaves on, whatever the pitch and the size of the host's data set. Three vertices are
+one triangle that covers the frame; the plane, the levels and the lines are all worked out
+for each fragment.
+
+Where the band gives 0 the pass SHALL NOT draw, and the count SHALL be 0. A call whose
+every fragment is empty would cost a full-screen pass and would make the three probes
+disagree.
 
 The count does not follow the data. The galaxy holds about 400 billion systems and the
 host may add 10,000 of them; the grid draws the same call either way. The levels are
@@ -131,8 +165,9 @@ apart, so a `float32` position alone cannot place a line.
 #### Scenario: The call count and the vertex count are fixed
 
 - **WHEN** the browser test turns the grid on and reads the grid's vertex count at the
-  zoom distances 10, 1,000 and 120,000 light years
-- **THEN** every reading is 3, and the pass draws in one call
+  zoom distances 10, 1,000 and 11,000 light years, and then at 120,000
+- **THEN** the first three readings are 3 and the pass draws in one call, and the last
+  reading is 0
 
 #### Scenario: A line sits on its coordinate at the closest zoom
 
@@ -140,7 +175,6 @@ apart, so a `float32` position alone cannot place a line.
   10 light years, turns the grid on, and reads the game `x` of the pixels of one drawn
   line of the 1 light year level
 - **THEN** the `x` is a whole number of light years within 0.05
-
 
 ### Requirement: The grid blends under the overlays at its own weights
 
@@ -194,6 +228,11 @@ cursor in CSS pixels, its width in CSS pixels and its alpha at the cursor. The e
 SHALL be in order of rising spacing. In a frame the grid did not draw in the reading SHALL
 be empty.
 
+**The alpha SHALL be the alpha the level draws at, the camera distance band included.** The
+probe reads what the frame holds, so a test that reads an alpha and a pixel compares two
+readings of the same thing. The band is 1 at 4,000 light years and nearer, so no reading
+inside that zoom band changes.
+
 #### Scenario: The probes agree with the frame
 
 - **WHEN** the browser test turns the grid on at a zoom of 1,000 light years at 1,080 CSS
@@ -208,6 +247,19 @@ be empty.
   `gridSpacingLy` and `gridLevels`
 - **THEN** the readings are 0, 0 and empty
 
+#### Scenario: The alpha carries the band
+
+- **WHEN** the browser test turns the grid on at a zoom of 8,000 light years, where the
+  band reads 0.5, and reads the alpha of the **10,000 light year** level, then reads the
+  same alpha at a zoom of 4,000 light years
+- **THEN** the first reading is half the second, within 0.01: 0.225 against 0.45
+
+The level is the 10,000 light year one and not the 1,000, because a level's alpha carries
+its screen fade as well as the band, and the two move together. The 1,000 light year level
+measures 234 CSS pixels at 4,000 light years and 117 at 8,000, which is inside the fade
+band of 40 to 400 pixels, so its drawn alpha reads 0.3305 and then 0.1059, a ratio of
+0.320. The 10,000 light year level measures 2,338 and 1,169 pixels, both above the 400
+pixel saturation, so its screen fade holds at 1 and the band alone moves it.
 
 ### Requirement: The grid carries coordinate labels
 
@@ -237,13 +289,47 @@ The placement SHALL hold to these bounds:
 - A candidate whose label box overlaps a box already placed SHALL be skipped, by the same
   box test the region labels and the marker name labels use.
 
+**A label SHALL NOT stand where its own lines do not draw.** Two more readings decide, and
+both are readings the lines themselves hold:
+
+- A crossing outside the galaxy model bounds SHALL be dropped, because the lines stop
+  there.
+- The level's drawn alpha at the crossing SHALL be at least **0.09**. The reading is the
+  level's own alpha rule, taken at the crossing's spacing on the screen, multiplied by the
+  camera distance band.
+
+  The spacing on the screen SHALL come from the projection's **local rate** at the
+  crossing, which is the quantity `grid.frag` reads as a derivative of the plane point.
+  The sweep SHALL project the crossing and two points a small step along the game `x` and
+  `z` axes, and SHALL invert the 2 by 2 matrix those two steps make, which gives the light
+  years of each game axis that one CSS pixel covers there. The reading therefore carries
+  the foreshortening that closes the lines up toward the horizon, on both screen axes. The
+  greater of the two axis readings decides, because the alpha at a point is the larger of
+  the two axes' readings.
+
+  **The step SHALL be small and SHALL NOT be one level spacing.** A gap measured over a
+  whole spacing is a secant of a map that bends hard toward the horizon, and the two
+  readings part company where the gate matters most: at a pitch of 5 degrees and a zoom of
+  3,000 light years, a crossing 65,000 light years out makes a gap of about 144 CSS pixels
+  over one spacing, while the shader reads 1.4 CSS pixels there and draws nothing. A gate
+  on the secant would keep a label over an empty frame, which is the fault the gate is
+  for.
+
+0.09 is what a level draws at 24 CSS pixels with the band open, the middle of the fade band
+from 8 to 40. The floor of 8 CSS pixels is where a level's alpha reaches 0 and not where
+its line becomes readable, so a label placed there would stand over nothing. One reading
+and not two, because the band is the other way a line goes out: without it a label would
+stand at full opacity at 11,500 light years, where the label level still measures 813 CSS
+pixels but the band leaves 0.011 of the alpha.
+
 **The plane label** SHALL be one more element, centred on the lower edge of the canvas and
 22 CSS pixels above it, which reads the `y` of the plane the grid draws on, in whole light
 years. The `x` and the `z` are on the crossings, and the `y` is one number for the whole
 grid, so it is stated once. The lower edge is the free edge: the HUD's top bar covers the
 top, its category browser the left and its information panel the right.
 
-Every label SHALL leave the overlay when the grid switch goes off.
+Every label SHALL leave the overlay when the grid switch goes off, and when the camera
+distance band gives 0.
 
 #### Scenario: A crossing label reads its own coordinates
 
@@ -277,6 +363,28 @@ Every label SHALL leave the overlay when the grid switch goes off.
   at the zoom distances 200, 1,000 and 3,000 light years
 - **THEN** the readings are 100, 1,000 and 10,000
 
+#### Scenario: No label stands past the last line
+
+- **WHEN** the browser test turns the grid on with the cursor at the model's upper `x`
+  bound at a zoom of 1,000 light years and a pitch of 89 degrees, where the label level is
+  1,000 light years and the crossing at `x` = 51,000 projects inside the frame, and reads
+  every crossing label's text
+- **THEN** no label names an `x` above the bound, and at least one names 50,000, so the
+  sweep dropped the crossing past the bound and kept the one inside it
+
+#### Scenario: A label goes out with its lines
+
+- **WHEN** the browser test turns the grid on at a zoom of 11,500 light years, where the
+  band leaves 0.011 of the alpha, draws a frame and counts every grid label, and repeats
+  at a zoom of 3,000 light years
+- **THEN** the first count is 0 and the second is above 0
+
+#### Scenario: Every label sits on a line
+
+- **WHEN** the browser test turns the grid on at a zoom of 3,000 light years at a pitch of
+  5 degrees, which reaches furthest toward the horizon, reads each crossing label's
+  position and reads the drawn pixel there
+- **THEN** every label sits on a pixel the grid lit
 
 ### Requirement: The grid holds the frame budget
 
@@ -318,6 +426,16 @@ a draw pass. The requirement "The grid labels hold the frame rate" measures them
 `setGridVisible(on)` and `isGridVisible()`. The grid SHALL be off unless the options ask
 for it, so no view the map draws today changes.
 
+The handle SHALL carry a grid change notification, which `real-systems` states, so a host
+page can learn that the switch moved and can write it where it keeps its state. The HUD's
+coordinate grid switch calls `setGridVisible` and no other member, so one notification
+covers every way the switch moves.
+
+**The demo site starts with the grid on**, which `library-package` states, and it keeps the
+switch in its URL fragment, which `map-navigation` states. That is the demo page's own
+option and not a change of the default: a host that gives no `grid` option still gets no
+grid.
+
 The renderer's pass switches SHALL carry a `grid` entry, as the other passes do, so the
 browser tests can read a frame with the grid alone and a frame without it.
 
@@ -327,8 +445,8 @@ labels on together.
 
 #### Scenario: The grid is off by default and the frame does not move
 
-- **WHEN** the browser test opens the default view with no `grid` option and compares the
-  frame with the committed baseline image
+- **WHEN** the browser test opens the default view with the grid off, as a map built with
+  no `grid` option has it, and compares the frame with the committed baseline image
 - **THEN** the frames match, because nothing new draws
 
 #### Scenario: The switch reaches the next frame
@@ -339,4 +457,9 @@ labels on together.
 - **THEN** the two readings differ, and the second matches the frame drawn with the grid
   off
 
+#### Scenario: The library default does not follow the demo site
+
+- **WHEN** a unit test creates a map with no `grid` option and reads `isGridVisible()`, and
+  a browser test opens the demo site with no fragment and reads the same
+- **THEN** the first reading is false and the second is true
 

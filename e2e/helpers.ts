@@ -80,6 +80,37 @@ export async function openMap(
   if (options.hud !== true) await removeHud(page);
 }
 
+/**
+ * Waits until the region labels hold one place.
+ *
+ * A camera that jumps leaves the label of a region away from the middle of it, and the
+ * label walks back over about 20 frames. A test that compares two pictures of the same
+ * scene must wait for that walk to end, or the two pictures differ by the label alone.
+ *
+ * The labels hold in under a second. This throws when they do not, so a test that then
+ * compares two pictures reports why it failed and does not read as a picture difference.
+ */
+export async function settleLabels(page: Page, timeout = 5000): Promise<void> {
+  const read = async (): Promise<string> =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.region-label')]
+        .map((node) => {
+          const label = node as HTMLElement;
+          return `${label.textContent ?? ''}@${label.style.left},${label.style.top}`;
+        })
+        .join('|'),
+    );
+  const end = Date.now() + timeout;
+  let before = await read();
+  while (Date.now() < end) {
+    await page.waitForTimeout(150);
+    const after = await read();
+    if (after === before) return;
+    before = after;
+  }
+  throw new Error(`the region labels still move after ${timeout} ms: ${before}`);
+}
+
 /** Reads the luminance of one pixel, 0 to 1, at a CSS pixel of the canvas. */
 export async function luminanceAt(
   page: Page,

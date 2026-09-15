@@ -350,8 +350,9 @@ test.describe('the labels at 1280 by 720', () => {
     // The filter takes it there in steps of no more than 20 CSS pixels a frame, so the
     // label slides and does not jump.
     expect(worstMove).toBeLessThan(21);
-    // It reaches the middle of the region at once. The spec reads the arrival at frame
-    // 10 of a still camera, which is 167 milliseconds at 60 frames a second.
+    // It reaches the middle of the region and does not crawl. The camera jump moves the
+    // target as well as the anchor, so the target smoothing and the anchor filter run in
+    // series. The spec reads 382 milliseconds for this push.
     const arrival = reached(8);
     expect(arrival).not.toBeNull();
     expect(arrival as number).toBeLessThan(400);

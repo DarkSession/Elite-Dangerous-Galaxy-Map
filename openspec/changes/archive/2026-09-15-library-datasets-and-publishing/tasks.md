@@ -23,8 +23,8 @@
       run clean from a clean tree and `dist/types/index.d.ts` is still there afterwards.
 - [x] 1.5 Give `package.json` `exports`, `types` and `files`, and drop `private`. Verify a
       unit test reads the fields and asserts each named path is in the build output.
-- [x] 1.6 Move `tests/main-bundle.test.ts` onto the library entry chunk, keeping the
-      170,000 byte bound, and add the HUD chunk check. Write the first library readings
+- [x] 1.6 Move `tests/main-bundle.test.ts` onto the library entry chunk, with the byte
+      bound the library entry asks for, and add the HUD chunk check. Write the first library readings
       into the test and into `specs/library-package/spec.md`, which today carries the page
       build's 152,506 and 27,419. Read them from a fresh build and not from the `dist/` in
       the tree. Verify the test passes and reports both sizes.
@@ -186,9 +186,11 @@
 
 ## 8. The label filter
 
-- [x] 8.1 Add `filterAnchor` to `src/app/labels.ts`: move the carried plane point half of
-      the gap toward the frame's target, and scale the step down when its screen move is
-      over 20 CSS pixels. Verify with unit tests on the step size and the cap.
+- [x] 8.1 Add `anchorStep` and `filterAnchor` to `src/app/labels.ts`: read the screen gap
+      between the carried plane point and the frame's target, take the step
+      `min(20, max(min(gap, 0.4), gap * 0.5 * min(1, gap / 48)))`, and scale the plane step
+      until its screen move is that figure. Verify with unit tests on the knee, the cap
+      and the floor.
 - [x] 8.2 Replace the hold in `labelCandidates` with the filter, dropping a carried point
       that no longer resolves to its region or no longer projects inside the frame.
       Verify with a unit test that a dropped point takes the target whole.
@@ -204,8 +206,86 @@
       over a slow pan across the galactic centre, the target of `Izanami` moves 48 CSS
       pixels in one frame where the filter moves the label 19.8. Keep the filter, and hold
       its cost to the cap.
+- [x] 8.6 Answer the owner's third reading: the labels still jump while the camera moves.
+      Measure what a person reads as a jump, which is the change of the label's screen
+      step from one frame to the next. A flat half-gap step gives 1.0 CSS pixels in a
+      middle frame of a 30 light year drag and 3.0 in the worst tenth. Make the speed fall
+      with the gap below the 48 pixel knee, which leaves every real move at the speed it
+      had. The measured figures are 0.45 and 1.3.
+- [x] 8.7 Answer the owner's fourth reading: less, but still jumping. The speed curve
+      alone cannot go further, because the 8 to 48 pixel band is both the noise and the
+      last part of every relocation. Add `smoothTarget` and a second map in `LabelMemory`,
+      so the anchor follows a target that already moves smoothly: 0.15 of the gap a frame,
+      the target taken whole above a 120 pixel move, and the carried point kept where the
+      smoothed one falls on another region. Add unit tests for the three rules, and one
+      over two drags that bounds the change of step at 0.2 and 0.7. The measured figures
+      are 0.09 and 0.36 on the slower drag and 0.16 and 0.67 on the faster one, with the
+      pushed label unchanged at 217 milliseconds.
 - [x] 8.4 Verify the settled-anchor bound still holds: a camera turn of 0.1 degrees moves
       the anchor by more than nothing and by less than 8 CSS pixels.
+
+- [x] 8.8 Answer the owner's reading of the requirement: a label belongs at the centre of
+      its region, and moves to the visible part only where the centre has no room. Add
+      `regionTarget`, which takes `Region.centroid` while it sits on its region and
+      projects inside the frame with the 48 pixel label inset, and the frame's own samples
+      otherwise. A centroid is a fixed point of the galaxy, so a label on it does not move
+      over the map at all. Verify with three unit tests: 18 of 20 labels of a whole galaxy
+      view take the centroid to the last digit, a label whose centre has no room takes a
+      point on its own region inside the frame, and over a drag the plane point of a label
+      on its centre is the same number in two frames in a row.
+
+- [x] 8.9 Answer the owner's two follow-ups: the label box must not touch the edge of its
+      region, and a displaced label moves too far. Add `fitInsideRegion`, which moves the
+      target until the six points of the box that matter sit on the region. Replace the
+      plane-space fallback of `regionTarget` with a screen-space ring search out from the
+      projection of the centroid, stopped at 96 pixels while the centre is in the frame.
+      Verify with two unit tests: at most 2 of 12 boxes cross their region edge over four
+      views, and the worst displaced target sits 4.7 CSS pixels from its centre.
+
+- [x] 8.10 Answer the owner's reading that a zoom still jumps: make a zoom read like a
+      drag. Measure how far each label moves from the projection of its own region centre
+      from one frame to the next, which separates the label moving from the map moving.
+      Remove the gate that drops a carried anchor for leaving its own region, and give the
+      frame gate a quarter of the frame of margin on each side, so a notch keeps the
+      anchor and
+      `filterAnchor` walks it back while a camera jump still drops it. Hold the drawn anchor inside the viewport and not inside the
+      48 pixel inset, so a label at the edge slides with its region rather than sitting
+      still while the map moves. Verify with a unit test over a drag, over 28 wheel notches
+      of 15 percent, and over the same notches held down with no still frame between them.
+
+- [x] 8.11 Fix the two browser tests the change broke. Hold the centre rule to a centroid
+      that projects inside the frame, because holding one that is far outside inside the
+      inset gives a corner of the frame; outside it the frame's own samples answer. Solve
+      the anchor step for the share that gives the wanted screen move, correcting up as
+      well as down, because the projection near the camera is strongly not linear and a
+      downward-only correction makes the label crawl. Verify with two unit tests: the label
+      of the region under the camera sits mid-frame at a distance of 10, and the label is
+      within 8 CSS pixels of its target 25 frames after a jump from 640 to 10.
+- [x] 8.12 Make the target smoothing a filter and not a gate. Grow the share of the gap
+      the smoothed target takes with the screen gap, as the cube of the gap over 120 CSS
+      pixels, because the gate held a real move of 70 pixels to 0.15 of the gap a frame
+      and the label crawled. Verify that the share reads 0.15 at a gap of 4 pixels and 1
+      at 120, that the drift measure of a drag, of wheel notches and of a held wheel does
+      not grow, and that the browser brings a pushed label within 8 CSS pixels of the
+      middle of its region inside 400 milliseconds.
+- [x] 8.13 Let the star pass picture test settle the labels before it compares its two
+      pictures. The test holds the camera still and compares two pictures of one scene,
+      and a label that still walks after a camera jump differs between them. Add
+      `settleLabels` to the browser helpers, which waits until the label positions hold.
+- [x] 8.14 Answer the implementation review. Return the solved step from `filterAnchor`
+      where no shorter step stays on the region, because the code returned the linear
+      first guess and moved the anchor 89 CSS pixels against a cap of 20. Hold the
+      carried target and the carried anchor to the one reach the code has, and correct
+      the three places that still read one frame. Make `settleLabels` throw on its
+      timeout, so a picture test reports why it failed. Tighten three assertions that
+      passed figures far worse than the ones the spec states. Verify with a unit test
+      that drives the step off its region under a projection that is not linear. Cut
+      `NEAR_RADII` to the four radii the only caller can reach, and correct the four doc
+      comments that no longer read as the code does: the pass count of the step solver,
+      a leftover line over `nearFrame`, the share of `TARGET_SHARE`, and the search that
+      `regionTarget` does not make for a centre outside the frame. State the rings and
+      their coarseness in the spec, and record the `MAX` blend of the two overlay
+      channels as a trade-off in the design.
 
 ## 9. The three demo data sets
 

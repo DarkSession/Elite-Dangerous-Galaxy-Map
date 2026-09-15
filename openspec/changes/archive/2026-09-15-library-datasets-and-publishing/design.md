@@ -197,27 +197,206 @@ faded line would grow thin instead of going out. Reconstructing the plane point 
 composite from the view ray needs no second channel, but it measures the camera distance
 to the pixel's plane point rather than to the segment, which is not what the spec states.
 
-### The filter is a pure function over plane points
+### The label target is the region's own centre
 
-`labels.ts` gains `filterAnchor(carried, target, toScreen)`. It moves the carried point
-half of the way to the target in plane coordinates. It then projects both ends of that
-step, and if the screen move is over 20 CSS pixels it scales the step down until it is 20.
-A carried point that no longer resolves to its region, or no longer projects inside the
-frame, is dropped and the target is taken whole.
+`labels.ts` gains `regionTarget(id, region, samples, viewport, frame)`. It returns the
+region's centroid while the region under it is that region and it projects inside the
+frame with the 48 pixel label inset, which is the room the label box needs.
 
-The cap is worked out on the projection and not on the plane, because a plane step of a
-fixed size is a different number of pixels at every zoom.
+Where the centre has no room the rule moves the label the least it can. It holds the
+projection of the centroid inside the inset and reads that point back to the plane through
+a new `FrameSamples.toPlane`, the inverse of `toScreen`. Where the read-back point is over
+another region it searches out from the projection of the centroid, ring by ring at 12, 24,
+48, 96, 192, 320, 640 and 1280 pixels, twelve directions on each ring, and takes the first
+point on its own region that is inside the inset.
 
-**Why a filter at all, when the owner asked for the label to move at once.** The first
-build moved the label 8 percent of the gap a frame, capped at 4 CSS pixels, and a label
-pushed to the frame edge took 550 to 835 milliseconds to come back. That reads as a crawl.
-Taking each frame's target whole reads worse: the target is read from a grid of samples
-that slides over the plane, so it steps on its own while the camera moves. Measured over a
-slow pan across the galactic centre, the target of `Izanami` jumps **48 CSS pixels** in one
-frame when a second patch of the region comes into view, and every label shivers by a pixel
-or two as samples cross region edges. Half the gap with a 20 pixel cap holds both ends: a
-128 pixel relocation lands in 9 frames, 150 milliseconds, and the 48 pixel step of the
-target reaches the label as 19.8 pixels over three frames.
+The search measures on the screen, not on the plane. At a pitch of 35 degrees one light
+year across the screen is many light years up it, so a point near on the plane can be far
+on the screen. An earlier build measured on the plane and moved one label 192 pixels
+sideways to hold a 29 pixel move down.
+
+The search stops at 96 pixels. A region can reach into the inset band at the edge, and the
+nearest point of it that is both on the region and inside the inset can be hundreds of
+pixels along that band. Moving there costs more than it gives, so the target holds the
+centre instead and `labelBox` moves the box into the frame.
+
+The whole centre rule applies only while the centroid projects **inside the frame**.
+Outside it the rule gives nonsense: holding a projection that is thousands of pixels away
+inside the inset lands on a corner, and a corner says nothing about where the region is. At
+a camera distance of 10 that put the label of the region under the camera in the top left
+corner rather than mid-screen. Outside the frame the target is the mean of the region's own
+samples, which is what the frame actually shows.
+
+### The label box does not cross the edge of its region
+
+`fitInsideRegion(target, id, size, samples, viewport)` moves the target so the six points
+of the label box that matter, the four corners and the middle of the top and bottom edges,
+all sit on the region. The box is a screen thing and the target is a plane point, so it
+first reads the plane step of one screen pixel across and one down, then works in those two
+directions. It grows its step over five passes, tries twelve directions at each, keeps the
+point that leaves the fewest box points off the region, and stops as soon as none are.
+
+A region narrower on the screen than the label is wide has no point that fits. One box of
+twelve crosses at a view of the whole galaxy, two of twelve at a wide view, none at two
+closer views. To hold those needs the label to get smaller, which the owner deferred.
+
+A centroid is one fixed point of the galaxy. A label on it does not move over the map at
+all, because nothing about the frame goes into the point. This is what the owner asked
+for, and it is why the rules below now carry only the partly visible case and the changes
+between the two.
+
+**Why the earlier builds moved.** Every earlier build read the target from the frame's
+samples in every frame, for every label. The sample grid is fixed on the screen, so it
+slides over the plane while the camera moves and the mean of a region's samples travels
+with it. That is not noise a filter can take out: measured over a drag of 30 light years a
+frame, the target moves 3.3 CSS pixels in a middle frame and a mean of it over 20 frames
+still moves 1.9. Three builds tuned the filter that follows that target, and each one only
+traded how fast the label answered a target that was itself moving.
+
+`Region.centroid` was already in the region metadata, unused by the label code.
+
+### The target is smoothed, then the anchor follows it
+
+`labels.ts` gains three pure functions. `smoothTarget(carried, target, toScreen, onRegion)`
+moves the target the frame before carried 0.15 of the way to this frame's target.
+`anchorStep(gap)` says how far the anchor goes on the screen for a screen gap.
+`filterAnchor(carried, target, toScreen)` projects the carried anchor and the smoothed
+target, asks `anchorStep` for the gap between them, and takes that share of the plane gap.
+The projection is not linear, so it then projects the end of the step and scales it by the
+ratio of what it wanted to what it got, up to four times.
+
+Both steps are worked out on the projection and not on the plane, because a plane step of
+a fixed size is a different number of pixels at every zoom.
+
+`LabelMemory` gains a second map beside `anchors`, holding the smoothed target of each
+region. The overlay rebuilds both from the labels of the frame, so the placement stays a
+function of what it is given.
+
+These two parts carry the partly visible case, where the target still comes from the
+frame's samples, and they carry the change when a region's centre leaves the frame.
+
+**Why two parts, and not one.** The first build moved the label 8 percent of the gap a
+frame, capped at 4 CSS pixels, and a label pushed to the frame edge took 550 to 835
+milliseconds to come back. That reads as a crawl. The second build moved half the gap a
+frame, capped at 20 CSS pixels. It relocated at once, and the owner reported that the
+labels jump while the camera moves.
+
+Measuring settled which of the two the filter was getting wrong. The target itself moves
+3.3 CSS pixels in a middle frame of a 30 light year drag, and a mean of it over 20 frames
+still moves 1.9. So most of that is not noise a filter can average away: the visible part
+of a region really travels under the camera, and the label must follow it. What a person
+reads as shaking is not the step but the **change of step** from frame to frame. The flat
+half-gap step changes it by 1.0 CSS pixels in a middle frame and 3.0 in the worst tenth.
+
+Speed that falls with the gap fixes part of it. A large gap is a real move and runs at the
+full half share and the 20 pixel cap, exactly as the second build did above a gap of 48
+pixels; a small gap is the noise, and the label answers it slowly. That takes the change of
+step to 0.45 and 1.3.
+
+It cannot go further alone. The band from 8 to 48 pixels is both the noise the label must
+ignore and the last part of every relocation, so more damping there slows every move: a
+knee at 96 pixels halves the shake again and takes a pushed label from 217 to 401
+milliseconds. The owner asked for both, and one curve cannot give both.
+
+Smoothing the target first separates them. The anchor follows a line that already moves
+smoothly, at the speed it had, and the change of step falls to **0.09** and **0.36**. The
+pushed label still reads 217 milliseconds in the unit test and 183 in the browser, because
+the smoothing gives way above a 120 pixel move and a push moves nothing but the anchor.
+
+The share is not one figure. It grows with the screen gap between the carried target and
+the frame's own: `0.15 + 0.85 * min(1, gap / 120) ** 3`. At the gap the sample grid gives
+a still region the share is near 0.15, which holds about seven frames. At 120 CSS pixels
+the share is 1 and the target is taken whole. The figure 120 separates a camera that
+jumps, which moves a target 145 pixels and must be answered at once, from a region that
+shows as two patches, which steps its target 50 pixels when a patch comes into view.
+
+An earlier form of this rule was a gate: 0.15 below 120 pixels and 1 above it. The gate
+made a real move crawl. A camera that jumped left the label about 70 CSS pixels from the
+middle of its region, under the gate figure, so the smoothed target took 0.15 of the gap
+a frame and the anchor chased a line that was itself still moving. The browser measured
+**448 milliseconds** to come within 8 pixels, over the 400 the suite allows.
+
+The share follows the cube of the reach, and not the reach itself. The table gives the
+worst frame of the drift measure, in CSS pixels:
+
+| Share                | Drag | Wheel notches | Held wheel |
+| -------------------- | ---- | ------------- | ---------- |
+| Gate at 120          | 5.8  | 7.0           | 13.2       |
+| Reach                | 10.9 | —             | —          |
+| Cube of the reach    | 6.7  | 6.9           | 10.1       |
+
+The reach on its own gives too much of a gap of 30 or 60 pixels to the label. The cube
+holds the smoothing over the whole range a drag works in, and opens it only near the
+figure where the target has really moved. The browser now measures **382 milliseconds**
+for the same push, and the worst frame of the held wheel falls as well.
+
+Where the smoothed point falls on another region the carried point is kept, not replaced.
+The mean of two points that are both on a region falls in the gap when the region shows as
+two patches, and taking this frame's target there would carry the label to the other patch
+in one frame.
+
+Two other rules were measured and dropped. A weighted mean over the nearest samples broke
+the rule that an anchor sits on its own region. A hold that froze the anchor until the gap
+passed a threshold traded the shake for bursts: it left the label still for a dozen frames
+and then moved it 20 pixels a frame, which reads worse than the shake.
+
+### A zoom reads like a drag
+
+The owner reported that a label jumps again when the camera zooms in far enough. A wheel
+notch changes the camera distance by 15 percent in one frame, with no smoothing, so a zoom
+is three times faster per frame than the fastest drag the tests measure.
+
+The right measure is not how far the label moves on the screen, because under a zoom the
+whole map moves and a label pinned to its region must move with it. It is how far the label
+moves **from the projection of its own region centre** from one frame to the next. A label
+that holds that offset slides with the map and reads as still.
+
+Three rules were making the label jump, and all three were gates rather than filters.
+
+1. **The carried anchor was dropped at the frame edge itself.** A zoom magnifies the view,
+   so the anchor of a label near the edge goes a little off the frame while the region
+   stays in view. The drop put the label on the target in one step. The gate now allows one
+   frame of margin on each side, so a notch keeps the anchor and `filterAnchor` walks it
+   back over some frames with no jump. The margin still drops an anchor a camera jump left
+   many frames away, which must not crawl back at the cap.
+2. **The carried anchor was dropped when it left its own region.** A region is not always
+   convex, so the straight line from the carried point to the target can cross a
+   neighbour. That gate is gone. `filterAnchor` halves its step up to six times to land on
+   the region, and where no step does it takes the step anyway: the target is always on the
+   region, so the anchor comes back as it walks.
+3. **The drawn anchor was held inside the 48 pixel inset.** That pinned a label near the
+   edge to one place on the screen while the map slid under it. The drawn anchor is now
+   held inside the viewport alone, and `labelBox` moves the box fully into the frame, so a
+   label at the edge stays readable and still slides with its region. This was the largest
+   of the three: it alone took the worst notch reading from 38.3 to about 7.
+
+The readings, as the worst and the mean move from the region centre in one frame:
+
+| Camera                                     | Before       | After        |
+| ------------------------------------------ | ------------ | ------------ |
+| A drag of 60 light years a frame           | 3.7 / 0.32   | 2.7 / 0.13   |
+| 28 wheel notches, 6 still frames between   | 38.3 / 1.05  | 7.0 / 0.49   |
+| 28 wheel notches, none still               | 36.9 / 4.30  | 13.2 / 1.40  |
+
+A fourth rule was tried and dropped. Bounding how far the anchor may lag behind its target
+made the label jump when the bound first engaged, and took the worst notch reading from 46
+back up to 374. The gates above were the whole problem.
+
+### The anchor step is solved for, not guessed
+
+`filterAnchor` wants to move the anchor `anchorStep(gap)` pixels on the screen, but it can
+only move a plane point. It guesses the share of the plane gap as `want / gap` and then
+reads what that share really moved.
+
+The old loop corrected that guess **downward alone**: it shortened a step that overshot and
+accepted one that undershot. Near the camera the projection is strongly not linear and the
+guess undershoots badly, so the label crawled. Over a jump from a camera distance of 640 to
+10 the anchor ran at about a third of the cap, and the label took over a second to cross
+the frame. Two browser tests caught it: the pushed label read 415 milliseconds rather than
+183, and a screenshot test that toggles one render pass saw the label in two places.
+
+The loop now corrects in both directions, up to eight passes, until the step is within
+0.05 pixels of the one asked for. The same jump now takes 25 frames.
 
 ### The category sweep stays a map lookup
 
@@ -408,6 +587,17 @@ light years, because every plane point in that frame is inside 200 light years, 
 a close zoom can no longer see which side of a boundary a system sits on. → The trade is
 stated in the spec and in the roadmap. The `accurate` staircase is 4,600 CSS pixels wide at
 a zoom of 10 and 1,080 rows, which is the worse fault.
+
+**The coverage channel and the near fade are blended with `MAX` together.** The region
+pass writes coverage in red and the near fade in green, and one `blendEquation(gl.MAX)`
+covers both channels. Where two chains cross on the screen, one 100 light years from the
+camera and one 5,000 away, green takes the far line's fade of 1 and red takes the near
+line's coverage. The near line then draws at full opacity over the few pixels of the
+crossing, where the fade should have taken it away. → The run is a few pixels wide and
+sits under a second line, so a reader does not read it as a fault. To separate the two
+channels needs two targets or two passes, which costs more than the fault does. The
+measure the spec states reads the largest contribution within 8 CSS pixels of the centre
+of a line, which is on one chain, so no reading changes.
 
 **The washed tones may read as weak over the bright disc.** The overlay's own contrast
 falls to 51 percent of what it was. → The numbers are in the spec, so a later change moves

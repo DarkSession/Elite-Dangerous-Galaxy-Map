@@ -216,14 +216,75 @@ sample crosses a region edge: it holds still and then steps. The plane position 
 sample moves with the camera, so a position worked out from those moves with the camera
 too, and its projection slides rather than steps.
 
-A label's anchor SHALL be the projection of the mean of the plane positions of the
-samples its region holds, when the region under that mean is the same region. When it is not, the anchor
-SHALL be the projection of the plane position of **the sample its own region holds whose
-plane position is nearest that mean**.
-Taking the nearest sample of any region would put the anchor on the region the mean
-landed on, which is the region the fallback exists to avoid. A region can appear in the frame as
-two separated patches, and the mean of those falls between them, on a different region;
-the second rule is what puts the anchor on the region in that case.
+**A label belongs at the centre of its region.** A label's target SHALL be the region's
+own centroid on the galactic plane, while the region under that centroid is that region
+and while the centroid projects inside the frame with the 48 CSS pixel label inset. The
+inset is the room the label box needs, and it is the same figure the anchor is held
+inside, so the target is the centre exactly while the centre has room for the label.
+
+The centroid is one fixed point of the galaxy. Nothing about the frame goes into it, so a
+label on it does not move over the map at any camera speed: its projection slides with the
+camera, and nothing else moves it. At a view of the whole galaxy 11 of the 20 labels sit on
+the centre of their region, and over a drag of 90 frames every one of the 512 readings of a
+label on its centre holds the same plane point as the frame before, to the last digit.
+
+**Where the centre has no room, the label SHALL move the least it can.** This rule SHALL
+apply only while the centroid projects **inside the frame**. Outside the frame the rule
+says nothing useful: holding a projection that is far away inside the inset gives a corner
+of the frame, and a corner carries nothing about where the region is. The frame then shows
+only a part of the region, and the rule below answers that case.
+
+The page SHALL hold the projection of the centroid inside the inset and read that held
+point back to the plane. When the region under the read-back point is the label's own
+region, that point SHALL be the target. This is the shortest move on the screen that gives
+the label room.
+
+When the read-back point is over another region, the page SHALL search out from the
+**projection of the centroid** on rings of **12, 24, 48 and 96 CSS pixels**, twelve
+directions to a ring, and take the first point that is on the label's own region and
+inside the inset. The rings are a coarse step and not the least move: a point on the
+region at 60 pixels is skipped, and the point at 96 taken. Four rings hold the worst
+reading of the measure to 4.7 CSS pixels, so a finer step buys nothing a reader can see. The search SHALL measure on the screen and not on
+the plane: at a low pitch one light year across the screen is many light years up it, so a
+point near on the plane can be far on the screen, and the rule is about the screen.
+
+The search SHALL stop at **96 CSS pixels**. A region can reach into the inset band at the
+edge of the frame, and the point of it that is both on the region and inside the inset can
+be hundreds of pixels along that band. To move the label there costs more than it gives:
+the label leaves the middle of its region for a corner of the frame. Where no point that
+near holds the label, the target SHALL stay the centroid, and the box rule below moves the
+box itself into the frame. The label then touches the frame edge, stays on the middle of
+its region and stays readable.
+
+**Where the centre does not project inside the frame, the label SHALL go to the part of
+the region the frame shows.** The target SHALL be the mean of the plane positions of the
+samples its region holds, or, when the region under that mean is another region, the plane
+position of the sample its own region holds nearest that mean. A region under the camera
+fills the whole frame, and the middle of the frame is where its label belongs.
+
+Over a view in which regions reach past the frame, the displaced target measures **4.7 CSS
+pixels** from the projection of the centroid at worst. An earlier rule that measured
+nearness on the plane moved one such label **192 CSS pixels** sideways to hold a 29 pixel
+move down, which reads as the label leaving its region.
+
+Reading the frame's samples is what makes a label move while the camera moves, because the
+sample grid is fixed on the screen and slides over the plane. The centre rule is there so
+that a label whose region has room for it reads none of that.
+
+**The label box SHALL NOT cross the edge of its own region.** A box that crosses the edge
+reads as naming the region beside it. The box is a screen thing and the target is a plane
+point, so the page SHALL read the plane step of one screen pixel across and one down, and
+then move the target in those two directions. Six points of the box SHALL be tested
+against the region: the four corners and the middle of the top and the bottom edge. The
+search SHALL grow its step over five passes and try twelve directions at each, SHALL take
+the point that leaves the fewest points of the box off the region, and SHALL stop as soon
+as none are. Every candidate SHALL sit on the region and project inside the frame, so the
+search never moves a label off its region or off the screen.
+
+A region narrower on the screen than the label is wide has no point that holds its box.
+At a view of the whole galaxy 1 of 12 boxes still crosses, at a wide view 2 of 12, and at
+two closer views none. To hold those as well needs the label to get smaller, which this
+change does not do.
 
 The anchor SHALL move in every frame in which the camera moves, and SHALL NOT snap to the
 grid of sample points. While a region shows as one connected patch and its anchor has
@@ -239,40 +300,142 @@ of 1.0 CSS pixels, and still reads as jumping, because the anchor is unmoved in 
 percent of frames and carries the whole motion in the rest. Only the lower bound catches
 that one.
 
-**A held anchor goes to its region's mean at once.** A region that carried a label in the
-frame before SHALL carry its anchor's plane point into this frame, and that point SHALL
-then move toward the frame's own target by **half of the gap between them**, in plane
-coordinates. The target is the mean of the region's sample plane positions, or the fallback
-above when the region under that mean is another region.
+**The target SHALL be smoothed before the anchor follows it.** The target of a frame is
+the mean above, or the fallback above. A region that carried a label in the frame before
+SHALL carry the smoothed target it used into this frame, and the smoothed target of this
+frame SHALL be the carried one moved a share of the way to the frame's own target, in
+plane coordinates.
 
-The step on the screen SHALL be capped at **20 CSS pixels** in one frame, so the label
-slides over two or three frames where the target jumps, and no frame carries it a long way
-at once.
+The carried target SHALL be dropped, and the frame's own target taken whole, when it no
+longer resolves to its region and when it goes out of reach of the frame. The reach is the
+frame grown by **a quarter of the frame** on each side, which is the reach the carried
+anchor takes below. A zoom magnifies the view, so a point on the centre of its region can
+go off the frame while the region itself stays in view; a target further out than the
+reach is stale.
 
-At 60 frames a second the anchor closes half the gap in one frame and 97 percent of it in
-five. A label pushed to the frame edge by a camera that then jumps back measures 128 CSS
-pixels from the middle of its region, and it is within 2 CSS pixels of that middle at frame
-9, which is 150 milliseconds. The label goes where it belongs at once and does not crawl.
+**The share SHALL grow with the screen gap between the two targets.** For a gap of `gap`
+CSS pixels the share SHALL be `0.15 + 0.85 * min(1, gap / 120) ** 3`. At the gap the
+sample grid gives a still region the share is near 0.15, and the smoothed target holds
+about seven frames of the target. At **120 CSS pixels** the share is 1 and the frame's own
+target is taken whole: above that figure the target has really moved, and the label must
+go there at once.
 
-The step is a filter over the sampling noise, and not a travel. The anchor is read from a
-grid of samples that slides over the plane while the camera moves, so samples cross region
-edges and the target steps between frames: the target of a region that shows as two patches
-moves a whole sample spacing, 48 CSS pixels, when a patch comes into view. Taking each
-frame's target whole shows that as a jump on the label. The filter holds the same turn over
-to 19.8 CSS pixels, over three frames.
+The share SHALL follow the **cube** of the reach, and not the reach itself. A share that
+follows the reach gives too much of a gap of 30 or 60 pixels to the label at once, and the
+worst frame of a drag grows from 5.8 CSS pixels to 10.9. The cube holds the smoothing over
+the whole range a drag works in, and opens it only near the figure where the target has
+really moved.
+
+The share SHALL grow and SHALL NOT step at one figure. A step is a gate. A gate that fires
+puts the label somewhere else in one frame, which is the jump this filter is there to
+stop.
+
+Where the smoothed point falls on another region, the carried point SHALL be kept. A
+region can show as two separated patches, and the point between this frame's target and
+the one before then falls in the gap. Taking this frame's target instead would carry the
+label to the other patch in one frame.
+
+**A held anchor goes to its smoothed target at once, and answers the sampling noise
+slowly.** A region that carried a label in the frame before SHALL carry its anchor's plane
+point into this frame, and that point SHALL then move toward the smoothed target.
+
+The step SHALL be read on the screen and not on the plane, because a plane step of a fixed
+size covers a different number of pixels at every zoom. The projection is not linear, so
+the share of the plane gap that gives the wanted step SHALL be **solved for**: the page
+reads what a share really moved on the screen and corrects it, **up as well as down**,
+until the step is the one asked for. A correction that goes downward alone makes the label
+crawl near the camera, where the first guess undershoots: over a jump from a camera
+distance of 640 to 10 the anchor ran at about a third of the cap and took 52 frames rather
+than 25.
+
+For a gap of `gap` CSS pixels between the projection of the carried point and the
+projection of the smoothed target, the step SHALL be:
+
+```
+min(20, max(min(gap, 0.4), gap * 0.5 * min(1, gap / 48)))
+```
+
+That is: **half the gap** at or above a gap of **48 CSS pixels**, falling with the gap
+below that, never more than a **20 CSS pixel** cap and never less than a **0.4 CSS pixel**
+floor.
+
+**Why both parts are needed.** The anchor is read from a grid of samples that is fixed on
+the screen. The grid slides over the plane while the camera moves, so samples cross region
+edges and the target of a frame does not move smoothly. Over a drag of 30 light years a
+frame at a camera distance of 2000, the target steps 3.3 CSS pixels in a middle frame, and
+it changes that step by 2.2 CSS pixels from one frame to the next. A mean of the target
+over 20 frames still moves 1.9 pixels a frame, so most of that is not noise to average
+away: the visible part of a region really does travel under the camera, and the label must
+follow it.
+
+A person reads the change of step from frame to frame, and not the step: a label that
+keeps its step slides with the map, and a label that changes it jumps. Taking each frame's
+target whole, and moving half of the gap under a 20 pixel cap, changes the step by 1.0 CSS
+pixels in a middle frame of that drag and by 3.0 in the worst tenth, and the labels shake.
+
+Speed that falls with the gap takes that to 0.45 and 1.3, because a large gap is a real
+move and a small gap is the noise. It cannot go further on its own: the band from 8 to 48
+pixels is both the noise the label must ignore and the last part of every relocation, so
+more damping there slows every move. Smoothing the target first separates the two. The
+anchor then follows a line that already moves smoothly, at the same speed as before, and
+the change of step falls to **0.09** and **0.36**. Over a faster drag of 200 light years a
+frame at a distance of 20000 it is **0.16** and **0.67**.
+
+The knee is 48 CSS pixels because that is the smallest real move the anchor must answer at
+full speed. The floor is there because speed that falls with the gap otherwise takes
+hundreds of frames over the last few pixels.
+
+A label pushed to the frame edge by a camera that then jumps back measures 128 CSS pixels
+from the middle of its region in the unit test. It is within 8 CSS pixels of that middle at
+frame 13, which is 217 milliseconds, and within 2 at frame 26. In the browser the push
+leaves the label 70 CSS pixels out and reads **382 milliseconds** to 8 CSS pixels, against
+the 400 the browser suite allows. The browser is slower than the unit test because the
+camera jump there moves the target as well as the anchor, and the two filters run in
+series. The label goes where it belongs and does not crawl.
 
 The filter replaces a hold that kept the anchor where it was for as long as the point still
 resolved to the region and still projected inside the frame. What the hold did, and should
 not have, was keep a label at the frame edge it had been pushed to long after the region was
 back in full view.
 
-A carried point that no longer resolves to its own region SHALL be replaced by the target at
-once, so an anchor never sits on another region. A carried point that no longer projects
-inside the frame SHALL be replaced by the target at once, as it is today. A region that
-carried no label in the frame before SHALL start at the target.
+**The carried anchor SHALL NOT be dropped for leaving its own region.** The target is
+always on its region, so an anchor that walks toward it comes back to the region on its
+own. A gate does the opposite of what it is for: it drops the carried point in one frame,
+and the label then goes to the target in one step, which is what a person sees as a jump.
 
-The anchor SHALL then be held inside the viewport with an inset of 48 pixels, which only
-moves a label whose box would otherwise cross the frame edge.
+**The carried anchor SHALL be dropped only when it goes out of reach of the frame.** The
+reach is the frame grown by **a quarter of the frame** on each side. A wheel notch changes
+the camera distance by 15 percent in a single frame, which throws the anchor of a label
+near the edge a little outside the frame while its region stays in view; the margin keeps
+that anchor and the filter walks it back. A camera that jumps to another view leaves the
+anchor further out than that, and the label re-places at once.
+
+An earlier gate dropped the anchor at the frame edge itself, with no margin, and fired on
+almost every wheel notch.
+
+A region is not always a convex shape, so the straight line from the carried point to the
+target can go over a neighbour. The step SHALL get shorter, halving up to six times, to
+land on the region where a shorter step does. Where none does, the step SHALL stand: the
+anchor comes back to the region as it walks.
+
+A region that carried no label in the frame before SHALL start at the target.
+
+**The drawn anchor SHALL be held inside the viewport, and not inside the inset.** The inset
+is where the target rule puts a label that must move. To hold the drawn anchor there as
+well pins a label near the frame edge to one place on the screen while the map slides under
+it, which reads as the label moving over the map. The box rule moves the box itself fully
+into the frame, so a label at the edge stays readable and still slides with its region.
+
+**A zoom SHALL read like a drag.** The measure is how far a label moves from the projection
+of its own region centre from one frame to the next, because a label that holds that offset
+slides with the map. Over a drag of 60 light years a frame the worst reading is **2.7 CSS
+pixels** and the mean is **0.13**. Over 28 wheel notches, each a change of distance of 15
+percent in one frame, the worst is **7.0** and the mean **0.49**. Over a wheel held down,
+with no still frame between the notches, the worst is **13.2** and the mean **1.40**.
+
+Before these rules the same wheel notches gave a worst reading of **38.3** and the held
+wheel **36.9**, and the anchor of one label ran **2,500 CSS pixels** past the frame while
+its region stayed in view.
 
 The candidate that holds the sample nearest the centre of the frame SHALL be placed
 first, so the region the view is centred on is always named. Ordering by sample count
@@ -386,15 +549,105 @@ and above, full at 20,000 and below. Labels SHALL NOT fade out at close zoom.
   corner of the frame, where the region's anchor is held against the 48 pixel inset, to the
   middle of the frame, and then over 60 further frames with the camera still
 - **THEN** the anchor starts more than 40 CSS pixels from the projection of the region's
-  mean, no frame carries it away from that mean, it is within 2 CSS pixels of it **by frame
-  10**, and it moves by no more than 20 CSS pixels in any one frame
+  mean, no frame carries it away from that mean, it is within 8 CSS pixels of it **by frame
+  15** and within 2 by frame 30, and it moves by no more than 20 CSS pixels in any one frame
+
+#### Scenario: A label sits on the centre of its region
+
+- **WHEN** a unit test reads the labels of a view of the whole galaxy at 1280 by 720, and
+  for each one works out whether its region's centroid sits on that region, projects inside
+  the frame with the 48 pixel inset, and holds the label box
+- **THEN** every label whose centre has that room takes the centroid itself as its target,
+  to the last digit, and more than half of the labels of the frame do
+
+#### Scenario: A label whose centre has no room goes to the visible part
+
+- **WHEN** a unit test reads the labels of a view at a camera distance of 800 inside the
+  galactic centre, where a region reaches well past the frame
+- **THEN** each label whose centre has no room takes a target that is not the centroid,
+  that sits on its own region, and that projects inside the frame
+
+#### Scenario: A label whose centre is outside the frame goes to the visible part
+
+- **WHEN** a unit test places the label of the region the camera sits in at a camera
+  distance of 10, where the region fills the frame and its centre projects far outside it
+- **THEN** the label sits near the middle of the frame, on the mean of the region's own
+  samples, and not against an edge of it
+
+#### Scenario: A label reaches its place after a view jump
+
+- **WHEN** a unit test settles the label of `Inner Orion Spur` at a camera distance of 640,
+  then jumps the camera to a distance of 10 and runs the placement on
+- **THEN** the anchor is within 8 CSS pixels of its target by frame 25. A step corrected
+  downward alone ran at about a third of the cap and took 52 frames
+
+#### Scenario: A displaced label moves only a little
+
+- **WHEN** a unit test reads the labels of a view of a corner of the galaxy at a camera
+  distance of 9000, where regions reach past the frame, and for each label whose centre has
+  no room but still projects inside the frame reads how far its target is from the
+  projection of the centroid
+- **THEN** no target is more than 6 CSS pixels from the centre, and the worst reading is
+  4.7 CSS pixels
+
+#### Scenario: The label box stays inside its own region
+
+- **WHEN** a unit test places the labels of four views, from the whole galaxy to a camera
+  distance of 800, and tests six points of each label box against the region grid
+- **THEN** at most 2 of the 12 boxes of any view cross the edge of their own region, and
+  every one that does belongs to a region narrower on the screen than the label is wide
+
+#### Scenario: A label on its centre does not move over the map
+
+- **WHEN** a unit test runs the placement over 90 frames of a drag of 200 light years a
+  frame at a camera distance of 20000, and reads the plane point of every label whose
+  target is its region's centroid
+- **THEN** every one of the 512 readings holds the same plane point as the frame before, to
+  the last digit, and none moves
+
+#### Scenario: A zoom reads like a drag
+
+- **WHEN** a unit test reads, for every label, how far it moves from the projection of its
+  own region centre from one frame to the next, over a drag of 60 light years a frame, over
+  28 wheel notches of 15 percent each with 6 still frames between them, and over the same
+  28 notches with no still frame between them
+- **THEN** the drag moves a label by less than 8 CSS pixels at worst, the notches by less
+  than 12 at worst and less than 1 on the mean, and the held wheel by less than 20 at worst
+  and less than 2 on the mean
+
+#### Scenario: A label that must really move does not crawl
+
+- **WHEN** the camera jumps and the label of a region starts about 70 CSS pixels from the
+  middle of its region
+- **THEN** the label comes within 8 CSS pixels of the middle inside **400 milliseconds**,
+  and no frame moves it more than 20 CSS pixels
+
+#### Scenario: The share of the gap follows the gap
+
+- **WHEN** a unit test reads the share for a gap of 4, 30, 90 and 120 CSS pixels
+- **THEN** the share at 4 pixels is 0.15 to three places, the share at 30 pixels is under
+  0.17, the share at 90 pixels is over 0.4, and the share at 120 pixels is 1
+
+#### Scenario: The label walks smoothly while the camera drags
+
+- **WHEN** a unit test runs the placement over 90 frames of a drag of 30 light years a
+  frame across the galactic centre, and over 90 frames of a drag of 200 light years a frame
+  at a camera distance of 20000, and reads for every label the length of the change of its
+  screen step from one frame to the next, with both ends of each step projected through the
+  frame they are read in, leaving out the frames in which a label leaves its region or the
+  frame
+- **THEN** the step changes by less than **0.2 CSS pixels** in a middle reading and by less
+  than **0.7** in the worst tenth, over more than 200 readings of each drag, and no reading
+  is over the 20 pixel cap. Taking each frame's target whole under a flat half-gap step
+  gives 1.0 and 3.0 on the slower drag
 
 #### Scenario: The filter does not hop between samples
 
 - **WHEN** a unit test runs the placement over 120 frames of a slow pan across a region
   whose two nearest samples to the mean are within 1 light year of each other
-- **THEN** the target of a frame moves by more than 8 CSS pixels, no frame moves the anchor
-  by more than the 20 CSS pixel cap, and the anchor's plane point changes by less than one
+- **THEN** the target of a frame moves by less than 1 CSS pixel, because the centre rule
+  reads no sample while the centre of the region has room; no frame moves the anchor by
+  more than the 20 CSS pixel cap; and the anchor's plane point changes by less than one
   sample spacing in any single frame
 
 #### Scenario: Labels neither crowd nor overlap

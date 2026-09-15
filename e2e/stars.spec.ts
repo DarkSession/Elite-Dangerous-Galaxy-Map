@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { boxelSeed, starOffsets, starSpreadValue } from '../src/scene-data/boxel';
-import { meanLuminanceFrame, openMap } from './helpers';
+import { meanLuminanceFrame, openMap, settleLabels } from './helpers';
 import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -685,6 +685,9 @@ test('a real system stays when the invented field goes', async ({ page }) => {
       expect(Math.abs((pixel[channel] as number) - wanted)).toBeLessThanOrEqual(2);
     }
 
+    // The region label walks back to the middle of its region after the camera jumps.
+    // The two pictures must hold the same scene, so the walk has to end first.
+    await settleLabels(page);
     await setPasses(page, { stars: true });
     const withStars = await page.locator('#map').screenshot();
     await setPasses(page, { stars: false });
