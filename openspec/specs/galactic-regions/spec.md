@@ -894,8 +894,8 @@ own. A gate does the opposite of what it is for: it drops the carried point in o
 and the label then goes to the target in one step, which is what a person sees as a jump.
 
 **The carried anchor SHALL be dropped only when it goes out of reach of the frame.** The
-reach is the frame grown by **a quarter of the frame** on each side. A wheel notch changes
-the camera distance by 15 percent in a single frame, which throws the anchor of a label
+reach is the frame grown by **a quarter of the frame** on each side. A wheel held down
+changes the camera distance by 15 percent in a frame, which throws the anchor of a label
 near the edge a little outside the frame while its region stays in view; the margin keeps
 that anchor and the filter walks it back. A camera that jumps to another view leaves the
 anchor further out than that, and the label re-places at once.
@@ -919,8 +919,9 @@ into the frame, so a label at the edge stays readable and still slides with its 
 **A zoom SHALL read like a drag.** The measure is how far a label moves from the projection
 of its own region centre from one frame to the next, because a label that holds that offset
 slides with the map. Over a drag of 60 light years a frame the worst reading is **2.7 CSS
-pixels** and the mean is **0.13**. Over 28 wheel notches, each a change of distance of 15
-percent in one frame, the worst is **7.0** and the mean **0.49**. Over a wheel held down,
+pixels** and the mean is **0.13**. Over 28 steps of 15 percent of the distance, each in one
+frame, which is more than a wheel notch moves in a frame, the worst is **7.0** and the mean
+**0.49**. Over a wheel held down,
 with no still frame between the notches, the worst is **13.2** and the mean **1.40**.
 
 Before these rules the same wheel notches gave a worst reading of **38.3** and the held

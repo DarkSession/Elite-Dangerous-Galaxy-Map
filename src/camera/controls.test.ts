@@ -11,36 +11,30 @@ import {
   notchesFromWheel,
   orbit,
   trackPress,
-  zoomByNotches,
+  zoomStep,
+  zoomTarget,
 } from './controls';
 import { createDefaultView, MAX_DISTANCE, MIN_DISTANCE } from './view';
 
 const viewport = { width: 1920, height: 1080 };
 
 describe('the zoom', () => {
-  test('gives 17,391 light years after one forward notch at 20,000', () => {
-    const view = createDefaultView();
-    view.distance = 20000;
-    zoomByNotches(view, 1);
-    expect(Math.abs(view.distance - 17391)).toBeLessThan(1);
+  test('gives a target of 17,391 light years after one forward notch at 20,000', () => {
+    expect(Math.abs(zoomTarget(20000, 1) - 17391)).toBeLessThan(1);
   });
 
-  test('stops at the limits', () => {
-    const view = createDefaultView();
-    zoomByNotches(view, 100);
-    expect(view.distance).toBe(MIN_DISTANCE);
-    zoomByNotches(view, -100);
-    expect(view.distance).toBe(MAX_DISTANCE);
+  test('stops the target at the limits', () => {
+    expect(zoomTarget(20000, 100)).toBe(MIN_DISTANCE);
+    expect(zoomTarget(20000, -100)).toBe(MAX_DISTANCE);
   });
 
   // The close limit moved from 500 to 10 light years. The wheel keeps its 1.15 step,
   // so the range alone is wider and the close limit takes more notches to reach.
   test('takes 68 notches from 120,000 to reach the close limit', () => {
-    const view = createDefaultView();
-    view.distance = MAX_DISTANCE;
+    let target = MAX_DISTANCE;
     let notches = 0;
-    while (view.distance > MIN_DISTANCE) {
-      zoomByNotches(view, 1);
+    while (target > MIN_DISTANCE) {
+      target = zoomTarget(target, 1);
       notches += 1;
       expect(notches).toBeLessThan(200);
     }
@@ -51,6 +45,87 @@ describe('the zoom', () => {
     expect(notchesFromWheel(-100, 0)).toBe(1);
     expect(notchesFromWheel(100, 0)).toBe(-1);
     expect(notchesFromWheel(-1, 1)).toBe(1);
+  });
+});
+
+describe('the zoom glide', () => {
+  const ONE_NOTCH_TARGET = 17391.3043;
+
+  /** Steps the glide until it lands, and gives the steps it took. */
+  const stepsToLand = (start: number, target: number, seconds: number): number => {
+    let distance = start;
+    let steps = 0;
+    while (distance !== target) {
+      distance = zoomStep(distance, target, seconds);
+      steps += 1;
+      expect(steps).toBeLessThan(1000);
+    }
+    return steps;
+  };
+
+  test('lands one notch in 13 frames at 60 frames a second, which is 217 ms', () => {
+    let distance = 20000;
+    for (let step = 1; step <= 12; step += 1) {
+      distance = zoomStep(distance, ONE_NOTCH_TARGET, 1 / 60);
+    }
+    expect(Math.abs(distance - 17450.12)).toBeLessThan(0.01);
+    expect(distance).not.toBe(ONE_NOTCH_TARGET);
+
+    distance = zoomStep(distance, ONE_NOTCH_TARGET, 1 / 60);
+    expect(distance).toBe(ONE_NOTCH_TARGET);
+    expect(Math.round((13 * 1000) / 60)).toBe(217);
+  });
+
+  test('reads the time and not the frame count', () => {
+    const slow = stepsToLand(20000, ONE_NOTCH_TARGET, 1 / 30);
+    const fast = stepsToLand(20000, ONE_NOTCH_TARGET, 1 / 144);
+    expect(slow).toBe(7);
+    expect(fast).toBe(31);
+
+    const slowMs = (slow * 1000) / 30;
+    const fastMs = (fast * 1000) / 144;
+    expect(Math.round(slowMs)).toBe(233);
+    expect(Math.round(fastMs)).toBe(215);
+    expect(Math.abs(slowMs - (13 * 1000) / 60)).toBeLessThan(20);
+    expect(Math.abs(fastMs - (13 * 1000) / 60)).toBeLessThan(20);
+  });
+
+  test('halves the gap every 50 milliseconds', () => {
+    const distance = zoomStep(20000, ONE_NOTCH_TARGET, 0.05);
+    expect(Math.abs(distance - 18650.1)).toBeLessThan(0.01);
+    expect(distance).toBeCloseTo(Math.sqrt(20000 * ONE_NOTCH_TARGET), 6);
+  });
+
+  test('lands the whole sweep from 120,000 to 10 in 517 milliseconds', () => {
+    const steps = stepsToLand(MAX_DISTANCE, MIN_DISTANCE, 1 / 60);
+    expect(steps).toBe(31);
+    expect(Math.round((steps * 1000) / 60)).toBe(517);
+  });
+
+  test('moves the picture by under 3 per cent in the first frame of a notch', () => {
+    const forward = zoomStep(20000, zoomTarget(20000, 1), 1 / 60);
+    const backward = zoomStep(20000, zoomTarget(20000, -1), 1 / 60);
+    const forwardPerCent = ((20000 - forward) / 20000) * 100;
+    const backwardPerCent = ((backward - 20000) / 20000) * 100;
+    expect(Math.abs(forwardPerCent - 2.84)).toBeLessThan(0.01);
+    expect(Math.abs(backwardPerCent - 2.93)).toBeLessThan(0.01);
+    expect(forwardPerCent).toBeLessThan(3);
+    expect(backwardPerCent).toBeLessThan(3);
+  });
+
+  test('keeps the 1.15 step over five notches on a held wheel', () => {
+    let target: number | null = null;
+    let distance = 20000;
+    for (let notch = 0; notch < 5; notch += 1) {
+      const before: number = target ?? distance;
+      target = zoomTarget(before, 1);
+      expect(target).toBeCloseTo(before / 1.15, 6);
+      distance = zoomStep(distance, target, 1 / 60);
+    }
+    const landed = target as number;
+    while (distance !== landed) distance = zoomStep(distance, landed, 1 / 60);
+    expect(Math.abs(distance - 9943.53)).toBeLessThan(0.01);
+    expect(distance).toBeCloseTo(20000 / 1.15 ** 5, 6);
   });
 });
 

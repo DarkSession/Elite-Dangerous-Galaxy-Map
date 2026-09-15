@@ -23,6 +23,8 @@ declare global {
     __readyAt?: number;
     /** How many context menu events reached the document without being stopped. */
     __openContextMenus?: number;
+    /** How many times the view change listener of the zoom glide test was called. */
+    __viewChangeCount?: number;
     /** The names the selection listeners heard, for the selection tests. */
     __selectionLog?: (string | null)[];
     /** The second map the HUD tests build, with the HUD on. */

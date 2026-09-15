@@ -925,9 +925,9 @@ test.describe('the selection flight', () => {
       window.galaxyMap?.setSelection('One');
     });
     await page.waitForTimeout(100);
-    // The wheel event goes to the canvas in one task with the two readings, so the
-    // second reading is the first with the wheel's own zoom step applied and no frame
-    // runs between them.
+    // The wheel event goes to the canvas in one task with the two readings, so no frame
+    // runs between them. The wheel sets a target and moves no view, so the two readings
+    // are the same. The frames of the 500 ms wait carry the camera to the target.
     const notch = await page.evaluate(() => {
       const map = window.galaxyMap;
       const canvas = document.getElementById('map');
@@ -948,9 +948,9 @@ test.describe('the selection flight', () => {
     const after = notch?.after;
     expect(before?.distance).toBeLessThan(20000);
     expect(before?.distance).toBeGreaterThan(500);
-    expect(after?.distance).toBeCloseTo((before?.distance ?? 0) / 1.15, 6);
+    expect(after?.distance).toBe(before?.distance);
     expect(left).toBe(0);
-    expect(rested.distance).toBeCloseTo(after?.distance ?? 0, 6);
+    expect(rested.distance).toBeCloseTo((before?.distance ?? 0) / 1.15, 2);
     expect(rested.cursor).toEqual(after?.cursor);
   });
 

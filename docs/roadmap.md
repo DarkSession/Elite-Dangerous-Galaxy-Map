@@ -97,7 +97,10 @@ Draws the galaxy's shape from far away and lets the user move across it.
   20,000, 30,000 and 120,000 light years.
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
-  zooms between 10 and 120,000 light years. Phase 3.1 moved the close end from 500. Keys `W A S D` move the cursor in the
+  zooms between 10 and 120,000 light years. Phase 3.1 moved the close end from 500. A
+  wheel notch sets a target distance and the camera glides to it. The glide lands in 217
+  milliseconds at 60 frames a second, which is the time the region labels settle in.
+  Keys `W A S D` move the cursor in the
   plane and `R F` move the cursor off the plane. The view lives in the URL fragment.
 - **Stack.** TypeScript, Vite, WebGL2 with an in-house wrapper, `gl-matrix`, plain DOM
   for the HUD, Vitest, Playwright with a GPU project, pnpm with the 7-day hold.

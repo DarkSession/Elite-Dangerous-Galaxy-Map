@@ -185,6 +185,7 @@ function start(target: HTMLCanvasElement): void {
   global.gridSpacingLy = () => debug.gridSpacingLy();
   global.gridLevels = () => debug.gridLevels();
   global.selectionFlightMs = () => debug.selectionFlightMs();
+  global.zoomTargetLy = () => debug.zoomTargetLy();
   global.regionLinePositions = () => debug.regionLinePositions();
   global.regionLineChains = () => debug.regionLineChains();
   global.compileTestProgram = (vertex, fragment) =>

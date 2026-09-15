@@ -93,7 +93,15 @@ test('a zoom writes the distance into the fragment', async ({ page }) => {
       timeout: 1000,
     },
   );
+  // The scenario "The glide writes the landed distance to the fragment". The write that
+  // carries the landing is the second one after the notch, so the fragment holds the
+  // distance the camera reached and not a distance it passed through.
+  const landed = await page.evaluate(
+    () => window.__galaxyMap?.getView?.().distance ?? -1,
+  );
+  console.log('the distance the fragment write carried', landed);
   expect(page.url()).toContain('d=30000');
+  expect(landed).toBeCloseTo(30000, 2);
 });
 
 test('a stored fragment still loads', async ({ page }) => {
@@ -268,4 +276,139 @@ test('a later fragment moves the switch and one with no g leaves it', async ({
   console.log('the switch after a fragment with no g', after);
 
   expect(after).toBe(false);
+});
+
+// One forward notch from 20,000 light years, which is 17,391.30.
+const ONE_NOTCH_LY = 20000 / 1.15;
+
+/** Sends one forward wheel notch to the canvas. */
+function sendNotch(): void {
+  document
+    .getElementById('map')
+    ?.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }),
+    );
+}
+
+// The scenario "A notch moves nothing in its own frame".
+test('the wheel sets a target and does not move the camera in the same task', async ({
+  page,
+}) => {
+  await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+
+  // The wheel event and the two readings run in one task, so no frame runs between
+  // them. The notch sets a target and writes no distance.
+  const notch = await page.evaluate(() => {
+    const before = window.__galaxyMap?.getView?.().distance ?? -1;
+    document
+      .getElementById('map')
+      ?.dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }),
+      );
+    return {
+      before,
+      after: window.__galaxyMap?.getView?.().distance ?? -1,
+      target: window.__galaxyMap?.zoomTargetLy?.() ?? null,
+    };
+  });
+  console.log('the notch in its own task', notch);
+
+  expect(notch.before).toBe(20000);
+  expect(notch.after).toBe(20000);
+  expect(notch.target).toBeCloseTo(ONE_NOTCH_LY, 2);
+});
+
+// The scenario "The glide lands on the target".
+test('the glide lands on the target', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+
+  await page.evaluate(sendNotch);
+  await page.waitForTimeout(500);
+  const landed = await page.evaluate(() => ({
+    distance: window.__galaxyMap?.getView?.().distance ?? -1,
+    target: window.__galaxyMap?.zoomTargetLy?.() ?? null,
+  }));
+  console.log('the landed glide', landed);
+
+  expect(landed.distance).toBeCloseTo(ONE_NOTCH_LY, 2);
+  expect(landed.target).toBeNull();
+});
+
+// The scenario "A host that writes the view ends the glide".
+test('a host that writes the view ends the glide', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+
+  await page.evaluate(sendNotch);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          window.__galaxyMap?.setView?.({ distance: 8000 });
+          resolve();
+        });
+      }),
+  );
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => ({
+    distance: window.__galaxyMap?.getView?.().distance ?? -1,
+    target: window.__galaxyMap?.zoomTargetLy?.() ?? null,
+  }));
+  console.log('the view after the host write', after);
+
+  expect(after.distance).toBe(8000);
+  expect(after.target).toBeNull();
+});
+
+// The scenario "The wheel event raises no view change listener".
+test('the wheel event raises no view change listener', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+  await page.evaluate(() => {
+    window.__viewChangeCount = 0;
+    window.galaxyMap?.onViewChange(() => {
+      window.__viewChangeCount = (window.__viewChangeCount ?? 0) + 1;
+    });
+  });
+
+  const atNotch = await page.evaluate(() => {
+    document
+      .getElementById('map')
+      ?.dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }),
+      );
+    return window.__viewChangeCount ?? -1;
+  });
+  await page.waitForTimeout(500);
+  const afterGlide = await page.evaluate(() => window.__viewChangeCount ?? -1);
+  await page.waitForTimeout(500);
+  const atRest = await page.evaluate(() => window.__viewChangeCount ?? -1);
+  console.log('the view change counts', { atNotch, afterGlide, atRest });
+
+  expect(atNotch).toBe(0);
+  expect(afterGlide).toBeGreaterThan(5);
+  expect(atRest).toBe(afterGlide);
+});
+
+// The scenario "Reduced motion takes the notch at once".
+test.describe('under reduced motion', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('a notch applies at once under reduced motion', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+
+    const notch = await page.evaluate(() => {
+      document
+        .getElementById('map')
+        ?.dispatchEvent(
+          new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }),
+        );
+      return {
+        distance: window.__galaxyMap?.getView?.().distance ?? -1,
+        target: window.__galaxyMap?.zoomTargetLy?.() ?? null,
+      };
+    });
+    console.log('the notch under reduced motion', notch);
+
+    expect(notch.distance).toBeCloseTo(ONE_NOTCH_LY, 2);
+    expect(notch.target).toBeNull();
+  });
 });

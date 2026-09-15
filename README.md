@@ -278,15 +278,15 @@ and it draws neither when the catalog is empty.
 
 ## Controls
 
-| Input           | What it does                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------ |
-| Left click      | Selects the system under the pointer. A click that finds no system keeps the selection.          |
-| Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.      |
-| Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.              |
-| Wheel           | Changes the distance by 1.15 per notch, between 10 and 120,000 light years.                      |
-| `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second. |
-| `R` `F`         | Move the cursor up and down at the same speed.                                                   |
-| `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                 |
+| Input           | What it does                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Left click      | Selects the system under the pointer. A click that finds no system keeps the selection.                                                           |
+| Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.                                                       |
+| Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.                                                               |
+| Wheel           | Divides the distance by 1.15 per notch, between 10 and 120,000 light years. The camera glides to the new distance and lands in about 0.2 seconds. |
+| `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second.                                                  |
+| `R` `F`         | Move the cursor up and down at the same speed.                                                                                                    |
+| `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                                                                  |
 
 The view lives in the URL fragment as
 `#c=<x>,<y>,<z>&d=<distance>&p=<pitch>&y=<yaw>&g=<grid>`, in light years and degrees.
