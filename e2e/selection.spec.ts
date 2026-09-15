@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
+import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -37,14 +38,14 @@ function record(
   position: readonly [number, number, number],
   category: string,
   id64?: string,
-): Record<string, unknown> {
+): SystemRecordInput {
   const value: Record<string, unknown> = {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
     primaryCategory: category,
   };
   if (id64 !== undefined) value['id64'] = id64;
-  return value;
+  return value as SystemRecordInput;
 }
 
 /** Adds one category that draws at every range. */
@@ -59,10 +60,14 @@ async function addCategory(page: Page, name: string): Promise<void> {
   );
 }
 
-/** Adds records through the handle. */
+/**
+ * Adds records through the handle. The cast is at the call, because a test also passes
+ * a record the input type refuses and the reader rejects at run time.
+ */
 async function addSystems(page: Page, records: readonly unknown[]): Promise<number> {
   return page.evaluate(
-    (list) => window.galaxyMap?.addSystems(list).added ?? -1,
+    (list) =>
+      window.galaxyMap?.addSystems(list as readonly SystemRecordInput[]).added ?? -1,
     records,
   );
 }
@@ -373,7 +378,7 @@ test.describe('the pick', () => {
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
     await addCategory(page, 'Alpha');
     const added = await page.evaluate(() => {
-      const records: Record<string, unknown>[] = [];
+      const records: SystemRecordInput[] = [];
       for (let index = 0; index < 10000; index += 1) {
         const column = index % 100;
         const row = Math.floor(index / 100);
@@ -1203,7 +1208,7 @@ test.describe('the overlay marks', () => {
   test('the switch turns the name labels on and off', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
     await addCategory(page, 'Alpha');
-    const records: Record<string, unknown>[] = [];
+    const records: SystemRecordInput[] = [];
     for (let index = 0; index < 10; index += 1) {
       records.push(record(`S${index}`, [(index - 5) * 100 + 50, 0, 0], 'Alpha'));
     }
@@ -1266,7 +1271,7 @@ test.describe('the overlay marks', () => {
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
     await addCategory(page, 'Alpha');
     const added = await page.evaluate(() => {
-      const records: Record<string, unknown>[] = [];
+      const records: SystemRecordInput[] = [];
       // The grid is 192 light years wide, which is about 30 CSS pixels at this view, so
       // the labels of the nearest systems do not all fall on each other and the count
       // reaches the cap rather than the overlap rule.

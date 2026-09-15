@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { waitForReady } from './helpers';
+import { startState, waitForReady } from './helpers';
 
 /** How many views this file has opened, so each one gets its own address. */
 let visits = 0;
@@ -15,8 +15,10 @@ let visits = 0;
  */
 async function openView(page: Page, fragment = ''): Promise<void> {
   visits += 1;
-  await page.goto(`/?view=${visits}${fragment}`);
+  await page.goto(`./?view=${visits}${fragment}`);
   await waitForReady(page);
+  // This opener navigates by itself, so it takes the start state the helper gives.
+  await startState(page);
 }
 
 /** One label on the page. */
@@ -82,6 +84,25 @@ async function readRegionsOnScreen(page: Page, spacing = 16): Promise<Set<string
   return new Set(names);
 }
 
+/** How near the frame edge a pushed label sits, in CSS pixels. */
+const LABEL_EDGE = 8;
+
+/** The box of one label, or null when the page shows no label of that name. */
+async function readLabelBox(page: Page, name: string): Promise<LabelReading | null> {
+  const labels = await readLabels(page);
+  return labels.find((label) => label.name === name) ?? null;
+}
+
+/** The centre of one label box, or null when the page shows no label of that name. */
+async function readLabelCentre(
+  page: Page,
+  name: string,
+): Promise<{ x: number; y: number } | null> {
+  const label = await readLabelBox(page, name);
+  if (label === null) return null;
+  return { x: label.left + label.width / 2, y: label.top + label.height / 2 };
+}
+
 /** True when a box lies inside a viewport. */
 function insideViewport(label: LabelReading, width: number, height: number): boolean {
   return (
@@ -89,6 +110,53 @@ function insideViewport(label: LabelReading, width: number, height: number): boo
     label.top >= 0 &&
     label.left + label.width <= width &&
     label.top + label.height <= height
+  );
+}
+
+/** One reading of a label box centre, taken in one animation frame. */
+interface AnchorReading {
+  readonly t: number;
+  readonly x: number | null;
+  readonly y: number | null;
+}
+
+/**
+ * Reads the centre of one label in every animation frame for a span of milliseconds.
+ * The reading starts in the frame after the page takes the view the test gives it.
+ */
+async function trackLabel(
+  page: Page,
+  name: string,
+  spanMs: number,
+  cursor: [number, number, number],
+): Promise<AnchorReading[]> {
+  return page.evaluate(
+    async ([label, span, x, y, z]) => {
+      window.galaxyMap?.setView({ cursor: [x as number, y as number, z as number] });
+      const readings: { t: number; x: number | null; y: number | null }[] = [];
+      const started = performance.now();
+      return await new Promise<typeof readings>((resolve) => {
+        const step = (): void => {
+          const element = Array.from(document.querySelectorAll('.region-label')).find(
+            (node) => node.textContent === label,
+          );
+          const t = performance.now() - started;
+          if (element === undefined) readings.push({ t, x: null, y: null });
+          else {
+            const box = element.getBoundingClientRect();
+            readings.push({
+              t,
+              x: box.left + box.width / 2,
+              y: box.top + box.height / 2,
+            });
+          }
+          if (t >= (span as number)) resolve(readings);
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+    },
+    [name, spanMs, cursor[0], cursor[1], cursor[2]] as const,
   );
 }
 
@@ -221,6 +289,74 @@ test.describe('the labels at 1280 by 720', () => {
         expect(apart, `${one.name} and ${two.name} overlap`).toBe(true);
       }
     }
+  });
+
+  test('a pushed label comes back to the middle of its region', async ({ page }) => {
+    // The camera moves 22,000 light years along `x`, which leaves `Inner Orion Spur` at
+    // the left edge of the frame. The camera then comes back, and the label is at the
+    // middle of the region within a few frames.
+    await openView(page, '#c=0,0,0&d=20000&p=35&y=0');
+    await page.waitForTimeout(2000);
+    const middle = await readLabelCentre(page, 'Inner Orion Spur');
+    expect(middle).not.toBeNull();
+
+    await page.evaluate(() => window.galaxyMap?.setView({ cursor: [22000, 0, 0] }));
+    await page.waitForTimeout(3000);
+    const pushed = await readLabelBox(page, 'Inner Orion Spur');
+    expect(pushed).not.toBeNull();
+    console.log('the pushed label sits at', JSON.stringify(pushed));
+    // The label is against the left edge of the frame.
+    expect((pushed as LabelReading).left).toBeLessThan(LABEL_EDGE);
+
+    const readings = await trackLabel(page, 'Inner Orion Spur', 2000, [0, 0, 0]);
+    const target = middle as { x: number; y: number };
+    const away = (reading: AnchorReading): number =>
+      reading.x === null
+        ? Number.POSITIVE_INFINITY
+        : Math.hypot(reading.x - target.x, (reading.y as number) - target.y);
+    const first = readings[0] as AnchorReading;
+    const last = readings[readings.length - 1] as AnchorReading;
+    let worstMove = 0;
+    for (let index = 1; index < readings.length; index += 1) {
+      const before = readings[index - 1] as AnchorReading;
+      const after = readings[index] as AnchorReading;
+      if (before.x === null || after.x === null) continue;
+      worstMove = Math.max(
+        worstMove,
+        Math.hypot(after.x - before.x, (after.y as number) - (before.y as number)),
+      );
+    }
+    const reached = (mark: number): number | null =>
+      readings.find((reading) => away(reading) <= mark)?.t ?? null;
+    console.log(
+      'the label starts',
+      away(first).toFixed(1),
+      'CSS pixels from the middle over',
+      readings.length,
+      'frames, and reaches 20 pixels after',
+      reached(20),
+      'ms, 8 after',
+      reached(8),
+      'ms and 2 after',
+      reached(2),
+      'ms, with a worst frame move of',
+      worstMove.toFixed(2),
+    );
+
+    // The camera move leaves the anchor a long way from the middle of the region.
+    expect(away(first)).toBeGreaterThan(50);
+    // No frame is dropped, so the label travels and does not blink.
+    expect(readings.filter((reading) => reading.x === null).length).toBe(0);
+    // The filter takes it there in steps of no more than 20 CSS pixels a frame, so the
+    // label slides and does not jump.
+    expect(worstMove).toBeLessThan(21);
+    // It reaches the middle of the region and does not crawl. The camera jump moves the
+    // target as well as the anchor, so the target smoothing and the anchor filter run in
+    // series. The spec reads 382 milliseconds for this push.
+    const arrival = reached(8);
+    expect(arrival).not.toBeNull();
+    expect(arrival as number).toBeLessThan(400);
+    expect(away(last)).toBeLessThan(2);
   });
 });
 

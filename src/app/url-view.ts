@@ -17,10 +17,31 @@ function readNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/** Turns a view into a URL fragment, without the leading `#`. */
-export function formatViewFragment(view: View): string {
+/**
+ * Turns a view into a URL fragment, without the leading `#`. `grid` writes the
+ * coordinate grid switch as `&g=1` or `&g=0`. The field is written only when the caller
+ * gives a boolean, so a page that does not use the grid writes the four view fields
+ * alone and no reader of the old format breaks.
+ */
+export function formatViewFragment(view: View, grid?: boolean): string {
   const cursor = view.cursor.map(format).join(',');
-  return `c=${cursor}&d=${format(view.distance)}&p=${format(view.pitch)}&y=${format(view.yaw)}`;
+  const fields = `c=${cursor}&d=${format(view.distance)}&p=${format(view.pitch)}&y=${format(view.yaw)}`;
+  if (typeof grid !== 'boolean') return fields;
+  return `${fields}&g=${grid ? '1' : '0'}`;
+}
+
+/**
+ * Reads the coordinate grid switch from a URL fragment: true for `g=1`, false for `g=0`
+ * and null for a fragment that names no readable `g`. A null leaves the switch where the
+ * page's own default put it.
+ */
+export function parseGridFragment(fragment: string): boolean | null {
+  const text = fragment.startsWith('#') ? fragment.slice(1) : fragment;
+  if (text.length === 0) return null;
+  const value = new URLSearchParams(text).get('g');
+  if (value === '1') return true;
+  if (value === '0') return false;
+  return null;
 }
 
 /**
@@ -69,22 +90,32 @@ export interface FragmentWriterOptions {
   readonly write: (fragment: string) => void;
   /** Reads the clock. The default is `Date.now`. */
   readonly now?: () => number;
+  /**
+   * Reads the coordinate grid switch at each write. The writer holds no switch of its
+   * own, because a write may come 500 ms after the move that asked for it. A writer with
+   * no reader writes the four view fields alone.
+   */
+  readonly grid?: () => boolean;
 }
 
-/** Writes the view to the URL fragment at most once every 500 ms. */
+/**
+ * Writes the view, and the coordinate grid switch when the options read one, to the URL
+ * fragment at most once every 500 ms.
+ */
 export function createFragmentWriter(
   view: View,
   options: FragmentWriterOptions,
 ): FragmentWriter {
   const write = options.write;
   const now = options.now ?? Date.now;
+  const readGrid = options.grid;
   let lastWrite = Number.NEGATIVE_INFINITY;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const send = (): void => {
     timer = null;
     lastWrite = now();
-    write(formatViewFragment(view));
+    write(formatViewFragment(view, readGrid?.()));
   };
 
   return {

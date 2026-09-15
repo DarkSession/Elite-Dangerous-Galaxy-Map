@@ -219,8 +219,25 @@ sits and nothing else about it.
 A line SHALL be drawn in the width the screen sees, not in the width the card's default
 line gives: a core of 2 CSS pixels, with an outline of 1 CSS pixel on each side, so the
 whole line is 4 CSS pixels whatever the device pixel ratio is. The core SHALL be the
-lighter colour and the outline SHALL be the darker one, so the line reads against both
-the dark space between the arms and the bright disc.
+lighter colour and the outline SHALL be the darker one.
+
+**The two tones are washed out.** The core SHALL be `(0.505, 0.658, 0.853)` and the
+outline `(0.125, 0.172, 0.267)`, and the opacity SHALL be **0.42**. Each tone is a third
+of the way from where it was toward the average of the two, and the opacity fell from
+0.55. The overlay's own contrast, the core's luminance less the outline's, times the
+opacity, therefore falls from 0.389 to 0.198, which is 51 percent of what it was. The
+wash is what makes the `accurate` staircase read as a soft edge rather than a row of
+steps; the line keeps its hue and still reads as a boundary.
+
+The consequence to know: the outline no longer darkens every background. Its luminance
+rose from 0.051 to 0.169, so over the dark space between the arms, where the frame reads
+below about 0.17, the outline now lightens the pixel rather than darkening it. It still
+darkens the bright disc, and it is still darker than the core everywhere, which is what
+makes the line read as a line.
+
+The fade adds one channel to the coverage buffer and one interpolation to each fragment.
+The overlay SHALL stay inside the frame budget `real-systems` states, which the browser
+suite already measures at a 20,000 light year view with a full set.
 
 Where two segments of a chain meet, the line SHALL NOT be brighter than a straight run of
 the same chain, and SHALL show no gap. A join is where a naive draw of one quad per
@@ -229,9 +246,46 @@ overlap blends twice. The rule SHALL hold for the traced set as well, whose join
 degree corners and are the hardest case the pass draws.
 
 The lines SHALL fade in as the zoom distance falls: nothing at 30,000 light years and
-above, full at 20,000 and below. They SHALL NOT fade out at close zoom. A smoothed
-boundary does not read as a staircase, which is why the phase 2 fade out below 3,000
-light years is removed.
+above, full at 20,000 and below.
+
+**A line fades out as the camera comes near it.** The fade SHALL be worked out for each
+pixel of the line, from the distance between the camera and the nearest point of the
+segment that pixel draws, in light years: nothing at **200** light years and below, full
+at **1,500** and above, on a smooth step between. The fade multiplies the zoom fade.
+
+The fade is per pixel and not per chain, so one line that runs from under the camera out
+to the horizon fades along its length rather than all at once. This is what the camera
+approaching a boundary shows: the line goes before the camera reaches it.
+
+This **reverses** the decision phase 3.1 recorded. That phase held the line to the closest
+zoom, so a user at 10 light years could see which side of a boundary a system sat on.
+
+What the fade takes away is the line **near the camera**, and not the whole overlay at a
+close zoom. A line far across the frame still draws, which is what the per-pixel rule is
+for. The zoom at which the whole frame goes empty is the zoom at which every plane point in
+it is inside 200 light years. At the default pitch of 35 degrees and a 60 degree vertical
+field of view, the top of the frame looks 5 degrees below the horizon, so it shows plane
+points about 11.4 times the camera's height above the plane: about 65 light years at a zoom
+of 10, about 990 at a zoom of 150, and about 3,300 at a zoom of 500. The overlay is
+therefore empty at a zoom of 10, and at a zoom of 500 it is faint under the cursor and full
+at the top of the frame.
+
+What is bought for it is that the `accurate` staircase, whose 49.3494 light year step is
+about 4,600 CSS pixels at a zoom of 10 and 1,080 rows, is never on the screen at the zoom
+where it is worst. The browser suite runs at 1280x720, where the same figures are two thirds
+of these.
+
+**The chosen views are constants and they move.** `tests/region-views.ts` searches the
+boundary set for the views the scenarios above open, and `e2e/region-views.ts` holds what it
+found. Two of them sit at a zoom of 500 light years, where the near fade now draws nothing,
+so they SHALL be searched again at a zoom where the camera is 1,500 light years or more
+from the place the scenario reads. The crossing view sits at 1,875 and is already above
+that.
+
+The region labels SHALL NOT take this fade. A label is placed at a point inside its own
+region, and the camera is always near the region it is looking into, so a near fade on the
+labels would empty the overlay of names at every close zoom. Labels keep the zoom fade
+alone, which the requirement "A region in view carries a label" states.
 
 #### Scenario: Nothing at the far view
 
@@ -250,35 +304,73 @@ light years is removed.
 
 #### Scenario: The boundary still draws at the closest zoom
 
-- **WHEN** the browser test opens at 1,500 light years, at 500 and at 10, with the overlay
-  on and again with it off, in each of `simplified` and `accurate`, centred on a plane
-  point a unit test has found within 25 light years of a chain of **both** sets
-- **THEN** at all three distances and in both modes the frame with the overlay differs
-  from the frame without it.
+- **WHEN** the browser test opens at 4,000 light years and at 1,500, with the overlay on
+  and again with it off, in each of `simplified` and `accurate`, centred on a plane point a
+  unit test has found **on** a chain of **both** sets
+- **THEN** at both distances and in both modes the frame with the overlay differs from the
+  frame without it.
 
-  The centre has to be near both sets and not only near the traced one. At a zoom of 10
-  light years the frame covers about 12 light years across the cursor, while the smoothed
-  line may sit 49.3 light years from the traced one, which is the whole reason the
-  `accurate` mode exists. A point chosen against one set alone can therefore leave the
-  other set's line outside the frame. The two lines coincide over most of their length, so
-  such a point exists
+  1,500 light years is now the closest zoom at which the line draws in full. The centre has
+  to be on both sets and not only on the traced one, because the smoothed line may sit
+  49.3 light years from the traced one. The two lines coincide over most of their length, so
+  such a point exists: the search gives a point on a traced segment within half a light year
+  of the smoothed set
+
+#### Scenario: The boundary fades out as the camera comes near
+
+- **WHEN** the browser test opens the view of the scenario above at 1,500 light years, at
+  500 and at 150, with the overlay on and again with it off, in each of `simplified` and
+  `accurate`, and reads the overlay's own contribution as the **largest** difference within
+  8 CSS pixels of the projection of the centre, the frame with the overlay less the frame
+  without it
+- **THEN** in both modes the contribution at 500 is below a third of the contribution at
+  1,500 and above zero, and at 150 it is zero.
+
+  The centre sits **on** a chain of both sets, which is what the scenario above states and
+  what the search gives. A centre merely within 25 light years of one would be 47 CSS pixels
+  from the line at a zoom of 500 against a line 4 pixels wide, and a reading beside the line
+  would report zero for the wrong reason. The reading
+  is a search within 8 CSS pixels of the projection, which covers the line's own width and
+  the rounding, as the existing suite already searches near a point.
+
+  The reading is near the cursor, which is the point the camera is 150 or 500 light years
+  from. The frames are not byte-identical at 150: the top of the frame shows plane points
+  about 990 light years away, and the line still draws there. Only a view straight down
+  empties the whole frame
+
+#### Scenario: One line fades along its own length
+
+- **WHEN** the browser test opens a view at 3,000 light years and a pitch of 5 degrees, a
+  unit test having chosen the cursor and the yaw so that one chain runs from the lower edge
+  of the frame to the cursor, and reads the overlay's own contribution at the pixel where
+  the chain crosses the lower tenth of the frame and at the pixel of the cursor
+- **THEN** the contribution at the lower edge is below a third of the contribution at the
+  cursor, and both are on the same chain
 
 #### Scenario: The line is four CSS pixels wide and two-toned
 
-- **WHEN** the browser test opens a view a unit test has chosen so that a boundary chain
+- **WHEN** the browser test opens a view in which the camera is **1,500 light years or
+  more** from the place it reads, so the near fade is full there, a unit test having chosen
+  the view so that a boundary chain
   crosses the frame within 5 degrees of vertical, reads one horizontal row of pixels
   across it, converts the run from device pixels to CSS pixels by the device pixel ratio,
   and compares it with the same row with the overlay off, in each of `simplified` and
   `accurate`
 - **THEN** in both modes the run of changed pixels is 4 CSS pixels wide within 1 CSS pixel,
-  the middle of the run is lighter than both ends, and both ends are darker than the same
-  pixels with the overlay off
+  the middle of the run is lighter than both ends, and every pixel of the run differs from
+  the same pixel with the overlay off.
+
+  The ends are no longer held to be darker than the frame under them. The washed outline
+  reads at a luminance of 0.169, so over the dark space between the arms it lightens the
+  pixel. What holds everywhere is that the middle is lighter than the ends
 
 #### Scenario: A join is not brighter than the line
 
-- **WHEN** the browser test opens a view a unit test has chosen at a place where the
-  drawn line **turns by at least 30 degrees within a reach of 8 CSS pixels**, and reads
-  the luminance of every pixel the overlay changes within 8 CSS pixels of that place
+- **WHEN** the browser test opens a view in which the camera is **1,500 light years or
+  more** from the bend, so the near fade is full there, a unit test having chosen the place
+  so that the drawn line **turns by at least 30 degrees within a reach of 8 CSS pixels**,
+  and reads the luminance of every pixel the overlay changes within 8 CSS pixels of that
+  place
 - **THEN** taking each pixel's change as the frame with the overlay less the frame
   without it, no pixel at the bend has a larger change than the largest change on a
   straight run of the same chain in the same frame, and no pixel inside the bend is
@@ -288,17 +380,20 @@ light years is removed.
   the requirement above holds every single vertex of the smoothed set to 20 degrees, so no
   two neighbouring segments of it can meet under 160 degrees. That does not make the join
   weaker as a test: it makes it stronger. The median segment of the drawn set is 5.09 light
-  years, which is about 10 CSS pixels at a zoom of 500 light years, against a line 4 CSS
-  pixels wide, so the ribbon quads of a bend overlap more than they did when a bend was one
-  sharp corner. The comparison is of the overlay's own contribution, because the overlay
+  years, which is 2.0 CSS pixels at a zoom of 1,600 light years and 1280x720, against a
+  line 4 CSS pixels wide, so the ribbon quads of a bend overlap more than they did when a
+  bend was one sharp corner. The view is at 1,600 and not at the 500 it was, because the
+  near fade draws nothing at 500. The comparison is of the overlay's own contribution, because the overlay
   draws at less than full opacity and the galaxy under a corner can be brighter than the
   galaxy under a straight run
 
 #### Scenario: A 90 degree corner of the traced set is not brighter than its line
 
 - **WHEN** the browser test sets the mode to `accurate`, opens a view a unit test has
-  chosen at a lattice node where the traced line turns by 90 degrees, at a zoom that puts
-  the two segments at more than 20 CSS pixels each, and reads the overlay's own
+  chosen at a lattice node where the traced line turns by 90 degrees, at a zoom of **1,600
+  light years**, where the camera is 1,600 light years from the node so the near fade is
+  full there and a 49.3494 light year segment is 19.2 CSS pixels at 1280x720, which is
+  longer than the 8 CSS pixel read radius, and reads the overlay's own
   contribution at every pixel within 8 CSS pixels of the node
 - **THEN** no pixel at the corner has a larger contribution than the largest contribution
   on a straight run of the same chain in the same frame, and no pixel inside the corner is
@@ -326,19 +421,82 @@ sample crosses a region edge: it holds still and then steps. The plane position 
 sample moves with the camera, so a position worked out from those moves with the camera
 too, and its projection slides rather than steps.
 
-A label's anchor SHALL be the projection of the mean of the plane positions of the
-samples its region holds, when the region under that mean is the same region. When it is not, the anchor
-SHALL be the projection of the plane position of **the sample its own region holds whose
-plane position is nearest that mean**.
-Taking the nearest sample of any region would put the anchor on the region the mean
-landed on, which is the region the fallback exists to avoid. A region can appear in the frame as
-two separated patches, and the mean of those falls between them, on a different region;
-the second rule is what puts the anchor on the region in that case.
+**A label belongs at the centre of its region.** A label's target SHALL be the region's
+own centroid on the galactic plane, while the region under that centroid is that region
+and while the centroid projects inside the frame with the 48 CSS pixel label inset. The
+inset is the room the label box needs, and it is the same figure the anchor is held
+inside, so the target is the centre exactly while the centre has room for the label.
+
+The centroid is one fixed point of the galaxy. Nothing about the frame goes into it, so a
+label on it does not move over the map at any camera speed: its projection slides with the
+camera, and nothing else moves it. At a view of the whole galaxy 11 of the 20 labels sit on
+the centre of their region, and over a drag of 90 frames every one of the 512 readings of a
+label on its centre holds the same plane point as the frame before, to the last digit.
+
+**Where the centre has no room, the label SHALL move the least it can.** This rule SHALL
+apply only while the centroid projects **inside the frame**. Outside the frame the rule
+says nothing useful: holding a projection that is far away inside the inset gives a corner
+of the frame, and a corner carries nothing about where the region is. The frame then shows
+only a part of the region, and the rule below answers that case.
+
+The page SHALL hold the projection of the centroid inside the inset and read that held
+point back to the plane. When the region under the read-back point is the label's own
+region, that point SHALL be the target. This is the shortest move on the screen that gives
+the label room.
+
+When the read-back point is over another region, the page SHALL search out from the
+**projection of the centroid** on rings of **12, 24, 48 and 96 CSS pixels**, twelve
+directions to a ring, and take the first point that is on the label's own region and
+inside the inset. The rings are a coarse step and not the least move: a point on the
+region at 60 pixels is skipped, and the point at 96 taken. Four rings hold the worst
+reading of the measure to 4.7 CSS pixels, so a finer step buys nothing a reader can see. The search SHALL measure on the screen and not on
+the plane: at a low pitch one light year across the screen is many light years up it, so a
+point near on the plane can be far on the screen, and the rule is about the screen.
+
+The search SHALL stop at **96 CSS pixels**. A region can reach into the inset band at the
+edge of the frame, and the point of it that is both on the region and inside the inset can
+be hundreds of pixels along that band. To move the label there costs more than it gives:
+the label leaves the middle of its region for a corner of the frame. Where no point that
+near holds the label, the target SHALL stay the centroid, and the box rule below moves the
+box itself into the frame. The label then touches the frame edge, stays on the middle of
+its region and stays readable.
+
+**Where the centre does not project inside the frame, the label SHALL go to the part of
+the region the frame shows.** The target SHALL be the mean of the plane positions of the
+samples its region holds, or, when the region under that mean is another region, the plane
+position of the sample its own region holds nearest that mean. A region under the camera
+fills the whole frame, and the middle of the frame is where its label belongs.
+
+Over a view in which regions reach past the frame, the displaced target measures **4.7 CSS
+pixels** from the projection of the centroid at worst. An earlier rule that measured
+nearness on the plane moved one such label **192 CSS pixels** sideways to hold a 29 pixel
+move down, which reads as the label leaving its region.
+
+Reading the frame's samples is what makes a label move while the camera moves, because the
+sample grid is fixed on the screen and slides over the plane. The centre rule is there so
+that a label whose region has room for it reads none of that.
+
+**The label box SHALL NOT cross the edge of its own region.** A box that crosses the edge
+reads as naming the region beside it. The box is a screen thing and the target is a plane
+point, so the page SHALL read the plane step of one screen pixel across and one down, and
+then move the target in those two directions. Six points of the box SHALL be tested
+against the region: the four corners and the middle of the top and the bottom edge. The
+search SHALL grow its step over five passes and try twelve directions at each, SHALL take
+the point that leaves the fewest points of the box off the region, and SHALL stop as soon
+as none are. Every candidate SHALL sit on the region and project inside the frame, so the
+search never moves a label off its region or off the screen.
+
+A region narrower on the screen than the label is wide has no point that holds its box.
+At a view of the whole galaxy 1 of 12 boxes still crosses, at a wide view 2 of 12, and at
+two closer views none. To hold those as well needs the label to get smaller, which this
+change does not do.
 
 The anchor SHALL move in every frame in which the camera moves, and SHALL NOT snap to the
-grid of sample points. While a region shows as one connected patch, a camera turn of 0.1
+grid of sample points. While a region shows as one connected patch and its anchor has
+settled on the target, a camera turn of 0.1
 degrees between two frames SHALL move its anchor, and SHALL move it by less than 8 CSS
-pixels.
+pixels. The bound is read on a settled anchor because the filter above adds up to 20 CSS
+pixels of its own while a label is still going to a target that moved.
 
 Both halves are needed. A rule that snaps to the nearest sample moves the anchor a whole
 sample spacing at once, 32 CSS pixels, which the upper bound catches. A rule that
@@ -347,14 +505,142 @@ of 1.0 CSS pixels, and still reads as jumping, because the anchor is unmoved in 
 percent of frames and carries the whole motion in the rest. Only the lower bound catches
 that one.
 
-A region whose anchor is held from the frame before SHALL keep it while the region under
-that anchor is still the same region and the anchor still projects inside the frame. This
-keeps the anchor on one point of the galaxy rather than letting it move between two
-samples that are almost equally near the mean. The projection of that point still moves
-with the camera, so holding it does not hold the label still on the screen.
+**The target SHALL be smoothed before the anchor follows it.** The target of a frame is
+the mean above, or the fallback above. A region that carried a label in the frame before
+SHALL carry the smoothed target it used into this frame, and the smoothed target of this
+frame SHALL be the carried one moved a share of the way to the frame's own target, in
+plane coordinates.
 
-The anchor SHALL then be held inside the viewport with an inset of 48 pixels, which only
-moves a label whose box would otherwise cross the frame edge.
+The carried target SHALL be dropped, and the frame's own target taken whole, when it no
+longer resolves to its region and when it goes out of reach of the frame. The reach is the
+frame grown by **a quarter of the frame** on each side, which is the reach the carried
+anchor takes below. A zoom magnifies the view, so a point on the centre of its region can
+go off the frame while the region itself stays in view; a target further out than the
+reach is stale.
+
+**The share SHALL grow with the screen gap between the two targets.** For a gap of `gap`
+CSS pixels the share SHALL be `0.15 + 0.85 * min(1, gap / 120) ** 3`. At the gap the
+sample grid gives a still region the share is near 0.15, and the smoothed target holds
+about seven frames of the target. At **120 CSS pixels** the share is 1 and the frame's own
+target is taken whole: above that figure the target has really moved, and the label must
+go there at once.
+
+The share SHALL follow the **cube** of the reach, and not the reach itself. A share that
+follows the reach gives too much of a gap of 30 or 60 pixels to the label at once, and the
+worst frame of a drag grows from 5.8 CSS pixels to 10.9. The cube holds the smoothing over
+the whole range a drag works in, and opens it only near the figure where the target has
+really moved.
+
+The share SHALL grow and SHALL NOT step at one figure. A step is a gate. A gate that fires
+puts the label somewhere else in one frame, which is the jump this filter is there to
+stop.
+
+Where the smoothed point falls on another region, the carried point SHALL be kept. A
+region can show as two separated patches, and the point between this frame's target and
+the one before then falls in the gap. Taking this frame's target instead would carry the
+label to the other patch in one frame.
+
+**A held anchor goes to its smoothed target at once, and answers the sampling noise
+slowly.** A region that carried a label in the frame before SHALL carry its anchor's plane
+point into this frame, and that point SHALL then move toward the smoothed target.
+
+The step SHALL be read on the screen and not on the plane, because a plane step of a fixed
+size covers a different number of pixels at every zoom. The projection is not linear, so
+the share of the plane gap that gives the wanted step SHALL be **solved for**: the page
+reads what a share really moved on the screen and corrects it, **up as well as down**,
+until the step is the one asked for. A correction that goes downward alone makes the label
+crawl near the camera, where the first guess undershoots: over a jump from a camera
+distance of 640 to 10 the anchor ran at about a third of the cap and took 52 frames rather
+than 25.
+
+For a gap of `gap` CSS pixels between the projection of the carried point and the
+projection of the smoothed target, the step SHALL be:
+
+```
+min(20, max(min(gap, 0.4), gap * 0.5 * min(1, gap / 48)))
+```
+
+That is: **half the gap** at or above a gap of **48 CSS pixels**, falling with the gap
+below that, never more than a **20 CSS pixel** cap and never less than a **0.4 CSS pixel**
+floor.
+
+**Why both parts are needed.** The anchor is read from a grid of samples that is fixed on
+the screen. The grid slides over the plane while the camera moves, so samples cross region
+edges and the target of a frame does not move smoothly. Over a drag of 30 light years a
+frame at a camera distance of 2000, the target steps 3.3 CSS pixels in a middle frame, and
+it changes that step by 2.2 CSS pixels from one frame to the next. A mean of the target
+over 20 frames still moves 1.9 pixels a frame, so most of that is not noise to average
+away: the visible part of a region really does travel under the camera, and the label must
+follow it.
+
+A person reads the change of step from frame to frame, and not the step: a label that
+keeps its step slides with the map, and a label that changes it jumps. Taking each frame's
+target whole, and moving half of the gap under a 20 pixel cap, changes the step by 1.0 CSS
+pixels in a middle frame of that drag and by 3.0 in the worst tenth, and the labels shake.
+
+Speed that falls with the gap takes that to 0.45 and 1.3, because a large gap is a real
+move and a small gap is the noise. It cannot go further on its own: the band from 8 to 48
+pixels is both the noise the label must ignore and the last part of every relocation, so
+more damping there slows every move. Smoothing the target first separates the two. The
+anchor then follows a line that already moves smoothly, at the same speed as before, and
+the change of step falls to **0.09** and **0.36**. Over a faster drag of 200 light years a
+frame at a distance of 20000 it is **0.16** and **0.67**.
+
+The knee is 48 CSS pixels because that is the smallest real move the anchor must answer at
+full speed. The floor is there because speed that falls with the gap otherwise takes
+hundreds of frames over the last few pixels.
+
+A label pushed to the frame edge by a camera that then jumps back measures 128 CSS pixels
+from the middle of its region in the unit test. It is within 8 CSS pixels of that middle at
+frame 13, which is 217 milliseconds, and within 2 at frame 26. In the browser the push
+leaves the label 70 CSS pixels out and reads **382 milliseconds** to 8 CSS pixels, against
+the 400 the browser suite allows. The browser is slower than the unit test because the
+camera jump there moves the target as well as the anchor, and the two filters run in
+series. The label goes where it belongs and does not crawl.
+
+The filter replaces a hold that kept the anchor where it was for as long as the point still
+resolved to the region and still projected inside the frame. What the hold did, and should
+not have, was keep a label at the frame edge it had been pushed to long after the region was
+back in full view.
+
+**The carried anchor SHALL NOT be dropped for leaving its own region.** The target is
+always on its region, so an anchor that walks toward it comes back to the region on its
+own. A gate does the opposite of what it is for: it drops the carried point in one frame,
+and the label then goes to the target in one step, which is what a person sees as a jump.
+
+**The carried anchor SHALL be dropped only when it goes out of reach of the frame.** The
+reach is the frame grown by **a quarter of the frame** on each side. A wheel notch changes
+the camera distance by 15 percent in a single frame, which throws the anchor of a label
+near the edge a little outside the frame while its region stays in view; the margin keeps
+that anchor and the filter walks it back. A camera that jumps to another view leaves the
+anchor further out than that, and the label re-places at once.
+
+An earlier gate dropped the anchor at the frame edge itself, with no margin, and fired on
+almost every wheel notch.
+
+A region is not always a convex shape, so the straight line from the carried point to the
+target can go over a neighbour. The step SHALL get shorter, halving up to six times, to
+land on the region where a shorter step does. Where none does, the step SHALL stand: the
+anchor comes back to the region as it walks.
+
+A region that carried no label in the frame before SHALL start at the target.
+
+**The drawn anchor SHALL be held inside the viewport, and not inside the inset.** The inset
+is where the target rule puts a label that must move. To hold the drawn anchor there as
+well pins a label near the frame edge to one place on the screen while the map slides under
+it, which reads as the label moving over the map. The box rule moves the box itself fully
+into the frame, so a label at the edge stays readable and still slides with its region.
+
+**A zoom SHALL read like a drag.** The measure is how far a label moves from the projection
+of its own region centre from one frame to the next, because a label that holds that offset
+slides with the map. Over a drag of 60 light years a frame the worst reading is **2.7 CSS
+pixels** and the mean is **0.13**. Over 28 wheel notches, each a change of distance of 15
+percent in one frame, the worst is **7.0** and the mean **0.49**. Over a wheel held down,
+with no still frame between the notches, the worst is **13.2** and the mean **1.40**.
+
+Before these rules the same wheel notches gave a worst reading of **38.3** and the held
+wheel **36.9**, and the anchor of one label ran **2,500 CSS pixels** past the frame while
+its region stayed in view.
 
 The candidate that holds the sample nearest the centre of the frame SHALL be placed
 first, so the region the view is centred on is always named. Ordering by sample count
@@ -462,6 +748,113 @@ and above, full at 20,000 and below. Labels SHALL NOT fade out at close zoom.
   place; and where the two counts are within the bonus of each other the region that
   carried a label keeps its place
 
+#### Scenario: A pushed anchor comes back to the centre at once
+
+- **WHEN** a unit test runs the placement over a camera that jumps in one frame from a
+  corner of the frame, where the region's anchor is held against the 48 pixel inset, to the
+  middle of the frame, and then over 60 further frames with the camera still
+- **THEN** the anchor starts more than 40 CSS pixels from the projection of the region's
+  mean, no frame carries it away from that mean, it is within 8 CSS pixels of it **by frame
+  15** and within 2 by frame 30, and it moves by no more than 20 CSS pixels in any one frame
+
+#### Scenario: A label sits on the centre of its region
+
+- **WHEN** a unit test reads the labels of a view of the whole galaxy at 1280 by 720, and
+  for each one works out whether its region's centroid sits on that region, projects inside
+  the frame with the 48 pixel inset, and holds the label box
+- **THEN** every label whose centre has that room takes the centroid itself as its target,
+  to the last digit, and more than half of the labels of the frame do
+
+#### Scenario: A label whose centre has no room goes to the visible part
+
+- **WHEN** a unit test reads the labels of a view at a camera distance of 800 inside the
+  galactic centre, where a region reaches well past the frame
+- **THEN** each label whose centre has no room takes a target that is not the centroid,
+  that sits on its own region, and that projects inside the frame
+
+#### Scenario: A label whose centre is outside the frame goes to the visible part
+
+- **WHEN** a unit test places the label of the region the camera sits in at a camera
+  distance of 10, where the region fills the frame and its centre projects far outside it
+- **THEN** the label sits near the middle of the frame, on the mean of the region's own
+  samples, and not against an edge of it
+
+#### Scenario: A label reaches its place after a view jump
+
+- **WHEN** a unit test settles the label of `Inner Orion Spur` at a camera distance of 640,
+  then jumps the camera to a distance of 10 and runs the placement on
+- **THEN** the anchor is within 8 CSS pixels of its target by frame 25. A step corrected
+  downward alone ran at about a third of the cap and took 52 frames
+
+#### Scenario: A displaced label moves only a little
+
+- **WHEN** a unit test reads the labels of a view of a corner of the galaxy at a camera
+  distance of 9000, where regions reach past the frame, and for each label whose centre has
+  no room but still projects inside the frame reads how far its target is from the
+  projection of the centroid
+- **THEN** no target is more than 6 CSS pixels from the centre, and the worst reading is
+  4.7 CSS pixels
+
+#### Scenario: The label box stays inside its own region
+
+- **WHEN** a unit test places the labels of four views, from the whole galaxy to a camera
+  distance of 800, and tests six points of each label box against the region grid
+- **THEN** at most 2 of the 12 boxes of any view cross the edge of their own region, and
+  every one that does belongs to a region narrower on the screen than the label is wide
+
+#### Scenario: A label on its centre does not move over the map
+
+- **WHEN** a unit test runs the placement over 90 frames of a drag of 200 light years a
+  frame at a camera distance of 20000, and reads the plane point of every label whose
+  target is its region's centroid
+- **THEN** every one of the 512 readings holds the same plane point as the frame before, to
+  the last digit, and none moves
+
+#### Scenario: A zoom reads like a drag
+
+- **WHEN** a unit test reads, for every label, how far it moves from the projection of its
+  own region centre from one frame to the next, over a drag of 60 light years a frame, over
+  28 wheel notches of 15 percent each with 6 still frames between them, and over the same
+  28 notches with no still frame between them
+- **THEN** the drag moves a label by less than 8 CSS pixels at worst, the notches by less
+  than 12 at worst and less than 1 on the mean, and the held wheel by less than 20 at worst
+  and less than 2 on the mean
+
+#### Scenario: A label that must really move does not crawl
+
+- **WHEN** the camera jumps and the label of a region starts about 70 CSS pixels from the
+  middle of its region
+- **THEN** the label comes within 8 CSS pixels of the middle inside **400 milliseconds**,
+  and no frame moves it more than 20 CSS pixels
+
+#### Scenario: The share of the gap follows the gap
+
+- **WHEN** a unit test reads the share for a gap of 4, 30, 90 and 120 CSS pixels
+- **THEN** the share at 4 pixels is 0.15 to three places, the share at 30 pixels is under
+  0.17, the share at 90 pixels is over 0.4, and the share at 120 pixels is 1
+
+#### Scenario: The label walks smoothly while the camera drags
+
+- **WHEN** a unit test runs the placement over 90 frames of a drag of 30 light years a
+  frame across the galactic centre, and over 90 frames of a drag of 200 light years a frame
+  at a camera distance of 20000, and reads for every label the length of the change of its
+  screen step from one frame to the next, with both ends of each step projected through the
+  frame they are read in, leaving out the frames in which a label leaves its region or the
+  frame
+- **THEN** the step changes by less than **0.2 CSS pixels** in a middle reading and by less
+  than **0.7** in the worst tenth, over more than 200 readings of each drag, and no reading
+  is over the 20 pixel cap. Taking each frame's target whole under a flat half-gap step
+  gives 1.0 and 3.0 on the slower drag
+
+#### Scenario: The filter does not hop between samples
+
+- **WHEN** a unit test runs the placement over 120 frames of a slow pan across a region
+  whose two nearest samples to the mean are within 1 light year of each other
+- **THEN** the target of a frame moves by less than 1 CSS pixel, because the centre rule
+  reads no sample while the centre of the region has room; no frame moves the anchor by
+  more than the 20 CSS pixel cap; and the anchor's plane point changes by less than one
+  sample spacing in any single frame
+
 #### Scenario: Labels neither crowd nor overlap
 
 - **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0` and reads the box of
@@ -473,7 +866,6 @@ and above, full at 20,000 and below. Labels SHALL NOT fade out at close zoom.
 - **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0` at 1920x1080 and reads
   the mean and the worst sampling time the page exposes over 300 frames
 - **THEN** the mean is under 2 milliseconds and the worst single frame is under 4
-
 
 ### Requirement: The region overlay has a switch
 
@@ -500,21 +892,31 @@ lines and the labels.
 The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
 region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
 region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If the built bundle carries the package's procedural
+for the game data behind them. If **either build** carries the package's procedural
 naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
+
+The repository now emits two builds, the library and the demo site, so the search reads
+both. The demo site is the one the public loads, and the library is the one another project
+installs, so a table that reaches either one reaches a user.
+
+The file SHALL also name the sources the demo site adds: the two further Canonn Research
+Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
+from `public/`.
 
 #### Scenario: The notice names every source
 
 - **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier` and
-  `@elite-dangerous-almanac/core`
+- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
+  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
+  `Notable Systems`
 
 #### Scenario: The bundle carries no unlicensed table
 
-- **WHEN** a test runs `pnpm build` and searches the built bundle for the package's
-  procedural naming tables
-- **THEN** either the tables are absent, or `THIRD_PARTY_NOTICES.md` holds the BSD
-  3-Clause text in full
+- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
+  for the package's procedural naming tables
+- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
+  BSD 3-Clause text in full
+
 ### Requirement: The region overlay has three modes
 
 The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
@@ -537,14 +939,31 @@ one value the host controls directly.
 The `regions` pass switch SHALL stay as it is, a renderer probe the browser tests read. A
 switch of `off` and a mode of `off` SHALL draw the same frame, so the two never disagree.
 
-The two sets differ in where the line sits, not in what the data says. The smoothed line
-may sit up to 49.3494 light years from the boundary the region data holds. At 1,080 CSS
-rows and a 60 degree vertical field of view, one CSS row covers `1.1547 * distance / 1080`
-light years, so that departure is 92 CSS pixels at a zoom of 500 light years and about
-4,600 at a zoom of 10, and it falls under one CSS pixel only above a zoom of about 46,000.
-The overlay does not draw above 30,000, so the departure is always at least 1.5 CSS pixels
-where the user can see it, and it is the close zoom that makes it matter, which is where a
-user asks which region a system is in.
+**Where the two sets differ, now that the near fade is there.** The two sets differ in
+where the line sits, not in what the data says. The smoothed line may sit up to 49.3494
+light years from the boundary the region data holds. **At 1,080 CSS rows** and a 60 degree
+vertical field of view, one CSS row covers `1.1547 * distance / 1080` light years, so the
+departure in CSS pixels is about `46,157 / distance`: 31 pixels at a zoom of 1,500 light
+years, 5.8 at 8,000, 1.8 at 25,000 and 1.5 at 30,000. It falls as the camera pulls back,
+and it drops under one CSS pixel above a zoom of about 46,000.
+
+The overlay draws between 1,500 and 30,000 light years, so the departure runs from about 31
+CSS pixels at the near end of that band down to about 1.5 at the far end. `accurate` is
+therefore worth choosing at the **near end** of the band, from 1,500 to about 8,000 light
+years, which is its lower fifth by distance, where the departure is 31 down to 5.8 CSS
+pixels and the user sees which line
+they are given. Above about 25,000 the two sets draw within 2 CSS pixels of each other and
+the mode changes almost nothing on the screen.
+
+This paragraph said before that the close zoom is what makes the difference matter, because
+the departure reaches about 4,600 CSS pixels at a zoom of 10 and 1,080 rows. The near fade
+takes the line
+away where the camera is within 200 light years of it, so at a zoom of 10 the whole frame is
+inside the fade and that reading is no longer on the screen. What the mode now answers is
+which side of a boundary a **region** lies on at the zoom a user reads the galaxy at, and
+not which side one system lies on at the zoom a user reads one system at.
+The requirement "The boundaries draw on the galactic plane in a zoom band" records that
+trade and why it was taken.
 
 #### Scenario: The default mode is simplified
 
@@ -570,7 +989,8 @@ user asks which region a system is in.
 
   The view has to sit at a corner. The two sets carry the same line along a straight run
   of the boundary, so a view chosen anywhere else can draw the same frame in `simplified`
-  and in `accurate`, and the reading would then say nothing about the mode
+  and in `accurate`, and the reading would then say nothing about the mode. 2,000 light
+  years is above the near fade band, so the line draws in full
 
 #### Scenario: The off mode removes both parts
 
@@ -585,7 +1005,7 @@ user asks which region a system is in.
   sets it back to `simplified` and draws one more, and reads how many times the scene data
   loaded
 - **THEN** the frames differ, the scene data loaded once, and neither change waited for a
-  worker
+  load
 
 #### Scenario: The labels do not follow the mode
 

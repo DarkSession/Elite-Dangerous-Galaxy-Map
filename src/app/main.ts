@@ -1,9 +1,10 @@
 // The demo page: build the map, own the URL fragment, and expose the test hooks.
 import type { View } from '../camera/view';
 import { galaxyMapGlobal } from '../render/global';
+import type { CategoryInput, SystemRecordInput } from '../scene-data/real-systems';
 import { createGalaxyMap } from './create-map';
-import type { GalaxyMap } from './create-map';
-import { createFragmentWriter, parseViewFragment } from './url-view';
+import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
+import { createFragmentWriter, parseGridFragment, parseViewFragment } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
 export const READY_EVENT = 'galaxy-map-ready';
@@ -25,35 +26,91 @@ function writeFragment(fragment: string): void {
 }
 
 /**
- * Puts the demo data set on the map: 3 categories and 212 Guardian systems, which
- * `THIRD_PARTY_NOTICES.md` names. Each record names its thumbnails at
- * `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn. The
- * page is a host application, so it supplies the records through the same two calls any
- * other host uses. The library bundles no data.
+ * Reads one demo file into the two arrays the map takes.
  *
- * The dev server alone runs this. `import.meta.env.DEV` is a constant in the production
- * build, so the bundler drops the block and the import with it. That matters: the
- * browser suite serves the production build, and its scenarios read an empty set for
- * the baseline image, the marker count and the byte-identical far view.
+ * JSON holds no tuple, so the module types a colour as `number[]` while `CategoryInput`
+ * states three numbers. The page therefore casts the categories through `unknown`. That
+ * is the point at which the file data enters, and the reader still checks every field.
  */
-async function loadDemoSystems(map: GalaxyMap): Promise<void> {
-  const demo = await import('./demo-systems.json');
-  const categories = map.addCategories(demo.default.categories);
-  const systems = map.addSystems(demo.default.systems);
-  console.info('The demo data set is on the map.', {
-    categories: categories.added,
-    systems: systems.added,
-    rejected: systems.rejected.length,
-  });
-  for (const reject of systems.rejected.slice(0, 5)) {
-    console.warn('The demo reader rejected a record.', reject);
-  }
+function demoSet(file: {
+  categories: unknown;
+  systems: readonly SystemRecordInput[];
+}): DatasetContent {
+  return {
+    categories: file.categories as unknown as readonly CategoryInput[],
+    systems: file.systems,
+  };
 }
+
+/**
+ * The three demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
+ * application, so it gives the map a catalog the way any other host does: each entry
+ * carries the counts the committed file holds and a `load()` that imports it. The
+ * library bundles no data and fetches none.
+ *
+ * The Guardian Ruins records name their thumbnails at
+ * `https://ruins.canonn.tech/images/maps/`, so the browser loads those pictures from
+ * Canonn when the user selects such a system. The other two sets name no picture.
+ *
+ * The demo site build carries the three files, so the dev server and the built site
+ * draw the same map. The library build reaches this module from nowhere, because
+ * `src/index.ts` does not import it.
+ */
+const DEMO_DATASETS: readonly DatasetEntry[] = [
+  {
+    id: 'guardian-ruins',
+    label: 'Guardian Ruins',
+    collection: 'Canonn Research Group',
+    region: 'Inner Orion Spur and five more regions',
+    description:
+      'The Guardian Ruins the Canonn Research Group records, as one record per ' +
+      'system and one category per ruin layout.',
+    systemCount: 212,
+    load: async (): Promise<DatasetContent> =>
+      demoSet((await import('../../demo-data/guardian-ruins.json')).default),
+  },
+  {
+    id: 'guardian-structures',
+    label: 'Guardian Structures',
+    collection: 'Canonn Research Group',
+    region: 'Inner Orion Spur',
+    description:
+      'The Guardian Structures the Canonn Research Group records, as one record per ' +
+      'system and one category per site type.',
+    systemCount: 163,
+    load: async (): Promise<DatasetContent> =>
+      demoSet((await import('../../demo-data/guardian-structures.json')).default),
+  },
+  {
+    id: 'notable-systems',
+    label: 'Notable Systems',
+    collection: 'Canonn Research Group',
+    region: 'Inner Orion Spur and Norma Expanse',
+    description:
+      'The systems the Canonn Research Group marks as notable, with one category per ' +
+      "subject and the project's own text as the description.",
+    systemCount: 16,
+    load: async (): Promise<DatasetContent> =>
+      demoSet((await import('../../demo-data/notable-systems.json')).default),
+  },
+];
 
 function start(target: HTMLCanvasElement): void {
   const global = galaxyMapGlobal();
   const map: GalaxyMap = createGalaxyMap(target, {
     ...(labelHost === null ? {} : { labelHost: labelHost as HTMLElement }),
+    // The loader the repository holds in `public/`, which the build serves under the
+    // site's own base path. `THIRD_PARTY_NOTICES.md` records the file and its source.
+    // The page reads the base path from the build, because the published site sits
+    // under a path and the dev server sits at the root.
+    loadingImage: `${import.meta.env.BASE_URL}EDLoader1.svg`,
+    // The page gives the map the three demo sets and asks for the Guardian Ruins at
+    // start. The HUD then shows the dataset field and the dataset library dialog.
+    datasets: DEMO_DATASETS,
+    dataset: 'guardian-ruins',
+    // The demo site starts with the coordinate grid on, unless the fragment says `g=0`.
+    // That is this page's own option: a host that gives no `grid` still gets no grid.
+    grid: parseGridFragment(window.location.hash) !== false,
     // The demo page is a host application, so it turns the HUD on the way any other
     // host does, and it adds one footer action to show what `actions` gives a host.
     hud: {
@@ -77,12 +134,22 @@ function start(target: HTMLCanvasElement): void {
   // The writer formats the object it was given at every write, so the page keeps this
   // one current from the handle's own view changes.
   const pageView: View = map.getView();
-  const writer = createFragmentWriter(pageView, { write: writeFragment });
+  // The writer reads the grid switch at each write, because a write may come 500 ms
+  // after the move that asked for it.
+  const writer = createFragmentWriter(pageView, {
+    write: writeFragment,
+    grid: () => map.isGridVisible(),
+  });
   map.onViewChange((view) => {
     pageView.cursor = view.cursor;
     pageView.distance = view.distance;
     pageView.yaw = view.yaw;
     pageView.pitch = view.pitch;
+    writer.schedule();
+  });
+  // The grid is not view state, so the page learns the switch from its own notification.
+  // The write rides the same throttle the view fields do.
+  map.onGridChange(() => {
     writer.schedule();
   });
 
@@ -124,18 +191,28 @@ function start(target: HTMLCanvasElement): void {
     debug.compileTestProgram(vertex, fragment);
 
   window.addEventListener('hashchange', () => {
-    map.setView(parseViewFragment(window.location.hash));
+    // The handler reads the fragment once and puts the whole of it in place before it
+    // calls the map. Each set raises a change, and the writer may write the fragment on
+    // that same turn. A write that runs part of the way through would put the page's own
+    // old state back in the URL, and the next fragment the user gives could then match
+    // the address the page already holds and raise no event at all.
+    const fragment = window.location.hash;
+    const grid = parseGridFragment(fragment);
+    const next = parseViewFragment(fragment);
+    pageView.cursor = next.cursor;
+    pageView.distance = next.distance;
+    pageView.yaw = next.yaw;
+    pageView.pitch = next.pitch;
+    // A fragment that names no readable `g` leaves the switch where it is.
+    if (grid !== null) map.setGridVisible(grid);
+    map.setView(next);
   });
-
-  if (import.meta.env.DEV) {
-    void loadDemoSystems(map).catch((error: unknown) => {
-      // The demo data is not the map. A failure here leaves the map drawing.
-      console.warn('The demo data set did not load.', error);
-    });
-  }
 
   map.ready.then(
     () => {
+      // `ready` settles after the start load, so a reader of the page sees the set that
+      // is already there. The browser suite reads this event and then clears the set,
+      // and a clear that ran first would leave the records on the map.
       global.renderer = debug.renderer;
       global.ready = true;
       window.dispatchEvent(new Event(READY_EVENT));

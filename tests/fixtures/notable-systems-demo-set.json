@@ -1,0 +1,121 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "INRA",
+      "color": [
+        255,
+        176,
+        64
+      ],
+      "description": "A system with a site of the INRA."
+    },
+    {
+      "name": "Guardian",
+      "color": [
+        120,
+        230,
+        180
+      ],
+      "description": "A system with a Guardian record."
+    },
+    {
+      "name": "Thargoid",
+      "color": [
+        190,
+        130,
+        255
+      ],
+      "description": "A system with a Thargoid record."
+    },
+    {
+      "name": "Human",
+      "color": [
+        120,
+        200,
+        255
+      ],
+      "description": "A system of human history."
+    }
+  ],
+  "systems": [
+    {
+      "name": "Hen 2-333",
+      "coords": {
+        "x": -840.65625,
+        "y": -561.15625,
+        "z": 13361.8125
+      },
+      "primaryCategory": "Guardian",
+      "secondaryCategories": [],
+      "description": "This is at the centre of a permit very similar to the Regor Sector Permit, and is theorised to be of significance to the Guardians\n\nThe Aronnax Expedition reached the vicinity of the permit-locked IC 4673 Sector on 19th January 3304 and spent one week surveying the borders for signs of spacefaring activity, as well as outdoor worlds and systems with all the materials needed for FSD boosting ('green' systems). The region was also circumnavigated to establish its size and morphology, which revealed it to be a sphere of 100 LY radius centred on the Wolf-Rayet system Hen 2-333, which is a possible supernova candidate and is surrounded by a tiny nebula consisting of mass thrown off the central star.\n\nIt is currently unknown whether the permit lock is a result of a safety precaution or interference from astrophysical phenomena, such as extreme radiation resulting from a supernova, however the immediate vicinity of the border was discovered to have an unusual abundance of life-bearing worlds, including two systems that each harbour two Earth-like Worlds, that must all be considered endangered."
+    },
+    {
+      "name": "Gamma Velorum",
+      "coords": {
+        "x": 1099.21875,
+        "y": -146.6875,
+        "z": -133.59375
+      },
+      "primaryCategory": "Guardian",
+      "secondaryCategories": [],
+      "description": "Gamma Velorum is a multiple star system in the constellation Vela. At magnitude +1.7, it is one of the brightest stars in the night sky, and by far the closest and brightest Wolf-Rayet star. It has the traditional names Suhail and Suhail al Muhlif, which confusingly also apply to Lambda Velorum. It also has a more modern popular name Regor.\n\nThis is one of the main theorised locations of the Guardian Homeworld, due to it being the centre of the main guardian bubble and being a hotter than avg star, such as where the guardians first evolved"
+    },
+    {
+      "name": "Sol",
+      "coords": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "primaryCategory": "Human",
+      "secondaryCategories": [],
+      "description": "The birthplace of humanity and the capital system of the Federation.\n\nThe galactic coordinate system is defined with Sol as the center (coordinates 0.0.0).\n\nThe Federation is the oldest of the ‘Big Three’ human superpowers. It has been in existence for over a thousand years.\n\nBy 3300 the Federation remains the largest power, holding sway over dozens of star systems within the ‘bubble’ of space known as the core worlds. It maintains a significant military force in its navy, the pinnacle of which is the ‘Farragut’ Class battlecruiser, a vessel some 2 kilometres long. A deployment of this vessel tends to quickly end anything other than a very major military engagement.\n\nThe Federation remains driven by the corporations. Some of the most famous of them have histories entwined with the Federation. The Sirius corporation, perhaps the biggest of them all, operating out of the Sirius system, has a virtual monopoly on power generators and hyperdrive technology. Other manufacturers are famed throughout space; with names such as Core Dynamics, Lakon Spaceways, Whatt and Pritney, Durn and Resner, Faulcon DeLacy, Zorgon Peterson and Saud Kruger. These so called ‘mega-corporations’ control the birth, lives and deaths of their employees, providing for their every need and expecting absolute loyalty in return.\n\nTechnology is a major part of any federation citizen’s life, and the economy is driven by quite conspicuous (and often compulsory) consumption of new and exciting mod cons, luxuries and consumables. The society is very much ‘throwaway’ with the new and exciting replacing the ‘old and outdated’ often within months of acquisition. This drives a constant demand and supply culture, with employees spending the money they earn, further driving the success of the corporations. Strictly speaking the Federation is composed of ‘States’, in a similar manner to the U.S.A. of 21st century Earth, but on a much bigger scale. States can still be countries, but they could be entire systems. The Federation retains a presidential electoral system, but corporations influence this dramatically, expecting their employees to vote according to the corporation’s wishes. Corruption, bribery and underhanded influence are rife. Individual freedoms are suppressed in favour of profit. Greed is good.\n\nThe Federation’s capitalist model retains the economic advantages and disadvantages of its predecessors. There are many rich people, but there are many people in grinding poverty too, in such debt to the corporations that they can be regarded as wage-slaves."
+    },
+    {
+      "name": "Merope",
+      "coords": {
+        "x": -78.59375,
+        "y": -149.625,
+        "z": -340.53125
+      },
+      "primaryCategory": "Thargoid",
+      "secondaryCategories": [],
+      "description": "Starting in March 3301, independent pilots began to encounter Unknown Artifacts in space. These appeared to be of an alien and almost organic origin and this raised the interest of the galactic scientific community. Research revealed that these unknown artifacts where pointing towards the system of Merope, and that they where in fact to be found in a shell with a radius of approximately 150 LY around this system. This is also the approximate area of space where unknown alien ships has appeared to pull pilots out of hyperspace.\n\nA closer investigation revealed barnacle sites to be present on Merope 2 A and 5 C, but apart from these nothing outstanding has been found in the system itself. At least, not for the time being...\n\nInterest in Merope was renewed with the discovery of a network of Unknown Structures that also appears to form a shell-like structure around Merope. This interest has only increased with the revelation that both the unknown artifacts, ships, and structures may all be of Thargoid origin. But to this day it is still a mystery how Merope itself fits into the bigger picture."
+    },
+    {
+      "name": "Col 70 Sector FY-N c21-3",
+      "coords": {
+        "x": 687.06,
+        "y": -362.53,
+        "z": -697.06
+      },
+      "primaryCategory": "Thargoid",
+      "secondaryCategories": [],
+      "description": "Col 70 Sector FY-N c21-3 is one of two systems of great significance to the Thargoids. In the permit locked Col 70 sector, it cannot be visited but we know it is significant because it is used as a reference site for the Thargoid measure of interstellar distances. The thargoids measure distance relative to the distance between Merope and Col 70 Sector FY-N c21-3"
+    },
+    {
+      "name": "Conn",
+      "coords": {
+        "x": -36.59375,
+        "y": -9.1875,
+        "z": -20.5
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Ameida Landing is an abandoned settlement on Conn A 3 a at 73.3853, 102.3709.\n\nThe location of this facility was given by an Unregistered Comms Beacon that can be found in orbit of Teegarden’s Star 2. Known to transmit the following at 45 minutes past every hour:\n\nSECURE 9 14 18 1 RISKY MOVE DRIVE TECH WHAT CHOICE IGNORING EVERYTHING CONN A 3 A SECURE\n\n(repeated four times)\n\nThe numerical sequence decodes by letter positions to INRA.\n\nThe facility was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have been used to reverse-engineer Thargoid drive technology."
+    },
+    {
+      "name": "HIP 59382",
+      "coords": {
+        "x": 19.03125,
+        "y": 130.09375,
+        "z": -11.59375
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Mayes Chemical Plant is an abandoned settlement on HIP 59382 1 b at 11.3987, 177.0659.\n\nThe location of this facility was given in the logs found at Klatt Enterprises.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a production facility."
+    }
+  ]
+}

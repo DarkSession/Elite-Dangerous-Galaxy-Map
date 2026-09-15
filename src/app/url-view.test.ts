@@ -4,6 +4,7 @@ import {
   createFragmentWriter,
   formatViewFragment,
   FRAGMENT_THROTTLE_MS,
+  parseGridFragment,
   parseViewFragment,
 } from './url-view';
 
@@ -74,6 +75,61 @@ describe('the URL fragment', () => {
       vi.advanceTimersByTime(FRAGMENT_THROTTLE_MS);
       expect(written.length).toBe(2);
       expect(written[1]).toContain('d=30000');
+      writer.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('the grid field of the fragment', () => {
+  test('writes the field only when the call gives a switch', () => {
+    const view = createDefaultView();
+    view.distance = 30000;
+
+    expect(formatViewFragment(view)).toBe('c=0,0,0&d=30000&p=35&y=0');
+    expect(formatViewFragment(view, true)).toBe('c=0,0,0&d=30000&p=35&y=0&g=1');
+    expect(formatViewFragment(view, false)).toBe('c=0,0,0&d=30000&p=35&y=0&g=0');
+  });
+
+  // The scenario "A fragment with no grid field leaves the switch".
+  test('reads g=1, g=0, an unreadable g and a fragment with none', () => {
+    expect(parseGridFragment('#c=0,0,0&d=8000&p=50&y=0&g=1')).toBe(true);
+    expect(parseGridFragment('c=0,0,0&d=8000&p=50&y=0&g=0')).toBe(false);
+    expect(parseGridFragment('#c=0,0,0&d=8000&p=50&y=0&g=x')).toBeNull();
+    expect(parseGridFragment('#c=0,0,0&d=8000&p=50&y=0')).toBeNull();
+    expect(parseGridFragment('')).toBeNull();
+    expect(parseGridFragment('#')).toBeNull();
+  });
+
+  test('leaves the view parser as it was', () => {
+    const view = parseViewFragment('#c=0,0,0&d=8000&p=50&y=0&g=0');
+    expect(view.distance).toBe(8000);
+    expect(view.pitch).toBe(50);
+    expect(view.cursor).toEqual([0, 0, 0]);
+  });
+
+  test('the writer reads the switch at each write', () => {
+    vi.useFakeTimers();
+    try {
+      const view = createDefaultView();
+      const written: string[] = [];
+      let clock = 1000;
+      let grid = true;
+      const writer = createFragmentWriter(view, {
+        write: (fragment) => written.push(fragment),
+        now: () => clock,
+        grid: () => grid,
+      });
+
+      writer.schedule();
+      expect(written[0]).toContain('&g=1');
+
+      grid = false;
+      clock += FRAGMENT_THROTTLE_MS;
+      writer.schedule();
+      expect(written).toHaveLength(2);
+      expect(written[1]).toContain('&g=0');
       writer.dispose();
     } finally {
       vi.useRealTimers();

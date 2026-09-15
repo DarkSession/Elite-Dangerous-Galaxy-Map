@@ -186,7 +186,7 @@
       3.14. Verify the document names the readings and not the targets
 - [x] 5.2 Run `pnpm lint`, `pnpm build`, `pnpm test` and `pnpm test:e2e`. Verify all four
       pass, and report any failure with its output rather than working around it
-- [ ] 5.3 Run the implementation review gate: launch the `openspec-implementation-reviewer`
+- [x] 5.3 Run the implementation review gate: launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and re-run
       the gate. Verify the verdict is APPROVE or APPROVE WITH NOTES before anything is
       shown to a human

@@ -4,7 +4,7 @@ The map is built in the phases below. Each phase is one OpenSpec change. This do
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-14.
+Last updated: 2026-09-15.
 
 ## Facts that hold for every phase
 
@@ -384,7 +384,16 @@ and gives the region overlay three modes.
   smoothed line is 92 CSS pixels at a zoom of 500 and about 4,600 at a zoom of 10. It
   falls under one CSS pixel only above a zoom of about 46,000, and the overlay does not
   draw above 30,000. The departure is therefore always visible where the user asks which
-  region a system is in.
+  region a system is in. The bullet below reverses this part of the decision.
+- **Reversed: the boundary does not draw near the camera.** The change
+  `library-datasets-and-publishing` fades the line out by the distance from the camera to
+  the nearest point of the segment each pixel draws: nothing at 200 light years and below,
+  full at 1,500 and above, on a smooth step between. The fade is per pixel, so one line
+  fades along its own length, and a line far across the frame still draws. The overlay is
+  empty at a zoom of 10 light years, because every plane point in that frame is inside 200
+  light years. A user at the closest zoom can therefore no longer read which side of a
+  boundary a system sits on. The trade buys this: the staircase of the traced set, which is
+  about 4,600 CSS pixels at a zoom of 10, is off the screen at the zoom where it is worst.
 
 ## Phase 4: selection and HUD
 
@@ -473,7 +482,10 @@ coordinate grid as a plane fill with six decade levels, and replaces the demo da
   horizon. Where two levels cover a pixel the alpha is the larger and not the sum. Each
   level fades to nothing at 100 of its own lines from the cursor. The camera phase of each
   level is worked out in `float64` on the processor, so the shader never adds two large
-  numbers.
+  numbers. Phase 5 multiplies one more factor into every level's alpha: a smooth step
+  over the camera's distance to the cursor, which reads 0 at 12,000 light years and 1 at
+  4,000. Where it reads 0 the pass does not draw at all, so the three probes read what
+  they read for a grid that is switched off.
 - **The grid costs no measurable fill.** At 1920x1080 the draw time with the grid on is
   0.966 ms against 0.954 ms with it off at a pitch of 5 degrees, and 0.728 ms against
   0.686 ms at a pitch of 89. Both differences are under 0.05 ms, against a budget of 1 ms.
@@ -483,9 +495,13 @@ coordinate grid as a plane fill with six decade levels, and replaces the demo da
   the near plane, keeps the 32 nearest the centre of the canvas and skips a box that
   overlaps one already placed. One more label states the plane's height on the lower edge.
   With 31 labels on screen, 10,000 systems and a pitch of 5 degrees, the animation frame
-  interval is a mean of 16.666 ms, against a bound of 18 ms.
+  interval is a mean of 16.666 ms, against a bound of 18 ms. Phase 5 adds two gates to
+  the sweep, because the labels read neither bound the lines read. A crossing outside the
+  model bounds on the game x or z axis is dropped, as `grid.frag` already discards such a
+  fragment. A crossing whose level draws under 0.09 alpha there is dropped as well, which
+  reads the level's screen spacing and the camera band together.
 - **The demo set is the Guardian Ruins.** `scripts/build-demo-systems.mjs` converts the
-  `guardian_ruins.json` dump of CanonnED3D-Map into `src/app/demo-systems.json`: 600 sites
+  `guardian_ruins.json` dump of CanonnED3D-Map into `demo-data/guardian-ruins.json`: 600 sites
   in 212 systems in 3 categories, where 166 systems hold more than one site type. A record
   is one system and carries one thumbnail for each type it holds, by its
   `ruins.canonn.tech` URL, so the repository holds no picture. The script fetches the dump
@@ -497,36 +513,84 @@ coordinate grid as a plane fill with six decade levels, and replaces the demo da
   A software renderer gives another number, and the suite fails a run that falls back to
   one.
 - **The baseline image did not move.** The grid is off unless the options ask for it and
-  the production build drops the demo set, so the committed far view is byte-identical.
+  the browser suite's helper clears the demo set, so the committed far view is
+  byte-identical.
 
-## Phase 5: the library API
+## Phase 5: the library build, the dataset catalog and the published site
 
-Change: not yet created.
+Change: `library-datasets-and-publishing`. Status: implemented.
 
-Makes the public API typed, so the map is usable as a library.
+Builds the map as a package, types the record input, gives the host a dataset catalog,
+and publishes the demo site.
 
-- **The problem.** `addCategories` and `addSystems` take `readonly unknown[]`. The
-  compiler therefore accepts any array, and the consumer finds a misspelt field only in
-  the rejection report at run time. `unknown` at the boundary also hides the accepted
-  shape from the editor, so the README is the only place that states it.
-- **Typed input.** The library exports `CategoryInput` and `SystemRecordInput`, and both
-  methods take an array of the type. The run-time parser stays, because the data comes
-  from a file or a network call that the compiler does not check. The type states the
-  contract and the parser holds it.
-- **The shape follows Spansh and EDSM.** A Spansh dump record and an EDSM system record
-  both carry `name`, `id64` and `coords` with `x`, `y` and `z`. The library keeps those
-  names, so a record from either source passes with no rename. The library adds
-  `primaryCategory` and `secondaryCategories`, which neither source has.
-- **The consumer converts.** The library does not read a Spansh dump, call the EDSM API
-  or hold a schema for either. The consumer reads its own data and builds the input
-  array before the call. This keeps the data source and the drawing layer separate, as
-  every phase does.
-- **Open questions.**
-  - Whether the typed methods replace the `unknown` ones or sit beside them for one
-    release.
-  - Whether the library exports a type guard, so a consumer can filter a parsed dump
-    before the call.
-  - Which other fields of a Spansh record the HUD of phase 4 needs.
+- **Two builds, two configurations.** `pnpm build` runs the type check, then the Vite
+  library build into `dist/`, then the declaration emit into `dist/types`. The emit runs
+  second, because Vite empties `dist/` and would take the declarations with it.
+  `pnpm build:demo-site` builds the page into `dist-demo/` with the base path
+  `/Elite-Dangerous-Galaxy-Map/`. `vite.config.lib.ts` holds the library build and
+  `vite.config.ts` holds the page, so no option carries a condition and neither output
+  overwrites the other.
+- **The library keeps its chunks.** The build emits one ES format, sets
+  `publicDir: false`, leaves code splitting on and keeps `gl-matrix` and
+  `@elite-dangerous-almanac/core` external. The HUD and the three workers stay separate
+  chunks, so a host that asks for no HUD downloads none of it. The entry chunk measured
+  162,593 bytes and the HUD chunk 47,360 bytes.
+- **The entry is `src/index.ts`.** The barrel exports `createGalaxyMap` and the 20 types
+  the public calls name, and it does not export `GalaxyMapDebug`. `package.json` names
+  the barrel in `exports`, so a host cannot deep-import a module the barrel left out.
+- **The record input is typed.** `addCategories` and `addSystems` take
+  `readonly CategoryInput[]` and `readonly SystemRecordInput[]`. The run-time reader and
+  its rejection report stay, because the data comes from a file or a network call the
+  compiler does not see.
+- **Answers to the open questions of this phase.**
+  - **The typed methods replace the `unknown` ones.** They do not sit beside them for a
+    release. The package has no consumer outside this repository yet, so the break costs
+    nothing.
+  - **The library exports no type guard.** The reader already reports each record it
+    rejects, with an index and a reason, so a consumer that wants to filter reads that
+    report.
+  - **The HUD needs no further field of a Spansh record.** It shows the six fields the
+    reader keeps and the three the host adds, which phase 4 lists.
+- **The host owns the data.** `GalaxyMapOptions` carries `datasets` and `dataset`, and
+  the handle carries `getDatasets`, `getLoadedDataset`, `loadDataset` and
+  `onDatasetChange`. An entry carries an id, a label, an async `load()` and the optional
+  collection, region, description and system count the HUD shows. `loadDataset` calls
+  `load()`, empties the set, adds what comes back and clears the selection and the name
+  filter. A later call wins and an earlier one rejects as cancelled. The library fetches
+  nothing and caches nothing.
+- **The demo site carries three sets.** Guardian Ruins, 212 systems in 3 categories;
+  Guardian Structures, 163 systems in 10 categories; and Notable Systems, 16 systems in
+  4 categories. `scripts/build-demo-systems.mjs` holds one converter per source and
+  writes the three files into `demo-data/`. The repository commits no dump.
+- **A system belongs to every category it names.** The marker draws when any category the
+  system is in is on, and the category browser counts and lists the system under each
+  one. The marker keeps the colour and the style of the primary category. One sweep over
+  10,000 systems in 4 categories stays under 2 ms.
+- **The loading image.** `GalaxyMapOptions.loadingImage` is a URL. The library puts the
+  picture in the canvas's parent, centred on the canvas, and removes it when `ready`
+  settles, whether it settles or fails. The demo site names `public/EDLoader1.svg`, which
+  it serves from its own origin, because the browser suite now serves the demo site and
+  reaches no host but the page's own.
+- **The region boundary is washed out and fades near the camera.** The fade reads the
+  camera's own distance to the drawn line, per fragment. Phase 3.1 records the reversal
+  it makes: the traced staircase is off the screen at the zoom where it is worst, and the
+  overlay is empty at a zoom of 10 light years.
+- **The coordinate grid is reachable, bounded and remembered.** The demo site starts the
+  grid on and the library default stays off. The URL fragment carries the switch as `g=1`
+  or `g=0`, and the handle gains `onGridChange`, because the grid is not view state and
+  the page cannot otherwise learn that the HUD switch moved. The camera distance band and
+  the two label gates sit with the phase 4.1 grid facts above.
+- **The pipeline.** `.github/workflows/ci.yml` runs on every push to `main` and on every
+  pull request that targets `main`. It installs with a frozen lockfile, then runs the
+  lint, the type check, the unit tests, the library build and the demo site build, in
+  that order. Every action is pinned to a commit SHA, for the reason the 7-day release
+  hold gives: a mutable tag gives whatever it points at on the day the run starts. After
+  the checks pass on a push to `main`, the workflow publishes `dist-demo/` to
+  <https://darksession.github.io/Elite-Dangerous-Galaxy-Map/>.
+- **The browser suite stays a local gate.** The workflow does not run Playwright. The
+  suite fails a run that falls back to SwiftShader or llvmpipe, and a GitHub-hosted
+  runner carries no GPU. A run without a card skips the suite; it does not run it against
+  a software renderer.
 
 ## Sources
 

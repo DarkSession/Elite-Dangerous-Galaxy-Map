@@ -197,3 +197,75 @@ test('a marker at the cursor draws at the closest zoom', async ({ page }) => {
   expect(Math.abs((pixel[1] as number) - 230)).toBeLessThanOrEqual(2);
   expect(Math.abs((pixel[2] as number) - 255)).toBeLessThanOrEqual(2);
 });
+
+// The `g` field of the fragment, which `map-navigation` states. Each test opens the
+// demo site's own start state, because the helper's default turns the grid off.
+test('a fresh load draws the grid and a g=0 fragment does not', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0', { demoData: true });
+  const on = await page.evaluate(() => {
+    window.galaxyMap?.debug.drawNow();
+    return {
+      switch: window.galaxyMap?.isGridVisible() ?? false,
+      vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
+    };
+  });
+
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0&g=0', { demoData: true });
+  const off = await page.evaluate(() => {
+    window.galaxyMap?.debug.drawNow();
+    return {
+      switch: window.galaxyMap?.isGridVisible() ?? true,
+      vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
+    };
+  });
+  console.log('the grid of the fragment', { on, off });
+
+  expect(on.switch).toBe(true);
+  expect(on.vertices).toBe(3);
+  expect(off.switch).toBe(false);
+  expect(off.vertices).toBe(0);
+});
+
+test('the HUD grid switch writes the field', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0', { demoData: true, hud: true });
+  const toggle = page.locator('.gm-hud__toggle[data-name="coordinate-grid"]');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+  await toggle.click();
+  await page.waitForFunction(() => window.location.hash.includes('g=0'), undefined, {
+    timeout: 2000,
+  });
+
+  await toggle.click();
+  await page.waitForFunction(() => window.location.hash.includes('g=1'), undefined, {
+    timeout: 2000,
+  });
+  console.log('the fragment after the switch', page.url());
+  expect(page.url()).toContain('g=1');
+});
+
+// The scenario "A later fragment moves the switch".
+test('a later fragment moves the switch and one with no g leaves it', async ({
+  page,
+}) => {
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0', { demoData: true });
+  expect(await page.evaluate(() => window.galaxyMap?.isGridVisible())).toBe(true);
+
+  await page.evaluate(() => {
+    window.location.hash = '#c=0,0,0&d=8000&p=50&y=0&g=0';
+  });
+  await page.waitForFunction(() => window.galaxyMap?.isGridVisible() === false, {
+    timeout: 2000,
+  });
+
+  await page.evaluate(() => {
+    window.location.hash = '#c=0,0,0&d=9000&p=50&y=0';
+  });
+  await page.waitForFunction(() => window.galaxyMap?.getView().distance === 9000, {
+    timeout: 2000,
+  });
+  const after = await page.evaluate(() => window.galaxyMap?.isGridVisible() ?? true);
+  console.log('the switch after a fragment with no g', after);
+
+  expect(after).toBe(false);
+});

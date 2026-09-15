@@ -5,6 +5,7 @@
 // the same panels from the same public members. ESLint holds that boundary.
 import type { GalaxyMap } from '../app/create-map';
 import { createCategoryPanel } from './categories';
+import { createDatasetDialog } from './dataset-dialog';
 import { make } from './dom';
 import { createInfoPanel } from './info-panel';
 import { createLightbox } from './lightbox';
@@ -33,6 +34,13 @@ export function createHud(
   const element = make(doc, 'div', 'gm-hud');
   const lightbox = createLightbox(doc);
   const topBar = createTopBar(doc, map, options.title ?? DEFAULT_TITLE);
+  // The dialog is there only when the top bar built the dataset field, which it does
+  // only when the catalog holds an entry.
+  const datasetDialog =
+    topBar.dataset === null ? null : createDatasetDialog(doc, map, topBar.dataset);
+  topBar.dataset?.button.addEventListener('click', () => {
+    datasetDialog?.open(topBar.dataset?.button ?? null);
+  });
   const categories = createCategoryPanel(doc, map);
   const optionsPanel = createOptionsPanel(doc, map);
   const info = createInfoPanel(doc, map, options.actions ?? [], lightbox);
@@ -40,6 +48,7 @@ export function createHud(
   const left = make(doc, 'div', 'gm-hud__left');
   left.append(categories.element, optionsPanel.element);
   element.append(topBar.element, left, info.element, lightbox.element);
+  if (datasetDialog !== null) element.appendChild(datasetDialog.element);
 
   // A wheel or a drag that lands on a panel belongs to the panel. The map's controls
   // listen on the canvas, which is not a parent of the HUD, so this stops a host that
@@ -52,6 +61,12 @@ export function createHud(
     // The HUD acts on Escape alone and lets every other key through, so a form field
     // the host owns keeps its keys.
     if (event.key !== 'Escape') return;
+    // The key unwinds one step at a time: the dialog, then the lightbox, then the
+    // selection. The dialog is first because it covers what is under it.
+    if (datasetDialog?.isOpen() === true) {
+      datasetDialog.close();
+      return;
+    }
     if (lightbox.isOpen()) {
       lightbox.close();
       return;
@@ -82,6 +97,7 @@ export function createHud(
 
   const refresh = (): void => {
     topBar.update();
+    topBar.dataset?.update();
     categories.rebuild();
     optionsPanel.update();
     info.rebuild();
@@ -99,6 +115,8 @@ export function createHud(
       stopViewListener();
       stopSelectionListener();
       categories.dispose();
+      datasetDialog?.dispose();
+      info.dispose();
       element.remove();
     },
   };

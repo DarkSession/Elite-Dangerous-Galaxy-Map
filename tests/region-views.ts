@@ -1,8 +1,9 @@
-// Chooses the two views the browser tests of the boundary line need.
+// Chooses the views the browser tests of the boundary line need.
 //
-// Two scenarios of `openspec/specs/galactic-regions` name a view that a unit test has
-// to choose: one where a chain crosses the frame within 5 degrees of vertical, and one
-// where the drawn line turns by at least 30 degrees within a reach of 8 CSS pixels. The
+// Three scenarios of `openspec/specs/galactic-regions` name a view that a unit test has
+// to choose: one where a chain crosses the frame within 5 degrees of vertical, one where
+// the drawn line turns by at least 30 degrees within a reach of 8 CSS pixels, and one
+// where a chain runs from the lower edge of the frame to the cursor. The
 // second is measured over a reach and not between two neighbouring segments, because
 // the spec holds every vertex of the drawn line to 20 degrees. Both come from the
 // boundary set itself, so nobody has to pick a place on the map by hand.
@@ -11,15 +12,17 @@
 // `e2e/region-views.ts` are what it gives. The browser test reads those constants,
 // because Playwright cannot import the camera module: it reaches the PNG of the
 // detail grid, which only Vite can load.
-import { project } from '../src/camera/projection';
+import { cameraPosition, project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
+import { regionNearFade } from '../src/render/region-pass';
 import type { RegionLines } from '../src/scene-data/types';
 import type {
   BothSetsChoice,
   CornerChoice,
   CrossingChoice,
   ChosenView,
+  FadingRunChoice,
 } from '../e2e/region-views';
 
 /** The galactic centre in game coordinates, as the browser helpers hold it. */
@@ -161,7 +164,10 @@ export function findVerticalCrossing(
     // The frame must sit inside the run, so the chain leaves it at both ends. The
     // frame covers 2 * distance * tan(30 degrees) light years at the cursor.
     const distance = Math.round((run.length * 0.7) / (2 * Math.tan(Math.PI / 6)));
-    if (distance < 600 || distance > 20000) continue;
+    // The near fade draws nothing where the camera is within 200 light years of the
+    // line and draws in full at 1,500, so the width reading needs a zoom of 1,500 or
+    // more. The camera sits at the cursor's own distance, which is the zoom.
+    if (distance < 1500 || distance > 20000) continue;
 
     // The cursor sits at the middle of the segment nearest the middle of the run, so
     // the centre of the frame lands on the drawn line and not at a corner of it.
@@ -248,12 +254,14 @@ const NEIGHBOUR_ARC_LY = 60;
  * segments can meet under 160 degrees and a bend is a run of vertices rather than one
  * corner. The reading window is the same 8 CSS pixels either way.
  *
- * The view takes the closest zoom, 500 light years, where one CSS pixel covers 0.8
- * light years. The comparison needs a straight run of the same chain in the same frame,
- * so the search also asks for one between 40 and 200 light years from the bend.
+ * The view takes a zoom of 1,600 light years, where one CSS pixel covers 2.57 light
+ * years. The camera is then 1,600 light years from the bend, which is above the near
+ * fade band of 200 to 1,500 light years, so the line draws in full there. The comparison
+ * needs a straight run of the same chain in the same frame, so the search also asks for
+ * one between 40 and 200 light years from the bend.
  */
 export function findSharpCorner(lines: RegionLines, viewport: Viewport): CornerChoice {
-  const distance = 500;
+  const distance = 1600;
   const perPixel = (2 * distance * Math.tan(Math.PI / 6)) / viewport.height;
   const reach = JOIN_REACH_PIXELS * perPixel;
 
@@ -450,10 +458,11 @@ const BOTH_SETS_CLEARANCE_LY = 200;
  * Finds a plane point that sits on a chain of both boundary sets.
  *
  * The scenario "The boundary still draws at the closest zoom" reads the same point in
- * both modes, down to a zoom of 10 light years. The frame there covers about 12 light
- * years across the cursor, while the smoothed line may sit 49.3 light years from the
- * traced one, so a point chosen against one set alone can leave the other set's line
- * outside the frame.
+ * both modes, down to a zoom of 1,500 light years, which is the closest zoom at which
+ * the near fade draws the line in full. The scenario "The boundary fades out as the
+ * camera comes near" then reads the same point at 500 and at 150 light years. The
+ * smoothed line may sit 49.3 light years from the traced one, so a point chosen against
+ * one set alone can leave the other set's line off the middle of the frame.
  *
  * The search takes the midpoint of a long traced segment, because the two lines coincide
  * along a straight run of the boundary, and keeps the longest such segment whose
@@ -534,14 +543,16 @@ const TRACED_BEND_REACH_LY = 12;
  * than 160 light years, so each one is more than 20 CSS pixels at the chosen zoom, a
  * straight run of the same chain for the comparison, and no other chain near.
  *
- * The view takes the same 500 light year zoom the smoothed corner takes, where one CSS
- * pixel covers 0.8 light years.
+ * The view takes the same 1,600 light year zoom the smoothed corner takes, where one CSS
+ * pixel covers 2.57 light years and a 49.3494 light year segment of the lattice is 19.2
+ * CSS pixels. The camera is then 1,600 light years from the node, which is above the
+ * near fade band, so the line draws in full there.
  */
 export function findTracedCorner(
   traced: RegionLines,
   viewport: Viewport,
 ): CornerChoice {
-  const distance = 500;
+  const distance = 1600;
   const perPixel = (2 * distance * Math.tan(Math.PI / 6)) / viewport.height;
 
   for (let chain = 0; chain < traced.chainCount; chain += 1) {
@@ -638,4 +649,225 @@ export function findTracedCorner(
     }
   }
   throw new Error('no traced corner meets the reading conditions');
+}
+
+/** The zoom the fading run reading takes, in light years. */
+const FADING_RUN_DISTANCE = 3000;
+
+/** The elevation the fading run reading takes, in degrees. It is the lowest one. */
+const FADING_RUN_PITCH = 5;
+
+/** Where in the frame the lower reading sits, as a share of the height from the top. */
+const FADING_RUN_LOWER = 0.95;
+
+/** How far the nearest other chain stays from either reading, in CSS pixels. */
+const FADING_RUN_CLEARANCE_PIXELS = 24;
+
+/**
+ * How much of the chosen chain, as arc length in light years, counts as the
+ * neighbourhood of the walk. A vertex inside it is the drawn line itself carrying on,
+ * and not another line near the reading. The window is long because the chain recedes
+ * toward the horizon behind the cursor: at 1,000 light years behind it the chain still
+ * draws 14 CSS pixels above the cursor, and it takes about 4,000 to clear the 24 the
+ * clearance asks for.
+ */
+const FADING_RUN_NEIGHBOUR_ARC_LY = 6000;
+
+/**
+ * Finds a view where one chain runs from the lower edge of the frame up to the cursor.
+ *
+ * The scenario "One line fades along its own length" reads the overlay's own
+ * contribution at the cursor and where the same chain crosses the lower tenth of the
+ * frame. At a pitch of 5 degrees the camera is 3,000 light years from the cursor and
+ * about 490 from the lower edge, so the near fade draws the line in full at the one and
+ * takes most of it away at the other.
+ *
+ * The search takes the longest straight runs of the set, puts the cursor on one end of a
+ * run, and turns the camera so the run points at it. The chain then stands upright on
+ * the screen and runs downward from the centre. It walks the chain from the cursor,
+ * projecting every vertex, and finds where the drawn line crosses the lower tenth. The
+ * crossing is searched inside the segment that holds it, because the set carries
+ * segments thousands of light years long and one of them can span the whole walk.
+ */
+export function findFadingRun(lines: RegionLines, viewport: Viewport): FadingRunChoice {
+  const perPixel = (2 * FADING_RUN_DISTANCE * Math.tan(Math.PI / 6)) / viewport.height;
+  const lowerY = FADING_RUN_LOWER * viewport.height;
+
+  /** One straight run of a chain, as the two vertices it spans. */
+  interface Run {
+    chain: number;
+    from: number;
+    to: number;
+    length: number;
+  }
+  const runs: Run[] = [];
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    const first = lines.first[chain] as number;
+    const last = lines.last[chain] as number;
+    let start = first;
+    for (let end = first + 1; end <= last; end += 1) {
+      if (chordDeparture(lines, start, end) > STRAIGHT_TOLERANCE_LY) {
+        start = end - 1;
+        continue;
+      }
+      runs.push({
+        chain,
+        from: start,
+        to: end,
+        length: gap(planeAt(lines, start), planeAt(lines, end)),
+      });
+    }
+  }
+  runs.sort((a, b) => b.length - a.length);
+
+  // The camera stands this far from the cursor along the plane, so the chain has to
+  // reach most of the way back toward it.
+  const ground = FADING_RUN_DISTANCE * Math.cos((FADING_RUN_PITCH * Math.PI) / 180);
+
+  for (const run of runs) {
+    if (run.length < ground * 0.85) continue;
+    const first = lines.first[run.chain] as number;
+    const last = lines.last[run.chain] as number;
+
+    for (const step of [1, -1]) {
+      const cursorVertex = step === 1 ? run.from : run.to;
+      const cursorPlane = planeAt(lines, cursorVertex);
+      const cursor = game(cursorPlane);
+
+      // The disc under the line must be bright, as it must be for the width reading.
+      const radius = Math.hypot(
+        cursorPlane[0] - GALACTIC_CENTRE[0],
+        cursorPlane[1] - GALACTIC_CENTRE[2],
+      );
+      if (radius > 16000) continue;
+
+      // The camera looks along the run, so the chain runs from the cursor toward the
+      // camera and draws downward on the screen.
+      const toward = planeAt(lines, step === 1 ? run.to : run.from);
+      const awayX = toward[0] - cursorPlane[0];
+      const awayZ = toward[1] - cursorPlane[1];
+      const yaw = ((((Math.atan2(-awayX, -awayZ) * 180) / Math.PI) % 360) + 360) % 360;
+      const view: ChosenView = {
+        cursor,
+        distance: FADING_RUN_DISTANCE,
+        yaw,
+        pitch: FADING_RUN_PITCH,
+      };
+
+      /** True while a screen point is still on the drawn line above the lower tenth. */
+      const stillAbove = (screen: ReturnType<typeof project>, last: number): boolean =>
+        screen.inFront &&
+        screen.x >= 0 &&
+        screen.x <= viewport.width &&
+        screen.y >= last - 1 &&
+        screen.y < lowerY;
+
+      // The walk down the chain. Every vertex it passes stays inside the frame, so the
+      // drawn line is one unbroken run from the centre to the lower edge.
+      let lowerFrom = -1;
+      let lowerTo = -1;
+      let above = project(view as View, cursor, viewport).y;
+      for (
+        let vertex = cursorVertex + step;
+        vertex >= first && vertex <= last;
+        vertex += step
+      ) {
+        const screen = project(view as View, game(planeAt(lines, vertex)), viewport);
+        if (stillAbove(screen, above)) {
+          above = screen.y;
+          continue;
+        }
+        lowerFrom = vertex - step;
+        lowerTo = vertex;
+        break;
+      }
+      if (lowerFrom < 0) continue;
+
+      // The crossing itself, inside that one segment. The projection does not run along
+      // a segment at an even rate, so the search bisects the segment rather than
+      // reading a share of it.
+      const a = planeAt(lines, lowerFrom);
+      const b = planeAt(lines, lowerTo);
+      const pointAt = (part: number): [number, number, number] =>
+        game([a[0] + (b[0] - a[0]) * part, a[1] + (b[1] - a[1]) * part]);
+      let low = 0;
+      let high = 1;
+      for (let round = 0; round < 60; round += 1) {
+        const middle = (low + high) / 2;
+        const screen = project(view as View, pointAt(middle), viewport);
+        if (stillAbove(screen, above)) low = middle;
+        else high = middle;
+      }
+      const lower = pointAt(low);
+      const lowerScreen = project(view as View, lower, viewport);
+      // The walk may have stopped for another reason than the lower edge: the chain can
+      // leave the frame at a side or pass the camera without ever reaching the tenth.
+      if (!lowerScreen.inFront || Math.abs(lowerScreen.y - lowerY) > 1) continue;
+      if (lowerScreen.x < 0 || lowerScreen.x > viewport.width) continue;
+
+      const camera = cameraPosition(view as View);
+      const rangeTo = (point: [number, number, number]): number =>
+        Math.hypot(point[0] - camera[0], point[1] - camera[1], point[2] - camera[2]);
+      const cursorRange = rangeTo(cursor);
+      const lowerRange = rangeTo(lower);
+      const cursorFade = regionNearFade(cursorRange);
+      const lowerFade = regionNearFade(lowerRange);
+      // The scenario holds the lower reading to under a third of the cursor reading. The
+      // search asks for a quarter, so the browser reading has room.
+      if (cursorFade < 1 || lowerFade <= 0 || lowerFade >= cursorFade / 4) continue;
+
+      // No other chain may come near either reading, and the chosen chain may not fold
+      // back over one. The check is in screen pixels, and it excuses the walked part of
+      // the chain with an arc margin at each end, where the same line carries on.
+      const cursorScreen = project(view as View, cursor, viewport);
+      const excusedTo = (from: number, way: number): number => {
+        let vertex = from;
+        let arc = 0;
+        while (vertex + way >= first && vertex + way <= last) {
+          arc += gap(planeAt(lines, vertex), planeAt(lines, vertex + way));
+          vertex += way;
+          if (arc >= FADING_RUN_NEIGHBOUR_ARC_LY) break;
+        }
+        return vertex;
+      };
+      const ends = [excusedTo(lowerTo, step), excusedTo(cursorVertex, -step)];
+      const lowExcused = Math.min(ends[0] as number, ends[1] as number);
+      const highExcused = Math.max(ends[0] as number, ends[1] as number);
+      // A vertex further from the camera than the cursor draws above the centre of the
+      // frame, so only the near ones can reach either reading.
+      const reach = FADING_RUN_DISTANCE + 1000;
+      let clearancePixels = Number.POSITIVE_INFINITY;
+      for (let vertex = 0; vertex < lines.vertexCount; vertex += 1) {
+        if (vertex >= lowExcused && vertex <= highExcused) continue;
+        const point = planeAt(lines, vertex);
+        if (Math.hypot(point[0] - camera[0], point[1] - camera[2]) > reach) continue;
+        const screen = project(view as View, game(point), viewport);
+        if (!screen.inFront) continue;
+        const away = Math.min(
+          Math.hypot(screen.x - cursorScreen.x, screen.y - cursorScreen.y),
+          Math.hypot(screen.x - lowerScreen.x, screen.y - lowerScreen.y),
+        );
+        if (away < clearancePixels) clearancePixels = away;
+      }
+      if (clearancePixels < FADING_RUN_CLEARANCE_PIXELS) continue;
+
+      return {
+        view,
+        viewport: { width: viewport.width, height: viewport.height },
+        chain: run.chain,
+        cursorVertex,
+        lowerFrom,
+        lowerTo,
+        cursor,
+        lower,
+        cursorRangeLy: cursorRange,
+        lowerRangeLy: lowerRange,
+        cursorFade,
+        lowerFade,
+        clearancePixels,
+        lightYearsPerPixel: perPixel,
+      };
+    }
+  }
+  throw new Error('no chain runs from the lower edge of the frame to the cursor');
 }

@@ -3,8 +3,11 @@
 //
 // The core colour is the lighter one and it draws above the core level. The outline
 // colour is the darker one and it draws above zero. One smoothstep at each edge gives
-// the antialiasing. Both tones come from one number, so they cannot drift apart, and
-// the widths stay in CSS pixels whatever the device pixel ratio is.
+// the antialiasing. Both tones come from the red channel, so they cannot drift apart,
+// and the widths stay in CSS pixels whatever the device pixel ratio is.
+//
+// The green channel carries the near fade the ribbon step wrote. It multiplies the
+// alpha alone, so a faded line goes out at its stated width rather than growing thin.
 precision highp float;
 
 uniform sampler2D uCoverage;
@@ -24,9 +27,11 @@ in vec2 vTexture;
 out vec4 fragColour;
 
 void main() {
-  float coverage = texture(uCoverage, vTexture).r;
+  vec2 reading = texture(uCoverage, vTexture).rg;
+  float coverage = reading.r;
+  float nearFade = reading.g;
   float line = smoothstep(0.0, uEdgeSoft, coverage);
-  if (line <= 0.0) discard;
+  if (line * nearFade <= 0.0) discard;
   float core = smoothstep(uCoreLevel - uCoreSoft, uCoreLevel + uCoreSoft, coverage);
-  fragColour = vec4(mix(uOutlineColour, uCoreColour, core), line * uOpacity);
+  fragColour = vec4(mix(uOutlineColour, uCoreColour, core), line * nearFade * uOpacity);
 }

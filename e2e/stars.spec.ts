@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { boxelSeed, starOffsets, starSpreadValue } from '../src/scene-data/boxel';
-import { meanLuminanceFrame, openMap } from './helpers';
+import { meanLuminanceFrame, openMap, settleLabels } from './helpers';
+import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -307,16 +309,30 @@ test('the bound holds at every view', async ({ page }) => {
   expect(counts[0]?.drawn).toBeLessThan(400000);
 });
 
-// The two frames are element screenshots of `#map`, which capture the page clipped to
-// the canvas box, so they also carry the label overlay. Both routes end at the same
-// view, so the labels are identical and only the drawn frame is under test. A test that
-// compares two different views this way would compare the labels as well; read the
-// canvas alone with `toDataURL` for that, as `e2e/regions.spec.ts` does.
+/**
+ * A digest of the drawing buffer. An element screenshot of `#map` captures the page
+ * clipped to the canvas box, so it carries the label overlay as well, and the place of a
+ * label depends on the frames drawn before it: an anchor carried from the frame before
+ * takes half of the gap to the middle of its region rather than all of it. Two routes to one
+ * view therefore give the same drawn frame and a label a few CSS pixels apart. These
+ * comparisons are about the drawn frame, so they read the canvas alone, as
+ * `e2e/regions.spec.ts` does. The comparison is of the digest and not of the image, so a
+ * failure prints a line and not a megabyte of base64.
+ */
+async function canvasDigest(page: import('@playwright/test').Page): Promise<string> {
+  const image = await page.evaluate(() => {
+    const canvas = document.getElementById('map');
+    if (!(canvas instanceof HTMLCanvasElement)) return '';
+    return canvas.toDataURL('image/png');
+  });
+  return createHash('sha256').update(image).digest('hex');
+}
+
 test('the same view gives the same frame by any route', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
   await setCloseFade(page, 1);
   await drawFrame(page);
-  const direct = await page.locator('#map').screenshot();
+  const direct = await canvasDigest(page);
 
   await openMap(page, '#c=4000,0,4000&d=8000&p=35&y=0');
   await setCloseFade(page, 1);
@@ -329,9 +345,9 @@ test('the same view gives the same frame by any route', async ({ page }) => {
     });
     window.__galaxyMap?.drawNow?.();
   });
-  const reached = await page.locator('#map').screenshot();
+  const reached = await canvasDigest(page);
 
-  expect(Buffer.compare(direct, reached)).toBe(0);
+  expect(reached).toBe(direct);
 });
 
 test('the invented field goes as the camera comes in', async ({ page }) => {
@@ -342,14 +358,14 @@ test('the invented field goes as the camera comes in', async ({ page }) => {
     CLOSEST_SOL,
   ];
   const differences: number[] = [];
-  const pairs: [Buffer, Buffer][] = [];
+  const pairs: [string, string][] = [];
   for (const where of views) {
     await openMap(page, where);
     await setPasses(page, { stars: true });
-    const withStars = await page.locator('#map').screenshot();
+    const withStars = await canvasDigest(page);
     differences.push(await meanPixelDifference(page));
     await setPasses(page, { stars: false });
-    const withoutStars = await page.locator('#map').screenshot();
+    const withoutStars = await canvasDigest(page);
     pairs.push([withStars, withoutStars]);
   }
   console.log('the close fade', differences);
@@ -362,8 +378,8 @@ test('the invented field goes as the camera comes in', async ({ page }) => {
   // off, byte for byte.
   expect(differences[3] as number).toBe(0);
   for (const index of [2, 3]) {
-    const pair = pairs[index] as [Buffer, Buffer];
-    expect(Buffer.compare(pair[0], pair[1]), `the view ${views[index]}`).toBe(0);
+    const pair = pairs[index] as [string, string];
+    expect(pair[1], `the view ${views[index]}`).toBe(pair[0]);
   }
 });
 
@@ -547,7 +563,7 @@ async function addSystemsAround(
         state = (state * 1103515245 + 12345) & 0x7fffffff;
         return state / 0x7fffffff;
       };
-      const records: Record<string, unknown>[] = [];
+      const records: SystemRecordInput[] = [];
       for (let index = 0; index < where.count; index += 1) {
         records.push({
           name: `S${index}`,
@@ -625,7 +641,7 @@ test('the same view gives the same frame with systems loaded', async ({ page }) 
   await addSystemsAround(page, cameraOf([0, 0, 0], 500), 500, 120);
   await setCloseFade(page, 1);
   await drawFrame(page);
-  const direct = await page.locator('#map').screenshot();
+  const direct = await canvasDigest(page);
 
   await openMap(page, '#c=4000,0,4000&d=8000&p=35&y=0');
   await addSystemsAround(page, cameraOf([0, 0, 0], 500), 500, 120);
@@ -639,9 +655,9 @@ test('the same view gives the same frame with systems loaded', async ({ page }) 
     });
     window.__galaxyMap?.drawNow?.();
   });
-  const reached = await page.locator('#map').screenshot();
+  const reached = await canvasDigest(page);
 
-  expect(Buffer.compare(direct, reached)).toBe(0);
+  expect(reached).toBe(direct);
 });
 
 test('a real system stays when the invented field goes', async ({ page }) => {
@@ -669,6 +685,9 @@ test('a real system stays when the invented field goes', async ({ page }) => {
       expect(Math.abs((pixel[channel] as number) - wanted)).toBeLessThanOrEqual(2);
     }
 
+    // The region label walks back to the middle of its region after the camera jumps.
+    // The two pictures must hold the same scene, so the walk has to end first.
+    await settleLabels(page);
     await setPasses(page, { stars: true });
     const withStars = await page.locator('#map').screenshot();
     await setPasses(page, { stars: false });

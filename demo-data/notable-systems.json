@@ -1,0 +1,220 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "INRA",
+      "color": [
+        255,
+        176,
+        64
+      ],
+      "description": "A system with a site of the INRA."
+    },
+    {
+      "name": "Guardian",
+      "color": [
+        120,
+        230,
+        180
+      ],
+      "description": "A system with a Guardian record."
+    },
+    {
+      "name": "Thargoid",
+      "color": [
+        190,
+        130,
+        255
+      ],
+      "description": "A system with a Thargoid record."
+    },
+    {
+      "name": "Human",
+      "color": [
+        120,
+        200,
+        255
+      ],
+      "description": "A system of human history."
+    }
+  ],
+  "systems": [
+    {
+      "name": "Hen 2-333",
+      "coords": {
+        "x": -840.65625,
+        "y": -561.15625,
+        "z": 13361.8125
+      },
+      "primaryCategory": "Guardian",
+      "secondaryCategories": [],
+      "description": "This is at the centre of a permit very similar to the Regor Sector Permit, and is theorised to be of significance to the Guardians\n\nThe Aronnax Expedition reached the vicinity of the permit-locked IC 4673 Sector on 19th January 3304 and spent one week surveying the borders for signs of spacefaring activity, as well as outdoor worlds and systems with all the materials needed for FSD boosting ('green' systems). The region was also circumnavigated to establish its size and morphology, which revealed it to be a sphere of 100 LY radius centred on the Wolf-Rayet system Hen 2-333, which is a possible supernova candidate and is surrounded by a tiny nebula consisting of mass thrown off the central star.\n\nIt is currently unknown whether the permit lock is a result of a safety precaution or interference from astrophysical phenomena, such as extreme radiation resulting from a supernova, however the immediate vicinity of the border was discovered to have an unusual abundance of life-bearing worlds, including two systems that each harbour two Earth-like Worlds, that must all be considered endangered."
+    },
+    {
+      "name": "Gamma Velorum",
+      "coords": {
+        "x": 1099.21875,
+        "y": -146.6875,
+        "z": -133.59375
+      },
+      "primaryCategory": "Guardian",
+      "secondaryCategories": [],
+      "description": "Gamma Velorum is a multiple star system in the constellation Vela. At magnitude +1.7, it is one of the brightest stars in the night sky, and by far the closest and brightest Wolf-Rayet star. It has the traditional names Suhail and Suhail al Muhlif, which confusingly also apply to Lambda Velorum. It also has a more modern popular name Regor.\n\nThis is one of the main theorised locations of the Guardian Homeworld, due to it being the centre of the main guardian bubble and being a hotter than avg star, such as where the guardians first evolved"
+    },
+    {
+      "name": "Sol",
+      "coords": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "primaryCategory": "Human",
+      "secondaryCategories": [],
+      "description": "The birthplace of humanity and the capital system of the Federation.\n\nThe galactic coordinate system is defined with Sol as the center (coordinates 0.0.0).\n\nThe Federation is the oldest of the ‘Big Three’ human superpowers. It has been in existence for over a thousand years.\n\nBy 3300 the Federation remains the largest power, holding sway over dozens of star systems within the ‘bubble’ of space known as the core worlds. It maintains a significant military force in its navy, the pinnacle of which is the ‘Farragut’ Class battlecruiser, a vessel some 2 kilometres long. A deployment of this vessel tends to quickly end anything other than a very major military engagement.\n\nThe Federation remains driven by the corporations. Some of the most famous of them have histories entwined with the Federation. The Sirius corporation, perhaps the biggest of them all, operating out of the Sirius system, has a virtual monopoly on power generators and hyperdrive technology. Other manufacturers are famed throughout space; with names such as Core Dynamics, Lakon Spaceways, Whatt and Pritney, Durn and Resner, Faulcon DeLacy, Zorgon Peterson and Saud Kruger. These so called ‘mega-corporations’ control the birth, lives and deaths of their employees, providing for their every need and expecting absolute loyalty in return.\n\nTechnology is a major part of any federation citizen’s life, and the economy is driven by quite conspicuous (and often compulsory) consumption of new and exciting mod cons, luxuries and consumables. The society is very much ‘throwaway’ with the new and exciting replacing the ‘old and outdated’ often within months of acquisition. This drives a constant demand and supply culture, with employees spending the money they earn, further driving the success of the corporations. Strictly speaking the Federation is composed of ‘States’, in a similar manner to the U.S.A. of 21st century Earth, but on a much bigger scale. States can still be countries, but they could be entire systems. The Federation retains a presidential electoral system, but corporations influence this dramatically, expecting their employees to vote according to the corporation’s wishes. Corruption, bribery and underhanded influence are rife. Individual freedoms are suppressed in favour of profit. Greed is good.\n\nThe Federation’s capitalist model retains the economic advantages and disadvantages of its predecessors. There are many rich people, but there are many people in grinding poverty too, in such debt to the corporations that they can be regarded as wage-slaves."
+    },
+    {
+      "name": "Merope",
+      "coords": {
+        "x": -78.59375,
+        "y": -149.625,
+        "z": -340.53125
+      },
+      "primaryCategory": "Thargoid",
+      "secondaryCategories": [],
+      "description": "Starting in March 3301, independent pilots began to encounter Unknown Artifacts in space. These appeared to be of an alien and almost organic origin and this raised the interest of the galactic scientific community. Research revealed that these unknown artifacts where pointing towards the system of Merope, and that they where in fact to be found in a shell with a radius of approximately 150 LY around this system. This is also the approximate area of space where unknown alien ships has appeared to pull pilots out of hyperspace.\n\nA closer investigation revealed barnacle sites to be present on Merope 2 A and 5 C, but apart from these nothing outstanding has been found in the system itself. At least, not for the time being...\n\nInterest in Merope was renewed with the discovery of a network of Unknown Structures that also appears to form a shell-like structure around Merope. This interest has only increased with the revelation that both the unknown artifacts, ships, and structures may all be of Thargoid origin. But to this day it is still a mystery how Merope itself fits into the bigger picture."
+    },
+    {
+      "name": "Col 70 Sector FY-N c21-3",
+      "coords": {
+        "x": 687.06,
+        "y": -362.53,
+        "z": -697.06
+      },
+      "primaryCategory": "Thargoid",
+      "secondaryCategories": [],
+      "description": "Col 70 Sector FY-N c21-3 is one of two systems of great significance to the Thargoids. In the permit locked Col 70 sector, it cannot be visited but we know it is significant because it is used as a reference site for the Thargoid measure of interstellar distances. The thargoids measure distance relative to the distance between Merope and Col 70 Sector FY-N c21-3"
+    },
+    {
+      "name": "Conn",
+      "coords": {
+        "x": -36.59375,
+        "y": -9.1875,
+        "z": -20.5
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Ameida Landing is an abandoned settlement on Conn A 3 a at 73.3853, 102.3709.\n\nThe location of this facility was given by an Unregistered Comms Beacon that can be found in orbit of Teegarden’s Star 2. Known to transmit the following at 45 minutes past every hour:\n\nSECURE 9 14 18 1 RISKY MOVE DRIVE TECH WHAT CHOICE IGNORING EVERYTHING CONN A 3 A SECURE\n\n(repeated four times)\n\nThe numerical sequence decodes by letter positions to INRA.\n\nThe facility was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have been used to reverse-engineer Thargoid drive technology."
+    },
+    {
+      "name": "HIP 59382",
+      "coords": {
+        "x": 19.03125,
+        "y": 130.09375,
+        "z": -11.59375
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Mayes Chemical Plant is an abandoned settlement on HIP 59382 1 b at 11.3987, 177.0659.\n\nThe location of this facility was given in the logs found at Klatt Enterprises.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a production facility."
+    },
+    {
+      "name": "HIP 7158",
+      "coords": {
+        "x": -3.78125,
+        "y": -143.84375,
+        "z": -33.8125
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Hogan Depot is an abandoned settlement on HIP 7158 A 2 b at -44.6309, -63.7982.\n\nThe location of this facility was given in the logs found at Mayes Chemical Plant.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a transfer facility."
+    },
+    {
+      "name": "LP 389-95",
+      "coords": {
+        "x": 98.84375,
+        "y": 7,
+        "z": -7.71875
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Velasquez Medical Research Centre is an abandoned settlement on LP 389-95 7 at 57.9668, 50.0331.\n\nThe location of this facility was given in the logs found at Hogan Depot.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a medical research laboratory.\n\nThe vaccine for the mycoid agent was developed here."
+    },
+    {
+      "name": "Hermitage",
+      "coords": {
+        "x": -28.75,
+        "y": 25,
+        "z": 10.4375
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Hollis Gateway is an abandoned settlement on Hermitage 4 a at -53.7548, 157.5843.\n\nThe location of this facility was given in the logs found at Stuart Retreat, and at Klatt Enterprises.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as an agricultural laboratory."
+    },
+    {
+      "name": "12 Trianguli",
+      "coords": {
+        "x": -77.15625,
+        "y": -76.8125,
+        "z": -120.6875
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Taylor Keep is an abandoned settlement on 12 Trianguli A 1 at -51.5711, 130.6677.\n\nThe location of this facility was given by an Unregistered Comms Beacon at Ain 2. The comms beacon transmits a message in phonetic alphabet.\n\nTaylor Keep was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a launch point for the delivery of weaponised mycoid to a Thargoid hive ship by Commander Jameson.\n\nThe facility contains a number of habitation modules, hangar or barracks buildings, it is surrounded by defence turrets. A major feature is the ship landing pad and control tower. There are collectable materials scattered around the site.\n\nWithin the facility there are four Data Points which may be scanned for an Intel Package, and for Engineer Data. There is a time limit to scanning the Data Points. The Data Point also will give you the waypoint for the site in the Navigation Panel.\n\nAround the facility there are three Settlement Comms Log Uplink points, scanning them gives some of the history of the INRA experiments:\n\nAll Our Hopes 1/3\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Communications record 1/3…\n\nI’ll admit I had my reservations about this Commander Jameson. I looked into his background and apparently he climbed the ranks of the Pilots Federation with unprecedented speed. He’s revered by other pilots. But that doesn’t mean he’s suited to the task.\n\nBut then it struck me – all we need is someone who can get the payload where it needs to go. The hard work – the development of the mycoid – has already been done. All Jameson has to do is push a button.\n\nThe important thing is to play up the whole ‘saving humanity’ angle. Make him feel like a hero. That should stop him asking too many questions.\n\nAnd if everything goes wrong, we can just pin the blame on him.\n\nAll Our Hopes 2/3\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Communications record 2/3…\n\nHaving received the payload from the Alnath system we’ve prepared a number of medium-range missiles loaded with the weaponised version of the mycoid.\n\nJameson will be here in three days to prep for the mission, which should give us more than enough time to fit his vessel. Apparently he insisted on using his own ship. I’ve also ordered that some special modifications be made to his craft.\n\nHe’ll have to get close to launch the missiles, so it’s unlikely he’ll be coming back. But if he does survive, there are contingencies in place.\n\nAll Our Hopes 3/3\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Communications record 3/3…\n\nTo: Commander Jameson\n\nFrom: Amaro Hem, Programme Coordinator\n\nWelcome, Commander Jameson. Your reputation precedes you. We are extremely grateful you chose to accept this mission.\n\nI understand that the purpose of the assignment has been explained to you, but allow me to reiterate: this mission, if executed successfully, could mean the end of our war with the Thargoids. Its importance cannot be overstated.\n\nThe consignment has been loaded onto your ship. We have made some minor modification to your vessel, but it should not affect the performance or functionality in any way.\n\nThis is an extremely dangerous mission, Commander. You will be heading deep into enemy territory. If anything goes wrong, you’re on your own.\n\nGood luck, Commander. The future of the human race is in your hands. All our hopes and prayers go with you."
+    },
+    {
+      "name": "Alnath",
+      "coords": {
+        "x": -3.875,
+        "y": -7.375,
+        "z": -133.65625
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Carmichael Point is an abandoned settlement on HIP 16824 A 2 f at 73.8762, 61.8761.\n\nThe location of this facility was given by an Unregistered Comms Beacon at HR 1188 A 2. The comms beacon transmits a message in phonetic alphabet on the hour.\n\nSecure 9 14 18 1 Bait Deployed Contact Confirmed HIP 16824 A 2 F Secure\n\n9 14 18 1 are the letter offsets for INRA\n\nCarmichael Point was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, it was used to lure a Thargoid ship in order to attack it. The attack failed, so happened presumably before the attack made by Commander Jameson.\n\nThe facility contains a number of habitation modules, hangar or barracks buildings, and has two large mycoid storage tanks. There are collectable materials scattered around the site.\n\nWithin the facility there is a Data Point which may be scanned for an Intel Package, and for Engineer Data. The Data Point also will give you the waypoint for the site in the Navigation Panel.\n\nAround the facility there are four Settlement Comms Log Uplink points, scanning them gives some of the history of the INRA experiments:\n\nWatching The Sky 1/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Site records found…\n\nEverything is in place.\n\nIf the thargoids take the bait, this facility should come under attack very soon. And when it does, we’ll find out if our new weapons are worth a damn.\n\nIt’s taken a lot of time and effort to make this place look like an important military site. I just hope they fall for it. It’s about time we started fighting back.\n\nWatching The Sky 2/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Site records found…\n\nEveryone’s on edge. It’s like seeing an approaching storm and waiting for it to break. The air is heavy with the threat of violence.\n\nMaybe they didn’t take the bait? Maybe we hid it too well? Or maybe we didn’t hide it well enough. What if they realise this is a trap?\n\nI suppose it’s too late to worry about that now. All we can do is watch the sky, and wait.\n\nWatching The Sky 3/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Site records found…\n\nContact confirmed! Thargoids 1,000 light seconds from the site and closing. Ready all weapon systems and prepare to fire on my order. We’ve only got one shot at this and I don’t want to miss.\n\nWait… wait. What is that? That’s not a regular Thargoid ship. It’s huge.\n\nWill someone scan that thing! And tell command we’ve got a mothership here. Get them the data as soon as possible.\n\nAll right, all right, that’s close enough. Fire all batteries!\n\nWatching The Sky 4/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\n…Site records found…\n\nTest unsuccessful…targets suffered minimal damage…site lost…all operatives…lost…\n\nThe INRA base found after Carmichael was Stack."
+    },
+    {
+      "name": "HIP 12099",
+      "coords": {
+        "x": -101.90625,
+        "y": -95.46875,
+        "z": -165.59375
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Stack is an abandoned settlement on HIP 12099 1 a at -72.6561, -67.3629.\n\nThe location of this facility was given by an Unregistered Comms Beacon in HIP 8887. The comms beacon transmits a message in phonetic alphabet:\n\nSECURE 9 1 4 1 8 1 HIP 7158 DELIVERY RECEIVED HIP 12099 1A SECURE.\n\nThe ‘9 1 4 1 8 1’ can be clustered as ‘9 14 18 1’, which are the letter offsets for INRA. HIP 12099 1 a is a reference to Taylor Keep, HIP 7158 refers to Hogan Depot.\n\nStack was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, operating as a thargoid live experimentation laboratory.\n\nThe facility contains a number of habitation modules, hangar or barracks buildings, and large tanks marked with the symbol for the mycoid weapon; the ground is stained in a manner consistent with leakage of the agent. A major feature is the experimentation pit (reached through a raised roadway) which seems to contains parts of Thargoids that have been experimented upon. There are collectable materials scattered around the site.\n\nWithin the facility there is a Data Point which may be scanned for an Intel Package, and for Engineer Data. The Data Point also will give you the waypoint for the site in the Navigation Panel.\n\nAround the facility there are four Settlement Comms Log Uplink points, scanning them gives some of the history of the INRA experiments:"
+    },
+    {
+      "name": "HIP 15329",
+      "coords": {
+        "x": -87.84375,
+        "y": -52,
+        "z": -167.375
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Stuart Retreat is an abandoned settlement on HIP 15329 A 3 c at -62.6134, -44.2569.\n\nIt was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, and for a time hosted the researcher who originally stumbled across the mycoid.\n\nThe facility contains a number of agricultural tents, habitation modules, and a communications tower. A couple of small tanks marked with the symbol for the mycoid weapon are present, and the ground is stained in a manner consistent with leakage of the agent.\n\nThere are Engineer Materials scattered around the ground, and within the facility there are two Data Points which may be scanned for an Intel Package, and for Engineer Data; both need to be scanned within 20s.\n\nAround the facility there are four Settlement Comms Log Uplink points, scanning them gives some of the history of the INRA:\n\nWHISTLEBLOWER 1/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\nI don’t have long. Once they realise I’m gone and the data has been copied, they’ll send their attack dogs after me, I know they will. But someone needs to show the galaxy what the INRA really is – what it’s doing, what it’s hiding.\n\nWHISTLEBLOWER 2/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\nI’m sorry for the part I’ve played in this. Truly.\n\nI was a researcher at a facility in the Hermitage 4 A system exploring agricultural applications of Thargoid-derived technology. The lab was owned by the INRA.\n\nPublicly, the INRA likes to emphasise the whole altruistic and cooperative thing, but in recent years it’s become much more focused on weapons testing and manufacture. Believe me, it’s a military contractor in all but name.\n\nWHISTLEBLOWER 3/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\nThe nature of my field was the study of disease-resistant crops and mycoproteins, that sort of thing. I was getting good results, even if my superiors took no notice. Then everything changed.\n\nI was running a bunch of control experiments, just trying a few things out really. It was an afterthought – it wasn’t even related to the main body of my work.\n\nThe results were interesting and I didn’t think they were particularly significant, but something made me take it directly to one of the INRA guys. I didn’t want to go to Dr Prince, she’d always been pretty dismissive of my work.\n\nI would give anything to be able to undo that decision. Anything.\n\nWHISTLEBLOWER 4/4\n\n…Bypassing security protocols…\n\n…Secure connection established…\n\nAll my equipment and samples were whisked off to some remote facility. Later, I found out they’d been taken to a weapons-testing site in the Alnath A 2 A A system.\n\nMy research was used as the basis of a new super weapon designed to destroy the Thargoids. I heard they experimented on live captives. I doubt any of it was strictly legal. It certainly wasn’t ethical.\n\nTo the public, the INRA is a symbol of all that is possible when superpowers set aside their differences and work together. Well, it might have started off like that, but it’s something very different now. Progress at any cost, might makes right – all our worst impulses channelled into an unaccountable organisation focused solely on making bigger and more powerful weapons. Bigger and more powerful weapons. God.\n\nIf you find this… if someone finds this, make sure it gets out. Please. It’s time people knew the truth.\n\nThe logs contain references to the Hollis Gateway agricultural laboratory on Hermitage 4 a, and the Klatt Enterprises weapons-testing site on Alnath A 2 a a."
+    },
+    {
+      "name": "Soontill",
+      "coords": {
+        "x": 249.65625,
+        "y": -45.34375,
+        "z": 120
+      },
+      "primaryCategory": "Guardian",
+      "secondaryCategories": [],
+      "description": "Soontill is an uninhabited system in the Core Systems within the Inner Orion Spur. It is allegedly home to a planet of the same name that was discovered by The Dark Wheel and is said to be replete with countless Thargoid treasures. The brothers Neptune and Oberon Ryder, sons of The Dark Wheel's leader, Alex Ryder, were originally divided over whether to pursue Raxxla or Soontill and eventually discovered the latter. Despite the location of the system Soontill being known and unrestricted, the planet's whereabouts remain a mystery to all but The Dark Wheel.\n\nObjects taken from Soontill include slabs of unidentified material covered in pictographs of unknown origin. They are exclusively sold at Cheranovsky City in the Ngurii system as the Rare Commodity Soontill Relics. These alien artefacts were confirmed by Chief Xeno-Chemist Lyran Betar to not have been made by human hands and date back tens of thousands of years.\n\nTourist Spot 0508 describes a base in the Soontill system where a secret Human-Thargoid project occurred.\n\nThis is rumoured to be the site of the CIEP base. Some stories claim a combined Human-Thargoid project took place here.\n\nThe acronym CIEP could mean Circle of Independent Elite Pilots, an offshoot of The Dark Wheel.They used it as a secret military base before being run off by pirates with fancy military technology. The location of Soontill was found by the pirates because it was close to Grandmort and the origin of the Circle attack force which traveled (out of their way) through Brohman and Lanaest to reach Delta Phoenicis.\n\nThe location of Soontill given by Universal Cartographics may not be the actual place, because neither it nor Ngurii are close to the Grandmort system."
+    },
+    {
+      "name": "HIP 16824",
+      "coords": {
+        "x": -49.21875,
+        "y": -89.375,
+        "z": -187.1875
+      },
+      "primaryCategory": "INRA",
+      "secondaryCategories": [],
+      "description": "Carmichael Point is an abandoned settlement on HIP 16824 A 2 f at 73.8762, 61.8761.\n\nThe location of this facility was given by an Unregistered Comms Beacon at HR 1188 A 2. The comms beacon transmits a message in phonetic alphabet on the hour.\n\nSecure 9 14 18 1 Bait Deployed Contact Confirmed HIP 16824 A 2 F Secure\n\n9 14 18 1 are the letter offsets for INRA\n\nCarmichael Point was operated by the Intergalactic Naval Reserve Arm (INRA), a co-operative between the Federation and Empire that operated during the last war with the Thargoids. This facility appears to have had connections to the project that created the mycoid used against the Thargoids, it was used to lure a Thargoid ship in order to attack it. The attack failed, so happened presumably before the attack made by Commander Jameson.\n\nThe facility contains a number of habitation modules, hangar or barracks buildings, and has two large mycoid storage tanks. There are collectable materials scattered around the site.\n\nWithin the facility there is a Data Point which may be scanned for an Intel Package, and for Engineer Data. The Data Point also will give you the waypoint for the site in the Navigation Panel.\n\nAround the facility there are four Settlement Comms Log Uplink points, scanning them gives some of the history of the INRA experiments:"
+    }
+  ]
+}

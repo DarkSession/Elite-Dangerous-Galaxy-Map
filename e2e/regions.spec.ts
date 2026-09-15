@@ -6,6 +6,7 @@ import type { Page } from '@playwright/test';
 import type { RegionMode } from '../src/app/create-map';
 import { GALACTIC_CENTRE, openMap, projectPoint } from './helpers';
 import {
+  FADING_RUN,
   NEAR_BOTH_SETS,
   SHARP_CORNER,
   TRACED_CORNER,
@@ -18,8 +19,18 @@ test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 /** A view inside the band where the overlay draws in full. */
 const MEDIUM_DISTANCE = 10000;
 
-/** The three close views the boundary must still draw at, in light years. */
-const CLOSE_DISTANCES = [1500, 500, 10];
+/**
+ * The two close views the boundary must still draw at, in light years. 1,500 is the
+ * closest zoom at which the near fade draws the line in full, so the scenario reads
+ * there and at 4,000 and no longer at 500 or 10.
+ */
+const CLOSE_DISTANCES = [4000, 1500];
+
+/**
+ * The three views the near fade reading takes, in light years. The camera is that far
+ * from the cursor, so the fade at the cursor is 1, then 0.135, then 0.
+ */
+const FADE_DISTANCES = [1500, 500, 150];
 
 /** The two modes that draw a line. */
 const DRAWING_MODES: RegionMode[] = ['simplified', 'accurate'];
@@ -441,13 +452,90 @@ test('the boundary still draws at the closest zoom', async ({ page }) => {
       await setPasses(page, { regions: false });
       const withoutOverlay = await canvasDigest(page);
 
-      // Phase 2 removed the lines below 3,000 light years. The smoothed boundary does
-      // not read as a staircase, so they draw here now.
+      // 1,500 light years is the closest zoom at which the line draws in full. The
+      // near fade takes it away below that.
       expect(withOverlay, `${mode} at ${distance} light years`).not.toBe(
         withoutOverlay,
       );
     }
   }
+});
+
+/**
+ * The overlay's own contribution at a plane point: the largest change it makes to any
+ * pixel within a reach of the point's projection. The overlay draws at less than full
+ * opacity, so an absolute reading would follow the galaxy under it.
+ */
+async function contributionNear(
+  page: Page,
+  point: [number, number, number],
+  reach = JOIN_RADIUS,
+): Promise<number> {
+  const screen = await projectPoint(page, point);
+  const rect = {
+    x: Math.round(screen.x) - reach,
+    y: Math.round(screen.y) - reach,
+    width: reach * 2 + 1,
+    height: reach * 2 + 1,
+  };
+  await setPasses(page, { regions: true });
+  const withOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: false });
+  const withoutOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: true });
+
+  let largest = 0;
+  for (let index = 0; index < withOverlay.length; index += 1) {
+    const change = Math.abs(
+      (withOverlay[index] as number) - (withoutOverlay[index] as number),
+    );
+    if (change > largest) largest = change;
+  }
+  return largest;
+}
+
+test('the boundary fades out as the camera comes near', async ({ page }) => {
+  await openMap(page);
+
+  for (const mode of DRAWING_MODES) {
+    await setRegionMode(page, mode);
+    const readings: number[] = [];
+    for (const distance of FADE_DISTANCES) {
+      await look(page, NEAR_BOTH_SETS.point, distance);
+      readings.push(await contributionNear(page, NEAR_BOTH_SETS.point));
+    }
+    console.log('the near fade reading', { mode, FADE_DISTANCES, readings });
+
+    const [full, half, none] = readings as [number, number, number];
+    // The camera is the zoom distance from the cursor, so the fade at the cursor is 1
+    // at 1,500 light years, 0.135 at 500 and 0 at 150.
+    expect(full, `${mode} at 1,500 light years`).toBeGreaterThan(0.05);
+    expect(half, `${mode} at 500 light years`).toBeGreaterThan(0);
+    expect(half, `${mode} at 500 light years`).toBeLessThan(full / 3);
+    expect(none, `${mode} at 150 light years`).toBe(0);
+  }
+});
+
+test('one line fades along its own length', async ({ page }) => {
+  await openMap(page);
+  await lookFrom(page, FADING_RUN.view);
+
+  // A unit test chose the cursor and the yaw so that one chain of the smoothed set runs
+  // from the lower tenth of the frame up to the cursor. The camera is 3,000 light years
+  // from the cursor and 487 from the lower reading.
+  const atCursor = await contributionNear(page, FADING_RUN.cursor);
+  const atEdge = await contributionNear(page, FADING_RUN.lower);
+  console.log('the fading run reading', {
+    chain: FADING_RUN.chain,
+    cursorRangeLy: FADING_RUN.cursorRangeLy,
+    lowerRangeLy: FADING_RUN.lowerRangeLy,
+    atCursor,
+    atEdge,
+  });
+
+  expect(atCursor).toBeGreaterThan(0.05);
+  expect(atEdge).toBeGreaterThan(0);
+  expect(atEdge).toBeLessThan(atCursor / 3);
 });
 
 for (const mode of DRAWING_MODES) {
@@ -503,14 +591,14 @@ for (const mode of DRAWING_MODES) {
       withOverlay[run.end] as number,
     );
 
-    // The outline is the darker of the two colours, so both ends of the run are darker
-    // than the frame under them.
-    expect(withOverlay[run.start] as number).toBeLessThan(
+    // The ends are no longer held to be darker than the frame under them. The washed
+    // outline reads at a luminance of 0.169, so over the dark space between the arms it
+    // lightens the pixel. What holds everywhere is that the overlay changes every pixel
+    // of the run and that the middle is lighter than the ends.
+    expect(withOverlay[run.start] as number).not.toBe(
       withoutOverlay[run.start] as number,
     );
-    expect(withOverlay[run.end] as number).toBeLessThan(
-      withoutOverlay[run.end] as number,
-    );
+    expect(withOverlay[run.end] as number).not.toBe(withoutOverlay[run.end] as number);
   });
 }
 

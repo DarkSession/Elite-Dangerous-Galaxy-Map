@@ -1,32 +1,55 @@
-// Checks that the region cell lookup stays out of every chunk but the region worker,
-// and that the page chunk stays small.
+// What the library build emits. The test runs the build into a directory of its own, so
+// every reading comes from a fresh build and not from the `dist/` left in the tree.
 //
-// `astro/codex-region-lookup` is about 199 KiB of run-length region cells. The label
-// sweep reads regions on the main thread, so the reader of the coarse grid lives in
-// `src/scene-data/regions.ts` and imports nothing from that lookup. If it ever imports
-// the trace instead, the whole table joins the page chunk and this test fails.
+// It checks four things:
+//
+// 1. The output holds the entry chunk, the three worker chunks, the HUD chunk and the
+//    three font files, and it holds no page, no demo data and no file of `public/`.
+// 2. The region cell lookup stays in the region worker. `astro/codex-region-lookup` is
+//    about 199 KiB of run-length region cells. The label sweep reads regions on the main
+//    thread, so the reader of the coarse grid lives in `src/scene-data/regions.ts` and
+//    imports nothing from that lookup. If it ever imports the trace instead, the whole
+//    table joins the entry chunk and this test fails.
+// 3. Every worker chunk bundles what it imports. A worker starts with no import map, so
+//    a bare specifier in a worker chunk does not resolve in the browser.
+// 4. `package.json` names paths the build emits, and the declaration names the public
+//    surface.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * How large the page chunk may be, in bytes. It measured 108,194 bytes when this test was
- * written, 124,530 bytes after the phase 3 change, which did not refresh this note,
- * 131,090 bytes after the deep zoom change, which added about 6.5 KB for the glow shader,
- * the region mode and the second boundary set, and 144,230 bytes before the flight,
- * markers and grid change. That change took the chunk to 152,848 bytes. The growth is the
- * selection flight, the grid pass and the grid labels.
+ * How large the library's entry chunk may be, in bytes. The guard is for the 199 KiB
+ * region cell lookup: a chunk that pulled that table in reads over 370,000 bytes. The
+ * bound is that guard and not a budget, so it keeps room for the code the library grows.
  *
- * The guard is for the 199 KiB region cell lookup. A chunk that pulled that table in
- * reads over 340,000 bytes, so a limit of 170,000 still catches the regression. The limit
- * also leaves room for one more feature before it needs a new reading.
+ * The page chunk measured 108,194 bytes when this test was written, 124,530 bytes after
+ * the phase 3 change, 131,090 after the deep zoom change and 152,848 after the flight,
+ * markers and grid change. The library entry chunk measured **162,593 bytes** on the
+ * first library build. It is larger than the page chunk although it carries no page and
+ * externalises `gl-matrix` and `@elite-dangerous-almanac/core`, because Vite compresses
+ * and mangles a library build but keeps its whitespace: a host's own bundler minifies it.
  */
-const MAIN_CHUNK_LIMIT = 170_000;
+const ENTRY_CHUNK_LIMIT = 200_000;
+
+/**
+ * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first
+ * library build and **47,360 bytes** after the dataset field, the dataset library dialog
+ * and their style rules joined it. The bound is a guard against the HUD pulling in a data
+ * layer, not a budget: the HUD reaches the map through the public handle alone.
+ */
+const HUD_CHUNK_LIMIT = 56_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,
@@ -34,62 +57,278 @@ const MAIN_CHUNK_LIMIT = 170_000;
  */
 const LOOKUP_TERMS = ['scaleNumerator', 'minPz'];
 
-/** Every JavaScript file under a directory, with its path. */
-function listScripts(directory: string): string[] {
+/** The files of `public/`, which the library build must not copy. */
+const PUBLIC_FILES = ['EDLoader1.svg', 'ruins-site.svg', 'structure-site.svg'];
+
+/** The types the entry point exports, which `library-package` lists. */
+const PUBLIC_TYPES = [
+  'GalaxyMapOptions',
+  'GalaxyMap',
+  'MapView',
+  'Category',
+  'RealSystem',
+  'SystemImage',
+  'RegionMode',
+  'CategoryInput',
+  'SystemRecordInput',
+  'HudOptions',
+  'HudAction',
+  'HudHandle',
+  'AddReport',
+  'CategoryReport',
+  'Reject',
+  'CategoryReject',
+  'DatasetEntry',
+  'DatasetContent',
+  'DatasetInfo',
+  'DatasetLoadResult',
+];
+
+/** Every file under a directory, with its path. */
+function listFiles(directory: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...listScripts(path));
-    else if (entry.name.endsWith('.js')) found.push(path);
+    if (entry.isDirectory()) found.push(...listFiles(path));
+    else found.push(path);
+  }
+  return found;
+}
+
+/** The name of a file, without its directory. */
+function nameOf(path: string): string {
+  return path.split('/').pop() ?? path;
+}
+
+/** Every module specifier an emitted chunk imports. */
+function importsOf(text: string): string[] {
+  const found: string[] = [];
+  const pattern = /(?:\bfrom|\bimport)\s*\(?\s*["']([^"']+)["']/g;
+  let match = pattern.exec(text);
+  while (match !== null) {
+    found.push(match[1] as string);
+    match = pattern.exec(text);
   }
   return found;
 }
 
 let outDir = '';
+let files: string[] = [];
 let scripts: string[] = [];
 
 beforeAll(() => {
-  outDir = mkdtempSync(join(tmpdir(), 'galaxy-map-chunks-'));
-  // The build runs alone, without the type check the `build` script also runs, because
-  // this test reads the emitted chunks and nothing else.
+  // The directory sits in the repository and not in the system temporary directory,
+  // because one test imports the built module and node resolves `gl-matrix` and
+  // `@elite-dangerous-almanac/core` by walking up to `node_modules/`.
+  outDir = mkdtempSync(join(root, '.library-build-'));
   // This repository uses pnpm. `npx` is npm tooling and would fetch from the registry
   // outside the 7-day release hold if the local binary were ever missing.
-  execFileSync('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
-    cwd: root,
-    stdio: 'pipe',
-  });
-  scripts = listScripts(outDir);
+  execFileSync(
+    'pnpm',
+    [
+      'exec',
+      'vite',
+      'build',
+      '--config',
+      'vite.config.lib.ts',
+      '--outDir',
+      outDir,
+      '--emptyOutDir',
+    ],
+    { cwd: root, stdio: 'pipe' },
+  );
+  execFileSync(
+    'pnpm',
+    ['exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', join(outDir, 'types')],
+    { cwd: root, stdio: 'pipe' },
+  );
+  files = listFiles(outDir);
+  scripts = files.filter((path) => path.endsWith('.js'));
 }, 300000);
 
 afterAll(() => {
   if (outDir !== '') rmSync(outDir, { recursive: true, force: true });
 });
 
-describe('the built chunks', () => {
+describe('the library build', () => {
+  test('emits the entry chunk, the workers, the HUD chunk and the three faces', () => {
+    const names = files.map(nameOf);
+    console.log('the library build emitted', names);
+
+    expect(names).toContain('index.js');
+    for (const worker of [
+      'point-cloud.worker',
+      'volume.worker',
+      'region-lines.worker',
+    ]) {
+      expect(names.filter((name) => name.startsWith(`${worker}-`))).toHaveLength(1);
+    }
+    expect(names.filter((name) => name.startsWith('hud-'))).toHaveLength(1);
+    expect(names.filter((name) => name.endsWith('.woff2'))).toHaveLength(3);
+    expect(names.filter((name) => name.endsWith('.png'))).toHaveLength(1);
+  });
+
+  test('carries no page, no demo data and no file of public', () => {
+    const demo: { systems: { name: string }[] } = JSON.parse(
+      readFileSync(join(root, 'demo-data', 'guardian-ruins.json'), 'utf8'),
+    ) as { systems: { name: string }[] };
+    const demoName = demo.systems[0]?.name as string;
+    expect(demoName.length).toBeGreaterThan(0);
+
+    for (const path of files) {
+      const name = nameOf(path);
+      expect(name.endsWith('.html'), `${name} is a page`).toBe(false);
+      expect(PUBLIC_FILES, `${name} comes from public/`).not.toContain(name);
+    }
+    for (const path of scripts) {
+      const text = readFileSync(path, 'utf8');
+      expect(text.includes(demoName), `${nameOf(path)} holds a demo record`).toBe(
+        false,
+      );
+      expect(
+        text.includes('galaxy-map-ready'),
+        `${nameOf(path)} holds the page event`,
+      ).toBe(false);
+    }
+  });
+
   test('carries the region cell lookup in the region worker only', () => {
     const carriers: string[] = [];
     for (const path of scripts) {
       const text = readFileSync(path, 'utf8');
-      if (LOOKUP_TERMS.every((term) => text.includes(term))) {
-        carriers.push(path.split('/').pop() ?? path);
-      }
+      if (LOOKUP_TERMS.every((term) => text.includes(term)))
+        carriers.push(nameOf(path));
     }
     console.log('the chunks that carry the region cell lookup', carriers);
-    expect(carriers.length).toBe(1);
+    expect(carriers).toHaveLength(1);
     expect(carriers[0]?.startsWith('region-lines.worker-')).toBe(true);
   });
 
-  test('keeps the page chunk small', () => {
-    const main = scripts.find((path) =>
-      (path.split('/').pop() ?? '').startsWith('index-'),
-    );
-    expect(main).toBeDefined();
-    const bytes = statSync(main as string).size;
-    console.log('the page chunk holds', bytes, 'bytes');
+  test('keeps the entry chunk and the HUD chunk small', () => {
+    const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
+    const hud = scripts.find((path) => nameOf(path).startsWith('hud-')) as string;
+    const entryBytes = statSync(entry).size;
+    const hudBytes = statSync(hud).size;
+    console.log('the entry chunk holds', entryBytes, 'bytes');
+    console.log('the HUD chunk holds', hudBytes, 'bytes');
+
     expect(
-      bytes,
-      'The page chunk grew. A main-thread import of `region-lines.ts` pulls the ' +
+      entryBytes,
+      'The entry chunk grew. A main-thread import of `region-lines.ts` pulls the ' +
         '199 KiB region cell lookup into it.',
-    ).toBeLessThan(MAIN_CHUNK_LIMIT);
+    ).toBeLessThan(ENTRY_CHUNK_LIMIT);
+    expect(hudBytes).toBeLessThan(HUD_CHUNK_LIMIT);
+    // The HUD is a chunk of its own, so a host that does not ask for the HUD downloads
+    // none of it. The style element id is text the HUD chunk alone holds.
+    expect(readFileSync(hud, 'utf8')).toContain('gm-hud-styles');
+    expect(readFileSync(entry, 'utf8')).not.toContain('gm-hud-styles');
+  });
+
+  test('bundles what each worker imports', () => {
+    const workers = scripts.filter((path) => nameOf(path).includes('.worker-'));
+    expect(workers).toHaveLength(3);
+    for (const path of workers) {
+      const bare = importsOf(readFileSync(path, 'utf8')).filter(
+        (specifier) => !specifier.startsWith('.') && !specifier.startsWith('/'),
+      );
+      console.log('the bare imports of', nameOf(path), bare);
+      expect(bare, `${nameOf(path)} carries a bare import`).toEqual([]);
+    }
+  });
+
+  test('package.json names paths the build emits', () => {
+    const manifest: {
+      private?: boolean;
+      types?: string;
+      files?: string[];
+      exports?: Record<string, Record<string, string>>;
+    } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as never;
+
+    expect(manifest.private).toBeUndefined();
+    expect(manifest.files).toEqual(['dist']);
+    const named = [
+      manifest.types as string,
+      manifest.exports?.['.']?.['types'] as string,
+      manifest.exports?.['.']?.['import'] as string,
+    ];
+    for (const path of named) {
+      expect(path.startsWith('./dist/')).toBe(true);
+      // The build wrote to a directory of its own, so the reading drops the `dist/`
+      // the package names and reads the same file under it.
+      const inside = join(outDir, path.slice('./dist/'.length));
+      expect(statSync(inside).isFile(), `${path} is not in the build output`).toBe(
+        true,
+      );
+    }
+  });
+
+  test('the built module loads and creates a map', async () => {
+    const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
+    const library: Record<string, unknown> = (await import(
+      pathToFileURL(entry).href
+    )) as Record<string, unknown>;
+    expect(typeof library['createGalaxyMap']).toBe('function');
+    // The barrel exports one value and the rest are types, which carry no run-time name.
+    expect(Object.keys(library).sort()).toEqual(['createGalaxyMap']);
+  });
+
+  test('the declaration names the public surface', () => {
+    const declaration = join(outDir, 'types', 'index.d.ts');
+    const text = readFileSync(declaration, 'utf8');
+    for (const name of PUBLIC_TYPES) expect(text).toContain(name);
+    expect(text).not.toContain('GalaxyMapDebug');
+
+    const good = join(outDir, 'reads-the-surface.ts');
+    const bad = join(outDir, 'reads-the-debug-hook.ts');
+    const uses = PUBLIC_TYPES.map(
+      (name, index) => `declare const value${index}: ${name};\nvoid value${index};`,
+    ).join('\n');
+    writeFileSync(
+      good,
+      `import type { ${PUBLIC_TYPES.join(', ')} } from './types/index';\n${uses}\n`,
+      'utf8',
+    );
+    writeFileSync(
+      bad,
+      "import type { GalaxyMapDebug } from './types/index';\n" +
+        'declare const hook: GalaxyMapDebug;\nvoid hook;\n',
+      'utf8',
+    );
+
+    expect(typeCheck(good)).toBe('');
+    expect(typeCheck(bad)).not.toBe('');
   });
 });
+
+/** Compiles one file against the built declaration and gives back what `tsc` said. */
+function typeCheck(path: string): string {
+  try {
+    execFileSync(
+      'pnpm',
+      [
+        'exec',
+        'tsc',
+        // The repository's own `tsconfig.json` is not the one to read here: the file
+        // under test sits outside it and names the built declaration.
+        '--ignoreConfig',
+        '--noEmit',
+        '--strict',
+        '--skipLibCheck',
+        '--target',
+        'ES2022',
+        '--module',
+        'ESNext',
+        '--moduleResolution',
+        'bundler',
+        '--lib',
+        'ES2022,DOM,DOM.Iterable,WebWorker',
+        path,
+      ],
+      { cwd: root, stdio: 'pipe' },
+    );
+    return '';
+  } catch (error) {
+    const reading = error as { stdout?: Buffer };
+    return (reading.stdout?.toString() ?? 'the compile failed').trim();
+  }
+}

@@ -5,10 +5,20 @@
 // The module works out no level of its own. `src/app/create-map.ts` reads the level from
 // the renderer as `renderer.gridSpacingLy()` and passes it in each frame as the
 // `spacingLy` field of the frame, so a label and its lines never disagree about the
-// level. The module imports no renderer, as the lint rule requires.
+// level.
+//
+// The module imports two pure functions from the grid pass, `gridLevelAlpha` and
+// `gridVisibility`, so one module owns the alpha rule and no copy of 0.18, 8 or 40 sits
+// here. No lint rule forbids that import: `no-restricted-imports` holds
+// `src/galaxy-model/`, `src/scene-data/` and `src/hud/` away from the renderer and says
+// nothing about `src/app/`, where `create-map.ts` already imports it. What this module
+// must not read is renderer state: it takes the level, the bounds and the camera
+// distance from the frame it is given.
 import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
+import type { Range } from '../galaxy-model/types';
+import { gridLevelAlpha, gridVisibility } from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
 
@@ -20,6 +30,21 @@ export const GRID_CANDIDATE_COUNT = (2 * GRID_LABEL_SPAN + 1) ** 2;
 
 /** How many crossing labels the overlay places. */
 export const MAX_GRID_LABELS = 32;
+
+/**
+ * The drawn alpha a level must hold at a crossing for that crossing to carry a label.
+ * It is what a level gives at 24 CSS pixels with the camera distance band open, which
+ * is the middle of the level's fade band from 8 to 40 CSS pixels. A label below it
+ * would stand over a line the user cannot see.
+ */
+export const GRID_LABEL_MIN_ALPHA = 0.09;
+
+/**
+ * How far along a game axis the sweep steps to read the projection's Jacobian, as a
+ * fraction of the level's spacing. It is small, because the reading must be the local
+ * rate the shader takes as a derivative and not a secant over a whole spacing.
+ */
+const JACOBIAN_STEP = 1e-3;
 
 /** How far above the lower edge of the canvas the plane label sits, in CSS pixels. */
 export const PLANE_LABEL_BOTTOM_CSS = 22;
@@ -71,6 +96,8 @@ export interface GridLabelFrame {
   readonly viewport: Viewport;
   /** The spacing of the label level, in light years. 0 draws no label. */
   readonly spacingLy: number;
+  /** The galaxy model bounds, which the grid lines stop at. */
+  readonly bounds: Range;
 }
 
 /** One crossing label the frame places. */
@@ -80,15 +107,55 @@ export interface GridLabelPlacement {
   /** Where the crossing projects to, in CSS pixels. */
   readonly x: number;
   readonly y: number;
+  /** The drawn alpha of the label level at the crossing, which the gate read. */
+  readonly alpha: number;
+}
+
+/**
+ * The drawn alpha of a level at a point of the plane. `perPixelX` and `perPixelZ` are the
+ * light years of the game `x` and `z` axes that one CSS pixel covers there, which is what
+ * `grid.frag` reads as a derivative of the plane point. The greater of the two axis
+ * readings decides, because the alpha at a point is the larger of the two, and the camera
+ * distance band multiplies the result.
+ */
+export function gridLabelAlpha(
+  perPixelX: number,
+  perPixelZ: number,
+  spacingLy: number,
+  band: number,
+): number {
+  const alongX = gridLevelAlpha(spacingLy / Math.max(perPixelX, 1e-9));
+  const alongZ = gridLevelAlpha(spacingLy / Math.max(perPixelZ, 1e-9));
+  return Math.max(alongX, alongZ) * band;
 }
 
 /**
  * The crossing labels of one frame. The sweep reads the 289 crossings within 8 spacings
- * of the cursor, drops the ones the frame cannot show, keeps the 32 nearest the centre
- * of the canvas, and skips a box that overlaps one already placed.
+ * of the cursor, drops the ones the frame cannot show, drops the ones whose own lines do
+ * not draw, keeps the 32 nearest the centre of the canvas, and skips a box that overlaps
+ * one already placed.
+ *
+ * Two readings say that a crossing's lines draw. The crossing lies inside the model
+ * bounds on both game axes, where `grid.frag` stops the lines. And the level's drawn
+ * alpha at the crossing holds `GRID_LABEL_MIN_ALPHA`, which `gridLabelAlpha` reads from
+ * the two axis scales the crossing sits at and the camera distance band.
+ *
+ * The two scales come from the projection's own Jacobian at the crossing: the sweep
+ * projects the crossing and two points a small step along the game `x` and `z` axes, and
+ * inverts the 2 by 2 matrix those two steps make. The reading is then the light years of
+ * each game axis that one CSS pixel covers, which is the quantity `grid.frag` takes as a
+ * derivative of the plane point. It therefore carries the foreshortening that closes the
+ * lines up toward the horizon on **both** screen axes.
+ *
+ * The step is small and not one level spacing. A gap measured over a whole spacing is a
+ * secant of a map that bends hard toward the horizon: at a pitch of 5 degrees and a zoom
+ * of 3,000 light years a crossing 65,000 light years out makes a gap of about 144 CSS
+ * pixels, while the shader reads 1.4 CSS pixels there and draws nothing at all. A label
+ * placed on that gap would stand over an empty frame, which is the fault this gate is
+ * for.
  */
 export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[] {
-  const { view, viewport, spacingLy } = frame;
+  const { view, viewport, spacingLy, bounds } = frame;
   if (spacingLy <= 0) return [];
 
   const matrix = viewProjectionMatrix(view, viewport);
@@ -101,6 +168,27 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
   const planeY = view.cursor[1] - camera[1];
   const baseX = Math.round(view.cursor[0] / spacingLy) * spacingLy;
   const baseZ = Math.round(view.cursor[2] / spacingLy) * spacingLy;
+  // The band is the camera's distance to the cursor, one reading for the whole frame,
+  // which is what the pass sends the shader.
+  const band = gridVisibility(view.distance);
+
+  /** A point of the plane in CSS pixels of the canvas, or null behind the near plane. */
+  const project = (gameX: number, gameZ: number): { x: number; y: number } | null => {
+    // The renderer's world frame runs its third axis the other way to the game's.
+    const offsetX = gameX - camera[0];
+    const offsetZ = camera[2] - gameZ;
+    const clipW =
+      matrix[3] * offsetX + matrix[7] * planeY + matrix[11] * offsetZ + matrix[15];
+    if (clipW <= near) return null;
+    const clipX =
+      matrix[0] * offsetX + matrix[4] * planeY + matrix[8] * offsetZ + matrix[12];
+    const clipY =
+      matrix[1] * offsetX + matrix[5] * planeY + matrix[9] * offsetZ + matrix[13];
+    return {
+      x: (clipX / clipW + 1) * halfWidth,
+      y: (1 - clipY / clipW) * halfHeight,
+    };
+  };
 
   const candidates: GridLabelPlacement[] = [];
   const centres: number[] = [];
@@ -108,33 +196,33 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
     for (let stepZ = -GRID_LABEL_SPAN; stepZ <= GRID_LABEL_SPAN; stepZ += 1) {
       const gameX = baseX + stepX * spacingLy;
       const gameZ = baseZ + stepZ * spacingLy;
-      // The renderer's world frame runs its third axis the other way to the game's.
-      const offset: [number, number, number] = [
-        gameX - camera[0],
-        planeY,
-        camera[2] - gameZ,
-      ];
-      const clipW =
-        matrix[3] * offset[0] +
-        matrix[7] * offset[1] +
-        matrix[11] * offset[2] +
-        matrix[15];
-      if (clipW <= near) continue;
-      const clipX =
-        matrix[0] * offset[0] +
-        matrix[4] * offset[1] +
-        matrix[8] * offset[2] +
-        matrix[12];
-      const clipY =
-        matrix[1] * offset[0] +
-        matrix[5] * offset[1] +
-        matrix[9] * offset[2] +
-        matrix[13];
-      const x = (clipX / clipW + 1) * halfWidth;
-      const y = (1 - clipY / clipW) * halfHeight;
+      // The lines stop at the model bounds, so a crossing beyond them carries none.
+      if (gameX < bounds.x[0] || gameX > bounds.x[1]) continue;
+      if (gameZ < bounds.z[0] || gameZ > bounds.z[1]) continue;
+      const at = project(gameX, gameZ);
+      if (at === null) continue;
+      const { x, y } = at;
       if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) continue;
+      // The two steps that make the Jacobian of the projection at this crossing.
+      const step = spacingLy * JACOBIAN_STEP;
+      const alongX = project(gameX + step, gameZ);
+      const alongZ = project(gameX, gameZ + step);
+      if (alongX === null || alongZ === null) continue;
+      // The columns of the Jacobian: CSS pixels of the screen for one light year of the
+      // game axis.
+      const xOverX = (alongX.x - x) / step;
+      const yOverX = (alongX.y - y) / step;
+      const xOverZ = (alongZ.x - x) / step;
+      const yOverZ = (alongZ.y - y) / step;
+      const determinant = xOverX * yOverZ - xOverZ * yOverX;
+      if (determinant === 0) continue;
+      // The rows of the inverse: light years of each game axis for one CSS pixel.
+      const perPixelX = Math.hypot(yOverZ / determinant, xOverZ / determinant);
+      const perPixelZ = Math.hypot(yOverX / determinant, xOverX / determinant);
+      const alpha = gridLabelAlpha(perPixelX, perPixelZ, spacingLy, band);
+      if (alpha < GRID_LABEL_MIN_ALPHA) continue;
       const text = crossingLabelText(gameX, gameZ);
-      candidates.push({ text, box: labelBoxAt(text, x, y), x, y });
+      candidates.push({ text, box: labelBoxAt(text, x, y), x, y, alpha });
       const fromX = x - halfWidth;
       const fromY = y - halfHeight;
       centres.push(fromX * fromX + fromY * fromY);

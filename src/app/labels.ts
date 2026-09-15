@@ -83,6 +83,8 @@ export interface PlacedLabel extends LabelBox {
   readonly name: string;
   /** The plane point the anchor projects from, so the next frame can hold it. */
   readonly plane: PlanePoint;
+  /** The smoothed target the anchor moves toward, so the next frame can carry it. */
+  readonly target: PlanePoint;
 }
 
 /**
@@ -117,6 +119,12 @@ export interface FrameSamples {
    * anchor is worked out on the plane and projected through this.
    */
   readonly toScreen: (x: number, z: number) => AnchorPoint | null;
+  /**
+   * A screen point read back to the galactic plane, or null when the ray under it runs
+   * away from the plane. It is the inverse of `toScreen`, and the displaced target rule
+   * reads it to move a label the least it can.
+   */
+  readonly toPlane: (x: number, y: number) => PlanePoint | null;
 }
 
 /** A region the frame shows enough of to name. */
@@ -129,6 +137,8 @@ export interface LabelCandidate {
   readonly count: number;
   /** The plane point the anchor projects from, in light years. */
   readonly plane: PlanePoint;
+  /** The smoothed target the anchor moves toward, so the next frame can carry it. */
+  readonly target: PlanePoint;
   /** Where the label sits, in CSS pixels from the top left. */
   readonly anchor: AnchorPoint;
 }
@@ -249,6 +259,15 @@ export function sampleFrame(
     return { x: screen.x, y: screen.y };
   };
 
+  const readPixel = { x: 0, y: 0 };
+  const toPlane = (readX: number, readY: number): PlanePoint | null => {
+    readPixel.x = readX;
+    readPixel.y = readY;
+    const point = planePointFrom(inverse, origin, readPixel, viewport, 0);
+    if (point === null) return null;
+    return { x: point[0], z: point[2] };
+  };
+
   let count = 0;
   for (let row = 0; row < rows; row += 1) {
     pixel.y = (row + 0.5) * stepY;
@@ -277,6 +296,7 @@ export function sampleFrame(
     elapsedMs: performance.now() - started,
     regionAtPlane,
     toScreen,
+    toPlane,
   };
 }
 
@@ -295,13 +315,487 @@ export interface LabelMemory {
   readonly previous: PreviousLabels;
   /** The plane point each of those anchored on. */
   readonly anchors: HeldAnchors;
+  /** The smoothed target each of those moved toward. */
+  readonly targets: HeldAnchors;
 }
 
 /** No label in the frame before, which is what a first frame reads. */
 export const NO_LABEL_MEMORY: LabelMemory = {
   previous: new Set<number>(),
   anchors: new Map<number, PlanePoint>(),
+  targets: new Map<number, PlanePoint>(),
 };
+
+/** What the frame's own samples say about a region, for `regionTarget`. */
+export interface RegionSamples {
+  /** The mean plane `x` of the samples the region holds. */
+  readonly meanX: number;
+  /** The mean plane `z` of the samples the region holds. */
+  readonly meanZ: number;
+  /** The index of the region's own sample nearest that mean. */
+  readonly sampleIndex: number;
+}
+
+/**
+ * The plane point a region's label belongs on.
+ *
+ * The first rule is the region's own **centre**: the centroid of its footprint on the
+ * galactic plane. That is one fixed point of the galaxy. A label on it does not move over
+ * the map at all, at any camera speed, because nothing about the frame goes into it. The
+ * centre is used while the region under it is that region, and while it projects inside
+ * the frame with the label inset, so the whole label box has room there.
+ *
+ * Where the centre has no room, the label moves **the least it can** to get room. The
+ * projection of the centre is held inside the frame with the same inset, and that screen
+ * point is read back to the plane. A label whose region runs off one edge moves toward
+ * that edge alone, and it stays as near its centre as the frame allows.
+ *
+ * Where the point read back sits on another region, the search goes out from the
+ * projection of the centre ring by ring, and takes the first point on its own region that
+ * is inside the inset. It measures on the screen and not on the plane, because at a low
+ * pitch a point near on the plane can be far on the screen.
+ *
+ * The search stops at `TARGET_MOVE_PIXELS`. Where no point that near holds the label, the
+ * centre itself is the better place: the box rule moves the box into the frame, so the
+ * label stays on the middle of its region. A centre that projects outside the frame does
+ * not search at all. The rule says nothing useful there, so the frame's own samples
+ * answer instead.
+ *
+ * Reading the frame is what makes a label move while the camera moves, because the sample
+ * grid is fixed on the screen and slides over the plane. The centre rule is there so that
+ * a label whose region has room for it reads none of that.
+ */
+export function regionTarget(
+  id: number,
+  region: Region,
+  samples: FrameSamples,
+  viewport: Viewport,
+  frame: RegionSamples,
+): PlanePoint {
+  const centre = { x: region.centroid[0], z: region.centroid[1] };
+  const onCentre = samples.regionAtPlane(centre.x, centre.z) === id;
+  const where = onCentre ? samples.toScreen(centre.x, centre.z) : null;
+  // The centre rule holds while the centre projects inside the frame. Outside it the rule
+  // says nothing useful: holding a projection that is far away inside the inset gives a
+  // corner of the frame, and a corner carries nothing about where the region is. The
+  // frame shows only a part of the region then, and its own samples answer that below.
+  const inFrame =
+    where !== null &&
+    where.x >= 0 &&
+    where.y >= 0 &&
+    where.x <= viewport.width &&
+    where.y <= viewport.height;
+  if (where !== null && inFrame) {
+    const held = {
+      x: clamp(where.x, LABEL_INSET, viewport.width - LABEL_INSET),
+      y: clamp(where.y, LABEL_INSET, viewport.height - LABEL_INSET),
+    };
+    if (held.x === where.x && held.y === where.y) return centre;
+
+    // The centre has no room. Read the held point back to the plane, which is the least
+    // move that gives the label room.
+    const moved = samples.toPlane(held.x, held.y);
+    if (moved !== null && samples.regionAtPlane(moved.x, moved.z) === id) return moved;
+
+    // The held point is over another region. The search goes out from the centre on the
+    // screen, and takes the first point that is on the region and has room. It measures
+    // on the screen and not on the plane, because at a low pitch one light year across
+    // the screen is many light years up it: a point near on the plane can be far on the
+    // screen, and the label must move only a little on the screen.
+    //
+    // Where no point that near holds the label, the centre itself is the better place:
+    // the box rule moves the box into the frame, so the label stays on the middle of its
+    // region and stays readable.
+    const near = nearestOnScreen(samples, id, where, viewport, TARGET_MOVE_PIXELS);
+    if (near !== null) return near;
+    return centre;
+  }
+
+  if (samples.regionAtPlane(frame.meanX, frame.meanZ) === id) {
+    return { x: frame.meanX, z: frame.meanZ };
+  }
+  return {
+    x: samples.planeX[frame.sampleIndex] as number,
+    z: samples.planeZ[frame.sampleIndex] as number,
+  };
+}
+
+/** How many times `fitInsideRegion` grows its step while it looks for room. */
+const FIT_PASSES = 5;
+
+/** How many directions it tries at each step. */
+const FIT_TURNS = 12;
+
+/**
+ * The plane point a label sits on, moved so that its box does not cross the edge of its
+ * own region.
+ *
+ * A label that crosses the edge reads as belonging to the region next to it. The box is a
+ * screen thing and the target is a plane point, so the search first reads the plane step
+ * of one screen pixel across and one down, and then works in those two directions. Six
+ * points of the box are tested against the region: the four corners and the middle of the
+ * top and the bottom edge.
+ *
+ * The search grows its step over five passes, and tries twelve directions at each. It
+ * takes the point that leaves the fewest points of the box off the region, and it stops
+ * as soon as none are. A candidate must sit on the region itself and project inside the
+ * frame, so the search never moves a label off its region or off the screen.
+ *
+ * A label already inside its region costs the six tests alone. Where a region is narrower
+ * on the screen than the label is wide, no point fits, and the search returns the point
+ * that fits best.
+ */
+export function fitInsideRegion(
+  target: PlanePoint,
+  id: number,
+  size: LabelSize,
+  samples: FrameSamples,
+  viewport: Viewport,
+): PlanePoint {
+  const at = samples.toScreen(target.x, target.z);
+  if (at === null) return target;
+  const right = samples.toPlane(at.x + 1, at.y);
+  const down = samples.toPlane(at.x, at.y + 1);
+  if (right === null || down === null) return target;
+  const acrossX = right.x - target.x;
+  const acrossZ = right.z - target.z;
+  const downX = down.x - target.x;
+  const downZ = down.z - target.z;
+
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  const off = (point: PlanePoint): number => {
+    let count = 0;
+    for (let column = -1; column <= 1; column += 1) {
+      for (let row = -1; row <= 1; row += 2) {
+        const x = point.x + acrossX * halfWidth * column + downX * halfHeight * row;
+        const z = point.z + acrossZ * halfWidth * column + downZ * halfHeight * row;
+        if (samples.regionAtPlane(x, z) !== id) count += 1;
+      }
+    }
+    return count;
+  };
+
+  let best = target;
+  let bestOff = off(best);
+  for (let pass = 0; pass < FIT_PASSES && bestOff > 0; pass += 1) {
+    const step = size.height * (pass + 1) * 0.5;
+    let found: PlanePoint | null = null;
+    let foundOff = bestOff;
+    for (let turn = 0; turn < FIT_TURNS; turn += 1) {
+      const angle = (turn / FIT_TURNS) * Math.PI * 2;
+      const acrossBy = Math.cos(angle) * step;
+      const downBy = Math.sin(angle) * step;
+      const point = {
+        x: best.x + acrossX * acrossBy + downX * downBy,
+        z: best.z + acrossZ * acrossBy + downZ * downBy,
+      };
+      if (samples.regionAtPlane(point.x, point.z) !== id) continue;
+      const where = samples.toScreen(point.x, point.z);
+      if (
+        where === null ||
+        where.x < LABEL_INSET ||
+        where.y < LABEL_INSET ||
+        where.x > viewport.width - LABEL_INSET ||
+        where.y > viewport.height - LABEL_INSET
+      ) {
+        continue;
+      }
+      const count = off(point);
+      if (count >= foundOff) continue;
+      foundOff = count;
+      found = point;
+    }
+    if (found === null) break;
+    best = found;
+    bestOff = foundOff;
+  }
+  return best;
+}
+
+/** How far out the screen search goes, and how many directions it tries on each ring. */
+const NEAR_RADII = [12, 24, 48, 96];
+const NEAR_TURNS = 12;
+
+/**
+ * The largest move on the screen the displaced rule makes while the centre of a region
+ * is still in the frame.
+ *
+ * A region can reach into the inset band at the edge of the frame, and the point of it
+ * that is both inside the inset and on the region can be far along that band. To move
+ * the label there costs more than it gives: the label leaves the middle of its region
+ * for a corner of the frame. Where the move costs more than this, the label holds its
+ * centre, and the box rule moves the box itself into the frame.
+ */
+export const TARGET_MOVE_PIXELS = 96;
+
+/**
+ * The plane point nearest `to` on the screen that is on region `id` and inside the
+ * frame inset. The search goes out ring by ring and stops at the first ring that holds
+ * one, so the point it returns is the least move the label can make. It gives up past
+ * `limit` pixels.
+ */
+function nearestOnScreen(
+  samples: FrameSamples,
+  id: number,
+  to: AnchorPoint,
+  viewport: Viewport,
+  limit: number,
+): PlanePoint | null {
+  for (const radius of NEAR_RADII) {
+    if (radius > limit) return null;
+    for (let turn = 0; turn < NEAR_TURNS; turn += 1) {
+      const angle = (turn / NEAR_TURNS) * Math.PI * 2;
+      const x = to.x + Math.cos(angle) * radius;
+      const y = to.y + Math.sin(angle) * radius;
+      if (
+        x < LABEL_INSET ||
+        y < LABEL_INSET ||
+        x > viewport.width - LABEL_INSET ||
+        y > viewport.height - LABEL_INSET
+      ) {
+        continue;
+      }
+      const point = samples.toPlane(x, y);
+      if (point === null) continue;
+      if (samples.regionAtPlane(point.x, point.z) === id) return point;
+    }
+  }
+  return null;
+}
+
+/**
+ * The share of the gap to this frame's target that the smoothed target takes.
+ *
+ * The target of a frame is the mean of the plane positions of the samples a region holds.
+ * The sample grid is fixed on the screen, so it slides over the plane while the camera
+ * moves and samples cross region edges. That makes the target of a frame step: over a
+ * drag of 30 light years a frame it moves 3.3 CSS pixels in a middle frame, and it
+ * changes that step by 2.2 pixels from one frame to the next.
+ *
+ * The anchor cannot take that out on its own. A filter slow enough to hold the noise back
+ * is also slow to carry a label where it belongs, and the two needs pull against each
+ * other. Smoothing the target first separates them: the anchor then follows a line that
+ * already moves smoothly, and it can follow it at speed.
+ *
+ * This is the share at the gap the grid gives a still region. `targetShare` grows it with
+ * the gap, and the smoothed target holds about seven frames at this end of the range. Over
+ * the same drag it cuts the change of step of the label from 0.45 CSS pixels in a middle
+ * frame to 0.09, and the worst frame from 2.9 to 0.8.
+ */
+export const TARGET_SHARE = 0.15;
+
+/**
+ * The screen gap, in CSS pixels, at which the smoothing is gone and the target is taken
+ * whole. Below it the share of the gap the smoothed target takes grows with the gap.
+ *
+ * Smoothing holds a label back where the target really moves. The figure is 120 because
+ * it must separate two moves that the smoothing must answer differently. A camera that
+ * jumps moves the target of a label 145 CSS pixels, and that label must go at once. The
+ * step the sample grid gives a still region is a few pixels, and that one reads better
+ * smoothed over seven frames.
+ *
+ * The share grows over the range and does not step at one figure. A step is a gate, and a
+ * gate that fires puts the label somewhere else in one frame, which is the jump this
+ * whole filter is there to stop.
+ */
+export const TARGET_RESET_PIXELS = 120;
+
+/**
+ * The share of the gap that the smoothed target takes, for a screen gap of `gap`.
+ *
+ * At a gap of the size the sample grid gives a still region the share is near
+ * `TARGET_SHARE`, and the smoothed target holds about seven frames. At
+ * `TARGET_RESET_PIXELS` the share is 1 and the target is taken whole.
+ *
+ * The share follows the cube of the reach, and not the reach itself. A share that follows
+ * the reach gives too much of a gap of 30 or 60 pixels to the label at once: the worst
+ * frame of a drag went from 5.8 CSS pixels to 10.9 in the measure. The cube holds the
+ * smoothing over the whole range a drag works in, and opens it only near the figure where
+ * the target has really moved.
+ */
+export function targetShare(gap: number): number {
+  const reach = Math.min(1, gap / TARGET_RESET_PIXELS);
+  return TARGET_SHARE + (1 - TARGET_SHARE) * reach ** 3;
+}
+
+/**
+ * The target the anchor moves toward: this frame's target, smoothed against the one the
+ * frame before carried. The caller passes `carried` only while it still sits on the
+ * region and still projects inside the frame.
+ *
+ * `target` is taken whole when there is nothing carried, and when the two are
+ * `TARGET_RESET_PIXELS` or more apart on the screen. `targetShare` sets the share
+ * between: the wider the gap, the more of it the smoothed target takes.
+ *
+ * Where the smoothed point falls on another region, the carried point is kept. A region
+ * can show as two separated patches, and the point between this frame's target and the
+ * one before then falls in the gap. Taking this frame's target instead would carry the
+ * label to the other patch in one frame, which is the jump the smoothing is there to
+ * stop. Holding the carried point keeps the label on the patch it is on until the target
+ * is near enough to move to.
+ */
+export function smoothTarget(
+  carried: PlanePoint | undefined,
+  target: PlanePoint,
+  toScreen: (x: number, z: number) => AnchorPoint | null,
+  onRegion: (x: number, z: number) => boolean,
+): PlanePoint {
+  if (carried === undefined) return target;
+  const from = toScreen(carried.x, carried.z);
+  const to = toScreen(target.x, target.z);
+  if (from === null || to === null) return target;
+  const share = targetShare(Math.hypot(to.x - from.x, to.y - from.y));
+  if (share >= 1) return target;
+
+  const smoothed = {
+    x: carried.x + (target.x - carried.x) * share,
+    z: carried.z + (target.z - carried.z) * share,
+  };
+  return onRegion(smoothed.x, smoothed.z) ? smoothed : carried;
+}
+
+/**
+ * The share of the gap to the target that the anchor closes in one frame, at full speed.
+ *
+ * The share is high, so a label that must really move goes where it belongs at once: 0.5
+ * closes half the gap in one frame and 97 percent of it in five, which is 83
+ * milliseconds at 60 frames a second.
+ */
+export const ANCHOR_SHARE = 0.5;
+
+/** How far the anchor goes on the screen in one frame, in CSS pixels. */
+export const ANCHOR_MAX_PIXELS = 20;
+
+/**
+ * The screen gap, in CSS pixels, at which the anchor reaches full speed. Below it the
+ * speed falls with the gap.
+ *
+ * The anchor is read from a grid of samples that is fixed on the screen. The grid slides
+ * over the plane while the camera moves, so samples cross region edges and the target a
+ * frame works out does not move smoothly: over a drag of 30 light years a frame, the
+ * target steps 3.3 CSS pixels in a middle frame, and it changes that step by 2.2 pixels
+ * from one frame to the next.
+ *
+ * A speed that does not read the gap gives all of that to the label, and the label
+ * shakes. A speed that falls with the gap separates the two things the filter must do. A
+ * large gap is a real move, and it still runs at the full share and reaches the cap. A
+ * small gap is the noise, and the label answers it slowly: the change of step from frame
+ * to frame falls from 1.0 pixels to 0.45, and the worst tenth from 3.0 to 1.3.
+ *
+ * The figure is 48 because a region that shows as two patches steps its target 48 pixels
+ * when a patch comes into view. That step is the smallest real move the filter must
+ * answer at full speed.
+ */
+export const ANCHOR_FULL_SPEED_PIXELS = 48;
+
+/**
+ * The least the anchor goes on the screen in one frame, in CSS pixels, while it is not
+ * already there.
+ *
+ * Speed falls with the gap, so without a floor the last few pixels take hundreds of
+ * frames. The floor is small enough to stay under the noise and large enough to close a
+ * 20 pixel gap in a second.
+ */
+export const ANCHOR_LEAST_PIXELS = 0.4;
+
+/**
+ * How far past each edge of the frame a carried point stays in reach, as a share of the
+ * frame. A wheel notch changes the camera distance by 15 percent in one frame, which
+ * moves the anchor of a label at the edge a little past it; that point must be kept and
+ * walked back, or the label jumps. A camera that jumps to another view leaves the anchor
+ * a whole frame away or more, and to walk that back at the cap reads as a crawl.
+ */
+export const ANCHOR_REACH_SHARE = 0.25;
+
+/** How many times the step is scaled before it takes what it has. */
+const CAP_PASSES = 8;
+/** How near the wanted step the solved step must come, in CSS pixels. */
+const STEP_TOLERANCE = 0.05;
+
+/** The number of times the anchor step gets shorter to stay on its own region. */
+const REGION_PASSES = 6;
+
+/**
+ * How far the anchor goes on the screen in one frame, in CSS pixels, for a gap of `gap`.
+ */
+export function anchorStep(gap: number): number {
+  const speed = gap * ANCHOR_SHARE * Math.min(1, gap / ANCHOR_FULL_SPEED_PIXELS);
+  return Math.min(
+    ANCHOR_MAX_PIXELS,
+    Math.max(Math.min(gap, ANCHOR_LEAST_PIXELS), speed),
+  );
+}
+
+/**
+ * The plane point a carried anchor takes in this frame. It moves toward the target by
+ * `anchorStep` of the gap between them.
+ *
+ * The gap and the step are both read on the projection and not on the plane, because a
+ * plane step of a fixed size covers a different number of pixels at every zoom. The
+ * function projects the carried point and the target, reads the step from the gap
+ * between them, and takes that share of the plane gap. The projection is not linear, so
+ * it then projects the end of the step and scales the step by the ratio of what it wants
+ * to what it got, up to `CAP_PASSES` times. Each pass is nearer the step than the one
+ * before.
+ *
+ * A point that does not project takes the target whole. There is nothing to measure a
+ * gap on, and a label that holds a point off the screen is dropped by the caller.
+ */
+export function filterAnchor(
+  carried: PlanePoint,
+  target: PlanePoint,
+  toScreen: (x: number, z: number) => AnchorPoint | null,
+  onRegion: (x: number, z: number) => boolean = () => true,
+): PlanePoint {
+  const from = toScreen(carried.x, carried.z);
+  const to = toScreen(target.x, target.z);
+  if (from === null || to === null) return target;
+
+  const gap = Math.hypot(to.x - from.x, to.y - from.y);
+  if (gap === 0) return carried;
+  const want = anchorStep(gap);
+
+  // The share of the plane gap that moves the anchor `want` pixels on the screen. The
+  // projection is not linear, so the first guess is only a guess, and it is wrong in both
+  // directions: near the camera the same share of the plane covers far fewer pixels than
+  // it does far from it. The loop reads what the share really moved and corrects it, up
+  // as well as down, until the step is the one `anchorStep` asked for.
+  //
+  // An earlier loop corrected downward alone. It made the label crawl at a close camera,
+  // where the first guess undershoots: the label took over a second to cross the frame
+  // rather than the 12 frames the cap allows.
+  let share = Math.min(1, want / gap);
+  for (let pass = 0; pass < CAP_PASSES; pass += 1) {
+    const at = toScreen(
+      carried.x + (target.x - carried.x) * share,
+      carried.z + (target.z - carried.z) * share,
+    );
+    if (at === null) break;
+    const went = Math.hypot(at.x - from.x, at.y - from.y);
+    if (went === 0) break;
+    if (Math.abs(went - want) <= STEP_TOLERANCE) break;
+    share = Math.min(1, share * (want / went));
+  }
+
+  // A region is not always a convex shape, so the straight line from the carried point
+  // to the target can go over a neighbour. A shorter step keeps the anchor on its own
+  // region where one does. Where none does, the step stands as it is: the target is
+  // always on the region, so the anchor comes back to the region as it walks.
+  const solved = share;
+  for (let pass = 0; pass < REGION_PASSES; pass += 1) {
+    const step = {
+      x: carried.x + (target.x - carried.x) * share,
+      z: carried.z + (target.z - carried.z) * share,
+    };
+    if (onRegion(step.x, step.z)) return step;
+    share /= 2;
+  }
+  return {
+    x: carried.x + (target.x - carried.x) * solved,
+    z: carried.z + (target.z - carried.z) * solved,
+  };
+}
 
 /**
  * The candidates of a frame, in the order they take a place. A region is a candidate
@@ -321,9 +815,14 @@ export const NO_LABEL_MEMORY: LabelMemory = {
  * region edge: it holds still and then steps. A plane position moves with the camera, so
  * its projection slides.
  *
- * An anchor held from the frame before keeps its plane point while that point still
- * resolves to the region and still projects inside the frame, so the anchor does not hop
- * between two samples that are almost equally near the mean. Its projection still moves.
+ * An anchor carried from the frame before moves toward the anchor this frame works out
+ * by `anchorStep` of the gap. A large gap is a real move and runs at the full share and
+ * the cap, so a label pushed to the frame edge is back at its region in under a second.
+ * A small gap is the noise of the sampling, and the label answers it slowly and stays
+ * still on the map. A carried point is kept while it is in front of the camera, and the
+ * filter alone holds it right: the target is always on the region and inside the frame, so
+ * an anchor that walks toward it comes back to both. A gate that drops the carried point
+ * puts the label on the target in one step, which is what a person reads as a jump.
  *
  * The candidate holding the sample nearest the centre of the frame comes first, so the
  * region the view is centred on is always named. A count order alone does not name the
@@ -340,6 +839,7 @@ export function labelCandidates(
   viewport: Viewport,
   regions: readonly Region[] = REGIONS,
   memory: LabelMemory = NO_LABEL_MEMORY,
+  measure?: (name: string) => LabelSize,
 ): LabelCandidate[] {
   if (samples.count === 0) return [];
   const byId = new Map(regions.map((region) => [region.id, region]));
@@ -399,12 +899,19 @@ export function labelCandidates(
     }
   }
 
-  /** True when a projected point lies inside the viewport. */
-  const insideFrame = (point: AnchorPoint): boolean =>
-    point.x >= 0 &&
-    point.y >= 0 &&
-    point.x <= viewport.width &&
-    point.y <= viewport.height;
+  // A carried target is kept while it is inside this reach, which is the frame grown by
+  // `ANCHOR_REACH_SHARE` of it on each side. A zoom magnifies the view, so a point that
+  // sits on the centre of its region can go off the frame while the region itself stays
+  // in view. To drop such a target puts the label on a new one in one step, which reads
+  // as a jump. A target further out than the reach is stale, so the rule drops that one.
+  // The carried anchor below takes the same reach, for the same two reasons.
+  const reachX = viewport.width * ANCHOR_REACH_SHARE;
+  const reachY = viewport.height * ANCHOR_REACH_SHARE;
+  const nearFrame = (point: AnchorPoint): boolean =>
+    point.x >= -reachX &&
+    point.y >= -reachY &&
+    point.x <= viewport.width + reachX &&
+    point.y <= viewport.height + reachY;
 
   const candidates: LabelCandidate[] = [];
   for (let id = 1; id < ID_RANGE; id += 1) {
@@ -413,22 +920,67 @@ export function labelCandidates(
     const region = byId.get(id);
     if (region === undefined) continue;
 
-    const meanX = (sumPlaneX[id] as number) / (counts[id] as number);
-    const meanZ = (sumPlaneZ[id] as number) / (counts[id] as number);
-    const onRegion = samples.regionAtPlane(meanX, meanZ) === id;
-    let plane: PlanePoint = onRegion
-      ? { x: meanX, z: meanZ }
-      : {
-          x: samples.planeX[index] as number,
-          z: samples.planeZ[index] as number,
-        };
+    // The label belongs at the centre of its region. The centroid is a fixed point of
+    // the galaxy, so a label on it does not move over the map at all: its projection
+    // slides with the camera and nothing else moves it. The frame's own samples are read
+    // only where the centre is not there to use.
+    const found = regionTarget(id, region, samples, viewport, {
+      meanX: (sumPlaneX[id] as number) / (counts[id] as number),
+      meanZ: (sumPlaneZ[id] as number) / (counts[id] as number),
+      sampleIndex: index,
+    });
+    // The box must not cross the edge of the region, or the label reads as belonging to
+    // the region beside it.
+    const target =
+      measure === undefined
+        ? found
+        : fitInsideRegion(found, id, measure(region.name), samples, viewport);
 
-    // The anchor of the frame before is kept while its plane point still resolves to
-    // this region and still projects inside the frame.
+    // The target is smoothed against the one the frame before carried, so the anchor
+    // follows a line that already moves smoothly. A carried target that no longer sits
+    // on its region, or that goes out of reach of the frame, is dropped by the same two
+    // rules the carried anchor follows below.
+    let held = memory.targets.get(id);
+    if (held !== undefined) {
+      const where = samples.toScreen(held.x, held.z);
+      if (
+        samples.regionAtPlane(held.x, held.z) !== id ||
+        where === null ||
+        !nearFrame(where)
+      ) {
+        held = undefined;
+      }
+    }
+    const smoothed = smoothTarget(
+      held,
+      target,
+      samples.toScreen,
+      (x, z) => samples.regionAtPlane(x, z) === id,
+    );
+
+    // A point is carried from the frame before while it stays in front of the camera and
+    // in reach of the frame. The filter, and not a gate, holds it on its own region: the
+    // target is always on the region, so an anchor that walks toward it comes back.
+    //
+    // The reach is `ANCHOR_REACH_SHARE` of the frame on each side. A zoom magnifies the
+    // view, so the anchor of a label near the edge goes a little off the frame while the
+    // region stays
+    // in view; to drop it there puts the label on the target in one step, which is the
+    // jump. A camera that jumps leaves the anchor many frames away, and to walk that back
+    // at the cap takes about half a second, which reads as a crawl. The margin separates
+    // the two.
+    let plane = smoothed;
     const carried = memory.anchors.get(id);
-    if (carried !== undefined && samples.regionAtPlane(carried.x, carried.z) === id) {
+    if (carried !== undefined) {
       const projected = samples.toScreen(carried.x, carried.z);
-      if (projected !== null && insideFrame(projected)) plane = carried;
+      if (projected !== null && nearFrame(projected)) {
+        plane = filterAnchor(
+          carried,
+          smoothed,
+          samples.toScreen,
+          (x, z) => samples.regionAtPlane(x, z) === id,
+        );
+      }
     }
 
     const screen = samples.toScreen(plane.x, plane.z);
@@ -438,9 +990,15 @@ export function labelCandidates(
       name: region.name,
       count: counts[id] as number,
       plane,
+      target: smoothed,
+      // The drawn anchor is held inside the frame, and not inside the inset. The inset
+      // is where the target rule puts a label that must move, and to hold the drawn
+      // anchor there as well pins a label near the edge to one place on the screen while
+      // the map slides under it. `labelBox` moves the box itself fully into the frame,
+      // so a label at the edge stays readable and still slides with its region.
       anchor: {
-        x: clamp(screen.x, LABEL_INSET, viewport.width - LABEL_INSET),
-        y: clamp(screen.y, LABEL_INSET, viewport.height - LABEL_INSET),
+        x: clamp(screen.x, 0, viewport.width),
+        y: clamp(screen.y, 0, viewport.height),
       },
     });
   }
@@ -492,7 +1050,13 @@ export function chooseLabels(
   memory: LabelMemory = NO_LABEL_MEMORY,
 ): PlacedLabel[] {
   const placed: PlacedLabel[] = [];
-  for (const candidate of labelCandidates(samples, viewport, regions, memory)) {
+  for (const candidate of labelCandidates(
+    samples,
+    viewport,
+    regions,
+    memory,
+    measure,
+  )) {
     if (placed.length >= MAX_LABELS) break;
     const box = labelBox(candidate.anchor, measure(candidate.name), viewport);
     if (placed.some((other) => boxesOverlap(box, other))) continue;
@@ -500,6 +1064,7 @@ export function chooseLabels(
       id: candidate.id,
       name: candidate.name,
       plane: candidate.plane,
+      target: candidate.target,
       ...box,
     });
   }
@@ -632,6 +1197,7 @@ export function createLabelOverlay(
       memory = {
         previous: wanted,
         anchors: new Map(labels.map((label) => [label.id, label.plane])),
+        targets: new Map(labels.map((label) => [label.id, label.target])),
       };
     },
     lastCounts(): { id: number; name: string; count: number }[] {

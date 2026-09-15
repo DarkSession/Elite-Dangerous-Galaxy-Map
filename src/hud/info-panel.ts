@@ -15,10 +15,15 @@ import { distanceFromSol, rangeFromCamera } from './geometry';
 import type { Lightbox } from './lightbox';
 import type { HudAction } from './types';
 
+/** How long a copy button shows its tick, in milliseconds. */
+export const COPY_TICK_MS = 1400;
+
 /** One field of the grid. */
 interface Field {
   readonly label: string;
   readonly value: string;
+  /** The text the field's copy button writes, when the field carries one. */
+  readonly copy?: string;
 }
 
 /** The information panel of the HUD. */
@@ -28,6 +33,17 @@ export interface InfoPanel {
   rebuild(): void;
   /** Rewrites the range from the camera, which follows the view. */
   update(): void;
+  /** Drops the timer a copy button holds. */
+  dispose(): void;
+}
+
+/**
+ * The three game coordinates as whole numbers with no thousands separator. The panel
+ * shows the position with its separators, because a separator is for reading, and the
+ * copy is for pasting into a field that takes a number.
+ */
+function copyPosition(position: readonly [number, number, number]): string {
+  return `${Math.round(position[0])} / ${Math.round(position[1])} / ${Math.round(position[2])}`;
 }
 
 /** The fields the record carries, in the order the panel shows them. */
@@ -35,8 +51,9 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
   const position = system.position;
   const fields: Field[] = [
     {
-      label: 'POSITION (LY)',
+      label: 'POSITION',
       value: `${formatWhole(position[0])} / ${formatWhole(position[1])} / ${formatWhole(position[2])}`,
+      copy: copyPosition(position),
     },
     { label: 'DISTANCE FROM SOL', value: formatLightYears(distanceFromSol(position)) },
     { label: 'RANGE', value: formatLightYears(range) },
@@ -60,6 +77,65 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
   return fields;
 }
 
+/** Draws the two squares of the copy mark. */
+function makeCopyIcon(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'gm-hud__copy-mark');
+  svg.setAttribute('viewBox', '0 0 14 14');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.3');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const corner of [
+    ['1.2', '1.2'],
+    ['4.8', '4.8'],
+  ]) {
+    const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', corner[0] as string);
+    rect.setAttribute('y', corner[1] as string);
+    rect.setAttribute('width', '8');
+    rect.setAttribute('height', '8');
+    svg.appendChild(rect);
+  }
+  return svg;
+}
+
+/** Draws the tick the button shows after it wrote to the clipboard. */
+function makeTickIcon(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'gm-hud__copy-tick');
+  svg.setAttribute('viewBox', '0 0 14 14');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.6');
+  svg.setAttribute('stroke-linecap', 'square');
+  svg.setAttribute('aria-hidden', 'true');
+  const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', '2,7.5 5.5,11 12,3.5');
+  svg.appendChild(line);
+  return svg;
+}
+
+/**
+ * Writes text to the clipboard and says whether the write succeeded. The clipboard is
+ * not always there: a browser may refuse the write, and a page served over plain HTTP
+ * carries no `navigator.clipboard`. A refused write throws nothing out of the HUD.
+ */
+async function writeClipboard(doc: Document, text: string): Promise<boolean> {
+  try {
+    const clipboard = doc.defaultView?.navigator.clipboard;
+    if (clipboard === undefined) return false;
+    await clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Builds the information panel. It is hidden while nothing is selected. */
 export function createInfoPanel(
   doc: Document,
@@ -70,15 +146,81 @@ export function createInfoPanel(
   const element = make(doc, 'section', 'gm-hud__info');
   element.hidden = true;
 
+  // The tick of the button that wrote last, and the timer that takes it away. One tick
+  // shows at a time, so a click on the second button moves it.
+  let tickButton: HTMLButtonElement | null = null;
+  let tickTimer: number | null = null;
+
+  /** Shows the copy mark again on the button that holds the tick. */
+  function clearTick(): void {
+    if (tickTimer !== null) {
+      clearTimeout(tickTimer);
+      tickTimer = null;
+    }
+    if (tickButton === null) return;
+    const label = tickButton.dataset['label'] ?? '';
+    tickButton.dataset['state'] = 'idle';
+    tickButton.title = label;
+    tickButton.setAttribute('aria-label', label);
+    tickButton = null;
+  }
+
+  /** Shows the tick on one button for 1.4 seconds. */
+  function showTick(button: HTMLButtonElement): void {
+    clearTick();
+    tickButton = button;
+    button.dataset['state'] = 'copied';
+    button.title = 'Copied';
+    button.setAttribute('aria-label', 'Copied');
+    tickTimer = window.setTimeout(clearTick, COPY_TICK_MS);
+  }
+
+  /**
+   * Builds one copy button. `read` gives the text at the click, so the button beside
+   * the name reads the system that is selected then.
+   */
+  function makeCopyButton(
+    label: string,
+    field: string,
+    read: () => string | null,
+  ): HTMLButtonElement {
+    const button = makeButton(doc, 'gm-hud__copy');
+    button.dataset['name'] = field;
+    button.dataset['state'] = 'idle';
+    // The idle name, which the button takes back when its tick goes.
+    button.dataset['label'] = label;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.append(makeCopyIcon(doc), makeTickIcon(doc));
+    button.addEventListener('click', (event) => {
+      // The click stays on the button. It reads the selection and never changes it.
+      event.stopPropagation();
+      const text = read();
+      if (text === null) return;
+      void writeClipboard(doc, text).then((written) => {
+        // A refused write shows no tick and leaves the panel as it is.
+        if (written && button.isConnected) showTick(button);
+      });
+    });
+    return button;
+  }
+
   const header = make(doc, 'div', 'gm-hud__info-header');
+  const titleGroup = make(doc, 'div', 'gm-hud__info-title');
   const name = make(doc, 'h2', 'gm-hud__info-name');
+  const copyName = makeCopyButton(
+    'Copy system name',
+    'name',
+    () => map.getSelection()?.name ?? null,
+  );
+  titleGroup.append(name, copyName);
   const close = makeButton(doc, 'gm-hud__info-close');
   close.textContent = '×';
   close.setAttribute('aria-label', 'Close the information panel');
   close.addEventListener('click', () => {
     map.setSelection(null);
   });
-  header.append(name, close);
+  header.append(titleGroup, close);
 
   const body = make(doc, 'div', 'gm-hud__info-body');
   const footer = make(doc, 'div', 'gm-hud__info-footer');
@@ -130,6 +272,9 @@ export function createInfoPanel(
     const system = map.getSelection();
     shown = system;
     rangeValue = null;
+    // The position's button is made again with the grid, so the tick it may hold goes
+    // with it.
+    clearTick();
     if (system === null) {
       setShown(element, false);
       replaceChildrenKeepingFocus(body, []);
@@ -148,7 +293,17 @@ export function createInfoPanel(
       const value = make(doc, 'div', 'gm-hud__field-value');
       value.textContent = field.value;
       if (field.label === 'RANGE') rangeValue = value;
-      box.append(label, value);
+      if (field.copy === undefined) {
+        box.append(label, value);
+      } else {
+        const text = field.copy;
+        const head = make(doc, 'div', 'gm-hud__field-head');
+        head.append(
+          label,
+          makeCopyButton('Copy position', 'position', () => text),
+        );
+        box.append(head, value);
+      }
       grid.appendChild(box);
     }
     parts.push(grid);
@@ -225,6 +380,9 @@ export function createInfoPanel(
         rangeValue,
         formatLightYears(rangeFromCamera(map.getView(), shown.position)),
       );
+    },
+    dispose(): void {
+      clearTick();
     },
   };
 }

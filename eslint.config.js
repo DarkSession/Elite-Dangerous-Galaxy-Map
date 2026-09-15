@@ -43,6 +43,10 @@ export default tseslint.config(
       // that code and does not ship it.
       '.design/**',
       'dist/**',
+      'dist-demo/**',
+      // The directory `tests/main-bundle.test.ts` builds into. It is removed after the
+      // run, and it holds build output and two files the declaration test compiles.
+      '.library-build-*/**',
       'node_modules/**',
       'test-results/**',
       'playwright-report/**',

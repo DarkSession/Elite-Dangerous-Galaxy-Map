@@ -42,6 +42,12 @@ export const GRID_MAX_ALPHA = 0.45;
 /** How many of its own lines a level reaches each side of the cursor. */
 export const GRID_FADE_LINES = 100;
 
+/** The camera distance at which the grid draws at full strength, in light years. */
+export const GRID_NEAR_FULL_LY = 4000;
+
+/** The camera distance at which the grid draws nothing, in light years. */
+export const GRID_FAR_NONE_LY = 12000;
+
 /** The smallest screen spacing a label level takes, in CSS pixels. */
 export const GRID_LABEL_CSS = 400;
 
@@ -93,6 +99,18 @@ export function gridLevelAlpha(screenSpacing: number): number {
 }
 
 /**
+ * How much of the grid draws at a camera distance to the cursor, from 0 to 1. The grid
+ * is a tool for reading a neighbourhood, so it fades in as the camera comes near: 0 at
+ * 12,000 light years and further, 1 at 4,000 and nearer, and 0.5 at 8,000.
+ *
+ * The reading is the camera's distance to the cursor, one value for the whole frame. A
+ * band by fragment range would open the grid under the camera at every zoom.
+ */
+export function gridVisibility(distance: number): number {
+  return 1 - smoothStep(GRID_NEAR_FULL_LY, GRID_FAR_NONE_LY, distance);
+}
+
+/**
  * How much of a level's alpha is left at a distance from the cursor on the plane. A
  * level reaches 100 of its own lines each side of the cursor and no further.
  */
@@ -136,18 +154,23 @@ export interface GridLevelReading {
   readonly alpha: number;
 }
 
-/** The reading of every level at a viewport and a zoom distance, in rising spacing. */
+/**
+ * The reading of every level at a viewport and a zoom distance, in rising spacing. The
+ * alpha is the alpha the level draws at, the camera distance band included, so a test
+ * that reads an alpha and a pixel compares two readings of one thing.
+ */
 export function gridLevelReadings(
   focalCss: number,
   distance: number,
 ): GridLevelReading[] {
+  const band = gridVisibility(distance);
   return GRID_LEVELS.map((level) => {
     const screenCss = gridScreenSpacing(focalCss, distance, level);
     return {
       spacingLy: level,
       screenCss,
       widthCss: gridLevelWidth(screenCss),
-      alpha: gridLevelAlpha(screenCss),
+      alpha: gridLevelAlpha(screenCss) * band,
     };
   });
 }
@@ -164,6 +187,11 @@ export interface GridPassFrame {
   readonly pixelRatio: number;
   /** The galaxy model bounds, which the grid stops at. */
   readonly bounds: Range;
+  /**
+   * The camera distance band, from 0 to 1, which multiplies every level's alpha. The
+   * renderer reads it from `gridVisibility` and does not draw at all when it is 0.
+   */
+  readonly band: number;
 }
 
 /** The coordinate grid pass. */
@@ -188,6 +216,7 @@ export function createGridProgram(gl: WebGL2RenderingContext): Program {
     'uBoldRange',
     'uFadeRange',
     'uFadeLines',
+    'uBand',
     'uSpacing[0]',
     'uPhase[0]',
   ]);
@@ -267,6 +296,7 @@ export function createGridPass(
         GRID_FADE_HIGH_CSS,
       );
       gl.uniform1f(program.uniforms['uFadeLines'] ?? null, GRID_FADE_LINES);
+      gl.uniform1f(program.uniforms['uBand'] ?? null, frame.band);
       gl.uniform1fv(program.uniforms['uSpacing[0]'] ?? null, spacings);
       gl.uniform2fv(program.uniforms['uPhase[0]'] ?? null, phases);
 

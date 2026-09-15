@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap, waitForReady } from './helpers';
+import { openMap, startState, waitForReady } from './helpers';
+import type { CategoryInput, SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -53,7 +54,7 @@ function record(
   name: string,
   position: readonly [number, number, number],
   category: string,
-): Record<string, unknown> {
+): SystemRecordInput {
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
@@ -61,7 +62,11 @@ function record(
   };
 }
 
-/** Adds categories through the handle and returns the report. */
+/**
+ * Adds categories through the handle and returns the report. The cast is at the call,
+ * because a test also passes a category the input type refuses and the reader rejects
+ * at run time.
+ */
 async function addCategories(
   page: Page,
   categories: readonly unknown[],
@@ -71,7 +76,7 @@ async function addCategories(
   rejected: { index: number; reason: string }[];
 }> {
   return page.evaluate((list) => {
-    const report = window.galaxyMap?.addCategories(list);
+    const report = window.galaxyMap?.addCategories(list as readonly CategoryInput[]);
     return report === undefined ? { added: 0, replaced: 0, rejected: [] } : report;
   }, categories);
 }
@@ -86,7 +91,7 @@ async function addSystems(
   rejected: { index: number; reason: string }[];
 }> {
   return page.evaluate((list) => {
-    const report = window.galaxyMap?.addSystems(list);
+    const report = window.galaxyMap?.addSystems(list as readonly SystemRecordInput[]);
     return report === undefined ? { added: 0, replaced: 0, rejected: [] } : report;
   }, records);
 }
@@ -516,7 +521,7 @@ test('the page reports the marker count', async ({ page }) => {
   const empty = await readCount();
 
   await addCategories(page, [{ name: 'Empire', color: CORE }]);
-  const records: Record<string, unknown>[] = [];
+  const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
     records.push(record(`S${index}`, [index * 4 - 200, 0, 0], 'Empire'));
   }
@@ -539,7 +544,7 @@ test('the switch removes the markers', async ({ page }) => {
   const emptySet = await frameOf(page);
 
   await addCategories(page, [{ name: 'Empire', color: CORE }]);
-  const records: Record<string, unknown>[] = [];
+  const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
     records.push(record(`S${index}`, [index * 4 - 200, 0, 0], 'Empire'));
   }
@@ -644,13 +649,19 @@ test('a region boundary does not cover a marker', async ({ page }) => {
 });
 
 test('the handle works before the first frame', async ({ page }) => {
-  await page.goto('/#c=0,0,0&d=4000&p=35&y=0');
+  await page.goto('./#c=0,0,0&d=4000&p=35&y=0');
   await page.waitForFunction(() => window.galaxyMap !== undefined, undefined, {
     timeout: 20000,
   });
+  // This test navigates by itself, so it takes the start state the helper gives.
+  await startState(page);
   const early = await page.evaluate(() => {
     const map = window.galaxyMap;
     if (map === undefined) return { ready: true, count: -1 };
+    // The page loads the demo set in the background, and it can land between the clear
+    // above and this call. The reading below is of one record, so the clear runs again
+    // in the same turn as the two calls it belongs to.
+    map.clearSystemsAndCategories();
     map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
     map.addSystems([
       { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
@@ -673,7 +684,7 @@ test('the handle works before the first frame', async ({ page }) => {
 test('the handle empties the set', async ({ page }) => {
   await openMap(page);
   await addCategories(page, [{ name: 'Empire', color: CORE }]);
-  const records: Record<string, unknown>[] = [];
+  const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
     records.push(record(`S${index}`, [index * 4 - 200, 0, 0], 'Empire'));
   }
@@ -694,7 +705,7 @@ test('the handle empties the set and the table together', async ({ page }) => {
     { name: 'Empire', color: [0, 180, 255] },
     { name: 'Alliance', color: [0, 255, 120] },
   ]);
-  const records: Record<string, unknown>[] = [];
+  const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
     records.push(record(`S${index}`, [index * 4 - 200, 0, 0], 'Empire'));
   }
@@ -764,6 +775,159 @@ test('the library makes its own label host', async ({ page }) => {
   // The canvas and the host the library made.
   expect(result.children).toBe(2);
   expect(result.labels).toBeGreaterThan(0);
+});
+
+test.describe('the loading picture', () => {
+  /**
+   * Builds a map over a canvas of its own and reads the canvas's parent before and
+   * after `ready` settles. `options` reaches the entry point as it is.
+   */
+  async function readLoadingImage(
+    page: Page,
+    options: Record<string, unknown>,
+    breakContext = false,
+  ): Promise<{
+    before: number;
+    after: number;
+    source: string;
+    failed: string;
+    canvas: { x: number; y: number };
+    picture: { x: number; y: number };
+    size: { width: number; height: number };
+  }> {
+    return page.evaluate(
+      async (build) => {
+        // The page's own map goes first, so the two do not share the loop.
+        window.galaxyMap?.dispose();
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position: absolute; inset: 0;';
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'display: block; width: 1280px; height: 720px;';
+        wrap.appendChild(canvas);
+        document.body.appendChild(wrap);
+        // A canvas that already holds a 2D context gives no WebGL2 context, so the
+        // start fails as it does on a card that refuses the map.
+        if (build.breakContext) canvas.getContext('2d');
+
+        const factory = window.galaxyMapFactory;
+        if (factory === undefined) throw new Error('The page has no map factory.');
+        const map = factory(canvas, build.options as never);
+        const image = wrap.querySelector('img');
+        const before = wrap.querySelectorAll('img').length;
+        const source = image?.src ?? '';
+        // The picture gets its size from its own file, so the file must arrive before
+        // the box is measured.
+        if (image !== null && !image.complete) {
+          await new Promise<void>((resolve) => {
+            image.addEventListener('load', () => resolve(), { once: true });
+            image.addEventListener('error', () => resolve(), { once: true });
+          });
+        }
+        // One frame, so the browser has laid the picture out before it is measured.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const canvasBox = canvas.getBoundingClientRect();
+        const pictureBox = image?.getBoundingClientRect() ?? canvasBox;
+
+        let failed = '';
+        try {
+          await map.ready;
+        } catch (error) {
+          failed = error instanceof Error ? error.message : String(error);
+        }
+        const after = wrap.querySelectorAll('img').length;
+        map.dispose();
+        wrap.remove();
+        return {
+          before,
+          after,
+          source,
+          failed,
+          canvas: {
+            x: canvasBox.left + canvasBox.width / 2,
+            y: canvasBox.top + canvasBox.height / 2,
+          },
+          picture: {
+            x: pictureBox.left + pictureBox.width / 2,
+            y: pictureBox.top + pictureBox.height / 2,
+          },
+          size: { width: pictureBox.width, height: pictureBox.height },
+        };
+      },
+      { options, breakContext },
+    );
+  }
+
+  test('the picture shows and then goes', async ({ page }) => {
+    await openMap(page);
+    const reading = await readLoadingImage(page, { loadingImage: './EDLoader1.svg' });
+    console.log('the loading picture', reading);
+
+    expect(reading.before).toBe(1);
+    expect(reading.source.endsWith('/EDLoader1.svg')).toBe(true);
+    expect(reading.after).toBe(0);
+    expect(reading.failed).toBe('');
+  });
+
+  test('the picture sits in the centre of the canvas', async ({ page }) => {
+    await openMap(page);
+    const reading = await readLoadingImage(page, { loadingImage: './EDLoader1.svg' });
+    console.log('the two centres', {
+      canvas: reading.canvas,
+      picture: reading.picture,
+    });
+
+    expect(Math.abs(reading.picture.x - reading.canvas.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(reading.picture.y - reading.canvas.y)).toBeLessThanOrEqual(1);
+  });
+
+  test('the picture keeps the size its file names', async ({ page }) => {
+    await openMap(page);
+    const wide = await readLoadingImage(page, { loadingImage: './EDLoader1.svg' });
+    await page.setViewportSize({ width: 700, height: 500 });
+    const narrow = await readLoadingImage(page, { loadingImage: './EDLoader1.svg' });
+    console.log('the picture size', { wide: wide.size, narrow: narrow.size });
+
+    // `EDLoader1.svg` names 170 by 170. The library sets no size, so the picture
+    // measures that in both windows and does not follow the window.
+    expect(wide.size.width).toBe(170);
+    expect(wide.size.height).toBe(170);
+    expect(narrow.size.width).toBe(170);
+    expect(narrow.size.height).toBe(170);
+  });
+
+  test('a failed start still removes the picture', async ({ page }) => {
+    await openMap(page);
+    const reading = await readLoadingImage(
+      page,
+      { loadingImage: './EDLoader1.svg' },
+      true,
+    );
+    console.log('the picture after a failed start', reading);
+
+    expect(reading.before).toBe(1);
+    expect(reading.after).toBe(0);
+    expect(reading.failed.length).toBeGreaterThan(0);
+  });
+
+  test('an unsafe URL adds no element', async ({ page }) => {
+    await openMap(page);
+    const reading = await readLoadingImage(page, {
+      loadingImage: 'javascript:alert(1)',
+    });
+    console.log('the picture of an unsafe URL', reading);
+
+    expect(reading.before).toBe(0);
+    expect(reading.after).toBe(0);
+  });
+
+  test('no option adds no element', async ({ page }) => {
+    await openMap(page);
+    const reading = await readLoadingImage(page, {});
+    console.log('the picture with no option', reading);
+
+    expect(reading.before).toBe(0);
+    expect(reading.after).toBe(0);
+  });
 });
 
 test('dispose stops the map and repeats safely', async ({ page }) => {
@@ -898,12 +1062,15 @@ test.describe('a page the card refuses', () => {
         return (original as (...args: unknown[]) => unknown).call(this, id, ...rest);
       } as typeof HTMLCanvasElement.prototype.getContext;
     });
-    await page.goto('/');
+    await page.goto('./');
     await page.waitForFunction(
       () => typeof window.__galaxyMap?.error === 'string',
       undefined,
       { timeout: 20000 },
     );
+    // This test navigates by itself, so it takes the start state the helper gives. The
+    // card refused the map, so the set is empty either way.
+    await startState(page);
 
     const error = await page.evaluate(() => window.__galaxyMap?.error ?? '');
     const message = await page.locator('#message').textContent();
@@ -1151,7 +1318,7 @@ test('a changed range changes what draws', async ({ page }) => {
   const cursor: [number, number, number] = [0, 0, 0];
   await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 1000 }]);
-  const records: Record<string, unknown>[] = [];
+  const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
     const range = 500 + (index * 4500) / 99;
     records.push(record(`S${index}`, atRange(cursor, 1000, range), 'Empire'));
@@ -1242,6 +1409,140 @@ test.describe('the category switch and the name filter', () => {
     expect(one).toBe(1);
     expect(firstOn).toEqual(firstOff);
     expect(secondOn).not.toEqual(secondOff);
+  });
+
+  test('a secondary category keeps a marker on the screen', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    const where = atRange(cursor, 1000, 2000);
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addCategories(page, [
+      { name: 'Alpha', color: CORE, maxDrawRange: 120000 },
+      { name: 'Beta', color: CORE, maxDrawRange: 120000 },
+    ]);
+    await addSystems(page, [
+      { ...record('Both', where, 'Alpha'), secondaryCategories: ['Beta'] },
+    ]);
+    await setView(page, cursor, 1000);
+
+    /** The marker count and what `systemAt` reads at the marker's pixel. */
+    const reading = async (): Promise<{ count: number; name: string | null }> => {
+      await drawFrame(page);
+      return page.evaluate((point) => {
+        const map = window.galaxyMap;
+        if (map === undefined) return { count: -1, name: null };
+        const screen = map.debug.project(point as [number, number, number]);
+        return {
+          count: map.debug.systemMarkerCount(),
+          name: map.systemAt(screen.x, screen.y)?.name ?? null,
+        };
+      }, where);
+    };
+
+    await page.evaluate(() => {
+      window.galaxyMap?.setCategoryVisible('Alpha', false);
+    });
+    const onBeta = await reading();
+
+    await page.evaluate(() => {
+      window.galaxyMap?.setCategoryVisible('Beta', false);
+    });
+    const offBoth = await reading();
+    console.log('the secondary category', { onBeta, offBoth });
+
+    expect(onBeta).toEqual({ count: 1, name: 'Both' });
+    expect(offBoth).toEqual({ count: 0, name: null });
+  });
+
+  // The marker pass alone over dark space, so the reading is the marker's own colour.
+  test('the colour still follows the primary category', async ({ page }) => {
+    const red: [number, number, number] = [255, 60, 60];
+    const blue: [number, number, number] = [60, 120, 255];
+    await openMap(page, '#c=40015,20000,25895&d=10&p=35&y=0');
+    await setPasses(page, {
+      volume: false,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      regions: false,
+      systems: true,
+    });
+    await addCategories(page, [
+      { name: 'Alpha', color: red, maxDrawRange: 120000 },
+      { name: 'Beta', color: blue, maxDrawRange: 120000 },
+    ]);
+    await addSystems(page, [
+      { ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] },
+    ]);
+    await setView(page, DARK_SPACE, 10);
+
+    // `Beta` is off, so the marker draws through `Alpha` alone. It still takes the
+    // colour of its primary category, which is `Beta`.
+    await page.evaluate(() => {
+      window.galaxyMap?.setCategoryVisible('Beta', false);
+    });
+    await drawFrame(page);
+    const pixel = await pixelAt(page, DARK_SPACE);
+    console.log('the marker colour through a secondary category', pixel);
+
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((pixel[channel] as number) - (blue[channel] as number)),
+      ).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('the sweep holds its budget', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    await addCategories(
+      page,
+      names.map((name) => ({ name, color: CORE, maxDrawRange: 120000 })),
+    );
+    const added = await page.evaluate((value) => {
+      const records = [];
+      for (let index = 0; index < 10000; index += 1) {
+        records.push({
+          name: `S${index}`,
+          coords: { x: index * 0.001, y: 0, z: 0 },
+          primaryCategory: value[index % 8] as string,
+          secondaryCategories: [
+            value[(index + 1) % 8] as string,
+            value[(index + 2) % 8] as string,
+            value[(index + 3) % 8] as string,
+          ],
+        });
+      }
+      return window.galaxyMap?.addSystems(records).added ?? -1;
+    }, names);
+    expect(added).toBe(10000);
+
+    // Every category goes off in turn, and each sweep is read after the frame that
+    // asked for it.
+    const readings: number[] = [];
+    for (const name of names) {
+      await page.evaluate((value) => {
+        window.galaxyMap?.setCategoryVisible(value, false);
+      }, name);
+      await drawFrame(page);
+      readings.push(
+        await page.evaluate(() => window.galaxyMap?.debug.categorySweepMs() ?? -1),
+      );
+    }
+    const count = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+    console.log('the category sweep readings in ms', readings);
+
+    expect(count).toBe(0);
+    for (const reading of readings) {
+      // The lower bound is 0 and not more than 0. Chromium gives `performance.now()` in
+      // steps of 0.1 milliseconds, and a sweep of 10,000 systems runs in about 0.1, so a
+      // reading of exactly 0 is a fast sweep and not a missing one. The budget the
+      // requirement states is the upper bound.
+      expect(reading).toBeGreaterThanOrEqual(0);
+      expect(reading).toBeLessThan(2);
+    }
   });
 
   test('the filter cuts the markers and the count', async ({ page }) => {

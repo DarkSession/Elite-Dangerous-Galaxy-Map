@@ -128,6 +128,13 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   allButton.addEventListener('click', () => setEveryCategory(true));
   noneButton.addEventListener('click', () => setEveryCategory(false));
 
+  /** Puts one system in the list of one category. */
+  function addEntry(name: string, entry: Entry): void {
+    const held = byCategory.get(name);
+    if (held === undefined) byCategory.set(name, [entry]);
+    else held.push(entry);
+  }
+
   /** Reads every system once, so the counts and the lists need no second sweep. */
   function readSystems(): void {
     byCategory.clear();
@@ -141,9 +148,10 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         identity: system.id64 ?? system.name,
         distance: Math.hypot(position[0], position[1], position[2]),
       };
-      const held = byCategory.get(system.primaryCategory);
-      if (held === undefined) byCategory.set(system.primaryCategory, [entry]);
-      else held.push(entry);
+      // The system goes in every category it names. The row's switch brings the
+      // system back through any of them, so the row's count and its list say so.
+      addEntry(system.primaryCategory, entry);
+      for (const name of system.secondaryCategories) addEntry(name, entry);
     }
   }
 
@@ -235,8 +243,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       const name = make(doc, 'span', 'gm-hud__category-name');
       name.textContent = category.name;
       const countText = make(doc, 'span', 'gm-hud__category-count');
-      // The count reads the primary category alone, because that is what the row's
-      // switch turns off.
+      // The count reads the primary category and every secondary one, because the
+      // row's switch brings a system back through any category it belongs to.
       countText.textContent = formatWhole(byCategory.get(category.name)?.length ?? 0);
       row.append(swatch, name, countText);
       row.addEventListener('click', () => {

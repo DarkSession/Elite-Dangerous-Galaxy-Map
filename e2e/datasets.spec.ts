@@ -1,0 +1,701 @@
+// The dataset catalog, the dataset field and the dataset library dialog, read through
+// the browser.
+//
+// Every test but the last builds a second map over a canvas of its own, with a catalog
+// the test wrote. Each entry's `load()` returns records the test made, so the suite
+// reaches no host but the page's own.
+import { expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { openMap } from './helpers';
+
+test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+
+/** What the test asks one catalog entry to be. */
+interface EntryBuild {
+  readonly id: string;
+  readonly label?: string;
+  readonly collection?: string;
+  readonly region?: string;
+  readonly description?: string;
+  readonly systemCount?: number;
+  /** How many records the entry's `load()` gives back. */
+  readonly systems?: number;
+  /** How many categories the entry's `load()` gives back. */
+  readonly categories?: number;
+  /** How long the `load()` takes, in milliseconds. It returns at once with none. */
+  readonly delay?: number;
+  /** True makes the `load()` reject. */
+  readonly fail?: boolean;
+}
+
+/** What the test asks the second map to be. */
+interface MapBuild {
+  readonly entries: readonly EntryBuild[];
+  /** The id of the entry the map loads at start. */
+  readonly dataset?: string;
+  /** False leaves the `datasets` option out, so the map gets no catalog. */
+  readonly catalog?: boolean;
+  /** False builds the map with no HUD. */
+  readonly hud?: boolean;
+}
+
+/**
+ * Opens the demo page, then builds a second map with a catalog of its own. The demo
+ * map goes down first, so the tests below drive one HUD and one catalog.
+ */
+async function openDatasets(page: Page, build: MapBuild): Promise<void> {
+  await openMap(page);
+  await page.evaluate(async (options: MapBuild) => {
+    const factory = window.galaxyMapFactory;
+    if (factory === undefined) throw new Error('The page has no map factory.');
+    window.galaxyMap?.dispose();
+    const wrap = document.createElement('div');
+    wrap.id = 'dataset-wrap';
+    wrap.style.cssText = 'position: absolute; inset: 0;';
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText =
+      'display: block; width: 100%; height: 100%; touch-action: none;';
+    wrap.appendChild(canvas);
+    document.body.appendChild(wrap);
+
+    window.__datasetLoads = [];
+    // The records are made here and not inside `load()`, so a measured load reads the
+    // time of the library's own work and not the time of the test's own array build.
+    const contentOf = (
+      entry: EntryBuild,
+    ): { categories: unknown[]; systems: unknown[] } => {
+      const categories: { name: string }[] = [];
+      for (let index = 0; index < (entry.categories ?? 1); index += 1) {
+        categories.push({
+          name: `${entry.id.toUpperCase()} ${index}`,
+          color: [153, 230, 255],
+          maxDrawRange: 200000,
+          description: `The category ${index} of ${entry.id}.`,
+        } as never);
+      }
+      const systems: unknown[] = [];
+      for (let index = 0; index < (entry.systems ?? 0); index += 1) {
+        systems.push({
+          name: `${entry.id}-${index}`,
+          coords: { x: index, y: 0, z: index * 2 },
+          primaryCategory: (categories[index % categories.length] as { name: string })
+            .name,
+        });
+      }
+      return { categories: categories as unknown[], systems };
+    };
+
+    const datasets = options.entries.map((entry) => {
+      const content = contentOf(entry);
+      return {
+        id: entry.id,
+        label: entry.label ?? entry.id,
+        ...(entry.collection === undefined ? {} : { collection: entry.collection }),
+        ...(entry.region === undefined ? {} : { region: entry.region }),
+        ...(entry.description === undefined ? {} : { description: entry.description }),
+        ...(entry.systemCount === undefined ? {} : { systemCount: entry.systemCount }),
+        load: (): unknown => {
+          window.__datasetLoads?.push(entry.id);
+          if (entry.fail === true) {
+            return Promise.reject(new Error(`The load of ${entry.id} failed.`));
+          }
+          if (entry.delay === undefined) return content;
+          return new Promise((resolve) => {
+            setTimeout(() => resolve(content), entry.delay);
+          });
+        },
+      };
+    });
+
+    const map = factory(canvas, {
+      hud: options.hud !== false,
+      ...(options.catalog === false ? {} : { datasets }),
+      ...(options.dataset === undefined ? {} : { dataset: options.dataset }),
+    } as never);
+    window.__datasetMap = map;
+    await map.ready;
+  }, build);
+}
+
+/** The root of the HUD the tests drive. */
+function hud(page: Page): Locator {
+  return page.locator('#dataset-wrap .gm-hud');
+}
+
+/** The dataset field of the top bar. */
+function field(page: Page): Locator {
+  return hud(page).locator('.gm-hud__dataset');
+}
+
+/** The dataset library dialog. */
+function dialog(page: Page): Locator {
+  return hud(page).locator('.gm-hud__dialog');
+}
+
+/** What the map holds now. */
+async function reading(page: Page): Promise<{
+  systems: number;
+  categories: number;
+  loaded: string | null;
+  filter: string;
+  selection: string | null;
+}> {
+  return page.evaluate(() => {
+    const map = window.__datasetMap;
+    return {
+      systems: map?.systemCount() ?? -1,
+      categories: map?.categoryCount() ?? -1,
+      loaded: map?.getLoadedDataset()?.id ?? null,
+      filter: map?.getNameFilter() ?? '',
+      selection: map?.getSelection()?.name ?? null,
+    };
+  });
+}
+
+/** Loads one dataset and says whether the promise resolved. */
+async function loadDataset(
+  page: Page,
+  id: string,
+): Promise<{ ok: boolean; message: string }> {
+  return page.evaluate(async (name) => {
+    try {
+      await window.__datasetMap?.loadDataset(name);
+      return { ok: true, message: '' };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : '' };
+    }
+  }, id);
+}
+
+/** Draws frames and gives back the mean milliseconds a frame took. */
+async function drawFrames(page: Page, count: number): Promise<number> {
+  return page.evaluate(
+    (many) => window.__datasetMap?.debug.measureFrames(many) ?? -1,
+    count,
+  );
+}
+
+test('a load replaces the set and clears the selection and the filter', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'first', systems: 5, categories: 2 },
+      { id: 'second', systems: 3, categories: 1 },
+    ],
+    dataset: 'first',
+  });
+
+  const before = await reading(page);
+  console.log('the map at start', before);
+  expect(before).toMatchObject({ systems: 5, categories: 2, loaded: 'first' });
+
+  const view = await page.evaluate(() => {
+    const map = window.__datasetMap;
+    map?.setSelection('first-2');
+    map?.setNameFilter('sol');
+    return map?.getView();
+  });
+
+  const result = await loadDataset(page, 'second');
+  const after = await reading(page);
+  console.log('the map after the load', after);
+
+  expect(result.ok).toBe(true);
+  expect(after).toEqual({
+    systems: 3,
+    categories: 1,
+    loaded: 'second',
+    filter: '',
+    selection: null,
+  });
+  // The load does not move the view: a host that wants to fly to the new set does it
+  // when the promise settles.
+  const now = await page.evaluate(() => window.__datasetMap?.getView());
+  expect(now).toEqual(view);
+});
+
+test('a failed load leaves the map as it was', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'good', systems: 4, categories: 2 },
+      { id: 'bad', fail: true },
+    ],
+    dataset: 'good',
+  });
+
+  const result = await loadDataset(page, 'bad');
+  const after = await reading(page);
+  const frame = await drawFrames(page, 10);
+  console.log('the failed load', result, 'the map after it', after);
+
+  expect(result.ok).toBe(false);
+  expect(result.message).toContain('The load of bad failed.');
+  expect(after).toMatchObject({ systems: 4, categories: 2, loaded: 'good' });
+  expect(frame).toBeGreaterThan(0);
+});
+
+test('an unknown id rejects and changes nothing', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [{ id: 'only', systems: 2 }],
+    dataset: 'only',
+  });
+
+  const result = await loadDataset(page, 'nothing');
+  const after = await reading(page);
+  console.log('the unknown id', result);
+
+  expect(result.ok).toBe(false);
+  expect(result.message).toContain('nothing');
+  expect(after).toMatchObject({ systems: 2, loaded: 'only' });
+});
+
+test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'full-a', systems: 10000, categories: 256 },
+      { id: 'full-b', systems: 10000, categories: 256 },
+    ],
+    dataset: 'full-a',
+  });
+
+  const before = await reading(page);
+  expect(before).toMatchObject({ systems: 10000, categories: 256 });
+
+  const measure = await page.evaluate(async () => {
+    const map = window.__datasetMap;
+    const started = performance.now();
+    await map?.loadDataset('full-b');
+    return performance.now() - started;
+  });
+  const after = await reading(page);
+  const frame = await drawFrames(page, 10);
+  console.log('the switch took', measure, 'ms, and the map holds', after);
+
+  expect(after).toMatchObject({ systems: 10000, categories: 256, loaded: 'full-b' });
+  expect(measure).toBeLessThan(40);
+  expect(frame).toBeGreaterThan(0);
+});
+
+test('the later load wins and the earlier one rejects as cancelled', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'start', systems: 2, categories: 1 },
+      { id: 'slow', systems: 7, categories: 1, delay: 300 },
+      { id: 'fast', systems: 3, categories: 1 },
+    ],
+    dataset: 'start',
+  });
+
+  const results = await page.evaluate(async () => {
+    const map = window.__datasetMap;
+    const settle = async (promise: Promise<unknown> | undefined): Promise<string> => {
+      try {
+        await promise;
+        return 'resolved';
+      } catch (error) {
+        return error instanceof Error ? error.message : 'rejected';
+      }
+    };
+    const first = map?.loadDataset('slow');
+    const second = map?.loadDataset('fast');
+    const readings = await Promise.all([settle(second), settle(first)]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return readings;
+  });
+  const after = await reading(page);
+  console.log('the two loads', results, 'the map after them', after);
+
+  expect(results[0]).toBe('resolved');
+  expect(results[1]).toContain('cancelled');
+  expect(after).toMatchObject({ systems: 3, loaded: 'fast' });
+});
+
+test('the start load reads the named entry', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', systems: 1 },
+      { id: 'two', systems: 2 },
+      { id: 'three', systems: 3 },
+    ],
+    dataset: 'three',
+  });
+
+  const after = await reading(page);
+  console.log('the start load read', after);
+  expect(after).toMatchObject({ systems: 3, loaded: 'three' });
+});
+
+test('ready settles when the start load rejects, and the map draws', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [{ id: 'bad', fail: true }],
+    dataset: 'bad',
+  });
+
+  const after = await reading(page);
+  const frame = await drawFrames(page, 10);
+  console.log('the map after the failed start load', after, 'the frame', frame);
+
+  // `openDatasets` awaits `ready`, so the test reaching this line is the reading that
+  // `ready` settled after a load that rejected.
+  expect(after).toMatchObject({ systems: 0, loaded: null });
+  expect(frame).toBeGreaterThan(0);
+  expect(await field(page).count()).toBe(1);
+});
+
+test('the bar carries the dataset field only with a catalog', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 1 },
+      { id: 'two', label: 'Two', systems: 2 },
+    ],
+    dataset: 'one',
+  });
+
+  await expect(field(page)).toHaveCount(1);
+  await expect(field(page)).toContainText('One');
+  // The field sits beside the region name and does not replace it.
+  await expect(hud(page).locator('.gm-hud__region')).toHaveCount(1);
+  await expect(hud(page).locator('.gm-hud__title')).toHaveCount(1);
+  await expect(hud(page).locator('.gm-hud__zoom')).toHaveCount(1);
+  await expect(hud(page).locator('.gm-hud__reset')).toHaveCount(1);
+
+  await page.evaluate(() => {
+    window.__datasetMap?.dispose();
+    document.getElementById('dataset-wrap')?.remove();
+  });
+  await openDatasets(page, { entries: [], catalog: false });
+
+  const empty = await page.evaluate(() => window.__datasetMap?.getDatasets().length);
+  console.log('the catalog of the second map holds', empty, 'entries');
+  expect(empty).toBe(0);
+  await expect(field(page)).toHaveCount(0);
+  await expect(hud(page).locator('.gm-hud__region')).toHaveCount(1);
+  await expect(hud(page).locator('.gm-hud__zoom')).toHaveCount(1);
+  await expect(hud(page).locator('.gm-hud__reset')).toHaveCount(1);
+});
+
+test('the filter narrows the list', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'ruins', label: 'Guardian Ruins', collection: 'Canonn', systems: 2 },
+      { id: 'structures', label: 'Guardian Structures', collection: 'Canonn' },
+      { id: 'notable', label: 'Notable Systems', collection: 'Canonn' },
+    ],
+    dataset: 'ruins',
+  });
+
+  await field(page).click();
+  const rows = dialog(page).locator('.gm-hud__dataset-row');
+  await expect(rows).toHaveCount(3);
+
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('notable');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Notable Systems');
+
+  // The filter reads the loaded entry's category names as well, which is the one set
+  // whose categories the map holds.
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('ruins 0');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Guardian Ruins');
+
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('nothing here');
+  await expect(rows).toHaveCount(0);
+  await expect(dialog(page).locator('.gm-hud__dataset-empty')).toHaveCount(1);
+});
+
+test('the list is grouped and capped, and its rows go when the dialog closes', async ({
+  page,
+}) => {
+  const entries: EntryBuild[] = [];
+  for (let index = 0; index < 130; index += 1) {
+    entries.push({
+      id: `set-${index}`,
+      label: `Set ${index}`,
+      collection: `Collection ${index % 3}`,
+      ...(index === 0 ? { systems: 2 } : {}),
+    });
+  }
+  await openDatasets(page, { entries, dataset: 'set-0' });
+
+  const closed = await hud(page).locator('*').count();
+  await field(page).click();
+
+  await expect(dialog(page).locator('.gm-hud__dataset-group')).toHaveCount(3);
+  await expect(dialog(page).locator('.gm-hud__dataset-row')).toHaveCount(120);
+  await expect(dialog(page).locator('.gm-hud__dataset-cut')).toHaveText(
+    '120 OF 130 DATASETS',
+  );
+  const open = await hud(page).locator('*').count();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toBeHidden();
+  const again = await hud(page).locator('*').count();
+  console.log('the HUD nodes closed', closed, 'open', open, 'closed again', again);
+
+  expect(open - closed).toBeLessThan(600);
+  expect(again).toBe(closed);
+});
+
+test('the dialog loads the entry the user chose, and cancel loads nothing', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2, categories: 1 },
+      {
+        id: 'two',
+        label: 'Two',
+        collection: 'Canonn',
+        region: 'Second Region',
+        description: 'The second.',
+        systemCount: 5,
+        systems: 5,
+        categories: 2,
+      },
+    ],
+    dataset: 'one',
+  });
+
+  const rows = dialog(page).locator('.gm-hud__dataset-row');
+
+  // Cancel loads nothing.
+  await field(page).click();
+  await rows.filter({ hasText: 'Two' }).click();
+  await expect(dialog(page).locator('.gm-hud__detail-label')).toHaveText('Two');
+  // The detail pane reads the collection, the region and the count on one line, as the
+  // mockup writes them.
+  await expect(dialog(page).locator('.gm-hud__detail-meta')).toHaveText(
+    'CANONN · SECOND REGION · 5 SYSTEMS',
+  );
+  await expect(dialog(page).locator('.gm-hud__detail-description')).toHaveText(
+    'The second.',
+  );
+  await dialog(page).locator('.gm-hud__dialog-cancel').click();
+  await expect(dialog(page)).toBeHidden();
+  expect((await reading(page)).loaded).toBe('one');
+
+  // Load dataset loads it and closes the dialog.
+  await field(page).click();
+  await rows.filter({ hasText: 'Two' }).click();
+  await dialog(page).locator('.gm-hud__dialog-load').click();
+  await expect(dialog(page)).toBeHidden();
+  await expect(field(page)).toContainText('Two');
+  const after = await reading(page);
+  console.log('the map after the dialog loaded', after);
+  expect(after).toMatchObject({ systems: 5, categories: 2, loaded: 'two' });
+
+  // The loaded entry reads CURRENTLY LOADED, and a click on it starts no load.
+  await field(page).click();
+  await rows.filter({ hasText: 'Two' }).click();
+  const button = dialog(page).locator('.gm-hud__dialog-load');
+  await expect(button).toHaveText('CURRENTLY LOADED');
+  await expect(button).toHaveAttribute('aria-disabled', 'true');
+  // The button reports its state with `aria-disabled` and stays in the tab order, so a
+  // real click reaches it and its handler does nothing. Playwright reads `aria-disabled`
+  // as a disabled control, so the click goes past that check.
+  await button.click({ force: true });
+  await expect(dialog(page)).toBeVisible();
+  const loads = await page.evaluate(() => window.__datasetLoads ?? []);
+  console.log('the loads the page counted', loads);
+  expect(loads).toEqual(['one', 'two']);
+});
+
+test('a second click starts no third load while one runs', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      // The load takes long enough that the second click below lands while it runs.
+      { id: 'slow', label: 'Slow', systems: 4, delay: 1500 },
+    ],
+    dataset: 'one',
+  });
+
+  const rows = dialog(page).locator('.gm-hud__dataset-row');
+  await field(page).click();
+  await rows.filter({ hasText: 'Slow' }).click();
+  await dialog(page).locator('.gm-hud__dialog-load').click();
+  // The dialog closes on the click, so the second click reopens it, chooses the same
+  // entry and presses the button again while the first load is still running.
+  await expect(field(page)).toHaveAttribute('data-loading', 'true');
+  await field(page).click();
+  await rows.filter({ hasText: 'Slow' }).click();
+  await dialog(page).locator('.gm-hud__dialog-load').click({ force: true });
+
+  await expect(field(page)).toHaveAttribute('data-loading', 'false', {
+    timeout: 10000,
+  });
+  const loads = await page.evaluate(() => window.__datasetLoads ?? []);
+  const after = await reading(page);
+  console.log('the loads', loads, 'the map', after);
+
+  expect(loads).toEqual(['one', 'slow']);
+  expect(after).toMatchObject({ systems: 4, loaded: 'slow' });
+});
+
+test('the open field carries the accent border', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'two', label: 'Two', systems: 3 },
+    ],
+    dataset: 'one',
+  });
+
+  const read = async (): Promise<{ expanded: string | null; border: string }> =>
+    field(page).evaluate((element: HTMLElement) => ({
+      expanded: element.getAttribute('aria-expanded'),
+      border: getComputedStyle(element).borderTopColor,
+    }));
+
+  const closed = await read();
+  await field(page).click();
+  await expect(dialog(page)).toBeVisible();
+  const open = await read();
+  await hud(page).locator('.gm-hud__dialog-cancel').click();
+  await expect(dialog(page)).toBeHidden();
+  const again = await read();
+  console.log('the dataset field border', { closed, open, again });
+
+  expect(closed.expanded).toBe('false');
+  expect(open.expanded).toBe('true');
+  expect(again.expanded).toBe('false');
+  // `#ff9a3c` is the accent the mockup draws on the open field.
+  expect(open.border).toBe('rgb(255, 154, 60)');
+  expect(closed.border).not.toBe(open.border);
+  expect(again.border).toBe(closed.border);
+});
+
+test('the dialog holds the focus and gives it back to the field', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'two', label: 'Two', systems: 3 },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).focus();
+  await page.keyboard.press('Enter');
+  await expect(dialog(page)).toBeVisible();
+
+  const inside = async (): Promise<boolean> =>
+    page.evaluate(() => {
+      const frame = document.querySelector('#dataset-wrap .gm-hud__dialog-frame');
+      return frame !== null && frame.contains(document.activeElement);
+    });
+  expect(await inside()).toBe(true);
+
+  // Tab through every control of the dialog and once more. The focus stays inside.
+  const controls = await dialog(page).locator('button, input').count();
+  for (let step = 0; step < controls + 1; step += 1) {
+    await page.keyboard.press('Tab');
+    expect(await inside()).toBe(true);
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toBeHidden();
+  const back = await page.evaluate(
+    () => document.activeElement?.className.includes('gm-hud__dataset') === true,
+  );
+  console.log('the focus is back on the field', back);
+  expect(back).toBe(true);
+});
+
+test('Escape closes the dialog first and the selection second', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 4 },
+      { id: 'two', label: 'Two', systems: 3 },
+    ],
+    dataset: 'one',
+  });
+
+  await page.evaluate(() => {
+    window.__datasetMap?.setSelection('one-1');
+  });
+  await field(page).click();
+  await expect(dialog(page)).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toBeHidden();
+  expect((await reading(page)).selection).toBe('one-1');
+
+  await page.keyboard.press('Escape');
+  expect((await reading(page)).selection).toBeNull();
+});
+
+test('the dialog calls no load to fill itself', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Canonn', systems: 3 },
+      { id: 'three', label: 'Three', systems: 4 },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('t');
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('');
+  const rows = dialog(page).locator('.gm-hud__dataset-row');
+  const count = await rows.count();
+  for (let index = 0; index < count; index += 1) await rows.nth(index).click();
+
+  // The entry with no collection sits in the OTHER group.
+  await expect(dialog(page).locator('.gm-hud__dataset-group-name')).toHaveText([
+    'CANONN',
+    'OTHER',
+  ]);
+
+  const loads = await page.evaluate(() => window.__datasetLoads ?? []);
+  console.log('the loads after opening, filtering and clicking', loads);
+  expect(loads).toEqual(['one']);
+});
+
+test('the demo page carries the three Canonn sets', async ({ page }) => {
+  await openMap(page, '', { demoData: true });
+
+  const catalog = await page.evaluate(() => ({
+    ids: window.galaxyMap?.getDatasets().map((entry) => entry.id) ?? [],
+    collections: window.galaxyMap?.getDatasets().map((entry) => entry.collection) ?? [],
+    loaded: window.galaxyMap?.getLoadedDataset()?.id ?? null,
+  }));
+  console.log('the demo catalog', catalog);
+  expect(catalog.ids).toEqual([
+    'guardian-ruins',
+    'guardian-structures',
+    'notable-systems',
+  ]);
+  expect(catalog.collections).toEqual([
+    'Canonn Research Group',
+    'Canonn Research Group',
+    'Canonn Research Group',
+  ]);
+  expect(catalog.loaded).toBe('guardian-ruins');
+
+  const readings: { systems: number; categories: number }[] = [];
+  for (const id of ['guardian-ruins', 'guardian-structures', 'notable-systems']) {
+    readings.push(
+      await page.evaluate(async (name) => {
+        await window.galaxyMap?.loadDataset(name);
+        return {
+          systems: window.galaxyMap?.systemCount() ?? -1,
+          categories: window.galaxyMap?.categoryCount() ?? -1,
+        };
+      }, id),
+    );
+  }
+  console.log('the three sets read', readings);
+  expect(readings).toEqual([
+    { systems: 212, categories: 3 },
+    { systems: 163, categories: 10 },
+    { systems: 16, categories: 4 },
+  ]);
+});

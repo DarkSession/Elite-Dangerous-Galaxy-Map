@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
 import { TRACED_CORNER } from './region-views';
+import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 /** The frame time the map must stay under, in milliseconds. */
 const BUDGET_MS = 16.7;
@@ -93,7 +94,7 @@ async function addSpreadSystems(page: Page): Promise<number> {
       state = (state * 1103515245 + 12345) & 0x7fffffff;
       return state / 0x7fffffff;
     };
-    const records: Record<string, unknown>[] = [];
+    const records: SystemRecordInput[] = [];
     for (let index = 0; index < 10000; index += 1) {
       records.push({
         name: `S${index}`,
@@ -187,7 +188,7 @@ test('the closest zoom is under budget with every marker in range', async ({
       state = (state * 1103515245 + 12345) & 0x7fffffff;
       return state / 0x7fffffff;
     };
-    const records: Record<string, unknown>[] = [];
+    const records: SystemRecordInput[] = [];
     for (let index = 0; index < 10000; index += 1) {
       // Every system sits inside a ball of 10 light years around Sol, so no marker is
       // cut by the range, all 10,000 draw and each one is close enough for the size
