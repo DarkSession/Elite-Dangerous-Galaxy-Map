@@ -23,16 +23,30 @@ import type {
 } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
 import { pickSystem } from '../scene-data/picking';
-import { createSystemSet } from '../scene-data/real-systems';
+import {
+  createSystemSet,
+  MODEL_BOUNDS,
+  safeImageUrl,
+} from '../scene-data/real-systems';
 import type {
   AddReport,
   Category,
+  CategoryInput,
   CategoryReport,
   RealSystem,
   RealSystemSet,
+  SystemRecordInput,
 } from '../scene-data/real-systems';
 import { coarseRegionIdAt, regionOfId } from '../scene-data/regions';
 import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
+import { createDatasetState } from './datasets';
+import type {
+  DatasetContent,
+  DatasetEntry,
+  DatasetInfo,
+  DatasetLoadResult,
+  DatasetState,
+} from './datasets';
 import { createGridLabelOverlay } from './grid-labels';
 import type { GridLabelOverlay } from './grid-labels';
 import { createLabelOverlay } from './labels';
@@ -44,6 +58,15 @@ import type { MarkerOverlay } from './markers';
 // point. The HUD lint rule forbids an import of `src/scene-data/`, so the entry point
 // carries the three types.
 export type { Category, RealSystem, SystemImage } from '../scene-data/real-systems';
+
+// The dataset catalog is part of the options and of the handle, so the entry point
+// carries its types as well. The HUD reads `DatasetInfo` through this module.
+export type {
+  DatasetContent,
+  DatasetEntry,
+  DatasetInfo,
+  DatasetLoadResult,
+} from './datasets';
 
 /**
  * How close a selection brings the camera, in light years. A view further out than this
@@ -78,6 +101,25 @@ export interface GalaxyMapOptions {
    * do not ask for it, and the map then adds no element to the page.
    */
   readonly hud?: boolean | HudOptions;
+  /**
+   * The URL of a picture the map shows in the middle of the canvas while it starts.
+   * The library removes it when `ready` settles, whether it settles or fails. A URL
+   * whose scheme is neither `http` nor `https`, and which is not relative, adds no
+   * element. With no URL the map adds no element.
+   */
+  readonly loadingImage?: string;
+  /**
+   * The data sets the user can switch between. Each entry carries an id, a label and a
+   * `load()` the host wrote. The library calls `load()` and reads what comes back; it
+   * fetches nothing itself. With no catalog the map loads nothing and the HUD shows no
+   * dataset field.
+   */
+  readonly datasets?: readonly DatasetEntry[];
+  /**
+   * The id of the entry the map loads at start. With no id, and with an id the catalog
+   * does not hold, the map loads the first entry.
+   */
+  readonly dataset?: string;
 }
 
 /** A view as a host reads and writes it. */
@@ -103,6 +145,12 @@ export interface GalaxyMapDebug {
   starDrawnCount(): number;
   starSuppressedCount(): number;
   systemMarkerCount(): number;
+  /**
+   * How long the last rebuild of the marker flags took, in milliseconds. The sweep runs
+   * on a change of the set, the table, the visibility or the filter, and not on a
+   * frame, so the reading is of the last change and not of the last frame.
+   */
+  categorySweepMs(): number;
   /** Holds the close fade at a value from 0 to 1, or `null` for the zoom distance. */
   setCloseFade(value: number | null): void;
   /**
@@ -166,9 +214,9 @@ export interface GalaxyMapDebug {
 /** What `createGalaxyMap` gives back. */
 export interface GalaxyMap {
   /** Reads categories into the table and returns the report. */
-  addCategories(categories: readonly unknown[]): CategoryReport;
+  addCategories(categories: readonly CategoryInput[]): CategoryReport;
   /** Reads records into the set and returns the report. */
-  addSystems(records: readonly unknown[]): AddReport;
+  addSystems(records: readonly SystemRecordInput[]): AddReport;
   /** Empties the system set. */
   clearSystems(): void;
   /** Empties the system set and the category table together. */
@@ -229,12 +277,32 @@ export interface GalaxyMap {
   /** True while the coordinate grid draws. */
   isGridVisible(): boolean;
   /**
+   * Calls `listener` after the coordinate grid switch moves, whatever moved it: a
+   * `setGridVisible` call, or the HUD switch, which calls that same member. The grid is
+   * not part of the view state, so `onViewChange` does not carry it and a page that
+   * keeps the switch reads it here. Returns an unsubscribe.
+   */
+  onGridChange(listener: (on: boolean) => void): () => void;
+  /**
    * The name of the codex region that holds a point on the galactic plane, or null. The
    * lookup reads the `x` and the `z` of the point and ignores its `y`, because the
    * region grid is a map of the plane and a region has no upper or lower bound. It gives
    * null before the scene data loads.
    */
   regionNameAt(point: readonly [number, number, number]): string | null;
+  /** The dataset catalog the options named, without the `load` functions. */
+  getDatasets(): DatasetInfo[];
+  /** The dataset now on the map, or null. */
+  getLoadedDataset(): DatasetInfo | null;
+  /**
+   * Loads one dataset of the catalog: it calls the entry's `load()`, empties the set and
+   * the table, and reads the two arrays that came back. A failed load leaves the map
+   * with the set it already had. A second call while a first one runs wins, and the
+   * first rejects as cancelled.
+   */
+  loadDataset(id: string): Promise<DatasetLoadResult>;
+  /** Calls `listener` after the loaded dataset changes. Returns an unsubscribe. */
+  onDatasetChange(listener: (dataset: DatasetInfo | null) => void): () => void;
   /**
    * The HUD handle, or null when the options do not ask for the HUD. The HUD loads by
    * dynamic import, so the member is null until `ready` settles.
@@ -266,6 +334,51 @@ function makeLabelHost(canvas: HTMLCanvasElement): HTMLElement | null {
   return host;
 }
 
+/** Puts the loading image in the middle of the canvas's box. */
+function placeLoadingImage(image: HTMLImageElement, canvas: HTMLCanvasElement): void {
+  // The middle of the canvas's box, and not the middle of the parent: a host may give
+  // the canvas a box of its own inside a larger element.
+  image.style.left = `${canvas.offsetLeft + canvas.clientWidth / 2}px`;
+  image.style.top = `${canvas.offsetTop + canvas.clientHeight / 2}px`;
+}
+
+/**
+ * Makes the loading image in the canvas's parent, or gives null when the options name
+ * no picture, when the URL names an unsafe scheme, or when the canvas has no parent.
+ * It sits over the canvas and under the HUD, and it takes no pointer input, so a drag
+ * that starts on it still orbits the camera.
+ */
+function makeLoadingImage(
+  canvas: HTMLCanvasElement,
+  url: string | undefined,
+): HTMLImageElement | null {
+  if (url === undefined || url === '') return null;
+  if (!safeImageUrl(url)) return null;
+  const parent = canvas.parentElement;
+  if (parent === null) return null;
+  const image = canvas.ownerDocument.createElement('img');
+  image.className = 'gm-loading-image';
+  image.alt = '';
+  image.setAttribute('aria-hidden', 'true');
+  image.style.position = 'absolute';
+  // The picture keeps the size its own file gives, and the host chooses that size in
+  // the file it names. The library sets no width, no height and no fit. An SVG must name
+  // its size as `width` and `height` attributes: an `<img>` element reads no size from
+  // the file's own CSS, and a file without the attributes grows with the box it sits in.
+  image.style.transform = 'translate(-50%, -50%)';
+  image.style.pointerEvents = 'none';
+  // The HUD root sits at 10, so the picture is over the canvas and under the panels.
+  image.style.zIndex = '5';
+  placeLoadingImage(image, canvas);
+  // A picture that does not load leaves no broken image mark, and it stops nothing.
+  image.addEventListener('error', () => {
+    image.hidden = true;
+  });
+  image.src = url;
+  parent.appendChild(image);
+  return image;
+}
+
 /**
  * Builds the map on a canvas and returns its handle in the same tick. The handle takes
  * categories and systems before the scene data is ready, and `ready` settles when the
@@ -280,6 +393,7 @@ export function createGalaxyMap(
   const view: View = createDefaultView();
   const listeners = new Set<(view: MapView) => void>();
   const selectionListeners = new Set<(system: RealSystem | null) => void>();
+  const gridListeners = new Set<(on: boolean) => void>();
 
   // The selection is held as an identity and not as an index, so a record replaced under
   // the same identity keeps it and an emptied set drops it.
@@ -336,6 +450,19 @@ export function createGalaxyMap(
   // `dispose` releases the renderer, so the last reading is kept. The test that checks
   // the loop stopped reads the count before and after the call.
   let lastStats: FrameStats = { frames: 0, meanMs: 0, worstMs: 0 };
+
+  // The picture the map shows while it starts. It is made in the same tick the map is
+  // built, because it covers the wait for the first frame.
+  let loadingImage: HTMLImageElement | null = makeLoadingImage(
+    canvas,
+    options.loadingImage,
+  );
+
+  /** Takes the loading image off the page. A second call does nothing. */
+  const removeLoadingImage = (): void => {
+    loadingImage?.remove();
+    loadingImage = null;
+  };
 
   const loadStop = new AbortController();
   const context = createRenderContext(canvas);
@@ -461,6 +588,28 @@ export function createGalaxyMap(
     if (changed) announceSelection();
   };
 
+  /**
+   * Puts one loaded dataset on the map. The order is the one `dataset-catalog` states:
+   * the set and the table are emptied first, then the categories and then the records.
+   * The state machine calls it after `load()` settles, so a failed load never reaches
+   * the map.
+   *
+   * The selection and the name filter go with the set, because both name records of the
+   * set that is being replaced. The view stays where it is.
+   */
+  const writeDataset = (content: DatasetContent): DatasetLoadResult => {
+    set.clearSystemsAndCategories();
+    set.setNameFilter('');
+    const categories = set.addCategories(content.categories);
+    const systems = set.addSystems(content.systems);
+    hudDirty = true;
+    if (selectedIdentity !== null) {
+      selectedIdentity = null;
+      announceSelection();
+    }
+    return { categories, systems };
+  };
+
   /** Drops a selection the set no longer holds, after the data changes. */
   const syncSelection = (): void => {
     if (selectedIdentity === null) return;
@@ -468,6 +617,17 @@ export function createGalaxyMap(
     selectedIdentity = null;
     announceSelection();
   };
+
+  // The catalog is read once, at the call. A drop is reported on the console, the way a
+  // rejected record is, because the options are the host's own code.
+  const datasets: DatasetState = createDatasetState({
+    datasets: options.datasets,
+    dataset: options.dataset,
+    write: writeDataset,
+  });
+  for (const reject of datasets.rejected) {
+    console.warn('The map dropped a dataset entry.', reject);
+  }
 
   const drawFrame = (): void => {
     if (renderer === null) return;
@@ -494,10 +654,18 @@ export function createGalaxyMap(
     // The grid labels read the label level the grid pass drew, so a label and its lines
     // never disagree. A frame with the grid off reports a spacing of 0, which clears the
     // labels with the same call.
-    gridLabels?.update({ view, viewport: size, spacingLy: renderer.gridSpacingLy() });
+    gridLabels?.update({
+      view,
+      viewport: size,
+      spacingLy: renderer.gridSpacingLy(),
+      bounds: MODEL_BOUNDS,
+    });
   };
 
-  const onResize = (): void => renderer?.resize();
+  const onResize = (): void => {
+    renderer?.resize();
+    if (loadingImage !== null) placeLoadingImage(loadingImage, canvas);
+  };
 
   const start = async (): Promise<void> => {
     if (context.gl === null) {
@@ -624,9 +792,19 @@ export function createGalaxyMap(
     hud = module.createHud(handle, hudOptions.host ?? canvas.parentElement, hudOptions);
   };
 
-  const ready = start().then(attachHud);
-  // A host that never reads `ready` must not raise an unhandled rejection.
-  void ready.catch(() => undefined);
+  // The start load runs beside the scene load, so the records are there as soon as the
+  // host's `load()` gives them. `ready` waits for both: a host that reads `systemCount`
+  // after `ready` then reads the set the map started with. The start load settles
+  // whether or not it succeeded, so a failed dataset still leaves a drawing map.
+  const startLoad = datasets.startLoad();
+  const ready =
+    startLoad === null
+      ? start().then(attachHud)
+      : Promise.all([start().then(attachHud), startLoad]).then(() => undefined);
+  // The picture goes when `ready` settles, whether it settles or fails. The same call
+  // reads the rejection, so a host that never reads `ready` raises no unhandled
+  // rejection.
+  void ready.then(removeLoadingImage, removeLoadingImage);
 
   const debug: GalaxyMapDebug = {
     setPasses(passes: Partial<PassSwitches>): void {
@@ -658,6 +836,11 @@ export function createGalaxyMap(
     },
     starSuppressedCount(): number {
       return renderer?.starSuppressedCount() ?? 0;
+    },
+    categorySweepMs(): number {
+      // The reading is of the sweep the frame before asked for, so a caller draws a
+      // frame after the change it wants to measure.
+      return set.lastSweepMs;
     },
     systemMarkerCount(): number {
       return renderer?.systemMarkerCount() ?? 0;
@@ -755,12 +938,12 @@ export function createGalaxyMap(
   };
 
   const map: GalaxyMap = {
-    addCategories(categories: readonly unknown[]): CategoryReport {
+    addCategories(categories: readonly CategoryInput[]): CategoryReport {
       const report = set.addCategories(categories);
       if (report.added + report.replaced > 0) hudDirty = true;
       return report;
     },
-    addSystems(records: readonly unknown[]): AddReport {
+    addSystems(records: readonly SystemRecordInput[]): AddReport {
       const report = set.addSystems(records);
       syncSelection();
       if (report.added + report.replaced > 0) hudDirty = true;
@@ -804,8 +987,11 @@ export function createGalaxyMap(
       gridLabels = null;
       ownedHost?.remove();
       ownedHost = null;
+      removeLoadingImage();
       listeners.clear();
       selectionListeners.clear();
+      gridListeners.clear();
+      datasets.clear();
     },
     getView(): MapView {
       return readView();
@@ -889,17 +1075,34 @@ export function createGalaxyMap(
       return namesOn;
     },
     setGridVisible(on: boolean): void {
-      gridOn = on === true;
+      const next = on === true;
+      // A set to the value the switch already holds raises no listener, so a host that
+      // writes the state it read does not write its own URL fragment again.
+      if (next === gridOn) return;
+      gridOn = next;
       renderer?.setGridDraw(gridOn);
       if (!gridOn) gridLabels?.clear();
+      for (const listener of gridListeners) listener(gridOn);
     },
     isGridVisible(): boolean {
       return gridOn;
+    },
+    onGridChange(listener: (on: boolean) => void): () => void {
+      gridListeners.add(listener);
+      return () => {
+        gridListeners.delete(listener);
+      };
     },
     regionNameAt(point: readonly [number, number, number]): string | null {
       if (regionGrid === null) return null;
       return regionOfId(coarseRegionIdAt(regionGrid, point[0], point[2]))?.name ?? null;
     },
+    // The four dataset members are the state machine's own calls. Each one is a closure
+    // of `createDatasetState` and reads no `this`, so the handle carries it as it is.
+    getDatasets: datasets.getDatasets,
+    getLoadedDataset: datasets.getLoadedDataset,
+    loadDataset: datasets.loadDataset,
+    onDatasetChange: datasets.onDatasetChange,
     get hud(): HudHandle | null {
       return hud;
     },

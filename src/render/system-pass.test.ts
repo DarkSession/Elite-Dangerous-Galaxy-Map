@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { cameraPosition } from '../camera/projection';
 import type { View } from '../camera/view';
 import { createSystemSet, MODEL_BOUNDS } from '../scene-data/real-systems';
+import type { SystemRecordInput } from '../scene-data/real-systems';
 import { SeededRandom } from '../scene-data/random';
 import {
   buildMarkerColors,
@@ -26,7 +27,7 @@ function record(
   name: string,
   position: readonly [number, number, number],
   category: string,
-): Record<string, unknown> {
+): SystemRecordInput {
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
@@ -374,7 +375,7 @@ describe('the two styles', () => {
       { name: 'Glow', color: [1, 2, 3] },
       { name: 'Disc', color: [4, 5, 6], markerStyle: 'disc' },
     ]);
-    const records: Record<string, unknown>[] = [];
+    const records: SystemRecordInput[] = [];
     for (let index = 0; index < 200; index += 1) {
       records.push(
         record(`S${index}`, [index * 5, 0, 0], index < 100 ? 'Glow' : 'Disc'),

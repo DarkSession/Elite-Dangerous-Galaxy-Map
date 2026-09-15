@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { startState } from './helpers';
 
 test('the scene data is ready in time and no task blocks the main thread', async ({
   page,
@@ -17,10 +18,12 @@ test('the scene data is ready in time and no task blocks the main thread', async
     });
   });
 
-  await page.goto('/');
+  await page.goto('./');
   await page.waitForFunction(() => (window.__readyAt ?? -1) >= 0, undefined, {
     timeout: 30000,
   });
+  // This file navigates by itself, so it takes the start state the helper gives.
+  await startState(page);
 
   const readyAt = await page.evaluate(() => window.__readyAt ?? -1);
   console.log('scene data ready after', Math.round(readyAt), 'ms');

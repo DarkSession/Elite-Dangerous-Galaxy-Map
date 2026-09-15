@@ -65,14 +65,14 @@ third-party code and no third-party data file.
 
 ## The Guardian site records of the demo page
 
-`src/app/demo-systems.json` holds 3 categories and 212 Guardian systems, with 600
+`demo-data/guardian-ruins.json` holds 3 categories and 212 Guardian systems, with 600
 Guardian Ruins sites between them. The demo page loads them as an example host data set;
 the library itself ships no data and fetches none. The records come from the
 [Canonn Research Group](https://canonn.science/) through
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), which is under the
 **MIT** licence. The file is a conversion of that project's `guardian_ruins.json` data
 set, which `Source/data/MapData-GR.js` fetches. `scripts/build-demo-systems.mjs` makes the
-conversion, and `pnpm build:demo` runs it. The conversion keeps each system's name, its
+conversion, and `pnpm build:demo-data` runs it. The conversion keeps each system's name, its
 coordinates, its site types and the bodies its sites are on, and drops every other field.
 
 Each record names its thumbnails at `https://ruins.canonn.tech/images/maps/`, one for each
@@ -111,6 +111,31 @@ SOFTWARE.
 The sites are places in the game's galaxy, so the Frontier Developments terms above
 also apply to them.
 
+## The Guardian Structures records of the demo page
+
+`demo-data/guardian-structures.json` holds 10 categories and 163 Guardian systems, with
+209 Guardian Structures sites between them. The records come from the same Canonn
+Research Group project as the ruins above, under the same **MIT** licence, and the file is
+a conversion of that project's `guardian_structures.json` data set.
+`scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
+name, its coordinates, its site types and the bodies its sites are on, and drops every
+other field. The records name no picture, so the browser fetches none for this set.
+
+The category names, the colours and the descriptions in that file are this project's own.
+
+## The Notable Systems records of the demo page
+
+`demo-data/notable-systems.json` holds 4 categories and 16 systems. The records come from
+the same Canonn Research Group project, under the same **MIT** licence, and the file is a
+conversion of that project's `notable_systems.json` data set.
+`scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
+name, its coordinates and its subject, and turns the `html` field of the dump into the
+plain-text description the HUD shows. **The description text is Canonn's own writing**,
+carried over under the MIT licence above, with the markup removed.
+
+The category names, the colours and the category descriptions in that file are this
+project's own.
+
 ## The HUD fonts
 
 The HUD bundles two font families. The build carries the `woff2` files from the two
@@ -138,6 +163,28 @@ into a path of its own.
 ED Assets states no licence on the file. This notice records where the numbers came
 from. The shape itself is Frontier Developments' and falls under the same
 non-commercial media usage rules as the game data above.
+
+## The loading picture
+
+`public/EDLoader1.svg` is the loader the demo page shows while the map starts. The file
+comes from ED Assets, at
+`https://edassets.org/static/img/svg/EDLoader1.svg`. This repository **holds a copy** of
+it, and the demo site serves that copy from its own address. The page does not fetch the
+file from `edassets.org`.
+
+The copy carries one change. The original names its size as `style="height:170px"` on the
+root element. An `<img>` element does not read a size from that CSS, so the picture gets
+no size of its own and grows with the box that holds it. The copy names the same 170 by
+170 size as `width` and `height` attributes, which the browser reads. The drawing is the
+same.
+
+ED Assets states no licence on the file, as it states none on the marker the pin is
+drawn from. This notice records where the copy came from. The shape is Frontier
+Developments' and falls under the same non-commercial media usage rules as the game data
+above.
+
+The library ships no copy: the library build leaves `public/` out of the package, and the
+loading picture is a URL the host names.
 
 ## The HUD mockup
 

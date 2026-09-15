@@ -59,10 +59,10 @@ Guardian system with an Alpha and a Beta ruin shows only under Alpha, and turnin
 off hides a system the user asked to keep. The marker still takes the colour and the
 style of the primary category.
 
-**A region label returns to the centre of its region.** The held anchor now glides back
-toward the region's own mean plane position instead of staying where it was pushed. The
-hold still stops the anchor hopping between two samples, because the glide is bounded
-and continuous.
+**A region label returns to the centre of its region.** The held anchor now goes back
+toward the region's own mean plane position instead of staying where it was pushed. It
+takes half of the gap in a frame, so a pushed label is back in about 9 frames. The step is
+bounded, which keeps the label from jumping when the target itself steps.
 
 **The selected system's name and position carry a copy button.** Each writes to the
 clipboard and shows a tick for 1.4 seconds.
@@ -133,7 +133,7 @@ expected reading and not a fault in the artifacts.
 - `map-hud`: the category browser counts and lists a system under every category it
   belongs to; the information panel carries a copy button on the name and on the
   position; the top bar carries the dataset field.
-- `galactic-regions`: a held label anchor glides back to its region's mean; the boundary
+- `galactic-regions`: a held label anchor goes back to its region's mean; the boundary
   line fades by the camera's distance to the line and draws in two closer tones.
 - `coordinate-grid`: the grid fades in over a camera distance band, so a wide view draws
   none of it; a coordinate label draws only inside the model bounds and only where its own
@@ -143,7 +143,7 @@ expected reading and not a fault in the artifacts.
 ## Impact
 
 **Code.** `src/app/create-map.ts` (options, handle, the loading overlay, the dataset
-calls), `src/app/labels.ts` (the anchor glide), `src/scene-data/real-systems.ts` (the
+calls), `src/app/labels.ts` (the anchor filter), `src/scene-data/real-systems.ts` (the
 typed input, the marker flags over every category), `src/hud/` (the top bar, the
 categories panel, the information panel, a new dataset dialog, the styles),
 `src/render/region-pass.ts` and `src/render/shaders/regions.vert`,
@@ -166,7 +166,7 @@ image), `THIRD_PARTY_NOTICES.md` (the two new Canonn sets and the loader image),
 **Tests.** The browser suite's base URL and the served build change. `e2e/helpers.ts`
 clears the demo set by default, and `tests/region-views.ts` and `e2e/region-views.ts` carry
 new constants for the two corner views, which sit at a zoom the near fade now empties. New unit tests for
-the anchor glide, the category membership rule, the dataset catalog reader and the two
+the anchor filter, the category membership rule, the dataset catalog reader and the two
 converters. New browser tests for the copy buttons, the dataset dialog, the loading
 image and the boundary fade. `e2e/grid.spec.ts` and `src/app/grid-labels.test.ts` carry
 the band and the label gate, and `src/app/url-view.test.ts` carries the grid field.

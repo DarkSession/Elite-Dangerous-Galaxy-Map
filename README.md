@@ -5,7 +5,8 @@ An interactive 3D map of the Elite Dangerous galaxy, drawn in the browser with W
 Phase 1 draws the far view: the bar, the bulge, the disc, the four spiral arms and the
 dust lanes, from a compact analytic model of the game's stellar-mass distribution.
 Phase 2 adds the decoration stars of the close view. Phase 3 makes the map a library and
-draws the host's real systems. Phase 4 adds selection and a HUD.
+draws the host's real systems. Phase 4 adds selection and a HUD. Phase 5 builds the
+map as a package, gives the host a dataset catalog and publishes the demo site.
 
 ## Requirements
 
@@ -29,30 +30,42 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 
 ## Scripts
 
-| Script          | What it does                                         |
-| --------------- | ---------------------------------------------------- |
-| `pnpm dev`      | Starts the Vite dev server on port 5173              |
-| `pnpm build`    | Checks the types, then builds into `dist/`           |
-| `pnpm preview`  | Serves `dist/` on port 4173                          |
-| `pnpm test`     | Runs the Vitest unit tests                           |
-| `pnpm test:e2e` | Builds, serves and runs the Playwright browser tests |
-| `pnpm lint`     | Runs ESLint                                          |
-| `pnpm format`   | Runs Prettier over the repository                    |
+| Script                 | What it does                                           |
+| ---------------------- | ------------------------------------------------------ |
+| `pnpm dev`             | Starts the Vite dev server on port 5173                |
+| `pnpm build`           | Checks the types, then builds the library into `dist/` |
+| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                 |
+| `pnpm build:demo-data` | Writes the three demo data files from the Canonn dumps |
+| `pnpm preview`         | Serves `dist-demo/` on port 4173                       |
+| `pnpm test`            | Runs the Vitest unit tests                             |
+| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests   |
+| `pnpm lint`            | Runs ESLint                                            |
+| `pnpm format`          | Runs Prettier over the repository                      |
 
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
-The dev server puts a demo data set on the map: 3 categories and 212 Guardian systems
-from [src/app/demo-systems.json](src/app/demo-systems.json), which
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names. Each record names its thumbnails
-at `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
-repository holds no picture of them. `pnpm build:demo` writes the file again from the
-Canonn dump. The demo page adds them with the
-same `addCategories` and `addSystems` calls any host uses. The production build drops
-the data and the code that loads it, so `pnpm preview` and the browser tests open a map
-with an empty set. Open `#c=1500,0,-500&d=3000&p=35&y=0` to see the markers.
+The demo page carries three data sets in [demo-data/](demo-data/), which
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names: Guardian Ruins, 212 systems in 3
+categories; Guardian Structures, 163 systems in 10 categories; and Notable Systems, 16
+systems in 4 categories. It names them in the `datasets` option any host uses, and it
+loads Guardian Ruins at start. The HUD's dataset field switches between them.
+`pnpm build:demo-data` writes the three files again from the Canonn dumps.
+
+A Guardian Ruins record names its thumbnails at
+`https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
+repository holds no picture of them. The other two sets name no picture. The dev server
+and the demo site build both carry the three files, and the library build carries no
+record of them. The browser suite serves the demo site and clears the set in its own
+helper, so a test that does not ask for a set opens an empty map. Open
+`#c=1500,0,-500&d=3000&p=35&y=0&g=1` to see the markers.
 
 ## The entry point
+
+The package entry is [src/index.ts](src/index.ts), which `package.json` names in
+`exports`. It exports `createGalaxyMap` and the types the public calls name, so a host
+imports from the package root and reaches no module the list leaves out. `pnpm build`
+writes the module to `dist/index.js` and its declarations to `dist/types/`.
 
 `createGalaxyMap(canvas, options)` in
 [src/app/create-map.ts](src/app/create-map.ts) builds a map. It returns a handle in the
@@ -73,7 +86,7 @@ light years. It is 120,000 when the category names none, which is the far zoom l
 such a marker draws at every zoom the map reaches.
 
 ```ts
-import { createGalaxyMap } from './app/create-map';
+import { createGalaxyMap } from 'elite-dangerous-galaxy-map';
 
 const canvas = document.getElementById('map') as HTMLCanvasElement;
 const map = createGalaxyMap(canvas);
@@ -129,9 +142,11 @@ The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCoun
 `setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
 carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
-`isGridVisible` and `regionNameAt`. The `hud` member is the HUD handle, or null when the
-options do not ask for the HUD. The region mode is `off`, `simplified` or
-`accurate`, and it is `simplified` unless the options name another. `simplified` draws
+`isGridVisible`, `onGridChange` and `regionNameAt`. For the dataset catalog it carries
+`getDatasets`, `getLoadedDataset`, `loadDataset` and `onDatasetChange`. The `hud`
+member is the HUD handle, or null when the options do not ask for the HUD. The region
+mode is `off`, `simplified` or `accurate`, and it is `simplified` unless the options
+name another. `simplified` draws
 the smoothed region boundary, `accurate` draws the traced boundary, which is the
 49.3494 light year staircase the region data holds, and `off` draws no boundary and
 places no label. A mode change takes effect in the next frame and does not rebuild the
@@ -161,11 +176,12 @@ distance already inside 500 light years does not change, so a close view stays c
 `getHover` gives the system under the pointer. The map draws a mark around the hovered
 system and a second mark around the selected one.
 
-Two options build the overlays the host does not have to drive itself:
+Three options build what the host does not have to drive itself:
 
 ```ts
 const map = createGalaxyMap(canvas, {
   grid: true,
+  loadingImage: '/loader.svg',
   hud: {
     title: 'GALACTIC CARTOGRAPHICS',
     actions: [{ label: 'LOG RECORD', onSelect: (system) => console.log(system) }],
@@ -174,7 +190,21 @@ const map = createGalaxyMap(canvas, {
 ```
 
 `grid` draws the coordinate grid on the galactic plane. It is off unless the options ask
-for it, and `setGridVisible` turns it on and off later.
+for it, `setGridVisible` turns it on and off later, and `onGridChange` reports every
+move of the switch, which the HUD drives as well. The demo site asks for the grid and
+the library default stays off, because a host that embeds the map in its own page did
+not ask for a coordinate grid. The grid fades in by the camera's distance to the cursor:
+it draws nothing at 12,000 light years and further, and it draws in full at 4,000 and
+nearer.
+
+`loadingImage` is a URL. The library puts the picture in the canvas's parent, centred on
+the canvas, and it removes the picture when `ready` settles, whether it settles or
+fails. A URL whose scheme the library refuses adds no element, and options that name no
+image add none. The picture keeps the size its own file names, because the library sets
+no width, no height and no fit. An SVG must name that size as `width` and `height`
+attributes: an `<img>` element reads no size from the file's own CSS, and a file without
+the attributes grows with the box it sits in. The demo site names its own
+`EDLoader1.svg`, which it serves from the site's own origin at 170 by 170.
 
 `hud` builds the heads-up display. `true` builds it with its defaults, and an object
 names the `title`, the `host` element and the footer `actions`. With no `host` the HUD
@@ -196,6 +226,41 @@ system with its fields, description, thumbnails and a lightbox. It reads the map
 the public handle alone. An ESLint rule stops `src/hud/` importing `src/render/`,
 `src/scene-data/` or `src/camera/`.
 
+## The dataset catalog
+
+`datasets` is a list of data sets the host writes. Each entry carries an `id`, a
+`label`, an async `load()` and the optional `collection`, `region`, `description` and
+`systemCount` the HUD shows. `dataset` names the entry the map loads at start, and the
+map loads the first entry when the options name none. The catalog holds at most 256
+entries.
+
+```ts
+const map = createGalaxyMap(canvas, {
+  hud: true,
+  dataset: 'ruins',
+  datasets: [
+    {
+      id: 'ruins',
+      label: 'Guardian Ruins',
+      collection: 'Canonn Research Group',
+      systemCount: 212,
+      load: async () => (await fetch('/ruins.json')).json(),
+    },
+  ],
+});
+```
+
+`loadDataset(id)` calls the entry's `load()`, empties the system set and the category
+table, and adds what comes back through the same `addCategories` and `addSystems` calls
+any host uses. It clears the selection and the name filter. A later call wins: an
+earlier load that is still running rejects as cancelled and writes nothing.
+`getDatasets` reads the catalog without the `load` functions, `getLoadedDataset` reads
+the set on the map, and `onDatasetChange` reports each change. The library fetches
+nothing and caches nothing: the host's `load()` reads the data.
+
+The HUD draws the dataset field in the top bar and the dataset library dialog behind it,
+and it draws neither when the catalog is empty.
+
 ## Controls
 
 | Input           | What it does                                                                                     |
@@ -206,12 +271,15 @@ the public handle alone. An ESLint rule stops `src/hud/` importing `src/render/`
 | Wheel           | Changes the distance by 1.15 per notch, between 10 and 120,000 light years.                      |
 | `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second. |
 | `R` `F`         | Move the cursor up and down at the same speed.                                                   |
-| `Escape`        | Closes the HUD lightbox. With no lightbox open it clears the selection.                          |
+| `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                 |
 
-The view lives in the URL fragment as `#c=<x>,<y>,<z>&d=<distance>&p=<pitch>&y=<yaw>`,
-in light years and degrees. The page writes it back at most once every 500 ms, so a
-link carries the view. The fragment does not carry the selection, because a link that
-selects a system would need the host's data set to hold that system.
+The view lives in the URL fragment as
+`#c=<x>,<y>,<z>&d=<distance>&p=<pitch>&y=<yaw>&g=<grid>`, in light years and degrees.
+`g` is `1` or `0` and carries the coordinate grid switch. It is the one optional field:
+a fragment that names no `g` leaves the switch where it is. The page writes the fragment
+back at most once every 500 ms, so a link carries the view and the grid. The fragment
+does not carry the selection, because a link that selects a system would need the host's
+data set to hold that system.
 
 ## The galaxy model
 
@@ -243,6 +311,25 @@ NVIDIA driver answers on inside the container. To see the test fail without the 
 ```bash
 GALAXY_MAP_EXTRA_CHROMIUM_ARGS=--disable-gpu pnpm test:e2e e2e/00-renderer.spec.ts
 ```
+
+## The pipeline
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push to `main` and on
+every pull request that targets `main`. It installs with a frozen lockfile, then runs
+`pnpm lint`, the type check, `pnpm test`, the library build and the demo site build, in
+that order. It stops at the first check that fails. Every action it uses is pinned to a
+commit SHA, for the reason [pnpm-workspace.yaml](pnpm-workspace.yaml) holds each npm
+release for 7 days: a mutable tag gives whatever it points at on the day the run starts.
+
+**The browser suite is a local gate.** The workflow does not run Playwright. The suite
+reads the renderer string and fails a run that falls back to SwiftShader or llvmpipe,
+and a GitHub-hosted runner carries no GPU. Run `pnpm test:e2e` in the dev container
+before you open a pull request.
+
+After the checks pass on a push to `main`, the workflow builds the demo site again and
+publishes `dist-demo/` to the repository's GitHub Pages address,
+<https://darksession.github.io/Elite-Dangerous-Galaxy-Map/>. It publishes nothing from a
+pull request, and it publishes no part of `dist/`, which is the library.
 
 ## Layout
 

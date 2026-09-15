@@ -166,7 +166,8 @@ NOT be replaced: the region under the cursor stays what that line reads, because
 "where am I looking".
 
 The field SHALL be a button. A click SHALL open the dataset dialog, and `Escape` SHALL
-close it.
+close it. While the dialog is open, the field SHALL carry `aria-expanded` as `true` and
+SHALL take the accent border the mockup draws on it.
 
 The dialog SHALL hold:
 
@@ -201,6 +202,14 @@ lightbox.
   `getLoadedDataset()`
 - **THEN** the dialog is closed, the field reads the second entry's label, and the reading
   is the second entry
+
+#### Scenario: The open field carries the accent border
+
+- **WHEN** the browser test reads the dataset field's `aria-expanded` and its border
+  colour, opens the dialog and reads both again, and closes the dialog and reads both a
+  third time
+- **THEN** the first and the third reading are `false` with the dim border, and the second
+  is `true` with the accent colour
 
 #### Scenario: Cancel loads nothing
 

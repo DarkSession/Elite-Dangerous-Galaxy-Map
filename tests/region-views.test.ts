@@ -3,13 +3,16 @@ import { project } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
 import { buildRegionData } from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
+import { regionNearFade } from '../src/render/region-pass';
 import {
+  FADING_RUN,
   NEAR_BOTH_SETS,
   SHARP_CORNER,
   TRACED_CORNER,
   VERTICAL_CROSSING,
 } from '../e2e/region-views';
 import {
+  findFadingRun,
   findPointNearBothSets,
   findSharpCorner,
   findTracedCorner,
@@ -265,5 +268,72 @@ describe('the view at a 90 degree corner of the traced set', () => {
     expect(
       TRACED_CORNER.clearanceLy / TRACED_CORNER.lightYearsPerPixel,
     ).toBeGreaterThan(JOIN_RADIUS_PIXELS * 4);
+  });
+});
+
+describe('the view where one line fades along its own length', () => {
+  test('is what the search of the boundary set gives', () => {
+    expect(findFadingRun(lines, FADING_RUN.viewport)).toEqual(FADING_RUN);
+  });
+
+  test('puts the cursor on the drawn line at the centre of the frame', () => {
+    const vertex = FADING_RUN.cursorVertex;
+    expect(lines.positions[vertex * 3] as number).toBe(FADING_RUN.cursor[0]);
+    expect(lines.positions[vertex * 3 + 2] as number).toBe(FADING_RUN.cursor[2]);
+    const centre = project(
+      FADING_RUN.view as View,
+      FADING_RUN.cursor,
+      FADING_RUN.viewport,
+    );
+    expect(centre.x).toBeCloseTo(FADING_RUN.viewport.width / 2, 4);
+    expect(centre.y).toBeCloseTo(FADING_RUN.viewport.height / 2, 4);
+  });
+
+  test('puts the lower reading on the same chain in the lower tenth', () => {
+    expect(FADING_RUN.lowerFrom).toBeGreaterThanOrEqual(
+      lines.first[FADING_RUN.chain] as number,
+    );
+    expect(FADING_RUN.lowerTo).toBeGreaterThanOrEqual(
+      lines.first[FADING_RUN.chain] as number,
+    );
+    // The reading sits on the segment between the two vertices the choice names.
+    const from: [number, number, number] = [
+      lines.positions[FADING_RUN.lowerFrom * 3] as number,
+      0,
+      lines.positions[FADING_RUN.lowerFrom * 3 + 2] as number,
+    ];
+    const to: [number, number, number] = [
+      lines.positions[FADING_RUN.lowerTo * 3] as number,
+      0,
+      lines.positions[FADING_RUN.lowerTo * 3 + 2] as number,
+    ];
+    const span = planeGap(from, to);
+    expect(
+      planeGap(from, FADING_RUN.lower) + planeGap(FADING_RUN.lower, to),
+    ).toBeCloseTo(span, 3);
+
+    const screen = project(
+      FADING_RUN.view as View,
+      FADING_RUN.lower,
+      FADING_RUN.viewport,
+    );
+    expect(screen.inFront).toBe(true);
+    expect(screen.y).toBeGreaterThan(0.9 * FADING_RUN.viewport.height);
+    expect(screen.y).toBeLessThanOrEqual(FADING_RUN.viewport.height);
+    expect(screen.x).toBeGreaterThan(0);
+    expect(screen.x).toBeLessThan(FADING_RUN.viewport.width);
+  });
+
+  test('draws the line in full at the cursor and an eighth of it at the edge', () => {
+    expect(FADING_RUN.cursorFade).toBe(regionNearFade(FADING_RUN.cursorRangeLy));
+    expect(FADING_RUN.lowerFade).toBe(regionNearFade(FADING_RUN.lowerRangeLy));
+    expect(FADING_RUN.cursorFade).toBe(1);
+    expect(FADING_RUN.lowerFade).toBeGreaterThan(0);
+    // The browser scenario holds the lower reading to under a third of the cursor one.
+    expect(FADING_RUN.lowerFade).toBeLessThan(FADING_RUN.cursorFade / 3);
+  });
+
+  test('carries no other chain near either reading', () => {
+    expect(FADING_RUN.clearancePixels).toBeGreaterThan(24);
   });
 });

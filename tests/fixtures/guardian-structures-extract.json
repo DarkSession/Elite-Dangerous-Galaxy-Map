@@ -1,0 +1,182 @@
+[
+  {
+    "SiteId": "4",
+    "Site Type": "Lacrosse",
+    "System Name": "Vela Dark Region KR-W c1-24",
+    "x": "1036.875",
+    "y": "-163.59375",
+    "z": "-85.96875",
+    "Body Name": "7 A"
+  },
+  {
+    "SiteId": "7",
+    "Site Type": "Fistbump",
+    "System Name": "Synuefe ZL-J d10-119",
+    "x": "834.21875",
+    "y": "-51.21875",
+    "z": "-154.65625",
+    "Body Name": "9 B"
+  },
+  {
+    "SiteId": "12",
+    "Site Type": "Lacrosse",
+    "System Name": "Col 173 Sector QU-O d6-32",
+    "x": "894.09375",
+    "y": "-203.625",
+    "z": "-146.5625",
+    "Body Name": "3 A"
+  },
+  {
+    "SiteId": "141",
+    "Site Type": "Lacrosse",
+    "System Name": "Vela Dark Region KR-W c1-24",
+    "x": "1036.875",
+    "y": "-163.59375",
+    "z": "-85.96875",
+    "Body Name": "7 A"
+  },
+  {
+    "SiteId": "147",
+    "Site Type": "Fistbump",
+    "System Name": "Synuefe ZL-J d10-119",
+    "x": "834.21875",
+    "y": "-51.21875",
+    "z": "-154.65625",
+    "Body Name": "9 B"
+  },
+  {
+    "SiteId": "160",
+    "Site Type": "Lacrosse",
+    "System Name": "Col 173 Sector QU-O d6-32",
+    "x": "894.09375",
+    "y": "-203.625",
+    "z": "-146.5625",
+    "Body Name": "3 A"
+  },
+  {
+    "SiteId": "200",
+    "Site Type": "Stickyhand",
+    "System Name": "Wregoe BU-Y b2-0",
+    "x": "1077.375",
+    "y": "400.5625",
+    "z": "-993.375",
+    "Body Name": "1 C"
+  },
+  {
+    "SiteId": "201",
+    "Site Type": "Bear",
+    "System Name": "Wregoe BU-Y b2-0",
+    "x": "1077.375",
+    "y": "400.5625",
+    "z": "-993.375",
+    "Body Name": "1 C"
+  },
+  {
+    "SiteId": "3",
+    "Site Type": "Hammerbot",
+    "System Name": "Col 173 Sector HR-M b23-3",
+    "x": "1024.28125",
+    "y": "-191.71875",
+    "z": "-193.8125",
+    "Body Name": "B 7"
+  },
+  {
+    "SiteId": "13",
+    "Site Type": "Turtle",
+    "System Name": "HD 63154",
+    "x": "979.46875",
+    "y": "-207.40625",
+    "z": "-131.59375",
+    "Body Name": "B 3 A"
+  },
+  {
+    "SiteId": "15",
+    "Site Type": "Crossroads",
+    "System Name": "Col 173 Sector JX-K b24-0",
+    "x": "993.0625",
+    "y": "-188.1875",
+    "z": "-173.53125",
+    "Body Name": "B 2"
+  },
+  {
+    "SiteId": "33",
+    "Site Type": "Bowl",
+    "System Name": "Vela Dark Region JS-T b3-0",
+    "x": "899.9375",
+    "y": "-142.1875",
+    "z": "-82.25",
+    "Body Name": "A 3"
+  },
+  {
+    "SiteId": "78",
+    "Site Type": "Squid",
+    "System Name": "Synuefe AH-J d10-103",
+    "x": "777.53125",
+    "y": "-158.28125",
+    "z": "-117.4375",
+    "Body Name": "B 1"
+  },
+  {
+    "SiteId": "80",
+    "Site Type": "Robolobster",
+    "System Name": "Synuefe EN-H d11-29",
+    "x": "745.6875",
+    "y": "-115",
+    "z": "-91.34375",
+    "Body Name": "6 B"
+  },
+  {
+    "SiteId": "1",
+    "Site Type": "Fistbump",
+    "System Name": "Synuefe LY-I b42-2",
+    "x": "814.71875",
+    "y": "-222.78125",
+    "z": "-151.15625",
+    "Body Name": "C 2"
+  },
+  {
+    "SiteId": "18",
+    "Site Type": "Lacrosse",
+    "System Name": "Vela Dark Region FL-Y d63",
+    "x": "1064.5",
+    "y": "-144.03125",
+    "z": "-101.71875",
+    "Body Name": "B 1"
+  },
+  {
+    "SiteId": "35",
+    "Site Type": "Bowl",
+    "System Name": "Col 173 Sector ZL-L b24-2",
+    "x": "896.78125",
+    "y": "-134.90625",
+    "z": "-182.09375",
+    "Body Name": "B 1"
+  },
+  {
+    "SiteId": "52",
+    "Site Type": "Hammerbot",
+    "System Name": "NGC 2451A Sector IR-W d1-77",
+    "x": "742.78125",
+    "y": "-156.90625",
+    "z": "-260.96875",
+    "Body Name": "AB 1 A"
+  },
+  {
+    "SiteId": "69",
+    "Site Type": "Lacrosse",
+    "System Name": "Col 173 Sector WP-O b22-1",
+    "x": "934.125",
+    "y": "-172.125",
+    "z": "-205.34375",
+    "Body Name": "A 3"
+  },
+  {
+    "SiteId": "86",
+    "Site Type": "Stickyhand",
+    "System Name": "Synuefe NU-F b44-5",
+    "x": "768.21875",
+    "y": "-166.0625",
+    "z": "-106.40625",
+    "Body Name": "B 1"
+  }
+]

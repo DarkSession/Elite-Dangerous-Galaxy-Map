@@ -7,6 +7,9 @@ import {
   CARRIED_BONUS,
   chooseLabels,
   fitSampleBuffers,
+  filterAnchor,
+  ANCHOR_MAX_PIXELS,
+  ANCHOR_SHARE,
   HELD_SHARE,
   LABEL_INSET,
   labelCandidates,
@@ -16,7 +19,7 @@ import {
   samplePointCount,
   sampleFrame,
 } from './labels';
-import type { AnchorPoint, FrameSamples, LabelMemory } from './labels';
+import type { AnchorPoint, FrameSamples, LabelMemory, PlanePoint } from './labels';
 // The test builds the coarse grid the page gets from the region worker. The page
 // never imports this module: it would pull the 199 KiB region lookup into the main
 // bundle, which `tests/main-bundle.test.ts` holds the line against.
@@ -507,7 +510,71 @@ describe('the hysteresis', () => {
   });
 });
 
-describe('the held anchor', () => {
+describe('the anchor filter', () => {
+  const identity = (x: number, z: number): AnchorPoint => ({ x, y: z });
+
+  /** A projection that shows 10 CSS pixels for every light year of the plane. */
+  const zoomed = (x: number, z: number): AnchorPoint => ({ x: x * 10, y: z * 10 });
+
+  test('moves the carried point its share of the gap to the target', () => {
+    const filtered = filterAnchor({ x: 210, z: 110 }, { x: 200, z: 100 }, identity);
+    expect(filtered.x).toBeCloseTo(210 - 10 * ANCHOR_SHARE, 9);
+    expect(filtered.z).toBeCloseTo(110 - 10 * ANCHOR_SHARE, 9);
+    // The step is under the cap, so the cap does not touch it.
+    expect(Math.hypot(filtered.x - 210, filtered.z - 110)).toBeLessThan(
+      ANCHOR_MAX_PIXELS,
+    );
+  });
+
+  test('scales a longer step down to the cap', () => {
+    const carried: PlanePoint = { x: 500, z: 400 };
+    const filtered = filterAnchor(carried, { x: 200, z: 100 }, identity);
+    const from = identity(carried.x, carried.z);
+    const to = identity(filtered.x, filtered.z);
+    expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeCloseTo(ANCHOR_MAX_PIXELS, 6);
+    // The cap scales the step and does not turn it: the point still moves toward the
+    // target on the straight line between the two.
+    expect(filtered.x - carried.x).toBeCloseTo(filtered.z - carried.z, 9);
+    expect(filtered.x).toBeLessThan(carried.x);
+  });
+
+  test('reads the cap on the projection and not on the plane', () => {
+    const carried: PlanePoint = { x: 210, z: 110 };
+    const target: PlanePoint = { x: 200, z: 100 };
+    // The same plane step, at a zoom that shows 10 pixels for a light year, moves the
+    // anchor 10 times as far, so the cap takes it back.
+    const wide = filterAnchor(carried, target, identity);
+    const close = filterAnchor(carried, target, zoomed);
+    const planeStep = (point: PlanePoint): number =>
+      Math.hypot(point.x - carried.x, point.z - carried.z);
+    const step = 10 * ANCHOR_SHARE;
+    expect(planeStep(wide)).toBeCloseTo(Math.hypot(step, step), 9);
+    expect(planeStep(close)).toBeCloseTo(
+      Math.hypot(step, step) * (ANCHOR_MAX_PIXELS / Math.hypot(step * 10, step * 10)),
+      6,
+    );
+    const from = zoomed(carried.x, carried.z);
+    const to = zoomed(close.x, close.z);
+    expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeCloseTo(ANCHOR_MAX_PIXELS, 6);
+  });
+
+  test('takes no step when the carried point is the target', () => {
+    const filtered = filterAnchor({ x: 200, z: 100 }, { x: 200, z: 100 }, identity);
+    expect(filtered).toEqual({ x: 200, z: 100 });
+  });
+
+  test('never steps past the target', () => {
+    let point: PlanePoint = { x: 0, z: 0 };
+    const target: PlanePoint = { x: 10, z: 0 };
+    for (let frame = 0; frame < 200; frame += 1) {
+      point = filterAnchor(point, target, identity);
+      expect(point.x).toBeLessThanOrEqual(target.x);
+    }
+    expect(point.x).toBeCloseTo(target.x, 3);
+  });
+});
+
+describe('the carried anchor', () => {
   const regions = [regionOf(1, 'Held Region'), regionOf(2, 'Other Region')];
 
   /** Three samples of region 1 on one row, so the mean of them is 200, 100. */
@@ -527,66 +594,382 @@ describe('the held anchor', () => {
 
   const identity = (x: number, z: number): AnchorPoint => ({ x, y: z });
 
-  test('keeps the anchor of the frame before while both rules hold', () => {
+  function anchorOf(
+    samples: FrameSamples,
+    memory: LabelMemory,
+  ): AnchorPoint | undefined {
+    return labelCandidates(samples, VIEWPORT, regions, memory).find(
+      (candidate) => candidate.id === 1,
+    )?.anchor;
+  }
+
+  test('filters the anchor of the frame before toward this frame anchor', () => {
     const samples = framed(() => 1, identity);
-    const anchor = labelCandidates(
-      samples,
-      VIEWPORT,
-      regions,
-      memoryOf([1], [[1, { x: 500, z: 400 }]]),
-    ).find((candidate) => candidate.id === 1)?.anchor;
-    expect(anchor).toEqual({ x: 500, y: 400 });
+    const anchor = anchorOf(samples, memoryOf([1], [[1, { x: 500, z: 400 }]]));
+    const step = filterAnchor({ x: 500, z: 400 }, { x: 200, z: 100 }, identity);
+    expect(anchor?.x).toBeCloseTo(step.x, 9);
+    expect(anchor?.y).toBeCloseTo(step.z, 9);
+    // The gap is long, so the frame moves the anchor by the cap and no further.
+    expect(
+      Math.hypot(500 - (anchor?.x as number), 400 - (anchor?.y as number)),
+    ).toBeCloseTo(ANCHOR_MAX_PIXELS, 6);
   });
 
-  test('drops the held anchor when the region under it is another region', () => {
-    // The plane point 500, 400 now reads as region 2, so the mean takes over.
+  test('drops a carried point whose region is another region and takes the target whole', () => {
+    // The plane point 500, 400 now reads as region 2, so the mean takes over at once.
     const samples = framed((x, z) => (x === 500 && z === 400 ? 2 : 1), identity);
-    const anchor = labelCandidates(
-      samples,
-      VIEWPORT,
-      regions,
-      memoryOf([1], [[1, { x: 500, z: 400 }]]),
-    ).find((candidate) => candidate.id === 1)?.anchor;
+    const anchor = anchorOf(samples, memoryOf([1], [[1, { x: 500, z: 400 }]]));
     expect(anchor).toEqual({ x: 200, y: 100 });
   });
 
-  test('drops the held anchor when it no longer projects inside the frame', () => {
-    // The held point projects past the right edge of the 1280 by 720 frame.
+  test('drops a carried point outside the frame and takes the target whole', () => {
+    // The carried point projects past the right edge of the 1280 by 720 frame.
     const samples = framed(
       () => 1,
       (x, z) => (x === 500 && z === 400 ? { x: 1400, y: 400 } : { x, y: z }),
     );
-    const anchor = labelCandidates(
-      samples,
-      VIEWPORT,
-      regions,
-      memoryOf([1], [[1, { x: 500, z: 400 }]]),
-    ).find((candidate) => candidate.id === 1)?.anchor;
+    const anchor = anchorOf(samples, memoryOf([1], [[1, { x: 500, z: 400 }]]));
     expect(anchor).toEqual({ x: 200, y: 100 });
   });
 
-  test('holding the plane point does not hold the label still', () => {
-    // The same held plane point under two projections, which is what a camera that
-    // moves gives. The anchor follows the projection.
-    const memory = memoryOf([1], [[1, { x: 500, z: 400 }]]);
-    const before = labelCandidates(
+  test('a region that carried no label starts at the target', () => {
+    const anchor = anchorOf(
       framed(() => 1, identity),
-      VIEWPORT,
-      regions,
+      memoryOf([]),
+    );
+    expect(anchor).toEqual({ x: 200, y: 100 });
+  });
+
+  test('carrying the plane point does not hold the label still', () => {
+    // The same carried plane point under two projections, which is what a camera that
+    // moves gives. The anchor follows the projection as well as the filter.
+    const memory = memoryOf([1], [[1, { x: 500, z: 400 }]]);
+    const before = anchorOf(
+      framed(() => 1, identity),
       memory,
-    ).find((candidate) => candidate.id === 1)?.anchor;
-    const after = labelCandidates(
+    );
+    const after = anchorOf(
       framed(
         () => 1,
         (x, z) => ({ x: x + 3, y: z + 2 }),
       ),
-      VIEWPORT,
-      regions,
       memory,
-    ).find((candidate) => candidate.id === 1)?.anchor;
-    expect(before).toEqual({ x: 500, y: 400 });
-    expect(after).toEqual({ x: 503, y: 402 });
+    );
+    expect((after?.x as number) - (before?.x as number)).toBeCloseTo(3, 9);
+    expect((after?.y as number) - (before?.y as number)).toBeCloseTo(2, 9);
   });
+});
+
+describe('the anchor over a pan', () => {
+  const regions = [regionOf(1, 'Panned Region'), regionOf(2, 'Around It')];
+
+  /**
+   * One frame of samples over a region that sits still on the plane. The projection is
+   * a shift, which is what a pan of a camera looking straight down gives, so the plane
+   * point under each screen sample moves and the sample grid does not.
+   */
+  function pannedSamples(
+    offset: AnchorPoint,
+    regionAt: (x: number, z: number) => number,
+  ): FrameSamples {
+    const points: {
+      x: number;
+      y: number;
+      planeX: number;
+      planeZ: number;
+      id: number;
+    }[] = [];
+    const columns = Math.ceil(VIEWPORT.width / SAMPLE_SPACING);
+    const rows = Math.ceil(VIEWPORT.height / SAMPLE_SPACING);
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const screenX = (column + 0.5) * (VIEWPORT.width / columns);
+        const screenY = (row + 0.5) * (VIEWPORT.height / rows);
+        const planeX = screenX - offset.x;
+        const planeZ = screenY - offset.y;
+        points.push({
+          x: screenX,
+          y: screenY,
+          planeX,
+          planeZ,
+          id: regionAt(planeX, planeZ),
+        });
+      }
+    }
+    return {
+      count: points.length,
+      points: points.length,
+      x: Float64Array.from(points, (point) => point.x),
+      y: Float64Array.from(points, (point) => point.y),
+      planeX: Float64Array.from(points, (point) => point.planeX),
+      planeZ: Float64Array.from(points, (point) => point.planeZ),
+      ids: Uint8Array.from(points, (point) => point.id),
+      elapsedMs: 0,
+      regionAtPlane: regionAt,
+      toScreen: (x: number, z: number) => ({ x: x + offset.x, y: z + offset.y }),
+    };
+  }
+
+  /** The mean of the plane positions of the samples one region holds. */
+  function meanOf(samples: FrameSamples, id: number): PlanePoint {
+    let sumX = 0;
+    let sumZ = 0;
+    let count = 0;
+    for (let index = 0; index < samples.count; index += 1) {
+      if (samples.ids[index] !== id) continue;
+      sumX += samples.planeX[index] as number;
+      sumZ += samples.planeZ[index] as number;
+      count += 1;
+    }
+    return { x: sumX / count, z: sumZ / count };
+  }
+
+  /**
+   * How far apart two samples sit on the plane where the anchor is. The spacing is
+   * fixed on the screen and not on the plane, so it is read where the anchor sits.
+   */
+  function localSpacing(samples: FrameSamples, point: PlanePoint): number {
+    let nearest = -1;
+    let range = Infinity;
+    for (let index = 0; index < samples.count; index += 1) {
+      const away = Math.hypot(
+        (samples.planeX[index] as number) - point.x,
+        (samples.planeZ[index] as number) - point.z,
+      );
+      if (away >= range) continue;
+      range = away;
+      nearest = index;
+    }
+    let spacing = Infinity;
+    for (let index = 0; index < samples.count; index += 1) {
+      if (index === nearest) continue;
+      const away = Math.hypot(
+        (samples.planeX[index] as number) - (samples.planeX[nearest] as number),
+        (samples.planeZ[index] as number) - (samples.planeZ[nearest] as number),
+      );
+      if (away < spacing) spacing = away;
+    }
+    return spacing;
+  }
+
+  /**
+   * How much nearer the mean the nearest sample of a region is than the next one, in
+   * light years. 0 is a tie, where the anchor of a frame that carries nothing hops.
+   */
+  function tieToMean(samples: FrameSamples, id: number): number {
+    let sumX = 0;
+    let sumZ = 0;
+    let count = 0;
+    for (let index = 0; index < samples.count; index += 1) {
+      if (samples.ids[index] !== id) continue;
+      sumX += samples.planeX[index] as number;
+      sumZ += samples.planeZ[index] as number;
+      count += 1;
+    }
+    if (count === 0) return Infinity;
+    const meanX = sumX / count;
+    const meanZ = sumZ / count;
+    let first = Infinity;
+    let second = Infinity;
+    for (let index = 0; index < samples.count; index += 1) {
+      if (samples.ids[index] !== id) continue;
+      const away = Math.hypot(
+        (samples.planeX[index] as number) - meanX,
+        (samples.planeZ[index] as number) - meanZ,
+      );
+      if (away < first) {
+        second = first;
+        first = away;
+      } else if (away < second) {
+        second = away;
+      }
+    }
+    return second - first;
+  }
+
+  /** Runs one frame and gives the candidate of region 1 and the memory for the next. */
+  function stepFrame(
+    samples: FrameSamples,
+    memory: LabelMemory,
+  ): { anchor: AnchorPoint; plane: PlanePoint; memory: LabelMemory } | null {
+    const candidates = labelCandidates(samples, VIEWPORT, regions, memory);
+    const next: LabelMemory = {
+      previous: new Set(candidates.map((candidate) => candidate.id)),
+      anchors: new Map(
+        candidates.map((candidate) => [candidate.id, candidate.plane] as const),
+      ),
+    };
+    const one = candidates.find((candidate) => candidate.id === 1);
+    if (one === undefined) return null;
+    return { anchor: one.anchor, plane: one.plane, memory: next };
+  }
+
+  test('a pushed anchor comes back to the centre', () => {
+    // A square region of 400 by 400 light years. The pan carries it from the right edge
+    // of the frame, where two columns of samples show and the inset holds the anchor, to
+    // the middle of the frame. The camera jumps there in one frame, which is the worst
+    // the filter meets: the anchor is still out at the right when the camera stops.
+    const square = (x: number, z: number): number =>
+      Math.abs(x) <= 200 && Math.abs(z) <= 200 ? 1 : 2;
+    const panFrames = 1;
+    const stillFrames = 60;
+    const start = { x: 1416, y: VIEWPORT.height / 2 };
+    const end = { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 };
+
+    let memory: LabelMemory = memoryOf([]);
+    let insetFrames = 0;
+    for (let frame = 0; frame <= panFrames; frame += 1) {
+      const share = frame / panFrames;
+      const offset = {
+        x: start.x + (end.x - start.x) * share,
+        y: start.y + (end.y - start.y) * share,
+      };
+      const step = stepFrame(pannedSamples(offset, square), memory);
+      expect(step).not.toBeNull();
+      if (step === null) return;
+      if (step.anchor.x >= VIEWPORT.width - LABEL_INSET - 1e-9) insetFrames += 1;
+      memory = step.memory;
+    }
+    // The pan starts with the region against the frame edge, where the inset holds the
+    // anchor.
+    expect(insetFrames).toBeGreaterThan(0);
+
+    const samples = pannedSamples(end, square);
+    const mean = meanOf(samples, 1);
+    const middle = samples.toScreen(mean.x, mean.z) as AnchorPoint;
+    let range = Infinity;
+    let started = 0;
+    let worstMove: number = 0;
+    let away = 0;
+    let arrived = -1;
+    let anchor: AnchorPoint | null = null;
+    for (let frame = 0; frame < stillFrames; frame += 1) {
+      const step = stepFrame(samples, memory);
+      expect(step).not.toBeNull();
+      if (step === null) return;
+      if (anchor !== null) {
+        const move = Math.hypot(step.anchor.x - anchor.x, step.anchor.y - anchor.y);
+        if (move > worstMove) worstMove = move;
+      }
+      const next = Math.hypot(step.anchor.x - middle.x, step.anchor.y - middle.y);
+      if (frame === 0) started = next;
+      if (next > range + 1e-9) away += 1;
+      if (arrived < 0 && next <= 2) arrived = frame;
+      range = next;
+      anchor = step.anchor;
+      memory = step.memory;
+    }
+    console.log(
+      'the pushed anchor starts',
+      started,
+      'CSS pixels from the middle, arrives within 2 of it at frame',
+      arrived,
+      'and ends',
+      range,
+      'away, worst move',
+      worstMove,
+    );
+    // The jump leaves the anchor well out of the middle.
+    expect(started).toBeGreaterThan(40);
+    // No still frame carries the anchor away from the mean.
+    expect(away).toBe(0);
+    // It is there in 10 frames, which is 167 milliseconds at 60 frames a second. The
+    // label does not crawl back.
+    expect(arrived).toBeGreaterThanOrEqual(0);
+    expect(arrived).toBeLessThanOrEqual(10);
+
+    expect(range).toBeLessThan(2);
+    expect(worstMove).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS + 1e-6);
+  });
+
+  test('the filter does not hop between samples', () => {
+    // A slow pan over the galactic centre. `Izanami` shows as two patches there, so its
+    // anchor is the sample of its own region nearest the mean, and two of its samples
+    // sit at the same distance from that mean. Which one is nearest changes as the
+    // sample grid moves over the plane, and the anchor of a frame that carries nothing
+    // hops a sample spacing.
+    const grid = buildCoarseRegionGrid(fillRegionGrid());
+    const izanami = REGIONS.find((region) => region.name === 'Izanami');
+    expect(izanami).toBeDefined();
+    const id = izanami?.id as number;
+
+    let memory: LabelMemory = memoryOf([]);
+    let anchor: AnchorPoint | null = null;
+    let plane: PlanePoint | null = null;
+    let bareAnchor: AnchorPoint | null = null;
+    let worstMove = 0;
+    let worstBareMove = 0;
+    let worstPlaneShare = 0;
+    let closestTie = Infinity;
+    for (let frame = 0; frame < 120; frame += 1) {
+      const view: View = {
+        cursor: [frame * 2, 0, 25895 + frame * 2],
+        distance: 2000,
+        yaw: 0,
+        pitch: 35,
+      };
+      const samples = sampleFrame(view, VIEWPORT, grid);
+      const one = labelCandidates(samples, VIEWPORT, REGIONS, memory).find(
+        (candidate) => candidate.id === id,
+      );
+      expect(one).toBeDefined();
+      if (one === undefined) return;
+
+      if (anchor !== null && plane !== null) {
+        worstMove = Math.max(
+          worstMove,
+          Math.hypot(one.anchor.x - anchor.x, one.anchor.y - anchor.y),
+        );
+        const step = Math.hypot(one.plane.x - plane.x, one.plane.z - plane.z);
+        worstPlaneShare = Math.max(
+          worstPlaneShare,
+          step / localSpacing(samples, one.plane),
+        );
+      }
+      anchor = one.anchor;
+      plane = one.plane;
+
+      // The same frame with no anchor carried, which is the target the filter follows.
+      const bare = labelCandidates(samples, VIEWPORT, REGIONS, memoryOf([id])).find(
+        (candidate) => candidate.id === id,
+      );
+      if (bare !== undefined) {
+        if (bareAnchor !== null) {
+          worstBareMove = Math.max(
+            worstBareMove,
+            Math.hypot(bare.anchor.x - bareAnchor.x, bare.anchor.y - bareAnchor.y),
+          );
+        }
+        bareAnchor = bare.anchor;
+      }
+      closestTie = Math.min(closestTie, tieToMean(samples, id));
+
+      const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory);
+      memory = {
+        previous: new Set(placed.map((label) => label.id)),
+        anchors: new Map(placed.map((label) => [label.id, label.plane])),
+      };
+    }
+    console.log(
+      'the filtered anchor moves at worst',
+      worstMove,
+      'CSS pixels a frame, and the target',
+      worstBareMove,
+    );
+    console.log(
+      'the two samples nearest the mean come within',
+      closestTie,
+      'light years of each other',
+    );
+    // The frame holds the near tie the scenario names, and the target hops when it
+    // turns over.
+    expect(closestTie).toBeLessThan(1);
+    expect(worstBareMove).toBeGreaterThan(8);
+    // The filter holds the same turn over to the cap, so the label slides over a few
+    // frames where the target jumps a whole sample spacing.
+    expect(worstMove).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS + 1e-6);
+    expect(worstPlaneShare).toBeLessThan(1);
+  }, 120000);
 });
 
 describe('the anchor as the camera turns', () => {

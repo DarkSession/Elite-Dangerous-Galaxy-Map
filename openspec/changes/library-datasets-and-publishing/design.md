@@ -174,8 +174,16 @@ call.
 The coverage buffer becomes `RG8`. The red channel keeps the coverage. The green channel
 carries the near fade of the pixel, worked out in `regions.frag` from the camera distance
 to the nearest point of the segment. The positions are already camera-relative, so that
-distance is `length(uChunkOffset + mix(aStart, aEnd, part))`, and the vertex shader passes
-the two endpoint distances. The composite multiplies the two channels into the alpha.
+distance is `length(uChunkOffset + mix(aStart, aEnd, part))`. The vertex shader passes the
+two endpoint positions and their clip `w`, and the fragment shader corrects the
+perspective before it reads the distance at `part`. The composite multiplies the two
+channels into the alpha.
+
+**The fragment reads the distance and does not interpolate it.** A linear mix of two
+endpoint distances is wrong on a long segment, and the sets hold long segments: 2,602
+smoothed segments are over 100 light years and 145 are over 1,000, the longest 3,681. One
+candidate read 1,419 light years where the true range is about 490, which is the
+difference between a line that fades and a line that does not.
 
 Both channels blend with `MAX`. Where two segments of one chain overlap at a join their
 fades are within a segment length of each other, against a fade band of 1,300 light years,
@@ -189,16 +197,27 @@ faded line would grow thin instead of going out. Reconstructing the plane point 
 composite from the view ray needs no second channel, but it measures the camera distance
 to the pixel's plane point rather than to the segment, which is not what the spec states.
 
-### The glide is a pure function over plane points
+### The filter is a pure function over plane points
 
-`labels.ts` gains `glideAnchor(carried, target, toScreen)`. It moves the carried point 8
-percent of the way to the target in plane coordinates. It then projects both ends of that
-step, and if the screen move is over 4 CSS pixels it scales the step down until it is 4.
+`labels.ts` gains `filterAnchor(carried, target, toScreen)`. It moves the carried point
+half of the way to the target in plane coordinates. It then projects both ends of that
+step, and if the screen move is over 20 CSS pixels it scales the step down until it is 20.
 A carried point that no longer resolves to its region, or no longer projects inside the
 frame, is dropped and the target is taken whole.
 
 The cap is worked out on the projection and not on the plane, because a plane step of a
 fixed size is a different number of pixels at every zoom.
+
+**Why a filter at all, when the owner asked for the label to move at once.** The first
+build moved the label 8 percent of the gap a frame, capped at 4 CSS pixels, and a label
+pushed to the frame edge took 550 to 835 milliseconds to come back. That reads as a crawl.
+Taking each frame's target whole reads worse: the target is read from a grid of samples
+that slides over the plane, so it steps on its own while the camera moves. Measured over a
+slow pan across the galactic centre, the target of `Izanami` jumps **48 CSS pixels** in one
+frame when a second patch of the region comes into view, and every label shivers by a pixel
+or two as samples cross region edges. Half the gap with a 20 pixel cap holds both ends: a
+128 pixel relocation lands in 9 frames, 150 milliseconds, and the 48 pixel step of the
+target reaches the label as 19.8 pixels over three frames.
 
 ### The category sweep stays a map lookup
 
@@ -341,14 +360,21 @@ The level's reach of 100 lines is not a gate. The sweep spans 8 spacings of the 
 each side of the cursor, so the furthest candidate sits about 12 spacings out, well inside
 the reach. A gate there could never fire.
 
-The sweep measures the screen spacing by projecting two more points, one spacing along the
-game x axis and one along z, and reading the gaps in CSS pixels. The gap therefore carries
-the foreshortening, which is what empties the lines toward the horizon. The shader reads
-the same quantity as a derivative of the plane point. The cost is two more projections for
-each of the 289 candidates, in the same loop that already projects them.
+The sweep measures the screen spacing from the projection's local rate at the crossing. It
+projects two more points a small step along the game x and z axes, and inverts the 2 by 2
+matrix those steps make. The reading is the light years of each game axis that one CSS
+pixel covers there, which is the quantity the shader takes as a derivative of the plane
+point. The cost is two more projections for each of the 289 candidates, in the same loop
+that already projects them.
 
-The greater of the two gaps decides, and not the smaller, because the shader takes the
-larger alpha of the two axes. Where the x lines compress to nothing the z lines still
+**The step is small and not one level spacing.** A gap measured over a whole spacing is a
+secant of a map that bends hard toward the horizon. At a pitch of 5 degrees and a zoom of
+3,000 light years a crossing 65,000 light years out makes a gap of about 144 CSS pixels,
+where the shader reads 1.4 and draws nothing. The two readings agree on a level view and
+part company at a grazing one, which is where the gate has to work.
+
+The greater of the two axis readings decides, and not the smaller, because the shader takes
+the larger alpha of the two axes. Where the x lines compress to nothing the z lines still
 draw, and a label there still sits on a line.
 
 `src/render/grid-pass.ts` owns the alpha rule, as the pure functions `gridLevelAlpha` and
@@ -388,9 +414,9 @@ falls to 51 percent of what it was. → The numbers are in the spec, so a later 
 a stated value rather than guessing one. The far-view baseline image does not change,
 because the zoom fade already draws nothing at the default view.
 
-**The glide may fight the label chooser and swap two labels while one travels.** → The
-carried bonus of 1.2 stays, and the glide is continuous, so the weight of a travelling
-label does not step.
+**The filter may fight the label chooser and swap two labels while one moves.** → The
+carried bonus of 1.2 stays, and the filter is bounded, so the weight of a moving label
+does not step.
 
 **A crossing of a near line and a far line reads brighter than it should.** → Stated
 above. It is a few pixels and it needs both lines in one frame at very different ranges.
@@ -431,7 +457,7 @@ The work has an order, because the later steps are tested against the earlier on
    loading image.
 4. The renderer: the washed tones and the near fade, then the chosen region views, which
    are re-derived at a zoom where the fade is full.
-5. The label glide.
+5. The label filter.
 6. The three converters and the dataset catalog, the handle members and the dialog.
 7. The workflow file and the documents.
 

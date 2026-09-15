@@ -206,9 +206,16 @@ inside that zoom band changes.
 #### Scenario: The alpha carries the band
 
 - **WHEN** the browser test turns the grid on at a zoom of 8,000 light years, where the
-  band reads 0.5, and reads the alpha of the 1,000 light year level, then reads the same
-  alpha at a zoom of 4,000 light years
-- **THEN** the first reading is half the second, within 0.01
+  band reads 0.5, and reads the alpha of the **10,000 light year** level, then reads the
+  same alpha at a zoom of 4,000 light years
+- **THEN** the first reading is half the second, within 0.01: 0.225 against 0.45
+
+The level is the 10,000 light year one and not the 1,000, because a level's alpha carries
+its screen fade as well as the band, and the two move together. The 1,000 light year level
+measures 234 CSS pixels at 4,000 light years and 117 at 8,000, which is inside the fade
+band of 40 to 400 pixels, so its drawn alpha reads 0.3305 and then 0.1059, a ratio of
+0.320. The 10,000 light year level measures 2,338 and 1,169 pixels, both above the 400
+pixel saturation, so its screen fade holds at 1 and the band alone moves it.
 
 ### Requirement: The grid carries coordinate labels
 
@@ -245,11 +252,24 @@ both are readings the lines themselves hold:
   there.
 - The level's drawn alpha at the crossing SHALL be at least **0.09**. The reading is the
   level's own alpha rule, taken at the crossing's spacing on the screen, multiplied by the
-  camera distance band. The spacing on the screen SHALL be the greater of the two gaps the
-  crossing makes with the point one level spacing away on the game `x` axis and with the
-  point one level spacing away on the game `z` axis, both projected, so the reading carries
-  the foreshortening that closes the lines up toward the horizon. The greater of the two
-  decides, because the alpha at a point is the larger of the two axes' readings.
+  camera distance band.
+
+  The spacing on the screen SHALL come from the projection's **local rate** at the
+  crossing, which is the quantity `grid.frag` reads as a derivative of the plane point.
+  The sweep SHALL project the crossing and two points a small step along the game `x` and
+  `z` axes, and SHALL invert the 2 by 2 matrix those two steps make, which gives the light
+  years of each game axis that one CSS pixel covers there. The reading therefore carries
+  the foreshortening that closes the lines up toward the horizon, on both screen axes. The
+  greater of the two axis readings decides, because the alpha at a point is the larger of
+  the two axes' readings.
+
+  **The step SHALL be small and SHALL NOT be one level spacing.** A gap measured over a
+  whole spacing is a secant of a map that bends hard toward the horizon, and the two
+  readings part company where the gate matters most: at a pitch of 5 degrees and a zoom of
+  3,000 light years, a crossing 65,000 light years out makes a gap of about 144 CSS pixels
+  over one spacing, while the shader reads 1.4 CSS pixels there and draws nothing. A gate
+  on the secant would keep a label over an empty frame, which is the fault the gate is
+  for.
 
 0.09 is what a level draws at 24 CSS pixels with the band open, the middle of the fade band
 from 8 to 40. The floor of 8 CSS pixels is where a level's alpha reaches 0 and not where

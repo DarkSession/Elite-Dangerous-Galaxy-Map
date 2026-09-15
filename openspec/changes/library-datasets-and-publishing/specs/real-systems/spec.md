@@ -519,6 +519,15 @@ of the canvas's box**, within 1 CSS pixel on each axis, and SHALL keep it there 
 canvas resizes. It SHALL sit above the canvas and below the HUD, and SHALL take no
 pointer input, so a drag that starts on it still orbits the camera.
 
+The library SHALL set no width, no height and no fit on the element, so the picture
+SHALL keep **the size its own file names** and SHALL NOT follow the canvas or the window.
+The host chooses the size in the file it names.
+
+The file SHALL name that size in a form an `<img>` element reads, which for an SVG is the
+`width` and the `height` attribute of the root element. A size in the file's own CSS is
+not read: a file that names one has no size of its own, and the browser then grows the
+picture with the box that holds it.
+
 The picture SHALL show from the call until `ready` settles, and the library SHALL remove
 the element then, whether `ready` resolved or failed. A map built with no `loadingImage`
 SHALL add no such element.
@@ -544,7 +553,10 @@ reaches no host but the page's own, and the suite now serves the demo site, so a
 loader would break that rule on every page load and would put the suite behind another
 project's uptime.
 
-`THIRD_PARTY_NOTICES.md` SHALL record the file, its source and its terms. ED Assets states
+The repository's copy SHALL carry `width="170"` and `height="170"` on its root element.
+The file from ED Assets names its size as `style="height:170px"` alone, which gives the
+picture no size of its own. `THIRD_PARTY_NOTICES.md` SHALL record this one change with the
+file, its source and its terms. ED Assets states
 no licence on the file, which the notice already records for the selection pin; for the
 loader the project holds a copy, and the notice SHALL say so plainly rather than leave the
 reader to find it.
@@ -561,6 +573,14 @@ reader to find it.
 - **WHEN** a browser test builds a map with a `loadingImage` in a canvas of 1280 by 720,
   and reads the picture's box and the canvas's box before `ready` settles
 - **THEN** the two centres are within 1 CSS pixel on each axis
+
+#### Scenario: The picture keeps the size its file names
+
+- **WHEN** a browser test builds a map with the demo loader as its `loadingImage` in a
+  window of 1280 by 720, reads the picture's box before `ready` settles, makes the window
+  700 by 500, and reads a second map's picture
+- **THEN** both boxes measure 170 by 170 CSS pixels, which is the size `EDLoader1.svg`
+  names
 
 #### Scenario: A failed start still removes the picture
 

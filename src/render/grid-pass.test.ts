@@ -11,9 +11,13 @@ import {
   gridLevelBoldness,
   gridLevelReadings,
   gridPhase,
+  gridVisibility,
+  GRID_FAR_NONE_LY,
+  GRID_NEAR_FULL_LY,
   gridScreenSpacing,
   gridLevelWidth,
 } from './grid-pass';
+import type { GridLevelReading } from './grid-pass';
 
 /** The CSS pixels per light year at one light year of range, for a viewport height. */
 function focalCss(rows: number): number {
@@ -91,6 +95,61 @@ describe('the level rule', () => {
     expect(bold.screenCss).toBeCloseTo(935, 0);
     expect(bold.alpha).toBeCloseTo(0.45, 2);
     expect((readings[0] as (typeof readings)[number]).alpha).toBe(0);
+  });
+});
+
+describe('the camera distance band', () => {
+  // The scenario "The band follows the camera distance".
+  test('reads 1, 1, 0.5, 0 and 0 at the five distances of the spec', () => {
+    expect(gridVisibility(3000)).toBeCloseTo(1, 9);
+    expect(gridVisibility(4000)).toBeCloseTo(1, 9);
+    expect(gridVisibility(8000)).toBeCloseTo(0.5, 9);
+    expect(gridVisibility(12000)).toBeCloseTo(0, 9);
+    expect(gridVisibility(60000)).toBeCloseTo(0, 9);
+  });
+
+  test('holds the two ends of the band at 4,000 and 12,000 light years', () => {
+    expect(GRID_NEAR_FULL_LY).toBe(4000);
+    expect(GRID_FAR_NONE_LY).toBe(12000);
+    expect(gridVisibility(10)).toBe(1);
+    expect(gridVisibility(11999)).toBeGreaterThan(0);
+    expect(gridVisibility(120000)).toBe(0);
+  });
+
+  test('never rises as the camera pulls back', () => {
+    let last = 1;
+    for (let distance = 0; distance <= 20000; distance += 100) {
+      const band = gridVisibility(distance);
+      expect(band).toBeLessThanOrEqual(last + 1e-9);
+      last = band;
+    }
+  });
+
+  // The scenario "The alpha carries the band". The scenario reads one level at two
+  // zooms and asks for half. A level's own alpha follows its spacing on the screen,
+  // which the zoom moves as well, so the halving holds only where that spacing rule is
+  // already at its top of 0.45. The 10,000 light year level is 2,338 CSS pixels apart
+  // at 4,000 light years and 1,169 at 8,000, both over the 400 the rule saturates at,
+  // so the band alone separates the two readings. The 1,000 light year level is 234 and
+  // 117 CSS pixels apart at the same two zooms, which is inside the rule's ramp, so it
+  // reads 0.330 and 0.106 and no factor of two. The reading below is the level the
+  // scenario's number holds for.
+  test('halves the saturated level alpha at 8,000 against 4,000 light years', () => {
+    const focal = focalCss(1080);
+    const near = gridLevelReadings(focal, 4000)[4] as GridLevelReading;
+    const half = gridLevelReadings(focal, 8000)[4] as GridLevelReading;
+
+    expect(near.spacingLy).toBe(10000);
+    expect(half.spacingLy).toBe(10000);
+    expect(near.alpha).toBeCloseTo(0.45, 6);
+    expect(half.alpha).toBeCloseTo(0.225, 6);
+    expect(half.alpha).toBeCloseTo(near.alpha / 2, 6);
+  });
+
+  test('reports no alpha at all beyond the band', () => {
+    for (const level of gridLevelReadings(focalCss(1080), 12000)) {
+      expect(level.alpha).toBe(0);
+    }
   });
 });
 
@@ -212,6 +271,7 @@ const FRAME = {
   camera: [45000.37, 600.5, -45000.25] as const,
   pixelRatio: 1,
   bounds: MODEL_BOUNDS,
+  band: 1,
 };
 
 describe('the grid draw', () => {

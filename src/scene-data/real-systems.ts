@@ -54,6 +54,29 @@ export interface Category {
   readonly maxDrawRange: number;
 }
 
+/**
+ * What a host passes to `addCategories`. The type states the contract and the reader
+ * holds it: every field is still checked at run time, because the data comes from a
+ * file or a network call the compiler does not see.
+ *
+ * The index signature lets a record carry fields the reader drops, so a caller does not
+ * have to strip a dump record first.
+ */
+export interface CategoryInput {
+  /** The identity of the category. */
+  readonly name: string;
+  /** Red, green and blue, each from 0 to 255. */
+  readonly color: readonly [number, number, number];
+  /** What the HUD shows about the category. */
+  readonly description?: string;
+  /** The shape the markers of the category draw in. The default is `glow`. */
+  readonly markerStyle?: MarkerStyle;
+  /** How far the camera comes from a system before its marker stops, in light years. */
+  readonly maxDrawRange?: number;
+  /** A field the reader drops. */
+  readonly [field: string]: unknown;
+}
+
 /** Why the reader rejected a category. */
 export type CategoryRejectReason =
   'no-name' | 'bad-color' | 'bad-style' | 'bad-range' | 'over-capacity';
@@ -131,12 +154,50 @@ export interface RealSystem {
   readonly images?: readonly SystemImage[];
 }
 
+/**
+ * What a host passes to `addSystems`. It is the shape of an EDSM or a Spansh dump
+ * record. The type states the contract and the reader holds it: every field is still
+ * checked at run time, because the data comes from a file or a network call the
+ * compiler does not see.
+ *
+ * The index signature lets a record carry fields the reader drops, so a caller does not
+ * have to strip a dump record first.
+ */
+export interface SystemRecordInput {
+  readonly name: string;
+  /** The position in game coordinates, in light years. */
+  readonly coords: { readonly x: number; readonly y: number; readonly z: number };
+  /** The name of a category the table holds. */
+  readonly primaryCategory: string;
+  /** The names of other categories the table holds. */
+  readonly secondaryCategories?: readonly string[];
+  /**
+   * The 64-bit system id. `JSON.parse` loses digits above 2^53, so a host that needs
+   * every digit passes a string or a `bigint`.
+   */
+  readonly id64?: number | string | bigint;
+  readonly allegiance?: string;
+  readonly government?: string;
+  readonly primaryEconomy?: string;
+  readonly security?: string;
+  readonly population?: number;
+  readonly bodyCount?: number;
+  /** A paragraph about the system, which the HUD shows. */
+  readonly description?: string;
+  /** The class of the primary star, for example `K5 V`. */
+  readonly primaryStar?: string;
+  /** Up to 8 pictures, which the HUD shows as thumbnails. */
+  readonly images?: readonly SystemImage[];
+  /** A field the reader drops. */
+  readonly [field: string]: unknown;
+}
+
 /** The category table and the system set, which the host fills through the handle. */
 export interface RealSystemSet {
   /** Reads categories into the table and reports what it did. */
-  addCategories(categories: readonly unknown[]): CategoryReport;
+  addCategories(categories: readonly CategoryInput[]): CategoryReport;
   /** Reads records into the set and reports what it did. */
-  addSystems(records: readonly unknown[]): AddReport;
+  addSystems(records: readonly SystemRecordInput[]): AddReport;
   /** Empties the set. */
   clearSystems(): void;
   /** Empties the set and the category table together. */
@@ -161,6 +222,11 @@ export interface RealSystemSet {
    * frame.
    */
   readonly markerFlags: Uint8Array;
+  /**
+   * How long the last rebuild of the flags took, in milliseconds. A browser test reads
+   * it through the handle to hold the sweep to its budget.
+   */
+  readonly lastSweepMs: number;
   /** True when the marker of one system draws. False outside the set. */
   drawsMarker(index: number): boolean;
   /** Turns the markers of a category on or off. An unknown name changes nothing. */
@@ -245,12 +311,13 @@ function readId64(value: unknown): string | null {
 }
 
 /**
- * True when a URL names a scheme the HUD may put in an image element. A URL with no
+ * True when a URL names a scheme the library may put in an image element. A URL with no
  * scheme is a relative URL and passes. The rule is a safety rule and not a formatting
  * one: a `javascript:` or a `data:` URL from an untrusted dump would run or embed
- * content the host did not mean to serve.
+ * content the host did not mean to serve. The record images and the loading image of
+ * the entry point both read it, so one rule covers every picture the library shows.
  */
-function safeImageUrl(url: string): boolean {
+export function safeImageUrl(url: string): boolean {
   // The test reads the string the browser reads. The URL standard removes every tab,
   // carriage return and line feed from the whole string, and strips the C0 control
   // characters and the spaces at each end, before it reads the scheme. A guard on the
@@ -362,12 +429,29 @@ export function createSystemSet(): RealSystemSet {
   const markerFlags = new Uint8Array(MAX_SYSTEMS);
   let flagsVersion = -1;
   let flagsCategoryVersion = -1;
+  // How long the last rebuild of the flags took. The sweep runs on a change and not on
+  // a frame, and the spec holds it under 2 milliseconds for 10,000 systems.
+  let lastSweepMs = 0;
+
+  /** True when any category the system belongs to is on. */
+  const anyCategoryOn = (system: RealSystem): boolean => {
+    if (categoryVisible.get(system.primaryCategory) !== false) return true;
+    // The marker takes its colour and its style from the primary category, and it
+    // draws while any category it belongs to is on. A row the user left on therefore
+    // keeps the system on the map.
+    const secondary = system.secondaryCategories;
+    for (let index = 0; index < secondary.length; index += 1) {
+      if (categoryVisible.get(secondary[index] as string) !== false) return true;
+    }
+    return false;
+  };
 
   const refreshFlags = (): void => {
     if (flagsVersion === version && flagsCategoryVersion === categoryVersion) return;
+    const startMs = performance.now();
     for (let index = 0; index < systems.length; index += 1) {
       const system = systems[index] as RealSystem;
-      const on = categoryVisible.get(system.primaryCategory) !== false;
+      const on = anyCategoryOn(system);
       const kept =
         nameFilterFold.length === 0 ||
         system.name.toLowerCase().includes(nameFilterFold);
@@ -375,6 +459,7 @@ export function createSystemSet(): RealSystemSet {
     }
     flagsVersion = version;
     flagsCategoryVersion = categoryVersion;
+    lastSweepMs = performance.now() - startMs;
   };
 
   const writeSystem = (slot: number, system: RealSystem): void => {
@@ -386,7 +471,7 @@ export function createSystemSet(): RealSystemSet {
   };
 
   return {
-    addCategories(input: readonly unknown[]): CategoryReport {
+    addCategories(input: readonly CategoryInput[]): CategoryReport {
       const rejected: CategoryReject[] = [];
       let added = 0;
       let replaced = 0;
@@ -449,7 +534,7 @@ export function createSystemSet(): RealSystemSet {
       return { added, replaced, rejected };
     },
 
-    addSystems(records: readonly unknown[]): AddReport {
+    addSystems(records: readonly SystemRecordInput[]): AddReport {
       const rejected: Reject[] = [];
       let added = 0;
       let replaced = 0;
@@ -599,6 +684,9 @@ export function createSystemSet(): RealSystemSet {
     get markerFlags(): Uint8Array {
       refreshFlags();
       return markerFlags.subarray(0, systems.length);
+    },
+    get lastSweepMs(): number {
+      return lastSweepMs;
     },
     drawsMarker(index: number): boolean {
       if (index < 0 || index >= systems.length) return false;

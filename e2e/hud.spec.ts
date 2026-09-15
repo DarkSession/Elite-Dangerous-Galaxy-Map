@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
+import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -88,10 +89,14 @@ async function addCategories(page: Page, names: readonly string[]): Promise<void
   );
 }
 
-/** Adds records to the HUD's map. */
+/**
+ * Adds records to the HUD's map. The cast is at the call, because a test also passes a
+ * record the input type refuses and the reader rejects at run time.
+ */
 async function addSystems(page: Page, records: readonly unknown[]): Promise<number> {
   return page.evaluate(
-    (list) => window.__hudMap?.addSystems(list).added ?? -1,
+    (list) =>
+      window.__hudMap?.addSystems(list as readonly SystemRecordInput[]).added ?? -1,
     records,
   );
 }
@@ -464,9 +469,46 @@ test.describe('the category browser', () => {
     await expect(categoryRow(page, 'A').locator('.gm-hud__category-count')).toHaveText(
       '2',
     );
+  });
+
+  // The row's switch brings a system back through any category it belongs to, so the
+  // count says how many systems that row holds and not how many name it first.
+  test('the counts read the secondary categories as well', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'A'),
+      record('Two', [0, 0, 200], 'A', { secondaryCategories: ['B'] }),
+    ]);
+    await expect(categoryRow(page, 'B')).toBeVisible();
+
     await expect(categoryRow(page, 'B').locator('.gm-hud__category-count')).toHaveText(
-      '0',
+      '1',
     );
+  });
+
+  // The demo set holds 166 systems with more than one ruin layout, so the three counts
+  // add up to 414 over 212 systems.
+  test('the counts hold with the demo set', async ({ page }) => {
+    await openMap(page, '', { hud: true, demoData: true });
+    const rows = page.locator('.gm-hud__category-row');
+    await expect(rows).toHaveCount(3);
+
+    const counts = await rows.evaluateAll((elements) =>
+      elements.map((element) =>
+        Number(
+          (
+            element.querySelector('.gm-hud__category-count')?.textContent ?? '0'
+          ).replace(/,/g, ''),
+        ),
+      ),
+    );
+    const systems = await page.evaluate(() => window.galaxyMap?.systemCount() ?? -1);
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    console.log('the demo set counts', { counts, total, systems });
+
+    expect(systems).toBe(212);
+    expect(total).toBeGreaterThan(systems);
   });
 
   test('the row shows the category description as its tooltip', async ({ page }) => {
@@ -648,7 +690,7 @@ test.describe('the HUD rebuild', () => {
       // 100 batches of 10, the way a host that streams an upstream adds them. No frame
       // runs between them, because the loop below does not give the browser the turn.
       for (let batch = 0; batch < 100; batch += 1) {
-        const records: Record<string, unknown>[] = [];
+        const records: SystemRecordInput[] = [];
         for (let index = 0; index < 10; index += 1) {
           const id = batch * 10 + index;
           records.push({
@@ -861,6 +903,23 @@ test.describe('the expanded system list', () => {
     expect(view.yaw).toBe(40);
   });
 
+  test('one system shows in every list it belongs to', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B']);
+    await addSystems(page, [
+      record('Both', [0, 0, 100], 'A', { secondaryCategories: ['B'] }),
+    ]);
+    await expect(categoryRow(page, 'A')).toBeVisible();
+
+    await expandButton(page, 'A').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Both');
+
+    await expandButton(page, 'B').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Both');
+  });
+
   test('a row turns its category on again', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -973,19 +1032,47 @@ test.describe('the information panel', () => {
     console.log('the field labels', labels);
 
     expect(labels).toEqual([
-      'POSITION (LY)',
+      'POSITION',
       'DISTANCE FROM SOL',
       'RANGE',
       'ALLEGIANCE',
       'POPULATION',
     ]);
-    await expect(fieldValue(page, 'POSITION (LY)')).toHaveText('55 / 17 / 27');
+    await expect(fieldValue(page, 'POSITION')).toHaveText('55 / 17 / 27');
     await expect(fieldValue(page, 'ALLEGIANCE')).toHaveText('Independent');
     await expect(fieldValue(page, 'POPULATION')).toHaveText('85,206,935');
     await expect(hud(page).locator('.gm-hud__description')).toHaveText(
       'The pilots federation holds the only access to this system.',
     );
     await expect(hud(page).locator('.gm-hud__chip')).toHaveText(['Alpha']);
+  });
+
+  test('an odd count of fields leaves no empty cell', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    // The record carries no field of its own, so the grid holds three: the position,
+    // the distance from Sol and the range.
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await select(page, 'Sol');
+
+    const labels = await fieldLabels(page);
+    expect(labels).toEqual(['POSITION', 'DISTANCE FROM SOL', 'RANGE']);
+
+    const boxes = await hud(page).evaluate((root: HTMLElement) => {
+      const grid = root.querySelector('.gm-hud__field-grid') as HTMLElement;
+      const fields = [...grid.querySelectorAll('.gm-hud__field')] as HTMLElement[];
+      return {
+        grid: grid.getBoundingClientRect().width,
+        fields: fields.map((field) => field.getBoundingClientRect().width),
+      };
+    });
+    console.log('the field grid', boxes);
+
+    // The last field takes both columns, and the first two take one each.
+    expect(boxes.fields).toHaveLength(3);
+    expect(Math.abs((boxes.fields[2] as number) - boxes.grid)).toBeLessThanOrEqual(1);
+    expect((boxes.fields[0] as number) * 2).toBeLessThan(boxes.grid + 12);
+    expect((boxes.fields[0] as number) * 2).toBeGreaterThan(boxes.grid - 12);
   });
 
   test('a record with no description hides that section', async ({ page }) => {
@@ -1077,6 +1164,146 @@ test.describe('the information panel', () => {
   });
 });
 
+/** The copy button of the name or of the position. */
+function copyButton(page: Page, name: 'name' | 'position'): Locator {
+  return hud(page).locator(`.gm-hud__copy[data-name="${name}"]`);
+}
+
+/** The state and the accessible name of one copy button. */
+async function copyState(
+  page: Page,
+  name: 'name' | 'position',
+): Promise<{ state: string; label: string }> {
+  return copyButton(page, name).evaluate((element) => ({
+    state: element.getAttribute('data-state') ?? '',
+    label: element.getAttribute('aria-label') ?? '',
+  }));
+}
+
+test.describe('the copy buttons', () => {
+  test('the name button copies the name', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Marked System AB-1', [0, 0, 100], 'Alpha')]);
+    await select(page, 'Marked System AB-1');
+
+    await copyButton(page, 'name').click();
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const selected = await page.evaluate(
+      () => window.__hudMap?.getSelection()?.name ?? null,
+    );
+    console.log('the clipboard after the name copy', text);
+
+    expect(text).toBe('Marked System AB-1');
+    expect(selected).toBe('Marked System AB-1');
+  });
+
+  test('the position button copies three whole numbers', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Marked', [1234.5, -20, 25895], 'Alpha')]);
+    await select(page, 'Marked');
+    // The panel keeps the thousands separators. The copy drops them, so what is copied
+    // pastes into a field that takes a number.
+    await expect(
+      hud(page).locator('.gm-hud__field').first().locator('.gm-hud__field-value'),
+    ).toHaveText('1,235 / -20 / 25,895');
+
+    await copyButton(page, 'position').click();
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    console.log('the clipboard after the position copy', text);
+
+    expect(text).toBe('1235 / -20 / 25895');
+  });
+
+  test('the tick shows and goes', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Ticked', [0, 0, 100], 'Alpha')]);
+    await select(page, 'Ticked');
+
+    await copyButton(page, 'name').click();
+    await expect
+      .poll(() => copyState(page, 'name'))
+      .toEqual({
+        state: 'copied',
+        label: 'Copied',
+      });
+
+    await page.waitForTimeout(1600);
+    expect(await copyState(page, 'name')).toEqual({
+      state: 'idle',
+      label: 'Copy system name',
+    });
+  });
+
+  test('only one tick at a time', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Ticked', [0, 0, 100], 'Alpha')]);
+    await select(page, 'Ticked');
+
+    await copyButton(page, 'name').click();
+    await expect
+      .poll(() => copyState(page, 'name'))
+      .toEqual({
+        state: 'copied',
+        label: 'Copied',
+      });
+    await copyButton(page, 'position').click();
+    await expect
+      .poll(() => copyState(page, 'position'))
+      .toEqual({
+        state: 'copied',
+        label: 'Copied',
+      });
+
+    expect(await copyState(page, 'name')).toEqual({
+      state: 'idle',
+      label: 'Copy system name',
+    });
+  });
+
+  test('a refused write does not break the panel', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Refused', [0, 0, 100], 'Alpha')]);
+    await select(page, 'Refused');
+    // The clipboard write rejects, as it does when the browser refuses the permission.
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, 'writeText', {
+        configurable: true,
+        value: () => Promise.reject(new Error('The write is refused.')),
+      });
+    });
+
+    await copyButton(page, 'name').click();
+    await copyButton(page, 'position').click();
+    const view = await page.evaluate(async () => {
+      for (let frame = 0; frame < 10; frame += 1) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      return window.__hudMap?.getView() ?? null;
+    });
+    console.log('the view after the refused writes', view);
+
+    expect(await copyState(page, 'name')).toEqual({
+      state: 'idle',
+      label: 'Copy system name',
+    });
+    expect(await copyState(page, 'position')).toEqual({
+      state: 'idle',
+      label: 'Copy position',
+    });
+    await expect(hud(page).locator('.gm-hud__info-name')).toHaveText('Refused');
+    expect(view?.distance).toBeGreaterThan(0);
+  });
+});
+
 test.describe('the images and the lightbox', () => {
   /** A record with two pictures the page serves from its own origin. */
   const withImages = (): Record<string, unknown> =>
@@ -1136,7 +1363,7 @@ test.describe('the images and the lightbox', () => {
     page,
   }) => {
     const served = record('Served', [0, 0, 100], 'Alpha', {
-      images: [{ url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' }],
+      images: [{ url: 'demo-images/ruins-site.svg', caption: 'SITE PLAN' }],
     });
 
     await openHud(page);
@@ -1173,8 +1400,8 @@ test.describe('the images and the lightbox', () => {
 
     const served = record('Served', [0, 0, 100], 'Alpha', {
       images: [
-        { url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' },
-        { url: '/demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
+        { url: 'demo-images/ruins-site.svg', caption: 'SITE PLAN' },
+        { url: 'demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
       ],
     });
 
@@ -1283,12 +1510,16 @@ test.describe('the images and the lightbox', () => {
   // A record names its pictures by path. The built page must serve them, and a 404 is
   // not a cross-origin request, so the third-party test above does not see it. The
   // record below is the test's own and names two pictures the build serves from
-  // `public/`: no browser test puts a record of the demo set on the map, because every
-  // one of those names a picture on another host.
+  // `public/`. The path is relative, because the site is served under a base path and a
+  // path that starts with `/` would resolve against the origin and miss it.
+  //
+  // The browser suite may put the demo set on the map, but no browser test selects a
+  // record of it: every one of those names a picture on another host, and the HUD would
+  // fetch a thumbnail from Canonn.
   test('a picture of the built page loads', async ({ page }) => {
     const pictures = [
-      { url: '/demo-images/ruins-site.svg', caption: 'SITE PLAN' },
-      { url: '/demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
+      { url: 'demo-images/ruins-site.svg', caption: 'SITE PLAN' },
+      { url: 'demo-images/structure-site.svg', caption: 'APPROACH VECTOR' },
     ];
     const served = record('Served', [0, 0, 100], 'Alpha', { images: pictures });
 
@@ -1413,7 +1644,11 @@ test.describe('the keyboard', () => {
   test('Tab reaches every control', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha', 'Beta']);
+    await addSystems(page, [record('Tabbed', [0, 0, 100], 'Alpha')]);
     await expect(categoryRow(page, 'Beta')).toBeVisible();
+    // The information panel holds the two copy buttons, so the sweep opens it first.
+    await select(page, 'Tabbed');
+    await expect(hud(page).locator('.gm-hud__info-name')).toHaveText('Tabbed');
 
     await hud(page).locator('.gm-hud__search').focus();
     // One pass of the tab ring. The sweep stops when the focus comes back to the box it
@@ -1443,6 +1678,8 @@ test.describe('the keyboard', () => {
       'gm-hud__toggle|system-names',
       'gm-hud__toggle|coordinate-grid',
       'gm-hud__reset|',
+      'gm-hud__copy|name',
+      'gm-hud__copy|position',
     ];
     for (const entry of wanted) {
       expect(seen.filter((name) => name === entry)).toHaveLength(1);
@@ -1548,7 +1785,7 @@ test.describe('the HUD budget', () => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
     const added = await page.evaluate(() => {
-      const records: Record<string, unknown>[] = [];
+      const records: SystemRecordInput[] = [];
       let state = 4711;
       const unit = (): number => {
         state = (state * 1103515245 + 12345) & 0x7fffffff;

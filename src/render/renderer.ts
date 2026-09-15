@@ -37,6 +37,7 @@ import {
   createGridProgram,
   gridLabelLevel,
   gridLevelReadings,
+  gridVisibility,
 } from './grid-pass';
 import type { GridLevelReading, GridPass } from './grid-pass';
 export type { GridLevelReading } from './grid-pass';
@@ -521,7 +522,11 @@ export function createRenderer(
     gridVertices = 0;
     const pixelRatio = width / Math.max(1, canvas.clientWidth);
     const focalCss = focal / pixelRatio;
-    if (passes.grid && gridDraw) {
+    // The grid fades in as the camera comes near: nothing at 12,000 light years and
+    // further, full at 4,000 and nearer. A band of 0 draws nothing at all, so the pass
+    // does not run and the three probes read what they read for a grid that is off.
+    const band = gridVisibility(view.distance);
+    if (passes.grid && gridDraw && band > 0) {
       gridSpacingOfFrame = gridLabelLevel(focalCss, view.distance);
       gridLevelsOfFrame = gridLevelReadings(focalCss, view.distance);
       gridVertices = gridPass.draw({
@@ -530,6 +535,7 @@ export function createRenderer(
         camera,
         pixelRatio,
         bounds: galaxyModel.bounds,
+        band,
       });
     } else {
       // The three probes must agree: a frame with no grid reports no vertices, no

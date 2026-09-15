@@ -6,9 +6,12 @@
 // no icon from a third-party host: a library that reached a font CDN would make every
 // host page send a request the host did not ask for. Each rule names a fallback stack,
 // so a build without the font packages keeps every panel readable.
-import chakraRegular from '@fontsource/chakra-petch/files/chakra-petch-latin-400-normal.woff2?url';
-import chakraSemiBold from '@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2?url';
-import monoRegular from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2?url';
+// `?url&no-inline` and not `?url`: the library build inlines every asset as a data URI
+// by default, and the three faces are about 50 KB together. The suffix keeps each one a
+// file the browser fetches on first paint. The page build already emits them as files.
+import chakraRegular from '@fontsource/chakra-petch/files/chakra-petch-latin-400-normal.woff2?url&no-inline';
+import chakraSemiBold from '@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2?url&no-inline';
+import monoRegular from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2?url&no-inline';
 
 /** The id of the one style element the HUD adds to a document. */
 export const HUD_STYLE_ID = 'gm-hud-styles';
@@ -111,9 +114,62 @@ const styleText = `
 }
 .gm-hud__top-left {
   display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.gm-hud__top-name {
+  display: flex;
   align-items: baseline;
   gap: 14px;
+  flex: 0 0 auto;
   min-width: 0;
+}
+.gm-hud__top-divider {
+  width: 1px;
+  height: 26px;
+  flex: 0 0 auto;
+  background: rgba(255, 150, 60, 0.22);
+}
+.gm-hud__dataset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 150, 60, 0.3);
+  background: rgba(0, 0, 0, 0.3);
+}
+.gm-hud__dataset:hover {
+  border-color: rgba(255, 150, 60, 0.75);
+}
+.gm-hud__dataset[aria-expanded='true'] {
+  border-color: #ff9a3c;
+}
+.gm-hud__dataset-label {
+  font-family: ${MONO};
+  font-size: 8.5px;
+  letter-spacing: 2px;
+  color: rgba(244, 230, 216, 0.4);
+  white-space: nowrap;
+}
+.gm-hud__dataset[data-loading='true'] .gm-hud__dataset-label {
+  color: ${ACCENT};
+}
+.gm-hud__dataset-value {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #f4e6d8;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-hud__dataset-caret {
+  font-family: ${MONO};
+  font-size: 9px;
+  color: ${ACCENT};
+  white-space: nowrap;
 }
 .gm-hud__title {
   margin: 0;
@@ -451,6 +507,12 @@ const styleText = `
   border-bottom: 1px solid rgba(255, 150, 60, 0.22);
   background: rgba(255, 150, 60, 0.07);
 }
+.gm-hud__info-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
 .gm-hud__info-name {
   margin: 0;
   font-size: 19px;
@@ -490,10 +552,49 @@ const styleText = `
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 8px 9px;
 }
+/* An odd count of fields leaves the last one alone on its row. It takes both columns,
+   so the grid shows no empty cell. */
+.gm-hud__field:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.gm-hud__field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
 .gm-hud__field-label {
   font-size: 9px;
   letter-spacing: 1.5px;
   color: rgba(244, 230, 216, 0.45);
+}
+.gm-hud__copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 150, 60, 0.32);
+  background: transparent;
+  color: rgba(244, 230, 216, 0.6);
+}
+.gm-hud__copy:hover {
+  background: rgba(255, 150, 60, 0.2);
+}
+.gm-hud__copy[data-state='copied'] {
+  border-color: ${ACCENT};
+  background: rgba(255, 150, 60, 0.22);
+  color: ${ACCENT};
+}
+.gm-hud__copy .gm-hud__copy-tick {
+  display: none;
+}
+.gm-hud__copy[data-state='copied'] .gm-hud__copy-mark {
+  display: none;
+}
+.gm-hud__copy[data-state='copied'] .gm-hud__copy-tick {
+  display: block;
 }
 .gm-hud__field-value {
   color: #f4e6d8;
@@ -592,6 +693,232 @@ const styleText = `
 }
 .gm-hud__centre:hover {
   background: rgba(255, 150, 60, 0.2);
+}
+
+.gm-hud__dialog {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 70;
+  background: rgba(4, 3, 6, 0.78);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+.gm-hud__dialog-frame {
+  width: min(92%, 960px);
+  max-height: min(82%, 640px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(12, 9, 13, 0.97);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 150, 60, 0.45);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8);
+}
+.gm-hud__dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 150, 60, 0.24);
+  background: rgba(255, 150, 60, 0.07);
+}
+.gm-hud__dialog-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: ${ACCENT};
+}
+.gm-hud__dialog-close {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 150, 60, 0.35);
+  color: ${ACCENT};
+  font-size: 15px;
+}
+.gm-hud__dialog-close:hover {
+  background: rgba(255, 150, 60, 0.2);
+}
+.gm-hud__dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.gm-hud__dialog-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gm-hud__dialog-filter-wrap {
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.gm-hud__dialog-filter {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 150, 60, 0.22);
+  color: #f4e6d8;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  padding: 8px 9px;
+  outline: none;
+}
+.gm-hud__dialog-filter::placeholder {
+  color: rgba(244, 230, 216, 0.35);
+}
+.gm-hud__dataset-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.gm-hud__dataset-group {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: rgba(18, 13, 19, 0.97);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: ${ACCENT};
+}
+.gm-hud__dataset-group-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-hud__dataset-group-count {
+  color: rgba(244, 230, 216, 0.35);
+}
+.gm-hud__dataset-row {
+  display: block;
+  width: 100%;
+  padding: 8px 12px 8px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-left: 2px solid transparent;
+  font-size: 12.5px;
+  letter-spacing: 1px;
+  color: rgba(244, 230, 216, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-hud__dataset-row:hover {
+  background: rgba(255, 150, 60, 0.12);
+}
+.gm-hud__dataset-row[aria-current='true'] {
+  border-left-color: ${ACCENT};
+  color: ${ACCENT};
+}
+.gm-hud__dataset-row[aria-pressed='true'] {
+  background: rgba(255, 150, 60, 0.16);
+  color: ${ACCENT};
+}
+.gm-hud__dataset-empty,
+.gm-hud__dataset-cut {
+  padding: 16px 12px;
+  font-family: ${MONO};
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: rgba(244, 230, 216, 0.4);
+}
+.gm-hud__dataset-cut {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.gm-hud__dialog-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.gm-hud__detail-body {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 16px 18px;
+}
+.gm-hud__detail-label {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: #ffb055;
+}
+.gm-hud__detail-meta {
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(244, 230, 216, 0.45);
+  margin-top: 10px;
+}
+.gm-hud__detail-description {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(244, 230, 216, 0.85);
+  white-space: pre-line;
+}
+.gm-hud__dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.gm-hud__dialog-cancel {
+  font-family: ${MONO};
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(244, 230, 216, 0.65);
+}
+.gm-hud__dialog-cancel:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.gm-hud__dialog-load {
+  font-family: ${MONO};
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 9px 16px;
+  border: 1px solid ${ACCENT};
+  background: rgba(255, 150, 60, 0.2);
+  color: ${ACCENT};
+}
+.gm-hud__dialog-load:hover {
+  background: rgba(255, 150, 60, 0.28);
+}
+.gm-hud__dialog-load[aria-disabled='true'] {
+  border-color: rgba(255, 150, 60, 0.3);
+  background: rgba(255, 150, 60, 0.1);
+  color: rgba(244, 230, 216, 0.5);
+  cursor: default;
+}
+.gm-hud__dialog-load[aria-disabled='true']:hover {
+  background: rgba(255, 150, 60, 0.1);
 }
 
 .gm-hud__lightbox {

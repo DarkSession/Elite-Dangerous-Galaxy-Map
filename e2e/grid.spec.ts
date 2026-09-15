@@ -246,13 +246,17 @@ test.describe('the grid geometry', () => {
     expect(Math.abs(firstX / 100 - Math.round(firstX / 100))).toBeLessThan(0.02);
   });
 
-  test('draws three vertices in one call at every zoom', async ({ page }) => {
+  test('draws three vertices in one call at every zoom inside the band', async ({
+    page,
+  }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
     await setPasses(page, SCENE_OFF);
     await setGrid(page, true);
 
+    // The camera distance band closes at 12,000 light years, so the three readings sit
+    // inside it and the fourth sits beyond it, where the pass does not draw at all.
     const readings: { distance: number; vertices: number; spacing: number }[] = [];
-    for (const distance of [10, 1000, 120000]) {
+    for (const distance of [10, 1000, 11000, 120000]) {
       await setView(page, [0, 0, 0], distance);
       readings.push({
         distance,
@@ -260,11 +264,18 @@ test.describe('the grid geometry', () => {
         spacing: await spacingOf(page),
       });
     }
-    console.log('the grid vertex count', readings);
+    const levels = await page.evaluate(
+      () => window.galaxyMap?.debug.gridLevels().length ?? -1,
+    );
+    console.log('the grid vertex count', readings, { levels });
 
-    for (const reading of readings) {
+    for (const reading of readings.slice(0, 3)) {
       expect(reading.vertices).toBe(3);
     }
+    const closed = readings[3] as (typeof readings)[number];
+    expect(closed.vertices).toBe(0);
+    expect(closed.spacing).toBe(0);
+    expect(levels).toBe(0);
   });
 
   test('sits a line on its coordinate at the closest zoom', async ({ page }) => {
@@ -351,12 +362,14 @@ test.describe('the grid geometry', () => {
   });
 
   test('stops at the model bounds', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=120000&p=89&y=0');
+    // The zoom sits inside the camera distance band and not on its endpoint, so the
+    // grid draws at full strength here.
+    await openMap(page, '#c=0,0,0&d=3000&p=89&y=0');
     await setPasses(page, SCENE_OFF);
     await setGrid(page, true);
     // The view rule clamps the cursor to the model bounds, so this puts it on the upper
     // `x` bound without the test naming the number.
-    await setView(page, [1e9, 0, 0], 120000);
+    await setView(page, [1e9, 0, 0], 3000);
 
     const cursorX = await page.evaluate(
       () => window.galaxyMap?.getView().cursor[0] ?? 0,
@@ -384,9 +397,9 @@ test.describe('the grid geometry', () => {
 
     expect(lit).toBeGreaterThan(0);
     const point = beyond as [number, number, number];
-    // One CSS pixel is about 192 light years at this zoom, so the last lit column may
-    // sit a few pixels past the bound and no further.
-    expect(point[0]).toBeLessThan(cursorX + 600);
+    // One CSS pixel is about 3.2 light years at this zoom, so the last lit column may
+    // sit about nine pixels past the bound and no further.
+    expect(point[0]).toBeLessThan(cursorX + 30);
   });
 });
 
@@ -775,5 +788,222 @@ test.describe('the grid labels', () => {
 
     expect(on).toBeGreaterThan(0);
     expect(off).toBe(0);
+  });
+});
+
+test.describe('the camera distance band', () => {
+  test('reads the three probes inside the band and beyond it', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=3000&p=89&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+
+    await setView(page, [0, 0, 0], 3000);
+    const near = await page.evaluate(() => ({
+      vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
+      spacing: window.galaxyMap?.debug.gridSpacingLy() ?? -1,
+      levels: window.galaxyMap?.debug.gridLevels().length ?? -1,
+    }));
+
+    await setView(page, [0, 0, 0], 60000);
+    const wide = await page.evaluate(() => ({
+      vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
+      spacing: window.galaxyMap?.debug.gridSpacingLy() ?? -1,
+      levels: window.galaxyMap?.debug.gridLevels().length ?? -1,
+      labels: document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label').length,
+      on: window.galaxyMap?.isGridVisible() ?? false,
+    }));
+    console.log('the probes inside and beyond the band', { near, wide });
+
+    expect(near.vertices).toBe(3);
+    expect(near.spacing).toBe(10000);
+    expect(near.levels).toBe(6);
+    // The switch is still on, and the band alone empties the frame.
+    expect(wide.on).toBe(true);
+    expect(wide.vertices).toBe(0);
+    expect(wide.spacing).toBe(0);
+    expect(wide.levels).toBe(0);
+    expect(wide.labels).toBe(0);
+  });
+
+  // The scenario "The alpha carries the band". The band halves between 4,000 and 8,000
+  // light years. A level's own alpha follows its spacing on the screen, which the zoom
+  // moves as well, so the halving shows on a level whose spacing rule is already at its
+  // top: the 10,000 light year level is 2,338 CSS pixels apart at 4,000 light years and
+  // 1,169 at 8,000, both over the 400 the rule saturates at. The 1,000 light year level
+  // is inside that rule's ramp at both zooms, so it is read here and not asserted on.
+  test('reports the alpha the band leaves', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
+    await setGrid(page, true);
+
+    await setView(page, [0, 0, 0], 4000);
+    const full = await page.evaluate(() => window.galaxyMap?.debug.gridLevels() ?? []);
+    await setView(page, [0, 0, 0], 8000);
+    const half = await page.evaluate(() => window.galaxyMap?.debug.gridLevels() ?? []);
+    console.log('the alpha at 4,000 and at 8,000', {
+      coarseFull: full[4],
+      coarseHalf: half[4],
+      fineFull: full[3],
+      fineHalf: half[3],
+    });
+
+    const coarseFull = full[4] as (typeof full)[number];
+    const coarseHalf = half[4] as (typeof half)[number];
+    expect(coarseFull.spacingLy).toBe(10000);
+    expect(coarseHalf.spacingLy).toBe(10000);
+    expect(coarseFull.alpha).toBeCloseTo(0.45, 2);
+    expect(coarseHalf.alpha).toBeCloseTo(coarseFull.alpha / 2, 2);
+  });
+
+  // The scenario "A wide view draws no grid".
+  test('draws the same pixels at the start view with the switch on and off', async ({
+    page,
+  }) => {
+    await openMap(page, '#c=0,0,0&d=60000&p=35&y=0');
+    await setView(page, [0, 0, 0], 60000, 35);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      const canvas = document.querySelector('canvas');
+      if (map === undefined || !(canvas instanceof HTMLCanvasElement)) return null;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      map.setGridVisible(false);
+      map.debug.drawNow();
+      const off = map.debug.readRect(0, 0, width, height);
+      map.setGridVisible(true);
+      map.debug.drawNow();
+      const on = map.debug.readRect(0, 0, width, height);
+      let different = 0;
+      for (let index = 0; index < on.length; index += 1) {
+        if (on[index] !== off[index]) different += 1;
+      }
+      return {
+        different,
+        bytes: on.length,
+        vertices: map.debug.gridVertexCount(),
+        labels: document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label')
+          .length,
+      };
+    });
+    console.log('the start view with the grid on and off', reading);
+
+    const read = reading as NonNullable<typeof reading>;
+    expect(read.bytes).toBe(1920 * 1080 * 4);
+    expect(read.different).toBe(0);
+    expect(read.vertices).toBe(0);
+    expect(read.labels).toBe(0);
+  });
+});
+
+test.describe('the grid labels and their lines', () => {
+  // The scenario "Every label sits on a line".
+  test('sit every label on a pixel the grid lit', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=3000&p=5&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 3000, 5);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      const canvas = document.querySelector('canvas');
+      if (map === undefined || !(canvas instanceof HTMLCanvasElement)) return null;
+      const box = canvas.getBoundingClientRect();
+      const spots: { text: string; x: number; y: number }[] = [];
+      for (const element of document.querySelectorAll('.gm-grid-label')) {
+        const at = element.getBoundingClientRect();
+        spots.push({
+          text: element.textContent ?? '',
+          x: Math.round(at.left + at.width / 2 - box.left),
+          y: Math.round(at.top + at.height / 2 - box.top),
+        });
+      }
+      const readAll = (): number[] =>
+        spots.map((spot) => {
+          const left = Math.min(
+            Math.max(0, spot.x - 3),
+            Math.max(0, canvas.clientWidth - 7),
+          );
+          const top = Math.min(
+            Math.max(0, spot.y - 3),
+            Math.max(0, canvas.clientHeight - 7),
+          );
+          const bytes = map.debug.readRect(left, top, 7, 7);
+          let best = 0;
+          for (let index = 0; index < bytes.length; index += 4) {
+            best = Math.max(best, bytes[index] as number);
+          }
+          return best;
+        });
+      map.setGridVisible(false);
+      map.debug.drawNow();
+      const off = readAll();
+      map.setGridVisible(true);
+      map.debug.drawNow();
+      const on = readAll();
+      return spots.map((spot, index) => ({
+        ...spot,
+        light: ((on[index] as number) - (off[index] as number)) / 255,
+      }));
+    });
+
+    const labels = reading as NonNullable<typeof reading>;
+    console.log('the labels and the light under them', labels);
+
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.length).toBeLessThanOrEqual(32);
+    for (const label of labels) {
+      expect(label.light, `the label "${label.text}"`).toBeGreaterThan(0.01);
+    }
+  });
+
+  // The scenario "A label goes out with its lines".
+  test('leave the overlay where the band leaves 0.011 of the alpha', async ({
+    page,
+  }) => {
+    await openMap(page, '#c=0,0,0&d=11500&p=89&y=0');
+    await setGrid(page, true);
+
+    await setView(page, [0, 0, 0], 11500);
+    const far = await page.evaluate(() => ({
+      labels: document.querySelectorAll('.gm-grid-label').length,
+      spacing: window.galaxyMap?.debug.gridSpacingLy() ?? -1,
+      vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
+    }));
+
+    await setView(page, [0, 0, 0], 3000);
+    const near = await page.evaluate(
+      () => document.querySelectorAll('.gm-grid-label').length,
+    );
+    console.log('the labels at 11,500 and at 3,000 light years', { far, near });
+
+    // The pass still draws at 11,500 light years and the label level is still 10,000,
+    // so the label gate and not the switch is what empties the overlay.
+    expect(far.vertices).toBe(3);
+    expect(far.spacing).toBe(10000);
+    expect(far.labels).toBe(0);
+    expect(near).toBeGreaterThan(0);
+  });
+
+  // The scenario "No label stands past the last line".
+  test('place no label past the model bound', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+    // The view rule clamps the cursor to the upper `x` bound of the model.
+    await setView(page, [1e9, 0, 0], 1000);
+
+    const reading = await page.evaluate(() => ({
+      cursorX: window.galaxyMap?.getView().cursor[0] ?? 0,
+      texts: [...document.querySelectorAll('.gm-grid-label')].map(
+        (element) => element.textContent ?? '',
+      ),
+    }));
+    console.log('the labels at the bound', reading);
+
+    expect(reading.texts.length).toBeGreaterThan(0);
+    expect(reading.texts.some((text) => text.startsWith('50000,'))).toBe(true);
+    for (const text of reading.texts) {
+      const x = Number(text.split(', ')[0]);
+      expect(x).toBeLessThanOrEqual(reading.cursorX);
+    }
   });
 });

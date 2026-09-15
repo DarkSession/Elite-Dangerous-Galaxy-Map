@@ -35,6 +35,9 @@ uniform vec2 uBoldRange;
 uniform vec2 uFadeRange;
 // How many of its own lines a level reaches each side of the cursor.
 uniform float uFadeLines;
+// The camera distance band, from 0 to 1. It multiplies every level's alpha, so a wide
+// view draws no grid at all. The processor works it out once for the frame.
+uniform float uBand;
 uniform float uSpacing[LEVEL_COUNT];
 uniform vec2 uPhase[LEVEL_COUNT];
 
@@ -87,7 +90,7 @@ void main() {
     vec2 bold = smoothstep(vec2(uBoldRange.x), vec2(uBoldRange.y), screen);
     vec2 width = vec2(uWidthRange.x) + (uWidthRange.y - uWidthRange.x) * bold;
     vec2 levelAlpha = (vec2(uAlphaRange.x) + (uAlphaRange.y - uAlphaRange.x) * bold) *
-      smoothstep(vec2(uFadeRange.x), vec2(uFadeRange.y), screen);
+      smoothstep(vec2(uFadeRange.x), vec2(uFadeRange.y), screen) * uBand;
 
     // The coverage of the line over this pixel. The ramp is one device pixel wide, so
     // the light across the line is its width whatever part of a pixel the line sits on.

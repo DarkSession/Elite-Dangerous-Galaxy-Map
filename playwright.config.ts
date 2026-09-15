@@ -18,7 +18,10 @@ export default defineConfig({
   timeout: 180_000,
   expect: { timeout: 20_000 },
   use: {
-    baseURL: 'http://localhost:4173',
+    // The demo site is served under the base path its GitHub Pages address carries, so
+    // every navigation in `e2e/` is relative to it. A path that starts with `/`
+    // resolves against the origin and misses the base path.
+    baseURL: 'http://localhost:4173/Elite-Dangerous-Galaxy-Map/',
   },
   projects: [
     {
@@ -40,8 +43,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm build && pnpm preview',
-    url: 'http://localhost:4173',
+    // The suite serves the demo site build, which carries the page and the demo data.
+    // `pnpm build` emits the library, which has no page to open.
+    command: 'pnpm build:demo-site && pnpm preview',
+    url: 'http://localhost:4173/Elite-Dangerous-Galaxy-Map/',
     // Always build and serve the code under test. A server left over from an
     // earlier run would serve a stale bundle.
     reuseExistingServer: false,

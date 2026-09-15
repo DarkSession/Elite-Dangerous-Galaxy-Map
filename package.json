@@ -1,13 +1,23 @@
 {
   "name": "elite-dangerous-galaxy-map",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "build:demo": "node scripts/build-demo-systems.mjs",
+    "build": "tsc --noEmit && vite build --config vite.config.lib.ts && tsc -p tsconfig.build.json",
+    "build:demo-site": "vite build",
+    "build:demo-data": "node scripts/build-demo-systems.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",

@@ -6,9 +6,13 @@ import {
   REGION_CORE_WIDTH_CSS,
   REGION_FADE_IN_FAR,
   REGION_FADE_IN_NEAR,
+  REGION_LINE_OPACITY,
   REGION_LINE_WIDTH_CSS,
+  REGION_NEAR_FADE_FULL,
+  REGION_NEAR_FADE_NONE,
   regionCoreLevel,
   regionFade,
+  regionNearFade,
 } from './region-pass';
 import type { RegionPrograms } from './region-pass';
 import { REGION_OUTLINE_COLOUR } from './region-pass';
@@ -141,6 +145,84 @@ describe('the region overlay fade', () => {
   });
 });
 
+/** The luminance of a tone, on the same scale the browser readings take. */
+function luminance(colour: readonly [number, number, number]): number {
+  return 0.2126 * colour[0] + 0.7152 * colour[1] + 0.0722 * colour[2];
+}
+
+describe('the near fade', () => {
+  test('draws nothing at 200 light years and below', () => {
+    expect(REGION_NEAR_FADE_NONE).toBe(200);
+    expect(regionNearFade(REGION_NEAR_FADE_NONE)).toBe(0);
+    expect(regionNearFade(150)).toBe(0);
+    expect(regionNearFade(0)).toBe(0);
+  });
+
+  test('draws in full at 1,500 light years and above', () => {
+    expect(REGION_NEAR_FADE_FULL).toBe(1500);
+    expect(regionNearFade(REGION_NEAR_FADE_FULL)).toBe(1);
+    expect(regionNearFade(4000)).toBe(1);
+  });
+
+  test('rises smoothly between the two distances', () => {
+    const middle = regionNearFade((REGION_NEAR_FADE_NONE + REGION_NEAR_FADE_FULL) / 2);
+    expect(middle).toBeCloseTo(0.5, 12);
+    expect(regionNearFade(500)).toBeGreaterThan(0);
+    expect(regionNearFade(500)).toBeLessThan(1);
+    // The scenario reads the contribution at 500 against the contribution at 1,500.
+    expect(regionNearFade(500)).toBeLessThan(1 / 3);
+    let before = 0;
+    for (let distance = 200; distance <= 1500; distance += 10) {
+      const now = regionNearFade(distance);
+      expect(now).toBeGreaterThanOrEqual(before);
+      before = now;
+    }
+  });
+});
+
+describe('the washed tones', () => {
+  /** The tones and the opacity the overlay drew with before the wash. */
+  const BEFORE = {
+    core: [0.6, 0.78, 1] as const,
+    outline: [0.03, 0.05, 0.12] as const,
+    opacity: 0.55,
+  };
+
+  test('drop the overlay contrast to 51 percent of what it was', () => {
+    const was = (luminance(BEFORE.core) - luminance(BEFORE.outline)) * BEFORE.opacity;
+    const now =
+      (luminance(REGION_CORE_COLOUR) - luminance(REGION_OUTLINE_COLOUR)) *
+      REGION_LINE_OPACITY;
+    expect(was).toBeCloseTo(0.389, 3);
+    expect(now).toBeCloseTo(0.198, 3);
+    expect(now / was).toBeCloseTo(0.51, 2);
+  });
+
+  test('move each tone a third of the way toward the average of the two', () => {
+    for (let channel = 0; channel < 3; channel += 1) {
+      const core = BEFORE.core[channel] as number;
+      const outline = BEFORE.outline[channel] as number;
+      const average = (core + outline) / 2;
+      expect(REGION_CORE_COLOUR[channel] as number).toBeCloseTo(
+        core + (average - core) / 3,
+        3,
+      );
+      expect(REGION_OUTLINE_COLOUR[channel] as number).toBeCloseTo(
+        outline + (average - outline) / 3,
+        3,
+      );
+    }
+    expect(REGION_LINE_OPACITY).toBe(0.42);
+  });
+
+  test('leave the outline lighter than the dark space between the arms', () => {
+    // The outline no longer darkens every background. Over a frame below about 0.17 it
+    // now lightens the pixel, which the width reading no longer asserts against.
+    expect(luminance(REGION_OUTLINE_COLOUR)).toBeCloseTo(0.169, 3);
+    expect(luminance(REGION_CORE_COLOUR)).toBeCloseTo(0.64, 2);
+  });
+});
+
 describe('the two-tone line', () => {
   test('is four CSS pixels wide with a two pixel core', () => {
     expect(REGION_LINE_WIDTH_CSS).toBe(4);
@@ -151,10 +233,10 @@ describe('the two-tone line', () => {
   });
 
   test('has a core lighter than its outline', () => {
-    const luminance = (colour: readonly [number, number, number]): number =>
-      0.2126 * colour[0] + 0.7152 * colour[1] + 0.0722 * colour[2];
+    // The wash brought the two tones together, so the gap is 0.47 and no longer 0.71.
+    // The core still reads as the middle of the line everywhere.
     expect(luminance(REGION_CORE_COLOUR)).toBeGreaterThan(
-      luminance(REGION_OUTLINE_COLOUR) + 0.5,
+      luminance(REGION_OUTLINE_COLOUR) + 0.4,
     );
   });
 });
@@ -181,6 +263,9 @@ describe('the coverage buffer', () => {
     expect([(first[0] as Call).args[3], (first[0] as Call).args[4]]).toEqual([
       1280, 720,
     ]);
+    // Two channels: the coverage in the red one and the near fade in the green one.
+    expect((first[0] as Call).args[2]).toBe(context.gl.RG8);
+    expect((first[0] as Call).args[6]).toBe(context.gl.RG);
 
     context.setDrawingBuffer(1920, 1080);
     pass.draw(FRAME);
@@ -209,8 +294,9 @@ describe('the coverage buffer', () => {
     expect(context.of('clear')).toHaveLength(1);
     const equations = context.of('blendEquation');
     expect(equations).toHaveLength(2);
-    // The first call takes the largest coverage of the overlapping quads at a join.
-    // The second puts the equation back for the passes that follow.
+    // The first call takes the largest coverage of the overlapping quads at a join. It
+    // runs on each channel by itself, so it holds for the near fade as well. The second
+    // call puts the equation back for the passes that follow.
     expect((equations[0] as Call).args[0]).toBe(context.gl.MAX);
     expect((equations[1] as Call).args[0]).toBe(context.gl.FUNC_ADD);
   });

@@ -64,7 +64,7 @@ describe('the conversion of the dump', () => {
 
     expect(system?.primaryCategory).toBe('Ruins Gamma');
     expect(system?.secondaryCategories).toEqual(['Ruins Alpha', 'Ruins Beta']);
-    expect(system?.images.map((image) => image.caption)).toEqual([
+    expect(system?.images?.map((image) => image.caption)).toEqual([
       'Gamma site',
       'Alpha site',
       'Beta site',

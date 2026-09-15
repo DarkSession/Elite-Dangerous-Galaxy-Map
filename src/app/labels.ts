@@ -304,6 +304,62 @@ export const NO_LABEL_MEMORY: LabelMemory = {
 };
 
 /**
+ * How much of the gap to this frame's anchor the carried point closes in one frame.
+ *
+ * The share is high, so the label goes where it belongs at once: 0.5 closes half the gap
+ * in one frame and 97 percent of it in five, which is 83 milliseconds at 60 frames a
+ * second.
+ *
+ * The filter is here for the sampling noise alone, and not to make the label travel. The
+ * anchor is read from a grid of samples that slides over the plane while the camera
+ * moves, so samples cross region edges and the mean of a region steps by a pixel or two
+ * between frames. Taking each frame's anchor whole shows that as a shiver on every
+ * label, and the target of a region that shows as two patches steps 48 CSS pixels at once
+ * when a patch comes into view. The filter halves the first and holds the second to the
+ * cap below.
+ */
+export const ANCHOR_SHARE = 0.5;
+
+/** How far the filter moves the anchor on the screen in one frame, in CSS pixels. */
+export const ANCHOR_MAX_PIXELS = 20;
+
+/** How many times the cap scales the step down before it takes what it has. */
+const CAP_PASSES = 4;
+
+/**
+ * The plane point a carried anchor takes in this frame. It closes `ANCHOR_SHARE` of the
+ * gap to the target, and moves no more than `ANCHOR_MAX_PIXELS` on the screen.
+ *
+ * The cap is read on the projection and not on the plane, because a plane step of a
+ * fixed size covers a different number of pixels at every zoom. The function projects
+ * both ends of the step, and while the step moves the anchor more than the cap it scales
+ * the step down by the ratio of the two. The projection is not linear, so the scale is
+ * read again up to four times; each pass is nearer the cap than the one before.
+ */
+export function filterAnchor(
+  carried: PlanePoint,
+  target: PlanePoint,
+  toScreen: (x: number, z: number) => AnchorPoint | null,
+): PlanePoint {
+  const stepX = (target.x - carried.x) * ANCHOR_SHARE;
+  const stepZ = (target.z - carried.z) * ANCHOR_SHARE;
+  if (stepX === 0 && stepZ === 0) return carried;
+
+  const from = toScreen(carried.x, carried.z);
+  let scale = 1;
+  if (from !== null) {
+    for (let pass = 0; pass < CAP_PASSES; pass += 1) {
+      const to = toScreen(carried.x + stepX * scale, carried.z + stepZ * scale);
+      if (to === null) break;
+      const moved = Math.hypot(to.x - from.x, to.y - from.y);
+      if (moved <= ANCHOR_MAX_PIXELS) break;
+      scale *= ANCHOR_MAX_PIXELS / moved;
+    }
+  }
+  return { x: carried.x + stepX * scale, z: carried.z + stepZ * scale };
+}
+
+/**
  * The candidates of a frame, in the order they take a place. A region is a candidate
  * when it holds at least 1 percent of the landed samples, so a region with nothing on
  * screen is never one. A region that carried a label in the frame before stays a
@@ -321,9 +377,12 @@ export const NO_LABEL_MEMORY: LabelMemory = {
  * region edge: it holds still and then steps. A plane position moves with the camera, so
  * its projection slides.
  *
- * An anchor held from the frame before keeps its plane point while that point still
- * resolves to the region and still projects inside the frame, so the anchor does not hop
- * between two samples that are almost equally near the mean. Its projection still moves.
+ * An anchor carried from the frame before takes half of the gap to the anchor this frame
+ * works out, and no more than 20 CSS pixels on the screen. A label pushed to the frame
+ * edge is back in the middle of its region in about 9 frames, and the step the target
+ * takes when a patch of a region comes into view reaches the label over three frames
+ * rather than in one. A carried point that no longer resolves to its region, or no longer
+ * projects inside the frame, is dropped and this frame's anchor is taken whole.
  *
  * The candidate holding the sample nearest the centre of the frame comes first, so the
  * region the view is centred on is always named. A count order alone does not name the
@@ -416,19 +475,23 @@ export function labelCandidates(
     const meanX = (sumPlaneX[id] as number) / (counts[id] as number);
     const meanZ = (sumPlaneZ[id] as number) / (counts[id] as number);
     const onRegion = samples.regionAtPlane(meanX, meanZ) === id;
-    let plane: PlanePoint = onRegion
+    const target: PlanePoint = onRegion
       ? { x: meanX, z: meanZ }
       : {
           x: samples.planeX[index] as number,
           z: samples.planeZ[index] as number,
         };
 
-    // The anchor of the frame before is kept while its plane point still resolves to
-    // this region and still projects inside the frame.
+    // A point is carried from the frame before while it still resolves to its region and
+    // still projects inside the frame. A point that fails either rule is dropped, and
+    // this frame's target is taken whole.
+    let plane = target;
     const carried = memory.anchors.get(id);
     if (carried !== undefined && samples.regionAtPlane(carried.x, carried.z) === id) {
       const projected = samples.toScreen(carried.x, carried.z);
-      if (projected !== null && insideFrame(projected)) plane = carried;
+      if (projected !== null && insideFrame(projected)) {
+        plane = filterAnchor(carried, target, samples.toScreen);
+      }
     }
 
     const screen = samples.toScreen(plane.x, plane.z);

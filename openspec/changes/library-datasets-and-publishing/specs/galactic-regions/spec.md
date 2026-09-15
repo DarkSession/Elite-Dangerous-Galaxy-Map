@@ -229,8 +229,8 @@ The anchor SHALL move in every frame in which the camera moves, and SHALL NOT sn
 grid of sample points. While a region shows as one connected patch and its anchor has
 settled on the target, a camera turn of 0.1
 degrees between two frames SHALL move its anchor, and SHALL move it by less than 8 CSS
-pixels. The bound is read on a settled anchor because the glide above adds up to 4 CSS
-pixels of its own while a label is still travelling.
+pixels. The bound is read on a settled anchor because the filter above adds up to 20 CSS
+pixels of its own while a label is still going to a target that moved.
 
 Both halves are needed. A rule that snaps to the nearest sample moves the anchor a whole
 sample spacing at once, 32 CSS pixels, which the upper bound catches. A rule that
@@ -239,25 +239,31 @@ of 1.0 CSS pixels, and still reads as jumping, because the anchor is unmoved in 
 percent of frames and carries the whole motion in the rest. Only the lower bound catches
 that one.
 
-**A held anchor glides back toward its region's mean.** A region that carried a label in
-the frame before SHALL carry its anchor's plane point into this frame, and that point SHALL
-then move toward the frame's own target by **8 percent of the gap between them**, in plane
+**A held anchor goes to its region's mean at once.** A region that carried a label in the
+frame before SHALL carry its anchor's plane point into this frame, and that point SHALL
+then move toward the frame's own target by **half of the gap between them**, in plane
 coordinates. The target is the mean of the region's sample plane positions, or the fallback
 above when the region under that mean is another region.
 
-The glide's own contribution to the anchor's motion on the screen SHALL be capped at **4
-CSS pixels** in one frame, so a label that has a long way to travel still slides rather
-than jumps.
+The step on the screen SHALL be capped at **20 CSS pixels** in one frame, so the label
+slides over two or three frames where the target jumps, and no frame carries it a long way
+at once.
 
-At 60 frames a second the anchor closes half the gap in about 8 frames and 90 percent of it
-in about 28, so a label that was pushed to the frame edge comes back to the middle of its
-region in under half a second once nothing holds it out there.
+At 60 frames a second the anchor closes half the gap in one frame and 97 percent of it in
+five. A label pushed to the frame edge by a camera that then jumps back measures 128 CSS
+pixels from the middle of its region, and it is within 2 CSS pixels of that middle at frame
+9, which is 150 milliseconds. The label goes where it belongs at once and does not crawl.
 
-The glide replaces a hold that kept the anchor where it was for as long as the point still
-resolved to the region and still projected inside the frame. The hold is what stopped the
-anchor hopping between two samples almost equally near the mean, and a glide of 8 percent
-a frame stops that too, because it is continuous. What the hold also did, and should not
-have, was keep a label at the frame edge it had been pushed to long after the region was
+The step is a filter over the sampling noise, and not a travel. The anchor is read from a
+grid of samples that slides over the plane while the camera moves, so samples cross region
+edges and the target steps between frames: the target of a region that shows as two patches
+moves a whole sample spacing, 48 CSS pixels, when a patch comes into view. Taking each
+frame's target whole shows that as a jump on the label. The filter holds the same turn over
+to 19.8 CSS pixels, over three frames.
+
+The filter replaces a hold that kept the anchor where it was for as long as the point still
+resolved to the region and still projected inside the frame. What the hold did, and should
+not have, was keep a label at the frame edge it had been pushed to long after the region was
 back in full view.
 
 A carried point that no longer resolves to its own region SHALL be replaced by the target at
@@ -374,21 +380,22 @@ and above, full at 20,000 and below. Labels SHALL NOT fade out at close zoom.
   place; and where the two counts are within the bonus of each other the region that
   carried a label keeps its place
 
-#### Scenario: A pushed anchor comes back to the centre
+#### Scenario: A pushed anchor comes back to the centre at once
 
-- **WHEN** a unit test runs the placement over a pan that carries a region from a corner of
-  the frame, where its anchor is held against the 48 pixel inset, to the middle of the
-  frame, and then over 60 further frames with the camera still
-- **THEN** the anchor moves toward the region's mean in every one of those 60 frames, it is
-  within 2 CSS pixels of the projection of that mean by frame 60, and it moves by no more
-  than 4 CSS pixels in any one of them
+- **WHEN** a unit test runs the placement over a camera that jumps in one frame from a
+  corner of the frame, where the region's anchor is held against the 48 pixel inset, to the
+  middle of the frame, and then over 60 further frames with the camera still
+- **THEN** the anchor starts more than 40 CSS pixels from the projection of the region's
+  mean, no frame carries it away from that mean, it is within 2 CSS pixels of it **by frame
+  10**, and it moves by no more than 20 CSS pixels in any one frame
 
-#### Scenario: The glide does not hop between samples
+#### Scenario: The filter does not hop between samples
 
 - **WHEN** a unit test runs the placement over 120 frames of a slow pan across a region
   whose two nearest samples to the mean are within 1 light year of each other
-- **THEN** no frame moves the anchor by more than 8 CSS pixels, and the anchor's plane
-  point changes by less than one sample spacing in any single frame
+- **THEN** the target of a frame moves by more than 8 CSS pixels, no frame moves the anchor
+  by more than the 20 CSS pixel cap, and the anchor's plane point changes by less than one
+  sample spacing in any single frame
 
 #### Scenario: Labels neither crowd nor overlap
 

@@ -1,0 +1,126 @@
+# The repository's automated pipeline.
+#
+# The check job runs the same checks a developer runs, in the same order, on every push
+# to `main` and on every pull request that targets `main`. The publish job then puts the
+# demo site on GitHub Pages. It runs from `main` alone.
+#
+# The workflow does not run the Playwright suite. That suite reads the renderer string
+# through `WEBGL_debug_renderer_info` and fails a run that falls back to SwiftShader or
+# llvmpipe. A GitHub-hosted runner carries no GPU, so the suite cannot pass there. The
+# browser suite is therefore a local gate: run `pnpm test:e2e` in the dev container,
+# which passes the host NVIDIA card through. The workflow does not weaken a check to
+# make a run pass, and it does not run the browser suite against a software renderer.
+#
+# Every action is pinned to a commit SHA, and the version sits in the comment beside it.
+# The project holds each npm release for 7 days against a hijacked maintainer account,
+# and a mutable tag gives whatever it points at on the day the run starts. A SHA is the
+# same measure for the same risk. To move an action, read the SHA of the new release and
+# write both the SHA and the version here.
+name: Check and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# The check job reads the repository and nothing more. The publish job names the two
+# write permissions its own deployment needs.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, unit tests and both builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The action reads the pnpm version from `packageManager` in package.json, so the
+      # runner installs the version this repository names.
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      # `--frozen-lockfile` fails rather than writes pnpm-lock.yaml, so a run cannot
+      # step around the 7-day release hold in pnpm-workspace.yaml.
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      # `pnpm build:demo-site` runs `vite build` alone and checks no type, so the type
+      # check is a step of its own.
+      - name: Check the types
+        run: pnpm exec tsc --noEmit
+
+      - name: Run the unit tests
+        run: pnpm test
+
+      - name: Build the library
+        run: pnpm build
+
+      - name: Build the demo site
+        run: pnpm build:demo-site
+
+  publish:
+    name: Publish the demo site to GitHub Pages
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # One group for the publish. A push that arrives while a deployment runs waits for
+    # it, GitHub drops every queued run but the newest, and the later push wins.
+    concurrency:
+      group: github-pages-publish
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `enablement` turns the Pages site on at the first run, with GitHub Actions as
+      # its source, so the publish needs no change in the repository settings.
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        with:
+          enablement: true
+
+      - name: Build the demo site
+        run: pnpm build:demo-site
+
+      # `dist-demo/` is the demo site. `vite.config.ts` gives it the base path
+      # `/Elite-Dangerous-Galaxy-Map/`, which is the path the Pages address serves it
+      # from. `dist/` is the library, and the publish does not upload it.
+      - name: Upload the demo site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist-demo
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

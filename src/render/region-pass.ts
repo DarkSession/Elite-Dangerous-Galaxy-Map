@@ -3,10 +3,12 @@
 // scene pass: no look constant of the far view changes it, and it changes none of them.
 //
 // The line is a two-tone ribbon and it draws in two steps. The first step expands each
-// segment into a screen-space quad and writes its coverage into a single-channel
-// buffer with the MAX blend equation, so a join keeps the smallest distance rather
-// than blending twice. The second step reads that buffer once and writes the core
-// colour and the outline colour over the frame.
+// segment into a screen-space quad and writes its coverage into the red channel of a
+// two-channel buffer with the MAX blend equation, so a join keeps the smallest distance
+// rather than blending twice. The green channel carries the near fade of the pixel,
+// which the camera's own distance to the segment gives. The second step reads that
+// buffer once, multiplies the two channels into the alpha, and writes the core colour
+// and the outline colour over the frame.
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -16,19 +18,31 @@ import fragmentSource from './shaders/regions.frag?raw';
 import fullScreenSource from './shaders/fullscreen.vert?raw';
 import compositeSource from './shaders/region-composite.frag?raw';
 
-/** The colour of the middle of a boundary line. It is the lighter of the two. */
-export const REGION_CORE_COLOUR: readonly [number, number, number] = [0.6, 0.78, 1];
+/**
+ * The colour of the middle of a boundary line. It is the lighter of the two.
+ *
+ * The tone is washed out: it sits a third of the way from the tone before it toward the
+ * average of the two tones. The wash is what makes the staircase of the traced set read
+ * as a soft edge rather than a row of steps.
+ */
+export const REGION_CORE_COLOUR: readonly [number, number, number] = [
+  0.505, 0.658, 0.853,
+];
 
 /**
  * The colour of the outline on each side of the core. It is the darker of the two, so
- * the line reads over the bright disc as well as over the dark space between the arms.
+ * the line reads over the bright disc.
+ *
+ * It is washed out as well, by the same third. Its luminance is 0.169, so over the dark
+ * space between the arms it now lightens the pixel rather than darkening it. It is
+ * still darker than the core everywhere, which is what makes the line read as a line.
  */
 export const REGION_OUTLINE_COLOUR: readonly [number, number, number] = [
-  0.03, 0.05, 0.12,
+  0.125, 0.172, 0.267,
 ];
 
 /** How opaque a boundary line is where the overlay draws in full. */
-export const REGION_LINE_OPACITY = 0.55;
+export const REGION_LINE_OPACITY = 0.42;
 
 /** The width of the whole line, in CSS pixels. */
 export const REGION_LINE_WIDTH_CSS = 4;
@@ -44,6 +58,16 @@ export const REGION_FADE_IN_FAR = 30000;
 
 /** The zoom distance at and below which the overlay draws in full, in light years. */
 export const REGION_FADE_IN_NEAR = 20000;
+
+/**
+ * The camera distance to a line at and below which the line draws nothing, in light
+ * years. The fade is read for each pixel, from the camera to the nearest point of the
+ * segment that pixel draws.
+ */
+export const REGION_NEAR_FADE_NONE = 200;
+
+/** The camera distance at and above which a line draws in full, in light years. */
+export const REGION_NEAR_FADE_FULL = 1500;
 
 /** The four corners of the ribbon quad, as a triangle strip. */
 const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
@@ -63,6 +87,15 @@ function smoothstep(low: number, high: number, value: number): number {
  */
 export function regionFade(distance: number): number {
   return 1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance);
+}
+
+/**
+ * How much of a line draws at a camera distance to it, 0 to 1. A line under the camera
+ * goes out and a line across the frame stays, because the shader reads this for each
+ * pixel and not once for the frame.
+ */
+export function regionNearFade(distance: number): number {
+  return smoothstep(REGION_NEAR_FADE_NONE, REGION_NEAR_FADE_FULL, distance);
 }
 
 /** The coverage the composite reads at the edge of the core, 0 to 1. */
@@ -113,6 +146,7 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       'uChunkOffset',
       'uTargetSize',
       'uHalfWidth',
+      'uNearFade',
     ]),
     composite: createProgram(
       gl,
@@ -132,7 +166,7 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
   };
 }
 
-/** The single-channel target the ribbon step writes and the composite step reads. */
+/** The two-channel target the ribbon step writes and the composite step reads. */
 interface CoverageTarget {
   readonly framebuffer: WebGLFramebuffer;
   readonly texture: WebGLTexture;
@@ -144,10 +178,12 @@ interface CoverageTarget {
 }
 
 /**
- * Creates the coverage target. `R8` is enough: the value it holds is a distance
+ * Creates the coverage target. `RG8` holds the coverage in the red channel and the near
+ * fade in the green one. Eight bits are enough for both: the coverage is a distance
  * against the half width, so one part in 255 is a fortieth of a device pixel at the
- * widths this pass draws. The target takes its storage on the first draw, so the
- * overlay costs no memory at 30,000 light years and above.
+ * widths this pass draws, and the fade is a ramp over 1,300 light years. The target
+ * takes its storage on the first draw, so the overlay costs no memory at 30,000 light
+ * years and above.
  */
 function createCoverageTarget(gl: WebGL2RenderingContext): CoverageTarget {
   const texture = gl.createTexture();
@@ -169,11 +205,11 @@ function createCoverageTarget(gl: WebGL2RenderingContext): CoverageTarget {
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
-        gl.R8,
+        gl.RG8,
         width,
         height,
         0,
-        gl.RED,
+        gl.RG,
         gl.UNSIGNED_BYTE,
         null,
       );
@@ -274,7 +310,8 @@ export function createRegionPass(
       const drawn = frame.traced ? tracedUpload : smoothedUpload;
       coverage.resize(width, height);
 
-      // Step one: the coverage of every segment, largest value wins.
+      // Step one: the coverage and the near fade of every segment, largest value wins.
+      // The MAX equation runs on each channel by itself, so the two never mix.
       gl.bindFramebuffer(gl.FRAMEBUFFER, coverage.framebuffer);
       gl.viewport(0, 0, width, height);
       gl.clearColor(0, 0, 0, 0);
@@ -297,6 +334,11 @@ export function createRegionPass(
       );
       gl.uniform2f(ribbon.uniforms['uTargetSize'] ?? null, width, height);
       gl.uniform1f(ribbon.uniforms['uHalfWidth'] ?? null, halfWidth);
+      gl.uniform2f(
+        ribbon.uniforms['uNearFade'] ?? null,
+        REGION_NEAR_FADE_NONE,
+        REGION_NEAR_FADE_FULL,
+      );
 
       gl.bindVertexArray(drawn.vertexArray);
       gl.bindBuffer(gl.ARRAY_BUFFER, drawn.positionBuffer);

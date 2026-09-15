@@ -1,0 +1,276 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "Structure Bear",
+      "color": [
+        232,
+        120,
+        72
+      ],
+      "description": "A Guardian structure of the Bear layout."
+    },
+    {
+      "name": "Structure Bowl",
+      "color": [
+        255,
+        190,
+        80
+      ],
+      "description": "A Guardian structure of the Bowl layout."
+    },
+    {
+      "name": "Structure Crossroads",
+      "color": [
+        120,
+        200,
+        255
+      ],
+      "description": "A Guardian structure of the Crossroads layout."
+    },
+    {
+      "name": "Structure Fistbump",
+      "color": [
+        255,
+        128,
+        160
+      ],
+      "description": "A Guardian structure of the Fistbump layout."
+    },
+    {
+      "name": "Structure Hammerbot",
+      "color": [
+        160,
+        140,
+        255
+      ],
+      "description": "A Guardian structure of the Hammerbot layout."
+    },
+    {
+      "name": "Structure Lacrosse",
+      "color": [
+        120,
+        230,
+        180
+      ],
+      "description": "A Guardian structure of the Lacrosse layout."
+    },
+    {
+      "name": "Structure Robolobster",
+      "color": [
+        255,
+        96,
+        96
+      ],
+      "description": "A Guardian structure of the Robolobster layout."
+    },
+    {
+      "name": "Structure Squid",
+      "color": [
+        190,
+        130,
+        255
+      ],
+      "description": "A Guardian structure of the Squid layout."
+    },
+    {
+      "name": "Structure Stickyhand",
+      "color": [
+        96,
+        220,
+        220
+      ],
+      "description": "A Guardian structure of the Stickyhand layout."
+    },
+    {
+      "name": "Structure Turtle",
+      "color": [
+        180,
+        220,
+        96
+      ],
+      "description": "A Guardian structure of the Turtle layout."
+    }
+  ],
+  "systems": [
+    {
+      "name": "Vela Dark Region KR-W c1-24",
+      "coords": {
+        "x": 1036.875,
+        "y": -163.59375,
+        "z": -85.96875
+      },
+      "primaryCategory": "Structure Lacrosse",
+      "secondaryCategories": [],
+      "description": "The system holds 2 Guardian structures. The body is 7 A."
+    },
+    {
+      "name": "Synuefe ZL-J d10-119",
+      "coords": {
+        "x": 834.21875,
+        "y": -51.21875,
+        "z": -154.65625
+      },
+      "primaryCategory": "Structure Fistbump",
+      "secondaryCategories": [],
+      "description": "The system holds 2 Guardian structures. The body is 9 B."
+    },
+    {
+      "name": "Col 173 Sector QU-O d6-32",
+      "coords": {
+        "x": 894.09375,
+        "y": -203.625,
+        "z": -146.5625
+      },
+      "primaryCategory": "Structure Lacrosse",
+      "secondaryCategories": [],
+      "description": "The system holds 2 Guardian structures. The body is 3 A."
+    },
+    {
+      "name": "Wregoe BU-Y b2-0",
+      "coords": {
+        "x": 1077.375,
+        "y": 400.5625,
+        "z": -993.375
+      },
+      "primaryCategory": "Structure Stickyhand",
+      "secondaryCategories": [
+        "Structure Bear"
+      ],
+      "description": "The system holds 2 Guardian structures. The body is 1 C."
+    },
+    {
+      "name": "Col 173 Sector HR-M b23-3",
+      "coords": {
+        "x": 1024.28125,
+        "y": -191.71875,
+        "z": -193.8125
+      },
+      "primaryCategory": "Structure Hammerbot",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 7."
+    },
+    {
+      "name": "HD 63154",
+      "coords": {
+        "x": 979.46875,
+        "y": -207.40625,
+        "z": -131.59375
+      },
+      "primaryCategory": "Structure Turtle",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 3 A."
+    },
+    {
+      "name": "Col 173 Sector JX-K b24-0",
+      "coords": {
+        "x": 993.0625,
+        "y": -188.1875,
+        "z": -173.53125
+      },
+      "primaryCategory": "Structure Crossroads",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 2."
+    },
+    {
+      "name": "Vela Dark Region JS-T b3-0",
+      "coords": {
+        "x": 899.9375,
+        "y": -142.1875,
+        "z": -82.25
+      },
+      "primaryCategory": "Structure Bowl",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is A 3."
+    },
+    {
+      "name": "Synuefe AH-J d10-103",
+      "coords": {
+        "x": 777.53125,
+        "y": -158.28125,
+        "z": -117.4375
+      },
+      "primaryCategory": "Structure Squid",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 1."
+    },
+    {
+      "name": "Synuefe EN-H d11-29",
+      "coords": {
+        "x": 745.6875,
+        "y": -115,
+        "z": -91.34375
+      },
+      "primaryCategory": "Structure Robolobster",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is 6 B."
+    },
+    {
+      "name": "Synuefe LY-I b42-2",
+      "coords": {
+        "x": 814.71875,
+        "y": -222.78125,
+        "z": -151.15625
+      },
+      "primaryCategory": "Structure Fistbump",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is C 2."
+    },
+    {
+      "name": "Vela Dark Region FL-Y d63",
+      "coords": {
+        "x": 1064.5,
+        "y": -144.03125,
+        "z": -101.71875
+      },
+      "primaryCategory": "Structure Lacrosse",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 1."
+    },
+    {
+      "name": "Col 173 Sector ZL-L b24-2",
+      "coords": {
+        "x": 896.78125,
+        "y": -134.90625,
+        "z": -182.09375
+      },
+      "primaryCategory": "Structure Bowl",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 1."
+    },
+    {
+      "name": "NGC 2451A Sector IR-W d1-77",
+      "coords": {
+        "x": 742.78125,
+        "y": -156.90625,
+        "z": -260.96875
+      },
+      "primaryCategory": "Structure Hammerbot",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is AB 1 A."
+    },
+    {
+      "name": "Col 173 Sector WP-O b22-1",
+      "coords": {
+        "x": 934.125,
+        "y": -172.125,
+        "z": -205.34375
+      },
+      "primaryCategory": "Structure Lacrosse",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is A 3."
+    },
+    {
+      "name": "Synuefe NU-F b44-5",
+      "coords": {
+        "x": 768.21875,
+        "y": -166.0625,
+        "z": -106.40625
+      },
+      "primaryCategory": "Structure Stickyhand",
+      "secondaryCategories": [],
+      "description": "The system holds 1 Guardian structure. The body is B 1."
+    }
+  ]
+}

@@ -130,6 +130,10 @@ selection. It SHALL hold, in this order:
 5. The images, when the record carries any.
 6. A footer with a **centre view** button and one button per entry of the `actions` option.
 
+The field grid SHALL hold **two columns**, as the mockup draws it, and the position field
+SHALL carry the mockup's label `POSITION`. An odd count of fields leaves the last field
+alone on its row, and that field SHALL take both columns, so the grid shows no empty cell.
+
 The **range from the camera** follows the view, so the panel SHALL rewrite it at most 10
 times a second, by the same rule as the top bar. Every other field changes only with the
 selection.
@@ -172,6 +176,13 @@ SHALL NOT let a failure in it stop the frame loop.
 - **THEN** the panel is shown, the header holds the name, the grid holds the position, the
   distance from Sol, the range from the camera, the allegiance and the population, there
   is no primary star field, and the description is shown
+
+#### Scenario: An odd count of fields leaves no empty cell
+
+- **WHEN** the browser test selects a record that gives three fields and reads the box of
+  the last field and the box of the grid
+- **THEN** the last field is as wide as the grid, and the earlier two are each about half
+  of it
 
 #### Scenario: A record with no description hides that section
 

@@ -26,6 +26,31 @@ export async function removeHud(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Gives the page the start state every test opens with: an empty system set, an empty
+ * category table and the coordinate grid off.
+ *
+ * The demo site loads the Guardian Ruins set at start and turns the grid on, and about
+ * 188 tests of this suite read a marker count, a category count or a frame that either
+ * would change. The rule is here and not in each test, so a test written later reads no
+ * set and no grid it did not ask for. The grid then reads the library default, which is
+ * off.
+ *
+ * The page reports itself ready after its start load, so the clear reaches a set that
+ * is already there.
+ *
+ * The helper draws one frame at the end. The frame probes report the last frame the
+ * renderer drew, so a test that reads one straight after the helper reads the state the
+ * helper leaves and not the state before it.
+ */
+export async function startState(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.galaxyMap?.clearSystemsAndCategories();
+    window.galaxyMap?.setGridVisible(false);
+    window.galaxyMap?.debug.drawNow();
+  });
+}
+
 /** What a test asks the page for beyond the view. */
 export interface OpenOptions {
   /**
@@ -34,6 +59,13 @@ export interface OpenOptions {
    * well, and a test that moves the pointer over a panel finds no system under it.
    */
   readonly hud?: boolean;
+  /**
+   * True keeps the start state the demo site itself opens with: the demo data set and
+   * the coordinate grid. The default clears the set and turns the grid off, so every
+   * test that does not ask for them opens an empty map with no grid. Only a test that
+   * reads the demo site's own start state passes it.
+   */
+  readonly demoData?: boolean;
 }
 
 /** Opens the map and waits for the first frame. */
@@ -42,8 +74,9 @@ export async function openMap(
   fragment = '',
   options: OpenOptions = {},
 ): Promise<void> {
-  await page.goto(`/${fragment}`);
+  await page.goto(`./${fragment}`);
   await waitForReady(page);
+  if (options.demoData !== true) await startState(page);
   if (options.hud !== true) await removeHud(page);
 }
 

@@ -56,6 +56,110 @@ describe('the entry point with no WebGL2 context', () => {
   });
 });
 
+/** One element the fake document made, with what the caller wrote on it. */
+interface FakeElement {
+  tag: string;
+  src?: string;
+  className?: string;
+  hidden?: boolean;
+  readonly style: Record<string, string>;
+  setAttribute(name: string, value: string): void;
+  addEventListener(name: string, listener: () => void): void;
+  remove(): void;
+}
+
+/** A canvas with no context, in a parent that records what the map adds to it. */
+function canvasInParent(): {
+  canvas: HTMLCanvasElement;
+  added: FakeElement[];
+  removed: FakeElement[];
+} {
+  const added: FakeElement[] = [];
+  const removed: FakeElement[] = [];
+  const parent = {
+    appendChild: (node: FakeElement): FakeElement => {
+      added.push(node);
+      return node;
+    },
+  };
+  const ownerDocument = {
+    createElement: (tag: string): FakeElement => ({
+      tag,
+      style: {},
+      setAttribute: () => undefined,
+      addEventListener: () => undefined,
+      remove(): void {
+        removed.push(this as unknown as FakeElement);
+      },
+    }),
+  };
+  const canvas = {
+    getContext: () => null,
+    clientWidth: 800,
+    clientHeight: 600,
+    offsetLeft: 0,
+    offsetTop: 0,
+    width: 800,
+    height: 600,
+    parentElement: parent,
+    ownerDocument,
+  };
+  return { canvas: canvas as unknown as HTMLCanvasElement, added, removed };
+}
+
+describe('the loading image', () => {
+  const scope = globalThis as unknown as {
+    window?: unknown;
+    requestAnimationFrame?: unknown;
+  };
+  let hadWindow = false;
+
+  beforeEach(() => {
+    hadWindow = 'window' in scope;
+    scope.window = {};
+    scope.requestAnimationFrame = vi.fn();
+  });
+
+  afterEach(() => {
+    if (!hadWindow) delete scope.window;
+    delete scope.requestAnimationFrame;
+  });
+
+  test('adds no element when the options name no picture', async () => {
+    const { canvas, added } = canvasInParent();
+    const map = createGalaxyMap(canvas);
+
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    expect(added).toHaveLength(0);
+  });
+
+  test('adds no element for a URL the scheme check refuses', async () => {
+    const { canvas, added } = canvasInParent();
+    const map = createGalaxyMap(canvas, { loadingImage: 'javascript:alert(1)' });
+
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    expect(added).toHaveLength(0);
+  });
+
+  test('adds the picture and takes it away when the start fails', async () => {
+    const { canvas, added, removed } = canvasInParent();
+    const map = createGalaxyMap(canvas, {
+      loadingImage: 'https://example.test/loader.svg',
+    });
+
+    expect(added).toHaveLength(1);
+    expect(added[0]?.tag).toBe('img');
+    expect(added[0]?.src).toBe('https://example.test/loader.svg');
+    // The canvas is 800 by 600 at the parent's corner, so the picture's middle sits at
+    // its middle.
+    expect(added[0]?.style['left']).toBe('400px');
+    expect(added[0]?.style['top']).toBe('300px');
+
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    expect(removed).toHaveLength(1);
+  });
+});
+
 describe('the lint rule on the location', () => {
   test('passes the library as it stands and fails a read of window.location', async () => {
     const eslint = new ESLint();
@@ -75,5 +179,46 @@ describe('the lint rule on the location', () => {
     // The page is the one file the rule leaves alone.
     const page = await eslint.lintText(source, { filePath: 'src/app/main.ts' });
     expect(page[0]?.errorCount).toBe(0);
+  });
+});
+
+describe('the grid change notification', () => {
+  const scope = globalThis as unknown as {
+    window?: unknown;
+    requestAnimationFrame?: unknown;
+  };
+  let hadWindow = false;
+
+  beforeEach(() => {
+    hadWindow = 'window' in scope;
+    scope.window = {};
+    scope.requestAnimationFrame = vi.fn();
+  });
+
+  afterEach(() => {
+    if (!hadWindow) delete scope.window;
+    delete scope.requestAnimationFrame;
+  });
+
+  test('calls the listener on each move and not on a set to the value it holds', async () => {
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    const moves: boolean[] = [];
+    const stop = map.onGridChange((on) => moves.push(on));
+
+    expect(map.isGridVisible()).toBe(false);
+    map.setGridVisible(false);
+    expect(moves).toEqual([]);
+
+    map.setGridVisible(true);
+    map.setGridVisible(true);
+    map.setGridVisible(false);
+    expect(moves).toEqual([true, false]);
+    expect(map.isGridVisible()).toBe(false);
+
+    stop();
+    map.setGridVisible(true);
+    expect(moves).toEqual([true, false]);
+    expect(map.isGridVisible()).toBe(true);
   });
 });

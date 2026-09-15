@@ -1,6 +1,9 @@
 // The detail grid, which refines the corrected surface density at 98 light years.
 // See `docs/galaxy-density-model.md`.
-import detailUrl from './galaxy-detail.png?url';
+// `?url&no-inline` and not `?url`: the library build inlines every asset as a data URI
+// by default, and this image is about 347 kB. The suffix keeps it a file the browser
+// fetches when the map starts. The page build already emits it as a file.
+import detailUrl from './galaxy-detail.png?url&no-inline';
 import { decodeGreyscalePng, PngError, readPngSize } from './png';
 import type { Range } from './types';
 

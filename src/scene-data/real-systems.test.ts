@@ -9,12 +9,28 @@ import {
   MAX_SYSTEMS,
   MODEL_BOUNDS,
 } from './real-systems';
-import type { RealSystemSet } from './real-systems';
+import type { CategoryInput, RealSystemSet, SystemRecordInput } from './real-systems';
+
+/**
+ * Casts a hand-made array to the input type. The reader checks every field at run
+ * time, so a rejection test still passes a record the type refuses, the way a host
+ * passes a dump it read from a file.
+ */
+function asRecords(records: readonly unknown[]): readonly SystemRecordInput[] {
+  return records as readonly SystemRecordInput[];
+}
+
+/** The same cast for a category array the type refuses. */
+function asCategories(categories: readonly unknown[]): readonly CategoryInput[] {
+  return categories as readonly CategoryInput[];
+}
 
 /** A set with the categories a test names already in its table. */
 function setWith(...names: string[]): RealSystemSet {
   const set = createSystemSet();
-  set.addCategories(names.map((name) => ({ name, color: [10, 20, 30] })));
+  set.addCategories(
+    names.map((name): CategoryInput => ({ name, color: [10, 20, 30] })),
+  );
   return set;
 }
 
@@ -23,7 +39,7 @@ function record(
   name: string,
   category: string,
   position: [number, number, number] = [0, 0, 0],
-): Record<string, unknown> {
+): SystemRecordInput {
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
@@ -78,14 +94,16 @@ describe('the category table', () => {
 
   test('gives each category fault its own reason', () => {
     const set = createSystemSet();
-    const report = set.addCategories([
-      { name: 'Empire', color: [0, 180, 255] },
-      { name: '', color: [1, 2, 3] },
-      { name: 'Two', color: [1, 2] },
-      { name: 'Nan', color: [1, Number.NaN, 3] },
-      { name: 'Sparkle', color: [1, 2, 3], markerStyle: 'sparkle' },
-      { name: 'Back', color: [1, 2, 3], maxDrawRange: -5 },
-    ]);
+    const report = set.addCategories(
+      asCategories([
+        { name: 'Empire', color: [0, 180, 255] },
+        { name: '', color: [1, 2, 3] },
+        { name: 'Two', color: [1, 2] },
+        { name: 'Nan', color: [1, Number.NaN, 3] },
+        { name: 'Sparkle', color: [1, 2, 3], markerStyle: 'sparkle' },
+        { name: 'Back', color: [1, 2, 3], maxDrawRange: -5 },
+      ]),
+    );
 
     expect(report.added).toBe(1);
     expect(report.rejected).toEqual([
@@ -179,9 +197,9 @@ describe('the category table', () => {
 
   test('drops a wrongly typed description', () => {
     const set = createSystemSet();
-    const report = set.addCategories([
-      { name: 'Empire', color: [0, 180, 255], description: 7 },
-    ]);
+    const report = set.addCategories(
+      asCategories([{ name: 'Empire', color: [0, 180, 255], description: 7 }]),
+    );
 
     expect(report.added).toBe(1);
     expect(set.category(0)).toEqual({
@@ -253,10 +271,12 @@ describe('the record reader', () => {
 
   test('rejects a record whose secondary category the table does not hold', () => {
     const set = setWith('A');
-    const report = set.addSystems([
-      { ...record('First', 'A'), secondaryCategories: ['B'] },
-      { ...record('Second', 'A'), secondaryCategories: 'A' },
-    ]);
+    const report = set.addSystems(
+      asRecords([
+        { ...record('First', 'A'), secondaryCategories: ['B'] },
+        { ...record('Second', 'A'), secondaryCategories: 'A' },
+      ]),
+    );
 
     expect(report.rejected).toEqual([{ index: 0, reason: 'unknown-category' }]);
     expect(report.added).toBe(1);
@@ -287,15 +307,17 @@ describe('the record reader', () => {
 
   test('gives each fault its own reason', () => {
     const set = setWith('A');
-    const report = set.addSystems([
-      record('Good', 'A'),
-      record('', 'A'),
-      { name: 'No coords', primaryCategory: 'A' },
-      { name: 'Nan', coords: { x: Number.NaN, y: 0, z: 0 }, primaryCategory: 'A' },
-      record('Far', 'A', [0, 0, 900000]),
-      { name: 'No category', coords: { x: 0, y: 0, z: 0 } },
-      record('Unknown', 'Z'),
-    ]);
+    const report = set.addSystems(
+      asRecords([
+        record('Good', 'A'),
+        record('', 'A'),
+        { name: 'No coords', primaryCategory: 'A' },
+        { name: 'Nan', coords: { x: Number.NaN, y: 0, z: 0 }, primaryCategory: 'A' },
+        record('Far', 'A', [0, 0, 900000]),
+        { name: 'No category', coords: { x: 0, y: 0, z: 0 } },
+        record('Unknown', 'Z'),
+      ]),
+    );
 
     expect(report.added).toBe(1);
     expect(report.rejected).toEqual([
@@ -473,19 +495,21 @@ describe('the set', () => {
 describe('the three HUD record fields', () => {
   test('keeps the fields when they are strings', () => {
     const set = setWith('A');
-    const report = set.addSystems([
-      {
-        ...record('Sol', 'A'),
-        description: 'The home system.',
-        primaryStar: 'G2 V',
-        images: [{ url: 'https://example.test/a.png', caption: 'A' }],
-      },
-      {
-        ...record('Achenar', 'A'),
-        description: 4,
-        primaryStar: null,
-      },
-    ]);
+    const report = set.addSystems(
+      asRecords([
+        {
+          ...record('Sol', 'A'),
+          description: 'The home system.',
+          primaryStar: 'G2 V',
+          images: [{ url: 'https://example.test/a.png', caption: 'A' }],
+        },
+        {
+          ...record('Achenar', 'A'),
+          description: 4,
+          primaryStar: null,
+        },
+      ]),
+    );
 
     expect(report.added).toBe(2);
     const first = set.system(0);
@@ -510,7 +534,7 @@ describe('the three HUD record fields', () => {
     for (let index = 0; index < 10; index += 1) {
       images.push({ url: `https://example.test/more-${index}.png` });
     }
-    const report = set.addSystems([{ ...record('Sol', 'A'), images }]);
+    const report = set.addSystems(asRecords([{ ...record('Sol', 'A'), images }]));
 
     expect(report.added).toBe(1);
     const kept = set.system(0)?.images ?? [];
@@ -553,10 +577,12 @@ describe('the three HUD record fields', () => {
 
   test('drops an images field that is not an array', () => {
     const set = setWith('A');
-    const report = set.addSystems([
-      { ...record('Sol', 'A'), images: 'a.png' },
-      { ...record('Achenar', 'A'), images: [] },
-    ]);
+    const report = set.addSystems(
+      asRecords([
+        { ...record('Sol', 'A'), images: 'a.png' },
+        { ...record('Achenar', 'A'), images: [] },
+      ]),
+    );
 
     expect(report.added).toBe(2);
     expect(set.system(0)?.images).toBeUndefined();
@@ -606,17 +632,81 @@ describe('the category switch', () => {
     expect(set.isCategoryVisible('A')).toBe(true);
   });
 
-  test('reads the primary category alone', () => {
+  test('keeps the marker while any category of the system is on', () => {
     const set = setWith('A', 'B');
     set.addSystems([{ ...record('one', 'A'), secondaryCategories: ['B'] }]);
     set.setCategoryVisible('A', false);
 
-    expect(set.drawsMarker(0)).toBe(false);
+    expect(set.drawsMarker(0)).toBe(true);
 
     set.setCategoryVisible('A', true);
     set.setCategoryVisible('B', false);
 
     expect(set.drawsMarker(0)).toBe(true);
+
+    set.setCategoryVisible('A', false);
+
+    expect(set.drawsMarker(0)).toBe(false);
+
+    set.setCategoryVisible('B', true);
+
+    expect(set.drawsMarker(0)).toBe(true);
+  });
+
+  test('keeps the primary category index for the colour', () => {
+    const set = setWith('A', 'B');
+    set.addSystems([{ ...record('one', 'B'), secondaryCategories: ['A'] }]);
+    set.setCategoryVisible('B', false);
+
+    expect(set.drawsMarker(0)).toBe(true);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
+  });
+
+  test('sweeps 10,000 systems of 4 categories in under 2 ms', () => {
+    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const set = setWith(...names);
+    const records = Array.from(
+      { length: MAX_SYSTEMS },
+      (_ignored, index): SystemRecordInput => ({
+        ...record(`s${index}`, names[index % 8] as string, [index * 0.001, 0, 0]),
+        secondaryCategories: [
+          names[(index + 1) % 8] as string,
+          names[(index + 2) % 8] as string,
+          names[(index + 3) % 8] as string,
+        ],
+      }),
+    );
+    set.addSystems(records);
+    // The first read builds the flags, so the measured sweep is the one the switch
+    // asks for and not the one the add asks for.
+    expect(set.markerFlags.length).toBe(MAX_SYSTEMS);
+
+    const readings: number[] = [];
+    for (const name of names) {
+      set.setCategoryVisible(name, false);
+      const start = performance.now();
+      const flags = set.markerFlags;
+      const sweepMs = performance.now() - start;
+      expect(flags.length).toBe(MAX_SYSTEMS);
+      readings.push(sweepMs);
+    }
+    const sorted = [...readings].sort((first, second) => first - second);
+    const medianMs = (sorted[3] as number) + (sorted[4] as number);
+    console.log('the category sweep ms', {
+      readings,
+      medianMs: medianMs / 2,
+    });
+
+    // Every category is off, so every marker is off.
+    expect(set.drawsMarker(0)).toBe(false);
+    // The bound holds the middle of the eight sweeps and not the slowest one. This suite
+    // runs its files at the same time, and the pipeline runs it on a shared machine, so
+    // one reading of a few hundred microseconds can carry a scheduler pause of more than
+    // the whole budget. The middle reading drops such a pause and still fails a sweep
+    // that is slow every time, which the fastest reading alone would not.
+    // `e2e/systems.spec.ts` holds every one of its eight readings to the budget on the
+    // machine this project measures on.
+    expect(medianMs / 2).toBeLessThan(2);
   });
 
   test('goes with the table on a paired clear', () => {

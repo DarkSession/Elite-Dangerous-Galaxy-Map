@@ -7,9 +7,12 @@ node_modules/
 # them here and the repository never holds one.
 data/
 
-# Build output
+# Build output. `dist/` is the library and `dist-demo/` is the demo site.
 dist/
+dist-demo/
 dist-ssr/
+# The directory `tests/main-bundle.test.ts` builds into. It is removed after the run.
+.library-build-*/
 *.local
 
 # Vite's dependency pre-bundling cache

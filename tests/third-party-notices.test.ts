@@ -20,6 +20,17 @@ describe('the third-party notices', () => {
     }
   });
 
+  test('names every data set and every picture the demo site carries', () => {
+    for (const source of [
+      'Guardian Ruins',
+      'Guardian Structures',
+      'Notable Systems',
+      'EDLoader1.svg',
+    ]) {
+      expect(notices, `the notices name ${source}`).toContain(source);
+    }
+  });
+
   test('names the non-commercial terms of the game data', () => {
     expect(notices).toContain('non-commercial');
     expect(notices).toContain('media-usage rules');
