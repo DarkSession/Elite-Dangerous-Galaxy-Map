@@ -32,16 +32,24 @@ describe('the point cloud', () => {
     expect(cloud.positions.length).toBe(300000);
     expect(cloud.tints.length).toBe(100000);
 
+    // The scan reports the first point outside the bounds and asserts once. An
+    // `expect` for each axis of each point is 600,000 calls, which took 2.9 seconds
+    // on an idle machine and went over the 5 second timeout under a loaded one.
     const bounds = galaxyModel.bounds;
-    for (let index = 0; index < cloud.count; index += 1) {
+    const axes = [bounds.x, bounds.y, bounds.z] as const;
+    let outside: string | null = null;
+    for (let index = 0; index < cloud.count && outside === null; index += 1) {
       const base = index * 3;
-      expect(cloud.positions[base] as number).toBeGreaterThanOrEqual(bounds.x[0]);
-      expect(cloud.positions[base] as number).toBeLessThanOrEqual(bounds.x[1]);
-      expect(cloud.positions[base + 1] as number).toBeGreaterThanOrEqual(bounds.y[0]);
-      expect(cloud.positions[base + 1] as number).toBeLessThanOrEqual(bounds.y[1]);
-      expect(cloud.positions[base + 2] as number).toBeGreaterThanOrEqual(bounds.z[0]);
-      expect(cloud.positions[base + 2] as number).toBeLessThanOrEqual(bounds.z[1]);
+      for (let axis = 0; axis < 3; axis += 1) {
+        const value = cloud.positions[base + axis] as number;
+        const [low, high] = axes[axis] as readonly [number, number];
+        if (value < low || value > high) {
+          outside = `point ${index} axis ${axis} is ${value}, outside ${low} to ${high}`;
+          break;
+        }
+      }
     }
+    expect(outside).toBeNull();
   });
 
   test('gives the detail ratio at the cell that holds Sol', () => {
