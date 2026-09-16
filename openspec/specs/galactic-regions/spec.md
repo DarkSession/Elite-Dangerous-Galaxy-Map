@@ -402,7 +402,7 @@ network fault, and it would never recover.
 - **THEN** the table is in no entry chunk, the page fetched it not at all before the calls,
   and the two calls together fetched it once
 
-### Requirement: The boundaries draw as one wide soft band over a smoothed line
+### Requirement: The boundaries draw as a wide band with a light core over a smoothed line
 
 The boundary chains SHALL draw as lines on the plane `y = 0`, after the tone map, so no
 look constant of the far view changes them and none of them changes the far view. They
@@ -413,21 +413,53 @@ set in `accurate`, and neither in `off`. Both sets draw through the same pass, w
 half width, the same tone and the same join rule, and the drawn band is the same width in
 both.
 
-**The line is one soft tone.**
+**The line is a band of two tones: a deeper outer band with a lighter core down its
+middle.** One flat tone read as a wash of colour laid over the map. Two tones read as a
+line: the outer tone marks the width of the boundary and the core marks where the boundary
+itself runs.
 
-- The tone SHALL be `(0.86, 0.74, 0.60)`, a warm cream.
-- The opacity SHALL be **0.55** where the overlay draws in full.
+- The **outer tone** SHALL be `(0.74, 0.55, 0.43)`, a deep amber. Its luminance by the
+  Rec.709 weights is **0.581**.
+- The **core tone** SHALL be `(0.90, 0.79, 0.52)`, a light amber of the same hue family.
+  Its luminance is **0.794**.
+- The **opacity** SHALL be **0.62** where the overlay draws in full, for both tones.
 - **The half width SHALL be 1.6 per cent of the viewport height in CSS pixels, clamped to
   8 and 24 CSS pixels**, so the whole band runs from 16 to 48 CSS pixels across and
   measures **34.6** at 1,080 CSS rows. The clamp acts at 500 CSS rows and below, and at
-  1,500 and above.
+  1,500 and above. This rule does not change.
 - The coverage the pass writes SHALL be `max(0, 1 - gap / halfWidth)`, where `gap` is the
   distance from the middle of the line in CSS pixels, evaluated for each device pixel of the
-  ribbon quad, in a single-channel buffer at the **full drawing buffer resolution**.
-- The alpha SHALL be `smoothstep(0, 1, coverage)`. The `smoothstep` **clamps at 1**, so the
-  band has a flat top.
+  ribbon quad, in a single-channel buffer at the **full drawing buffer resolution**. This
+  rule does not change either: both tones are read from that one channel.
+- **The edge SHALL be 4 CSS pixels wide, or a quarter of the half width where that is
+  less**, and the top of the band SHALL be flat over the rest of its width. The alpha SHALL
+  be `smoothstep(0, e, coverage)`, where `e = min(0.25, 4 / halfWidth)` is the edge measured
+  as a share of the half width. At 1,080 rows the half width is 17.28 CSS pixels and `e` is
+  0.2315, so the alpha is 1 wherever the gap is under 13.3 CSS pixels and falls to 0 over
+  the 4 CSS pixels outside that.
+
+  The quarter binds at a half width under 16 CSS pixels, which is 1,000 CSS rows and below.
+  At the clamp floor of 8 CSS pixels the edge is 2, which leaves the outer part 2.5 CSS
+  pixels of flat top between the core's mix and the edge. A fixed 4 CSS pixel edge would
+  leave it 0.5, and the band at a small window would read as a core with no band around it.
+- **The core SHALL be the middle quarter of the band.** The tone SHALL be
+  `mix(outer, core, m)` with `m = smoothstep(0.75 - c, 0.75 + c, coverage)`, where
+  `c = 1.5 / halfWidth` is a transition of 1.5 CSS pixels. The core therefore runs where
+  the gap is under `0.25 * halfWidth`, which is **8.6 CSS pixels** across at 1,080 rows
+  against the band's 34.6, and 4.0 CSS pixels at the clamp floor of 8 against the band's
+  16.0. The transition is fixed in CSS pixels, as the edge is, so the two tones meet over
+  the same short ramp at every viewport.
 - Where two quads of one join overlap, the buffer SHALL keep the larger coverage, which is
   the smaller distance. A join therefore reads as a straight run reads and not as twice one.
+
+**Both parts are read from the one coverage channel**, so the pass holds the same single
+target it held and the two tones cost one `mix` for each pixel of the composite.
+
+**Why a flat top and a short edge.** The alpha was `smoothstep(0, 1, coverage)`, which rises
+over the whole half width, so the band had no width at which it was itself: it was a soft
+ridge that reached its tone at one line of pixels. Over the galaxy that reads as a smear of
+colour. The reference the look follows draws a band with a flat top and an edge of about a
+fifth of its half width, and the core inside it.
 
 The width is a share of the viewport and not a fixed number of CSS pixels because the band
 is wide. A fixed 34.6 CSS pixels would cover a tenth of a 360 row window and a sixtieth of a
@@ -460,10 +492,16 @@ holds:
 The normalisation SHALL therefore be 1 in both modes, and the pass SHALL hold **one**
 full-resolution coverage target and not three.
 
-The dark outline is what carried the old 6 CSS pixel line over the bright disc. The warm
-tone carries it instead: its luminance is 0.755, above every part of the frame but the core
-itself, so the band lightens the picture nearly everywhere and needs no darker edge to be
-seen.
+**What each tone carries.** The old 6 CSS pixel line carried a dark outline, which the one
+cream tone of 0.755 luminance replaced: that tone lightens every part of the frame but the
+galactic core. The two tones of this requirement carry it by **contrast between themselves**
+as well. The outer tone at 0.581 is below the tone-mapped core, which reads about 0.93, and
+above the dark space between the arms, which reads about 0.05, so the band lightens the
+picture over most of it and darkens the brightest part of it. The core tone at 0.794 stands
+0.213 above the outer tone, and at an opacity of 0.62 that is **0.132** of luminance the
+core adds over the outer part, whatever the picture under the band, because both are laid
+over the same background at the same opacity. A boundary therefore reads as a line over
+the galactic centre, where a single tone had least to work with.
 
 **A line goes out by its own range to the camera, and the overlay goes out by the zoom at
 the far end alone.** Two fades SHALL multiply.
@@ -531,11 +569,14 @@ below.
 
 A chain that runs at an angle to the screen needs one term, and it is a term of the
 **instrument** and not of the pass. Comparing the largest reading of two places on a band
-compares two samples of a flat top, and only a line a pixel row lands on is sampled at its
-middle. The scenario "A join is not brighter than the line" therefore allows the **half pixel
-sampling loss**, `opacity * (3u**2 - 2u**3)` at `u = 0.5 / halfWidth`, which is 0.00071 at a
-half width of 24. The 3 per cent tolerance the blur needed is gone, and 0.00071 is three per
-cent of it.
+compares two samples of a flat top. The top is now flat over the whole of the band but its
+4 CSS pixel edge and its 1.5 CSS pixel core transition, so a pixel row within half a pixel
+of the middle of a line lands inside the **core's own flat part**, which is
+`0.5 * halfWidth - 3` CSS pixels wide: **9.0** at the half width of 24 this rule reads at,
+and 5.6 at the 17.28 of 1,080 CSS rows. Both samples therefore read the same plateau and the half pixel
+sampling loss of the ridge profile is **0**. The scenario "A join is not brighter than the
+line" SHALL allow **one 8-bit step**, 0.0039, which is the quantisation of the frame it
+reads and not a property of the pass. The 3 per cent tolerance the blur needed is gone.
 
 **The chosen views are constants and they moved.** `tests/region-views.ts` searches the
 boundary set for the views the scenarios below open, and `e2e/region-views.ts` holds what it
@@ -641,9 +682,15 @@ same rule asked for at 1,080 rows and 10,000.
 
 The search SHALL drop the premise that the view sits within 16,000 light years of the
 galactic centre. That premise was there so the disc under the line could be brighter than
-the **dark outline**, and the outline is gone. In its place the reading point SHALL sit at
-least **5,000 light years** from the galactic centre, which keeps the reading off the bright
-core, where the band no longer lightens. The clearance SHALL stay at **60 CSS pixels**.
+the **dark outline** of the 6 CSS pixel line, and no part of this band is drawn to be darker
+than the picture: the outer tone is deeper than the core, not darker than the sky. In its
+place the reading point SHALL sit at least **5,000 light years** from the galactic centre,
+which keeps the reading off the bright core, where the outer tone darkens rather than
+lightens. The clearance SHALL stay at **60 CSS pixels**.
+
+The floor and the searches do not move for the two tones. Each search reads the band
+against the picture under it or against another part of the same band, and both tones are
+laid over one background at one opacity, so a view that held one tone holds two.
 
 The search SHALL run **once for each set**, and `e2e/region-views.ts` SHALL hold one crossing
 view for each. A near-vertical straight run of the smoothed set is not a near-vertical
@@ -717,7 +764,7 @@ years**, and SHALL each take the zoom and the viewport its scenario names. They 
 **All three searches SHALL take the same radius floor the width search takes**, a floor of
 **5,000 light years** from the galactic centre, and SHALL drop the ceiling of 16,000 that
 each holds today. The ceiling was there so the disc under the line could be brighter than
-the dark outline, which is gone. The join search holds no radius premise today and SHALL
+the dark outline of the 6 CSS pixel line, which is gone. The join search holds no radius premise today and SHALL
 take none.
 
 **The three searches SHALL hold their windows per search and not in one module constant.**
@@ -817,14 +864,25 @@ the tolerance SHALL read an exact bound.
 
 - **WHEN** the browser test opens the crossing view of the traced set at **1920x1080**, at
   **1280x720** and at **640x360**, and reads the **half-maximum width** of the band across a
-  straight run, in CSS pixels, in each
-- **THEN** the readings are **17.3**, **11.5** and **8.0** CSS pixels, each within **1.0**
+  straight run, in CSS pixels, in each, where the maximum is the band's **outer plateau** on
+  that same row and not the largest reading of it
+- **THEN** the readings are **30.6**, **20.2** and **14.0** CSS pixels, each within **1.0**
   CSS pixel.
 
-  The half-maximum width is the **half width** and not the whole band. The alpha is
-  `smoothstep(0, 1, 1 - gap / halfWidth)`, which is 0.5 at a coverage of 0.5, that is at a
-  gap of `halfWidth / 2`, so the width at half maximum is `2 * halfWidth / 2`. The base
-  spec's own table reads 3.00 to 3.50 for a half width of 3, which is the same rule.
+  **The maximum is the outer plateau.** The largest reading of a row sits at the middle of
+  the line, where the tone is the **core** one, so half of it is not half of the profile the
+  outer tone draws. The reference SHALL therefore be the reading at a gap of
+  `halfWidth - edge - 1` CSS pixels, which is inside the flat top and one CSS pixel clear of
+  the edge, where the profile alpha is 1 and the tone is the outer one. The corner scenario
+  below takes its reference by the same rule.
+
+  The half-maximum width then follows the flat top. The alpha is
+  `smoothstep(0, e, 1 - gap / halfWidth)` with `e = min(0.25, 4 / halfWidth)`, which is 0.5
+  at a gap of `halfWidth - edge / 2`, so the width at half maximum is
+  `2 * halfWidth - edge`. The three half widths are 17.28, 11.52 and 8, whose edges are 4,
+  2.88 and 2, so the readings are 30.6, 20.2 and 14.0. They were 17.3, 11.5 and 8.0 against
+  the ridge profile, whose half maximum sat at `halfWidth / 2`. The band's own width has not
+  changed; the profile across it has.
 
   The whole band, which is where the contribution reaches 0, is **34.6**, **23.0** and
   **16.0** CSS pixels at the three viewports. The third is the clamp: 1.6 per cent of 360
@@ -923,13 +981,21 @@ the tolerance SHALL read an exact bound.
 - **THEN** in both modes the contribution at 25,000 is between a fifth and four fifths of
   the contribution at 20,000, and the contribution at 31,000 is 0
 
-#### Scenario: The line is one tone and lightens what it crosses
+#### Scenario: The band carries a lighter core inside a deeper outer part
 
 - **WHEN** the browser test opens the crossing view of the drawn set at **3840x2160** at a
-  zoom of **20,000 light years**, reads a row across a straight run of the band, and
-  compares the middle of the run with its two ends
-- **THEN** in both modes the middle of the run is lighter than both ends, and no pixel of
-  the run is darker than the frame drawn with the overlay off
+  zoom of **20,000 light years**, where the half width is 24 CSS pixels, reads a row across
+  a straight run of the band, and reads the luminance at the middle of the run, at 12 and at
+  16 CSS pixels from the middle, and at 30 CSS pixels from it
+- **THEN** in both modes:
+  - the middle is lighter than the reading at 12 CSS pixels by **0.132** of luminance,
+    within 0.02. The two readings differ by `opacity * (coreLuminance - outerLuminance)`,
+    which is `0.62 * (0.794 - 0.581)`, and that difference does not follow the picture under
+    the band, because both tones are laid over one background at one opacity;
+  - the readings at 12 and at 16 CSS pixels differ by at most **one 8-bit step**, so the
+    outer part is a plateau and not a ramp;
+  - the reading at 30 CSS pixels is the frame drawn with the overlay off, within one 8-bit
+    step, because it lies outside the band's 24 CSS pixel half width
 
 #### Scenario: A join is not brighter than the line
 
@@ -937,20 +1003,19 @@ the tolerance SHALL read an exact bound.
   years** on a bend of the smoothed set and reads the band's contribution at the bend and
   along a straight run of the same chain
 - **THEN** no pixel at the bend has a contribution above the largest contribution of the
-  straight run by more than the **half pixel sampling loss**, and no pixel of the bend has a
+  straight run by more than **one 8-bit step**, 0.0039, and no pixel of the bend has a
   contribution of 0.
 
-  The sampling loss is `opacity * (3u**2 - 2u**3)` at `u = 0.5 / halfWidth`, which is
-  **0.00071** at an opacity of 0.55 and a half width of 24. It is derived and not chosen.
-
-  **Why a comparison of two peaks needs it.** The band's top is flat, so the largest reading
-  of a run is the reading of the pixel nearest the middle of the line, and how near that is
-  depends on where the pixel grid falls across the line. **Neither set puts a pixel row on the
-  middle of a line.** Both are smoothed, so both run at angles the pixel grid does not follow,
-  and the two peaks being compared are read at two different offsets. The measured deficit is
-  **0.000217**, which is the loss at an offset of 0.275 CSS pixels, inside the half pixel the
-  bound allows. The rule is about the pass, and
-  without this term the reading is about the pixel grid
+  **Why the tolerance is one 8-bit step and no longer a sampling loss.** The band's top is
+  flat, so the largest reading of a run is the reading of the pixel nearest the middle of the
+  line, and how near that is depends on where the pixel grid falls across the line. With the
+  ridge profile that offset cost the reading `opacity * (3u**2 - 2u**3)` at
+  `u = 0.5 / halfWidth`, which was 0.00071. With the flat top of this requirement a pixel
+  within half a pixel of the middle sits inside the core's flat part, which is
+  `0.5 * halfWidth - 3` and therefore **9.0** CSS pixels wide at a half width of 24, so two
+  peaks read one plateau and the offset costs nothing. What is
+  left is the frame's own 8-bit quantisation. The tolerance is derived from the profile and
+  not chosen
 
 #### Scenario: The sharpest corner of the traced set is not brighter than its line
 
@@ -968,21 +1033,31 @@ the tolerance SHALL read an exact bound.
 #### Scenario: The corner of the traced set is round to the band's half width
 
 - **WHEN** the browser test sweeps rays out from the same corner through the quadrant the
-  two arms do not span, reads each ray where the band falls to **half its own peak**, and
-  takes the **median** of twice that radius
+  two arms do not span, reads each ray where the band falls to **half the outer plateau on
+  that same ray**, and takes the **median** of that radius plus **2.0** CSS pixels
 - **THEN** the radius is the band's own half width, **24.0 CSS pixels** at 2,160 rows,
-  within **2.0** CSS pixels, so the corner is round without a blur. On the pinned package
-  the reading is **24.05**, against an offset curve that is 24.00 at every ray of the sweep.
+  within **2.0** CSS pixels, so the corner is round without a blur. Against the ridge
+  profile the same corner read 24.05, on an offset curve that is 24.00 at every ray of the
+  sweep, and the reading is expected to hold within the bound.
 
-  **The ray is read at half the peak and not at a floor near 0.** The alpha along a ray is
-  `peak * smoothstep(0, 1, 1 - gap / halfWidth)`, which is 0.5 exactly at `gap = halfWidth / 2`,
-  so the half-alpha radius is half the radius wanted and the reading doubles it. That point is
-  where the ramp is steepest, so a small error in alpha is a small error in radius. A floor
-  near 0 sits on the flattest part of the ramp, under one 8-bit step of the band over a bright
-  background, so the radius it returns follows how bright the galaxy is under the corner. Read
-  that way this corner came back **2.4 CSS pixels short** of an offset curve that is exactly
-  24.00. The peak is read along the ray itself, so the range fade, the zoom fade and the tone
-  all divide out.
+  **The ray is read against the outer plateau and not against the peak.** The band carries
+  two tones, so the peak at the middle of the line is the **core** tone and the edge the
+  sweep reads carries the **outer** tone. A ratio of the two would mix the tones with the
+  alpha. The reference reading SHALL therefore be taken on the same ray at a gap of
+  `halfWidth - edge - 1` CSS pixels, which is **19.0** at a half width of 24: it is inside
+  the outer plateau and one CSS pixel clear of the edge, where the alpha is 1 and the tone
+  is the outer one. Both readings then carry one
+  tone, and the range fade, the zoom fade and the tone divide out as they did.
+
+  **The half-alpha point and the correction.** The alpha is
+  `smoothstep(0, e, 1 - gap / halfWidth)` with `e = min(0.25, 4 / halfWidth)`, which is
+  `4 / 24` here, so half the plateau sits at `gap = halfWidth - 2`, which is 2.0 CSS pixels inside the band's own edge. The sweep
+  therefore adds 2.0 rather than doubling its reading, which is what the ridge profile
+  needed. That point sits in the middle of the 4 CSS pixel edge, where the ramp is steepest,
+  so a small error in alpha is a small error in radius. A floor near 0 sits on the flattest
+  part of the ramp, under one 8-bit step of the band over a bright background, so the radius
+  it returns follows how bright the galaxy is under the corner. Read that way this corner
+  came back **2.4 CSS pixels short** of the offset curve.
 
   **The median and not the mean.** Where the background is already as bright as the band's own
   tone there is no room left to read a contribution in, and a ray that crosses such a patch
@@ -1395,7 +1470,8 @@ expose both figures so a test can read them.
 
 **A label SHALL fade exactly as the boundary at the same place fades.** A name and the line
 it names SHALL read at the same strength, so a label's opacity SHALL be the product of the
-same two fades the requirement "The boundaries draw as one wide soft band over a smoothed line" states:
+same two fades that the requirement
+"The boundaries draw as a wide band with a light core over a smoothed line" states:
 
 - the **zoom fade**, read once for the frame from the camera's distance to the cursor: 1 at
   20,000 light years and below, falling on a smooth step to 0 at **30,000** and above;
@@ -1497,44 +1573,52 @@ user sees at those zooms.
 #### Scenario: A label and the line beside it read at the same strength
 
 - **WHEN** the browser test opens `#c=0,0,0&d=18000&p=35&y=0` at **1920x1080**, reads a
-  region label's
-  opacity and the range `r` from the camera to that label's own plane anchor, then takes a
-  cross-section across a boundary band whose own plane point is within **100** light years of
-  `r`, and reads the **greatest** alpha of that cross-section
-- **THEN** the label's opacity and the band's alpha divided by the band's own opacity of
-  0.55 agree within **0.05**, so the name and the line at the same distance carry the same
+  region label's opacity and the range `r` from the camera to that label's own plane
+  anchor, then reads every pixel of the frame whose own plane point is within **100** light
+  years of `r`, turns each one into an alpha through the band's **core** tone, keeps the
+  pixels whose background reads under **0.5** of luminance, and takes the **greatest** of
+  those alphas
+- **THEN** the label's opacity and that alpha divided by the band's own opacity of **0.62**
+  agree within **0.05**, so the name and the line at the same distance carry the same
   strength.
 
   The reading is taken on a line at the anchor's range and **not** at the anchor itself. An
   anchor sits in the interior of its region, which the box rule pushes away from the edge, so
   the coverage at the anchor's own pixel is 0 and there is no band alpha to read there.
 
-  **Why the greatest alpha of a cross-section, and not a pixel chosen by its distance from
-  the centre.** The alpha is `smoothstep(0, 1, max(0, 1 - gap / halfWidth))`, which with
-  `u = gap / halfWidth` is `1 - 3u**2 + 2u**3`. It reads exactly 1 only at `u = 0`, and it
-  falls away faster than a reader expects: at a tenth of the half width it is already
-  **0.972**, a departure of 0.028. The greatest alpha of a cross-section is the pixel nearest
-  the centre, which is within half a device pixel of it. At 1,080 CSS rows and a device pixel
-  ratio of 1 the half width is 17.28 device pixels, so `u` is at most 0.029 and the departure
-  at most **0.0025**. A higher ratio makes `u` smaller, so a ratio of 1 is the worst case.
+  **Why the core tone, and why the greatest reading.** The band draws in two tones and the
+  reading turns a pixel into an alpha through one of them. The greatest reading sits at the
+  middle of a line, where the tone is the **core** one, so the core tone is the one to read
+  it through. The profile alpha there is exactly **1**, because the top of the band is flat,
+  so the reading is `opacity * rangeFade * zoomFade` exactly and the label's opacity is the
+  product of the same two fades. A pixel of the outer part reads
+  `alpha * (outer - background) / (core - background)`, which is below the core's reading
+  over a background darker than both tones.
 
-  The viewport is the other way about, because the half width follows it: at 720 CSS rows the
-  half width is 11.52 and the departure 0.0055, and at the clamp floor of 8 it is 0.0112. The
-  scenario names 1920x1080, and at the worst viewport the map supports the sum below reads
-  0.033 against the same bound of 0.05, so the reading holds everywhere.
+  **Why the background bound of 0.5.** Over a background **brighter** than both tones both
+  rooms are negative and that ratio turns above 1, so a pixel of the outer part would read
+  above a pixel of the core and the greatest reading would carry the wrong tone. The two
+  tone luminances are 0.581 and 0.794, so a bound of 0.5 keeps every pixel that is read
+  below both. It also holds the room at 0.294 or more, well clear of the 0.05 floor the
+  reading already carries for a background near the tone. The test SHALL fail if the window
+  holds no pixel under the bound.
 
-  **The 0.05 bound and what it has to carry.** Three terms, each at its worst:
+  **The 0.05 bound and what it has to carry.** Two terms, each at its worst:
 
   | source | worst cost |
   | --- | --- |
-  | reading the nearest pixel rather than the exact centre | 0.0025 |
   | the 100 light year range window, at a slope of `1.5 / 10,000` a light year | 0.015 |
-  | 8-bit quantisation of the band's alpha, `1 / 255 / 0.55` | 0.007 |
-  | **sum** | **0.025** |
+  | 8-bit quantisation of the band's alpha, `1 / 255 / 0.62` | 0.006 |
+  | **sum** | **0.021** |
 
-  That leaves half the bound for the projection of the anchor and the plane point under the
-  pixel. A window of 200 light years would cost 0.030 on its own and take the sum past 0.04,
-  which is why the window is 100
+  The ridge profile carried a third term of **0.0025**, for reading the pixel nearest the
+  middle of the line rather than the middle itself: its alpha reached 1 at one line of
+  pixels and fell away as `1 - 3u**2 + 2u**3`. The flat top takes that term to 0. The core's
+  own flat part is `0.5 * halfWidth - 3` CSS pixels wide, which is **5.6** at 1,080 CSS
+  rows, so a pixel carries the full core tone wherever the pixel grid falls across the line,
+  at every viewport and every device pixel ratio. That leaves more than half the bound for
+  the projection of the anchor and the plane point under the pixel. A window of 200 light
+  years would cost 0.030 on its own, which is why the window is 100
 
 #### Scenario: No label where no line draws
 
@@ -1889,7 +1973,6 @@ user sees at those zooms.
   4,000 the top corner ray meets the plane at 6,243 light years, under the floor, so the
   range half closes. At 60,000 light years the plane runs out to about 395,000, so the range
   half is open and the **zoom** half closes it. A gate on either half alone lets one of these
-  two through
 
 ### Requirement: The region overlay has three modes and starts on the traced set
 
@@ -1901,7 +1984,8 @@ The map SHALL expose a region mode with exactly three values: `off`, `simplified
 - `accurate` SHALL draw the **traced set**, which the terminology note below separates from
   the traced boundary the trace finds. It SHALL place the same labels
   `simplified` places, and both SHALL draw through the same pass at the same width, which
-  the requirement "The boundaries draw as one wide soft band over a smoothed line" states.
+  the requirement
+  "The boundaries draw as a wide band with a light core over a smoothed line" states.
 
 **The default was `simplified`.** Both sets are smoothed and both stay inside one cell of
 the data, so the choice between them is no longer accuracy against smoothness. It is

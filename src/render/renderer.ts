@@ -590,11 +590,9 @@ export function createRenderer(
         pixelRatio,
         bounds: galaxyModel.bounds,
         band,
-        // A level that carries no number reaches the lesser of its own 100 lines and
-        // the share of the camera distance the zoom bound gives, so the dense lattice
-        // marks a neighbourhood of the cursor at every zoom. The numbered level is
-        // exempt, which is why the rule reads the same figures `gridLabelLevel` does.
-        reach: gridReachPerLevel(focalCss, view.distance, gridReach),
+        // Every level reaches 100 of its own lines each side of the cursor and no
+        // further, so the reach of a level follows the level and never the zoom.
+        reach: gridReachPerLevel(gridReach),
         background: backgroundPass.texture,
       });
     } else {

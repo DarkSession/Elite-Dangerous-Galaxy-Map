@@ -38,14 +38,19 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * The page chunk measured 108,194 bytes when this test was written, 124,530 bytes after
  * the phase 3 change, 131,090 after the deep zoom change and 152,848 after the flight,
  * markers and grid change. The library entry chunk measured **162,593 bytes** on the
- * first library build and **198,764 bytes** with the cursor marker, the plane overlay and
- * the exact region lookup in, which leaves about 1.2 kB under the bound. The next change
- * that touches the entry chunk must read the bound again. It is larger than the page chunk
- * although it carries no page and
- * externalises `gl-matrix` and `@elite-dangerous-almanac/core`, because Vite compresses
- * and mangles a library build but keeps its whitespace: a host's own bundler minifies it.
+ * first library build, **198,764 bytes** with the cursor marker, the plane overlay and
+ * the exact region lookup in, **199,705 bytes** before the band, grid, number and marker
+ * tuning, and **200,821 bytes** after it. The next change that touches the entry chunk
+ * must read the bound again. It is larger than the page chunk although it carries no page
+ * and externalises `gl-matrix` and `@elite-dangerous-almanac/core`, because Vite
+ * compresses and mangles a library build but keeps its whitespace: a host's own bundler
+ * minifies it.
+ *
+ * The bound rose from 200,000 to 210,000 with the reading of 200,821. The guard still
+ * holds: a chunk that pulled the region cell table in reads over 370,000 bytes, which is
+ * far above either figure.
  */
-const ENTRY_CHUNK_LIMIT = 200_000;
+const ENTRY_CHUNK_LIMIT = 210_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first

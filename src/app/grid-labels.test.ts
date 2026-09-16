@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { cameraPosition, viewProjectionMatrix } from '../camera/projection';
+import { cameraPosition, planePoint, viewProjectionMatrix } from '../camera/projection';
 import type { View } from '../camera/view';
 import {
   GRID_LABEL_MERGE_FLOOR,
@@ -19,6 +19,7 @@ import {
   GRID_LABEL_FONT_MIN_CSS,
   GRID_LABEL_MIN_ALPHA,
   GRID_LABEL_OPACITY,
+  GRID_LABEL_GAP_SHARE,
   GRID_LABEL_REACH,
   GRID_LABEL_SHADOW,
   GRID_LABEL_SPAN,
@@ -178,21 +179,42 @@ describe('the crossing labels', () => {
     }
   });
 
-  test('hold the crossing inside the label quad', () => {
+  test('hold the crossing at the label quad\u2019s own bottom right corner', () => {
+    const view = viewAt([0, 0, 0], 1000);
     const frame = {
-      view: viewAt([0, 0, 0], 1000),
+      view,
       viewport: VIEWPORT,
       bounds: BOUNDS,
       background: null,
       spacingLy: 1000,
     };
+    // The gap is 0.04 of a spacing on each axis, which is 40 light years here.
+    const gap = GRID_LABEL_GAP_SHARE * 1000;
 
-    for (const placement of gridLabelPlacements(frame, measure)) {
-      const box = placement.placed.box;
-      expect(placement.x).toBeGreaterThanOrEqual(box.left - 1e-6);
-      expect(placement.x).toBeLessThanOrEqual(box.left + box.width + 1e-6);
-      expect(placement.y).toBeGreaterThanOrEqual(box.top - 1e-6);
-      expect(placement.y).toBeLessThanOrEqual(box.top + box.height + 1e-6);
+    const placed = gridLabelPlacements(frame, measure);
+    expect(placed.length).toBeGreaterThan(0);
+    for (const placement of placed) {
+      const numbers = numbersOf(placement.text);
+      const crossingX = numbers[0] as number;
+      const crossingZ = numbers[2] as number;
+      // The four game corners of the placed quad, read back from its screen corners.
+      const corners = placement.placed.corners.map((point) =>
+        planePoint(view, point, VIEWPORT, view.cursor[1]),
+      );
+      for (const corner of corners) expect(corner).not.toBeNull();
+      // The third corner is the element's own bottom right one, which sits at the
+      // crossing less the gap on `x` and plus the gap on `z`. A wrong sign on either
+      // axis fails here and not on the distance alone.
+      const bottomRight = corners[2] as [number, number, number];
+      expect(bottomRight[0]).toBeCloseTo(crossingX - gap, 3);
+      expect(bottomRight[2]).toBeCloseTo(crossingZ + gap, 3);
+      // Every corner lies toward `-x` and `+z` of the crossing, so neither line runs
+      // under a digit.
+      for (const corner of corners) {
+        const point = corner as [number, number, number];
+        expect(point[0]).toBeLessThan(crossingX);
+        expect(point[2]).toBeGreaterThan(crossingZ);
+      }
     }
   });
 
@@ -253,15 +275,16 @@ describe('the crossing labels', () => {
 });
 
 describe('the reach fade', () => {
-  test('falls to 0 at 1.2 spacings', () => {
-    expect(GRID_LABEL_REACH).toBe(1.2);
+  test('falls to 0 at 2 spacings', () => {
+    expect(GRID_LABEL_REACH).toBe(2);
     expect(gridLabelReach(0, 100)).toBeCloseTo(1, 9);
     // The reading this change is specified against.
-    expect(gridLabelReach(90, 100)).toBeCloseTo(0.25, 9);
-    expect(gridLabelReach(120, 100)).toBe(0);
+    expect(gridLabelReach(90, 100)).toBeCloseTo(0.55, 9);
     expect(gridLabelReach(200, 100)).toBe(0);
-    // A cursor at the middle of a cell sits 0.707 spacings from all four corners.
-    expect(gridLabelReach(70.71, 100)).toBeGreaterThan(0.4);
+    expect(gridLabelReach(240, 100)).toBe(0);
+    // The furthest corner of the cell the cursor sits in is 1.41 spacings away, so it
+    // draws at an opacity of at least 0.29.
+    expect(gridLabelReach(141.4, 100)).toBeGreaterThan(0.29);
   });
 
   test('takes every crossing past the reach out of the frame', () => {
@@ -300,15 +323,12 @@ describe('the label size on the plane', () => {
     // At a width share of 0.6 the width bound is the lesser one for every text a
     // crossing carries.
     const wide = measure('-10,000 : -600 : -10,000');
-    const byWidth =
-      (1000 * GRID_LABEL_WIDTH_SHARE * wide.capPerEm) / wide.widthPerEm;
+    const byWidth = (1000 * GRID_LABEL_WIDTH_SHARE * wide.capPerEm) / wide.widthPerEm;
     expect(byWidth).toBeLessThan(1000 * GRID_LABEL_CAP_SHARE);
     expect(gridLabelCapHeightLy(1000, wide)).toBeCloseTo(byWidth, 9);
 
     const short = measure('0 : 0 : 0');
-    expect(gridLabelCapHeightLy(1000, short)).toBeLessThan(
-      1000 * GRID_LABEL_CAP_SHARE,
-    );
+    expect(gridLabelCapHeightLy(1000, short)).toBeLessThan(1000 * GRID_LABEL_CAP_SHARE);
 
     // Only a text narrower than six cap heights reaches the one tenth ceiling, which no
     // crossing label is. The ceiling is a guard and not the rule that sets the size.
@@ -684,6 +704,32 @@ describe('the label overlay', () => {
 
     const second = made.reduce((sum, element) => sum + element.writes.length, 0);
     expect(second).toBe(0);
+  });
+
+  test('reads the background at the centre of its own box', () => {
+    const { host } = fakeHost();
+    const overlay = createGridLabelOverlay(host);
+    // Two columns: the left one dark and the right one bright. The crossing at the
+    // cursor projects to the middle of the frame, which is the right column, and the
+    // label's own box sits to the left of it, in the dark column.
+    const reading: GridLabelReading = {
+      width: 2,
+      height: 1,
+      pixels: Uint8Array.from([0, 0, 0, 255, 255, 255, 255, 255]),
+    };
+
+    overlay.update({
+      view: viewAt([0, 0, 0], 1000),
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      background: reading,
+      spacingLy: 1000,
+    });
+
+    const first = overlay.readings()[0] as ReturnType<typeof overlay.readings>[number];
+    expect(first.text).toBe('0 : 0 : 0');
+    // The dark column leaves the whole opacity. The bright one would give 0.75 of it.
+    expect(first.opacity).toBeCloseTo(GRID_LABEL_OPACITY, 6);
   });
 
   test('carries a soft dark shadow and no pure black', () => {

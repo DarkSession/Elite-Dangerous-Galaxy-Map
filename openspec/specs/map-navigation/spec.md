@@ -636,13 +636,32 @@ the map uses everywhere its luminance is **0.818**, above every part of the fram
 core itself.
 
 **The size.** The box SHALL be square on the plane, and its side SHALL be the light years
-that **96 CSS pixels** cover along the screen's horizontal at the cursor. The ring is
-therefore about 58 CSS pixels across and the arrow tips about 90 CSS pixels apart at every
-zoom, so the marker holds its size on the screen while the map moves under it.
+that the **box size on the screen** covers along the screen's horizontal at the cursor. The
+ring measures 0.6 of the box and the arrow tips 0.94 of it, so both follow that one size.
+
+**The box size on the screen SHALL follow the camera's distance to the cursor.** Let `d` be
+that distance in light years. The size SHALL be `96 - 56 * smoothstep(12000, 60000, d)` CSS
+pixels, which is:
+
+| `d` light years | Box CSS pixels | Ring CSS pixels |
+| --------------- | -------------- | --------------- |
+| 12,000 and less | 96             | 58              |
+| 30,000          | 78.3           | 47              |
+| 60,000 and more | 40             | 24              |
 
 The size is read on the screen and not fixed in light years because the marker is a control
 and not a place: a fixed size in light years would fill the frame at a close zoom and vanish
 at a wide one.
+
+**One size at every zoom is wrong at the wide end.** The marker held 96 CSS pixels from the
+closest zoom to the furthest. At the start view of 60,000 light years the galaxy disc
+measures about 1,000 CSS pixels across a 1,080 row frame, so the marker covered about a
+tenth of it and read as a thing of the map rather than as the cursor.
+
+The near end of the band is **12,000** light years, which is where the coordinate grid goes
+out. The marker therefore holds its full size through every view the grid draws in, and
+shrinks only in the views that show the galaxy whole. The floor of **40** CSS pixels holds
+the ring at 24 CSS pixels across, which is still a mark a user can find and tap.
 
 **When it draws.** The marker SHALL draw in every frame the map draws, and SHALL be dropped
 only by the rules `plane-overlay` states, which is a cursor behind the near plane or off the
@@ -679,7 +698,14 @@ those names one thing and the cursor names a place.
 - **WHEN** the browser test reads the width of the ring's screen bounding box at a pitch of
   89 degrees at zooms of 100, 1,000 and 10,000 light years
 - **THEN** each reading is **58** CSS pixels within 3, so the marker does not follow the
-  zoom
+  zoom inside the near end of the size band, which every one of the three zooms sits in
+
+#### Scenario: The marker shrinks as the camera pulls back
+
+- **WHEN** the browser test reads the width of the ring's screen bounding box at a pitch of
+  89 degrees at the camera distances 12,000, 30,000, 60,000 and 120,000 light years
+- **THEN** the four readings are **58**, **47**, **24** and **24** CSS pixels within 3, so
+  the marker falls across the band and holds its floor beyond it
 
 #### Scenario: The marker follows the cursor off the plane
 

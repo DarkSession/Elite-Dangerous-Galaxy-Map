@@ -6,7 +6,7 @@ grid stays readable from 10 light years to 120,000.
 
 ## Requirements
 
-### Requirement: The grid draws every decade level on the cursor's plane
+### Requirement: The grid draws every decade level to its own reach on the cursor's plane
 
 The map SHALL draw a set of lines on a plane of constant `y` in game coordinates. The
 lines SHALL run along the `x` and the `z` axes of the game frame, so a line of the grid
@@ -50,63 +50,40 @@ on the plane. A level therefore reaches 100 of its own lines each side of the cu
 no further, so the 10 light year level covers 1,000 light years and the 1,000 light year
 level covers 100,000.
 
-**A level that carries no number takes a reach that follows the zoom instead, where that is
-the smaller.** The reach of such a level SHALL be the **lesser** of its own `100 * s` and
-`0.4 * d` light years, where `d` is the camera's distance to the cursor, and its alpha SHALL
-be multiplied by the single ramp `clamp(1 - r / reach, 0, 1)`. The two are not multiplied
-together: both are the ramp `1 - r / reach`, so the lesser of the two fades is exactly the
-fade of the lesser of the two reaches, and a product would fade a line well before either
-reach ended.
+**That reach is the only reach a level takes.** A level that carried no number took the
+lesser of its own `100 * s` and `0.4 * d`, where `d` is the camera's distance to the
+cursor. That second bound SHALL go. Every level, numbered or not, SHALL take
+`clamp(1 - r / (100 * s), 0, 1)` and nothing else, so the reach of a level follows the
+level and never the zoom.
 
-The sentence above about 100 of a level's own lines therefore states the reach of the
-numbered level, and the ceiling of every other level's.
+The zoom bound drew the fine levels inside a disc of 0.346 of the viewport height about the
+cursor, 374 CSS pixels on 1,080 rows, and left the numbered level alone outside it. The
+frame then read as a patch of lattice around the cursor inside a coarse grid, and a user
+who moved the cursor moved the patch with it. A grid that stops a few hundred pixels from
+the cursor is not a grid of the map.
 
-**The level that carries the numbers SHALL be exempt**, and SHALL keep its own reach of 100
-lines. The requirement "The grid carries coordinate labels on its own plane" names that level
-and gives a crossing a label only within 1.2 of its spacings. A label has to sit on a lit
-line, and the numbered level is picked so that its crossings are far apart: at a camera
-distance of 1,000 light years the numbers sit on the 1,000 light year level, a cursor at the
-middle of a cell is 707 light years from its nearest crossing, and a reach of `0.4 * d` is
-400, so `0.4 * d` first reaches 707 at a camera distance of 1,768 light years. Cutting that
-level would leave the frame with lines and no numbers from **234** light years, where the
-numbered level becomes 1,000, to **1,768**; and again below **177**, where the numbers sit on
-the 100 light year level and `0.4 * d` falls under the 70.7 light years a cursor can sit from
-its nearest crossing of it.
+The lattice therefore runs to the edge of the frame again wherever its own reach and its
+screen spacing allow. Two rules bound it: a level draws nothing below a screen spacing of 8
+CSS pixels, which takes every level that would read as a wash, and a level stops at 100 of
+its own lines. At a camera distance of 4,000 light years and 1,080 CSS rows the 100 light
+year level measures 23.4 CSS pixels at the cursor and draws at an alpha of 0.09, and the 10
+light year level measures 2.3 and draws nothing.
 
-The numbered level is 100 or 1,000 light years and never more, so it is **not** the coarsest
-level on the screen and every level above it is cut like every other. Cutting every level
-but the numbered one still takes the dense lattice away, which is the whole of what reads as
-a lattice. At a camera distance of 4,000 light years the numbered level is 1,000 light years
-and its crossings sit 233.8 CSS pixels apart, so it carries about 8 lines across a 1,920 CSS
-pixel frame, against the 100 light year level's 82, which the reach cuts to 32 inside the
-disc.
+**At a shallow pitch those two rules leave the lattice running to the frame edge, and that
+is accepted.** The shader reads the screen spacing **per axis** from the fragment
+derivatives, so the two line families of one level end at different places. At a camera
+distance of 4,000 light years, a pitch of 45 degrees and 1,080 CSS rows, the top of the
+frame sits 7,727 light years beyond the cursor, inside the 100 light year level's own reach
+of 10,000. The lines of constant depth fall under 8 CSS pixels 76 per cent of the way up
+the frame; the lines that run toward the horizon are still 9.9 CSS pixels apart at the top
+row and the 8 CSS pixel cut never ends them. Half of that lattice therefore reaches the
+frame edge.
 
-**The exemption puts one step in the reach**, at the camera distance where the numbered level
-changes. That is 233.8 light years at 1,080 CSS rows. Below it the numbers sit on the 100
-light year level, which is then exempt and reaches 10,000 light years; above it they sit on
-the 1,000 light year level and the 100 light year level is cut to `0.4 * d`, which is 93.5
-light years there. Crossing that zoom downward, the 100 light year lines outside the reach
-disc appear in one frame. The frame holds about one and a half of that level's cells between
-the disc and its own edge **across** the frame at that zoom, and about three and a half **up**
-the frame at a pitch of 45, so the step is a few lines and not a lattice, and the lines it
-brings are the ones that were already inside the frame. It is accepted rather than
-smoothed, because a level that fades in over a zoom band would put a second band beside the
-camera distance band and give the grid two things to do at once.
-
-The zoom reach is a **fixed size on the screen**. A disc of radius `0.4 * d` light years
-around the cursor projects to `0.4 * focalCss` CSS pixels at the cursor's own range, and
-`focalCss` is `rows / (2 tan 30)`, so the radius is **0.346 of the viewport height** whatever
-the viewport and whatever the zoom: 374 CSS pixels on 1,080 rows. Every level below the
-numbered one therefore marks the same neighbourhood of the cursor at every zoom.
-
-Without this bound every level that draws runs past the frame. The grid draws only while the
-camera is nearer than 12,000 light years, which the band below states, and at the near end of
-that band, a camera distance of 4,000 light years and a pitch of 45 degrees, the top of the
-frame sits **7,727 light years** beyond the cursor. The field of view is 60 degrees vertically
-whatever the viewport, so the row count is not part of that figure. The 100 light year level
-reaches 10,000 there and the 1,000 light year level reaches 100,000, so both cover the whole
-frame. At a pitch of 5 degrees the top ray of the frame runs 25 degrees above the horizontal,
-the frame holds the horizon, and no per-level reach ever ends inside it.
+That is the reading the zoom bound was added for, and it is the behaviour the owner asks
+for now. A grid that stops a few hundred CSS pixels from the cursor is the worse of the two
+faults: it reads as a hole in the frame, while a lattice that runs on reads as a grid that
+is simply fine. The perspective fade still takes the family that closes up, and the camera
+distance band still takes the whole grid at 12,000 light years.
 
 **The grid fades in as the camera comes near.** The alpha of every level SHALL be
 multiplied by a band over the camera's distance to the cursor: 0 at **12,000** light years
@@ -131,7 +108,8 @@ over a brighter one.
 
 The grid drew in `rgb(255, 154, 60)`, an orange. Two things in the frame are warm: the
 galactic core, whose tone-mapped luminance reaches about 0.93, and the region boundary
-band, whose tone is `(0.86, 0.74, 0.60)`. An orange grid had to be told from both by
+band, whose two tones are `(0.74, 0.55, 0.43)` and `(0.90, 0.79, 0.52)`, of luminance 0.581
+and 0.794. An orange grid had to be told from both by
 brightness alone, and over the core it could not be. A cyan grid is told from both by hue
 at any brightness, and it is the only cool line the map draws.
 
@@ -207,87 +185,37 @@ whose `x` or whose `z` lies outside the bounds carries no line.
   with the grid switch on, and reads it again with the switch off
 - **THEN** the two frames hold the same pixels
 
-#### Scenario: A level fades out at the zoom reach
+#### Scenario: The lattice runs to the edge of the frame
 
-- **WHEN** a unit test reads the fade of the **10,000 light year** level at a camera distance
-  of 4,000 light years, at 0, 800 and 1,600 light years from the cursor on the plane, where
-  the numbered level is 1,000 light years
-- **THEN** the readings are 1, 0.5 and 0, so the reach is 1,600 light years, which is
-  `0.4 * 4000`. The level is named because the reading holds only for a level the zoom bound
-  binds: the 10,000 light year level's own reach is 1,000,000 light years, far above 1,600,
-  and it is not the numbered level, so it is not exempt
+- **WHEN** the browser test turns the grid on at **1920x1080** at a pitch of 89 degrees at
+  a camera distance of **4,000** light years, where the numbered level is 1,000 light
+  years, and measures in CSS pixels the largest radius about the cursor at which the
+  **100 light year** level lights any pixel of the frame
+- **THEN** the radius is above **900** CSS pixels, which is past the 374 the zoom bound
+  ended at and near the 1,101 CSS pixels from the middle of that frame to its corner.
 
-#### Scenario: The reach is the lesser of the two
+  The level's own reach is 10,000 light years, and at that pitch and that distance the frame
+  holds plane points out to about 2,330 light years at the middle of its top row and further
+  at its corners, all inside the reach, so the reach ends outside the frame and the level
+  draws over the whole of it
 
-- **WHEN** a unit test reads the combined fade of the 100 light year level at a camera
-  distance of 4,000 light years, at 1,000 light years from the cursor, where the numbered
-  level is 1,000 light years and the 100 light year level is therefore not exempt
-- **THEN** the reading is 0.375, which is the zoom fade at that distance, because the zoom
-  reach of 1,600 light years is below the level's own 10,000. It is not the product of the
-  two fades, which is 0.338
+#### Scenario: The lattice draws past the old zoom bound at a shallow pitch
 
-#### Scenario: The level's own reach still binds where it is the smaller
+- **WHEN** the browser test turns the grid on at **1920x1080** at a pitch of **45 degrees**
+  at a camera distance of **4,000** light years, and reads the middle column of the
+  **bottom row** of the frame for a line of the **100 light year** level
+- **THEN** the level lights pixels in that row.
 
-- **WHEN** a unit test reads the combined fade of the 10 light year level at a camera
-  distance of 4,000 light years, at 500 light years from the cursor
-- **THEN** the reading is 0.5, which is the level's own reach of 1,000 light years and not
-  the zoom reach of 1,600
+  The plane point under the middle of the bottom row is **2,070 light years** from the
+  cursor, on the camera's own side of it: the camera sits 2,828 light years above the plane
+  and 2,828 behind the cursor, and the bottom row looks 75 degrees below the horizontal,
+  which meets the plane 758 light years from the point below the camera. The zoom bound of
+  `0.4 * d` reached 1,600 light years, so it drew nothing in that row. The level's own reach
+  of 10,000 light years keeps it, and the range there gives a screen spacing of 31.9 CSS
+  pixels, which draws at an alpha of 0.16.
 
-#### Scenario: The numbered level keeps its own reach
-
-- **WHEN** a unit test reads, at **1,080 CSS rows**, the combined fade of the numbered level
-  at a camera distance of 4,000 light years, at 1,000 light years from the cursor, and reads
-  the numbered level itself at the camera distances 200 and 4,000 light years
-- **THEN** the numbered level is 100 light years at 200 and 1,000 light years at 4,000, and
-  its fade at 1,000 light years from the cursor is 0.99, which is its own reach of 100,000
-  light years and not the zoom reach of 1,600
-
-#### Scenario: The lattice marks the same part of the frame at every zoom
-
-- **WHEN** the browser test turns the grid on at **1920x1080** at a pitch of 89 degrees, at
-  the camera distances 500, 1,000 and 2,000 light years, where the numbered level is 1,000
-  light years at all three, and measures in CSS pixels the **largest** radius about the cursor
-  at which the 100 light year level lights any pixel of the frame
-- **THEN** the three radii are within 20 CSS pixels of each other, and each is below 374 CSS
-  pixels, which is where the ramp reaches 0, by the distance over which the ramp falls under
-  one 8-bit step. On the pinned package they read **367.5**, **361.9** and **360.6** CSS
-  pixels, a spread of 6.9 and each 6.5 to 13.4 short of the 374 the ramp ends at.
-
-  The reading SHALL be the largest radius anywhere in the frame and NOT the radius along the
-  row through the cursor. The row reading is quantised by the level's own line spacing, which
-  runs from 187 CSS pixels at a camera distance of 500 light years down to 47 at 2,000, so at
-  the near zoom it can fall short by nearly a whole 187 and would fail a bound of 20 that the
-  behaviour itself holds
-
-#### Scenario: The lattice stops at its reach and the numbered level goes on
-
-- **WHEN** the browser test turns the grid on at **1920x1080** at a camera distance of 4,000
-  light years, at a yaw of **30 degrees**, with the cursor **50 light years** off a crossing
-  of the 100 light year level on both axes, at each of the pitches 45, 60 and 89 degrees,
-  samples the **row** through the middle of the frame, and counts the grid lines it crosses
-  between the cursor and 1,600 light years out, and between 1,600 and 3,200 light years out
-- **THEN** at every one of the three pitches the count of lines for each 1,000 light years
-  falls by at least a factor of **5** between the two bands, and every line the second band
-  carries belongs to the numbered level. On the pinned package the inner band carries **34**,
-  **35** and **36** lines at the pitches 45, 60 and 89 and the outer band carries **4** at all
-  three, which is **10.6**, **10.9** and **11.3** lines for each 1,000 light years against
-  **1.25**, a fall by a factor of 8.5 to 9.0. No line of the outer band sits off the numbered
-  level at any of the three pitches.
-
-  The row and not the column, and 45 degrees and not 5. At a pitch of 5 the horizon sits 82
-  CSS pixels above the middle of the frame, the whole 3,200 light year run compresses into 36
-  CSS pixels, and the 100 light year level's spacing along the depth axis is **2.1** CSS
-  pixels, under the 8 at which a level's alpha reaches 0. A column at that pitch therefore
-  counts lines that are not drawn, and reads the same with this change and without it.
-
-  The viewport, the yaw and the cursor offset are all premises. At 4:3 the 3,200 light year
-  mark falls outside the frame at a pitch of 45, so the second band has nothing to count. At a
-  yaw of 0 the row through the middle of the frame runs along one axis of the grid, so it lies
-  on a line of constant `z` and crosses none of that family; the yaw of 30 degrees makes it
-  cross both families. The cursor offset keeps the row itself off a line.
-
-  Without the zoom reach both bands carry the same count, so the ratio is 1 and the scenario
-  fails.
+  This scenario reads the near side of the frame and the one above it reads the far side, so
+  the two together hold the lattice over the whole frame at both ends of the pitch range
 
 ### Requirement: The grid draws in one call of three vertices
 
@@ -492,20 +420,24 @@ pixel saturation, so its screen fade holds at 1 and the band alone moves it.
 The grid's vertex count is fixed at 3, but its fill is not: at a pitch of 5 degrees, which
 is the shallowest the camera reaches, the numbered level crosses the whole frame and reaches
 toward the horizon, and the shader tests all six levels at every fragment whatever their
-reach. The cost that has to be measured is therefore the fill and not the vertex count, and
-the zoom reach does not lower it. The reach cuts what a level **draws**, not what the shader
-**reads**: the loop over the six levels runs for each fragment either way, and a level the
-reach has cut still costs its own spacing, its own derivative and its ramps. The
-readings below therefore SHALL NOT move because of the zoom reach, and a reading that falls
-is a reading of something else.
+reach. The cost that has to be measured is therefore the fill and not the vertex count.
 
-Measured with the reach in place over three runs, the grid adds **0.05 to 0.14 milliseconds**
-at a pitch of 5 degrees and **0.05 to 0.08** at 89, against the 1 millisecond bound. The
-reading is stated as a range on purpose: the run-to-run spread of one build is about
-0.09 milliseconds at the shallow pitch, which is larger than the whole of what the grid costs,
-so a single figure here claims a precision the instrument does not have and two runs would
-disagree with it. Nothing smaller than that spread can be read from this scenario, and the
-zoom reach is expected to move the cost by nothing at all.
+**A reach cuts what a level draws, not what the shader reads.** The loop over the six
+levels runs for each fragment whatever the reaches are, and a level a reach has cut still
+costs its own spacing, its own derivative and its ramps. A level the reach has **kept**
+costs one blend more, which is a write and not a read, so the reading below is the reading
+of the fill either way.
+
+Measured over three runs with every level drawing to its own reach, the grid adds
+**-0.07 to 0.27 milliseconds** at a pitch of 5 degrees and **-0.07 to 0.15** at 89, against
+the 1 millisecond bound. The reading is stated as a range on purpose: the run-to-run spread
+of one build is larger than the whole of what the grid costs, so a single figure here claims
+a precision the instrument does not have and two runs would disagree with it. A negative
+reading is a run in which the frame with the grid was the faster of the two, which is what a
+cost under the spread looks like. Nothing smaller than that spread can be read from this
+scenario. With the zoom reach of `0.4 * d` still in place the same three runs read **0.05 to
+0.14 milliseconds** at 5 degrees and **0.05 to 0.08** at 89, so taking the reach off lights
+more pixels of the frame and moves the reading by less than the spread.
 
 The grid now carries a second pass as well. The background reading averages the scene down
 to a sixteenth of the frame on each axis, and the requirement "The frame carries a
@@ -607,8 +539,8 @@ marker pass, and SHALL blend over the frame with alpha and no depth test. A regi
 boundary and a marker therefore draw over a grid line, and the grid adds no light the tone
 map reads.
 
-The look is the level rule of the requirement "The grid draws every decade level on the
-cursor's plane": the colour `rgb(96, 214, 224)`, a width from 1.0 to 2.6 CSS pixels and an
+The look is the level rule of the requirement "The grid draws every decade level to its
+own reach on the cursor's plane": the colour `rgb(96, 214, 224)`, a width from 1.0 to 2.6 CSS pixels and an
 alpha from 0 to 0.45, each following the level's spacing on the screen.
 
 The alphas are about twice the ones the grid drew with before the change that set them,
@@ -676,7 +608,7 @@ centre is not one pixel wide in one column and two in the next.
   the **comparison**, which is the nearest pixel that carries the same grid contribution
   within a tenth and no boundary contribution at all
 - **THEN** the grid's contribution at the crossing, which is the frame with both overlays less
-  the frame with the boundary alone, is between **0.30 and 0.75** of the grid's contribution at
+  the frame with the boundary alone, is between **0.25 and 0.70** of the grid's contribution at
   the comparison pixel, which is the frame with the grid alone less the frame with neither.
   The reading is taken on the channel that carries the largest grid contribution.
 
@@ -688,19 +620,27 @@ centre is not one pixel wide in one column and two in the next.
   boundary draws in full.
 
   The scenario reads the **order** and nothing else. The boundary draws after the grid at an
-  alpha of `0.55` times its own coverage alpha: the zoom fade is 1 at 8,000 light years and the
-  range fade is 1 beyond 20,000, so neither fade takes any of it. Where the coverage alpha is 1 the boundary keeps `1 - 0.55`, that is 0.45, of whatever
+  alpha of `0.62` times its own profile alpha: the zoom fade is 1 at 8,000 light years and the
+  range fade is 1 beyond 20,000, so neither fade takes any of it. Where the profile alpha is
+  1 the boundary keeps `1 - 0.62`, that is **0.38**, of whatever
   the grid put down under it. If the grid drew last, the grid's contribution would be the same
-  at both pixels and the ratio would be 1. The band is wide because the boundary's own alpha at
-  the crossing is not always its largest, and because the background moves a little between the
-  two pixels; it is narrow enough that the wrong order cannot pass.
+  at both pixels and the ratio would be 1. The band is wide because the background moves a
+  little between the two pixels, and because a crossing pixel near the edge of the band
+  carries less than the full profile alpha; it is narrow enough that the wrong order cannot
+  pass.
 
-  **The measured ratio is 0.40.** The view the test finds holds 35 rows whose plane point is
-  beyond 20,000 light years, the reading falls on the blue channel, and the grid moves that
-  channel by 2 of 255 at the crossing against 5 at the comparison pixel. The band above is
-  the bound the reading must fall inside, and 0.45 is the figure the rule gives at full
-  coverage: the crossing pixel does not carry the boundary's full coverage alpha, so the
-  measured ratio sits a little under it.
+  **0.38 is the figure the rule gives at full profile alpha, and the flat top makes that the
+  common case.** The band's top is flat from its middle out to `halfWidth - edge`, so a
+  crossing pixel anywhere but in the 4 CSS pixel edge reads the full alpha. Against the ridge
+  profile, which reached its tone at one line of pixels, the same scenario measured **0.40**
+  against a figure of 0.45: the view the test finds holds 35 rows whose plane point is beyond
+  20,000 light years, the reading falls on the blue channel, and the grid moved that channel
+  by 2 of 255 at the crossing against 5 at the comparison pixel. That reading belongs to the
+  ridge profile and to the opacity of 0.55, and a build that draws the flat top at 0.62
+  states its own reading in its place. The flat top reads **0.367**: the view the test finds
+  holds 35 rows whose plane point is beyond 20,000 light years, the reading falls on the red
+  channel, and the grid moved that channel by 11 of 255 at the crossing against 30 at the
+  comparison pixel.
 
   An earlier form of this scenario compared the crossing pixel's distance to the two frames.
   That reading does not hold the order: it puts the grid's contribution on one side and the
@@ -838,7 +778,7 @@ reading a user acts on.
 **Two levels leave a band with few numbers, and that is accepted.** From a zoom of about 300
 to about 900 light years the level is 1,000 light years, whose crossings sit further apart
 than the frame is wide, so a cursor away from a crossing sees no coordinate label at all. The
-reach rule below would take those labels anyway: a crossing more than 1,200 light years from
+reach rule below would take those labels anyway: a crossing more than 2,000 light years from
 the cursor carries no label whatever level it is on. Adding the 10,000 light year level would
 not fill the band either, because its crossings are ten times further apart again. The map
 shows the grid lines there and no numbers, and the HUD's information panel names a position
@@ -861,26 +801,67 @@ leaves the number clearly inside the cell it names. The placement SHALL
 measure the text once per level, as the region labels measure each name once, and SHALL set
 the height from that measurement rather than from a character count.
 
+**A label SHALL stand clear of the two lines it names.** The label's rectangle on the plane
+SHALL sit so that the crossing is its **bottom right** corner, less a gap of **0.04** of a
+level spacing on each of the game `x` and the game `z` axes. The label therefore lies in the
+cell above and left of the crossing, in the frame the text itself reads in, and neither of
+the two lines runs under a digit.
+
+The rectangle runs along the game axes, which `plane-overlay` states: its width runs along
+`x`, its height runs along `z`, and its **anchor sits at its middle**. The element's local
+`y` grows **downward along the game `-z` axis**, which is what makes the text read the right
+way round at the default view, so the rectangle's top edge is its `+z` edge and its bottom
+edge is its `-z` edge. Its **bottom right** corner is therefore at
+`(anchor.x + width / 2, anchor.z - height / 2)` in game coordinates.
+
+The anchor the placement gives the overlay SHALL therefore be the crossing **less** half the
+label's width and the gap on `x`, and **plus** half its height and the gap on `z`:
+
+- `anchor.x = crossing.x - width / 2 - gap`
+- `anchor.z = crossing.z + height / 2 + gap`
+
+The two signs are not the same, and the `z` one follows the element's own frame and not the
+game frame. The label then lies toward `-x` and `+z` from the crossing, which is up and to
+the left of it on the screen at the default view.
+
+A label was centred on its crossing, so both lines crossed the text through its middle. A
+number is read against the lines it names, and a line through the middle of a row of digits
+is the one place a reader cannot tell one digit from another.
+
+The gap is 0.04 of a spacing, which is about one cap height: the cap height is the lesser of
+one tenth of the spacing and the height that holds `x : y : z` to 0.6 of a spacing, which is
+about a twenty-third of the spacing. At the 1,000 light year level the gap is 40 light years.
+
+**The reported anchor SHALL stay the crossing.** The reading the page exposes names the
+place the label belongs to, and that place is the crossing and not the middle of the text.
+The background reading the label follows SHALL still be read at the centre of the label's
+**own box**, which now sits off the crossing, because that is the picture the text draws
+over.
+
 **A crossing SHALL carry a label only near the cursor, and its opacity SHALL fall with the
 distance.** Let `d` be the distance on the plane from the cursor to the crossing and `s` the
 level's spacing. Then:
 
-- a crossing with `d` at or above **1.2 s** SHALL carry no label;
-- a crossing with `d` below that SHALL take a reach opacity of `1 - d / (1.2 s)`.
+- a crossing with `d` at or above **2 s** SHALL carry no label;
+- a crossing with `d` below that SHALL take a reach opacity of `1 - d / (2 s)`.
 
 At the 100 light year level a crossing 90 light years from the cursor therefore draws at
-**0.25**, and one at the cursor draws at 1. A user moving the cursor sees the crossing ahead
+**0.55**, and one at the cursor draws at 1. A user moving the cursor sees the crossing ahead
 of them come up as the one behind them goes down, so the numbers follow the cursor rather
 than filling the frame.
 
-The reach is 1.2 spacings and not 1 so that a crossing stays named while the cursor crosses
-the cell beyond it. A cursor at the middle of a cell sits `0.707 s` from **all four** of that
-cell's corners, so a reach of one spacing already names all four, at an opacity of 0.293. What
-one spacing does not do is hold a crossing while the cursor moves the next half cell away
-from it: the label would reach 0 exactly as the cursor reaches the far edge of the next cell,
-and the number would go out at the moment the user is furthest from any other. 1.2 carries it
-through that edge, and it gives the reading this change is specified against, 0.25 at 90
-light years on the 100 light year level.
+**The reach is 2 spacings, so every corner of the cursor's own cell carries a number.** The
+furthest corner of the cell a cursor sits in is `1.41 s` away, at the moment the cursor sits
+on the opposite corner. The reach was 1.2 spacings, which took that corner and left the cell
+named on one side only: a user beside a crossing read numbers behind them and none ahead.
+Two spacings names all four corners wherever the cursor sits in the cell, and it names them
+at an opacity of at least `1 - 1.41 / 2`, which is **0.29**.
+
+The reach is 2 and not more because 2 is what the candidate ring already holds. The ring
+below reads the crossings within 2 spacings of the cursor's own cell on each axis, and a
+crossing three steps out is at least 2 spacings away, so no reach above 2 could name a
+crossing the ring holds. A wider reach would need a wider ring, which is more work in each
+frame for numbers the cap of 8 would drop.
 
 The placement SHALL hold to these bounds:
 
@@ -1025,14 +1006,14 @@ them from the picture alone.
   degrees, puts the cursor 90 light years from a crossing on one axis and level with it on
   the other, draws a frame and reads that label's reach opacity, then moves the cursor onto
   the crossing and reads it again
-- **THEN** the first reading is **0.25** within 0.02 and the second is 1 within 0.02
+- **THEN** the first reading is **0.55** within 0.02 and the second is 1 within 0.02
 
 #### Scenario: No label stands past the reach
 
 - **WHEN** the browser test turns the grid on at the 100 light year level at a pitch of 89
   degrees and reads every crossing label's text and the distance on the plane from the
   cursor to the crossing it names
-- **THEN** every distance is below 120 light years, and at least one label is present
+- **THEN** every distance is below 200 light years, and at least one label is present
 
 #### Scenario: A label is no wider than the cell it names
 
@@ -1042,6 +1023,46 @@ them from the picture alone.
 - **THEN** every label's width is at or below **0.6** of its level's spacing, and at least
   one label is above **0.4** of it, so the rule bounds the label without making it
   unreadably small
+
+#### Scenario: A number stands clear of the lines it names
+
+- **WHEN** the browser test turns the grid on at a pitch of **89 degrees** at a zoom of
+  1,000 light years, draws a frame, and reads the four screen corners of every crossing
+  label and the screen position of the crossing each one names
+- **THEN** no crossing lies inside its own label's quad, each crossing sits within **0.12**
+  of the level's spacing on the screen from the nearest corner of that quad, and that
+  nearest corner is the label's **own bottom right** corner, which is the third of the four
+  corners `plane-overlay` reports, in every label of the frame.
+
+  0.12 is the bound and 0.057 is the reading the rule gives: the gap of 0.04 of a spacing on
+  each axis puts the bottom right corner `0.04 * sqrt(2)` of a spacing from the crossing.
+
+  The corner is named because the offset has a sign on each axis and the wrong sign on
+  either one still clears the lines. A label placed at `+x` or at `-z` from its crossing
+  reads the same distance from it and lies in the wrong cell, and this reading is what tells
+  the two apart. At a pitch of 89 degrees and the default yaw the game `+z` axis runs up the
+  screen and the game `+x` axis runs right, so the bottom right corner of the label is the
+  corner nearest the crossing and the label lies above and left of it
+
+#### Scenario: Every corner of the cursor's own cell carries a number
+
+- **WHEN** the browser test turns the grid on at a pitch of **89 degrees** at a zoom of
+  **200** light years, where the label level is 100 light years, puts the cursor **5 light
+  years** from a crossing on each axis, draws a frame and reads every crossing label's text
+- **THEN** the four crossings of the cell the cursor sits in all carry a label, one in each
+  quadrant about the cursor, and the furthest of the four is **134.4** light years away,
+  which the reach of 200 light years draws at an opacity of **0.33**.
+
+  The offset of 5 light years is what separates the two reaches. The four corners then sit
+  at 7.1, 95.1, 95.1 and 134.4 light years, so the old reach of 1.2 spacings, 120 light
+  years, named three of them and left the quadrant beyond the cursor with no number. An
+  offset of 20 light years would put the furthest corner at 113, inside the old reach as
+  well, and the scenario would pass before the change and after it.
+
+  The cap of 8 holds all four. Eleven of the 25 candidates lie inside the reach, and the
+  four corners of the cursor's own cell are the first, second, third and sixth nearest, so
+  the cap takes none of them. The level draws at its full 0.45 alpha at that zoom, 467 CSS
+  pixels of spacing on the screen, so the alpha gate takes none of them either
 
 #### Scenario: The label count is capped
 
@@ -1113,3 +1134,4 @@ them from the picture alone.
 - **WHEN** a unit test reads the label opacity factor at the drawn alpha a fully bold level
   gives with the band open, which is 0.45, and at the gate of 0.09
 - **THEN** the first factor is 1 and the second is 0.2
+

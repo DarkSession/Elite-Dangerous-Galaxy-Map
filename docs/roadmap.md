@@ -883,6 +883,61 @@ Three faults the owner found while reading the map after phase 5.3.
   it was 0.3768. All ten are re-measured. The lesson is the sweep, not the figures: a
   reading a test prints rather than asserts needs its own task.
 
+## Phase 5.5: the band's two tones, the grid's reach, the numbers and the marker
+
+Change: `tune-region-lines-grid-numbers-and-cursor`. Status: implemented. Four look faults
+the owner found while reading the map after phase 5.4.
+
+- **The boundary band draws in two tones with a flat top.** One coverage channel carries
+  both. The outer tone is `(0.74, 0.55, 0.43)` and the core tone is `(0.90, 0.79, 0.52)`,
+  both at an opacity of **0.62**. The composite reads
+  `alpha = smoothstep(0, uEdgeShare, coverage)` and
+  `tone = mix(uTone, uToneCore, smoothstep(0.75 - uCoreEdge, 0.75 + uCoreEdge, coverage))`,
+  with `uEdgeShare = min(0.25, 4 / halfWidth)` and `uCoreEdge = 1.5 / halfWidth`. The band
+  therefore has a flat top, an edge of `min(4, 0.25 * halfWidth)` CSS pixels and a core over
+  the middle quarter of its width. The half width rule does not move.
+
+  The tones are measured from the owner's reference and not chosen. The core stands
+  **0.213** of luminance above the outer tone, which is 0.132 in the frame at an opacity of
+  0.62 and 34 of 255. The band read at 1,080 rows over the dark space gives the outer
+  plateau at `rgb(123, 92, 76)` and the core at `rgb(148, 130, 90)`, which is a step of
+  0.1315 of luminance.
+
+  The profile and not the width is what the browser readings follow. The width at half
+  maximum is now `2 * halfWidth - edge`, that is **30.6**, **20.2** and **14.0** CSS pixels
+  at 1,080, 720 and 360 rows, against 17.3, 11.5 and 8.0 for the ridge profile that goes.
+  Every such reading takes its reference on the **outer plateau**, at a gap of
+  `halfWidth - edge - 1` CSS pixels, because the peak of a row carries the core tone.
+
+- **The grid's zoom reach is reversed.** Phase 5.4 gave a level the lesser of its own reach
+  and `0.4 * cameraDistance`, which stopped the dense levels at a disc about the cursor and
+  left the frame empty around it. Every level now takes **100 of its own lines** and nothing
+  else, so the lattice runs to the edge of the frame at every camera distance inside the
+  band. `GRID_REACH_ZOOM` and `gridZoomReach` are gone, and with them the exemption the
+  numbered level needed. The grid's own draw time reads -0.07 to 0.27 milliseconds at a
+  pitch of 5 degrees and -0.07 to 0.15 at 89, against the 1 millisecond bound, so the wider
+  reach costs less than the run-to-run spread of the instrument.
+
+- **A number leaves its crossing and reaches further.** The label reach rises from 1.2 to
+  **2** spacings, so all four corners of the cell the cursor sits in carry a number wherever
+  the cursor sits in it: the furthest corner is `1.41` spacings away and draws at an opacity
+  of 0.29. The label also stands clear of the two lines it names. Its rectangle sits so that
+  the crossing is its **bottom right** corner, less a gap of `GRID_LABEL_GAP_SHARE`, 0.04 of
+  a spacing, on each of the game `x` and `z` axes.
+
+  The two signs of that offset are not the same. `planeCorners` runs the element's local `y`
+  **downward along the game `-z` axis**, so the rectangle's bottom right corner is at
+  `(anchor.x + width / 2, anchor.z - height / 2)` and the anchor the placement gives is
+  `[crossing.x - width / 2 - gap, crossing.z + height / 2 + gap]`. The reported anchor stays
+  the crossing, and the background reading moves to the centre of the label's own box.
+
+- **The cursor marker follows the zoom.** The marker's box is
+  `96 - 56 * smoothstep(12000, 60000, cameraDistance)` CSS pixels, so it is 96 near the
+  plane and 40 at a view of the whole galaxy. `cursorMarkerSizeCss` holds the rule in one
+  place, and both the plane rectangle and the element's own box read it, so the two cannot
+  disagree. The ring reads 58, 47, 24 and 24 CSS pixels wide at camera distances of 12,000,
+  30,000, 60,000 and 120,000.
+
 ## Sources
 
 - Galaxy density model: [galaxy-density-model.md](galaxy-density-model.md) in this
