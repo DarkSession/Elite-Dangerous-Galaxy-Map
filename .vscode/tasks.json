@@ -2,30 +2,37 @@
   "version": "2.0.0",
   "tasks": [
     {
-      // Background task: the debugger waits for the "ready in" line before opening Chrome, and
-      // the server keeps running after you stop debugging. Ctrl-C it in the terminal panel, or
-      // let a rebuild replace it.
-      "label": "vite: dev server",
+      // Opens the debugging browser yourself, on the container's display. Watch it at
+      // http://localhost:6080 (password `vscode`). The debugger no longer starts Chrome:
+      // run this task, then start the "Chrome: attach to :9222" configuration.
+      "label": "chrome: open with the GPU flags",
       "type": "shell",
-      "command": "pnpm dev --host 0.0.0.0 --port 5173 --strictPort",
+      "command": "/usr/bin/google-chrome",
+      "args": [
+        // A separate profile, so the port is free even when another Chrome window is open.
+        "--user-data-dir=/tmp/chrome-debug-profile",
+        "--remote-debugging-port=9222",
+        // Chrome's setuid/namespace sandbox cannot start under the default container seccomp
+        // profile as a non-root user. The container is the isolation boundary here.
+        "--no-sandbox",
+        // ANGLE over Vulkan is the path that reaches the NVIDIA driver in this container. The
+        // gl-egl backend reaches only the Mesa software driver here, and without a backend
+        // Chrome silently drops to SwiftShader on the CPU. Check chrome://gpu after a change.
+        "--use-gl=angle",
+        "--use-angle=vulkan",
+        // Chrome blocklists most Linux driver/GPU combinations it has not been tested against,
+        // including this one inside a container.
+        "--ignore-gpu-blocklist",
+        "--enable-gpu-rasterization",
+        "--enable-zero-copy",
+        // Surfaces WebGL context-loss and shader compile errors on the console instead of a
+        // blank canvas.
+        "--enable-logging=stderr",
+        "--v=1",
+        "http://localhost:5173/Elite-Dangerous-Galaxy-Map/"
+      ],
       "isBackground": true,
-      "problemMatcher": {
-        "owner": "vite",
-        "fileLocation": ["relative", "${workspaceFolder}"],
-        "pattern": {
-          "regexp": "^\\s*(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
-          "file": 1,
-          "line": 2,
-          "column": 3,
-          "severity": 4,
-          "message": 5
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".*VITE v.*",
-          "endsPattern": ".*ready in \\d+.*"
-        }
-      },
+      "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "dedicated" }
     },
     {
@@ -34,30 +41,6 @@
       "command": "pnpm build",
       "group": "build",
       "problemMatcher": ["$tsc"]
-    },
-    {
-      "label": "vite: preview",
-      "type": "shell",
-      "command": "pnpm preview --host 0.0.0.0 --port 4173 --strictPort",
-      "dependsOn": "vite: build",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "vite",
-        "pattern": {
-          "regexp": "^\\s*(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
-          "file": 1,
-          "line": 2,
-          "column": 3,
-          "severity": 4,
-          "message": 5
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".*vite v.*preview.*|.*Local:.*",
-          "endsPattern": ".*Local:.*4173.*"
-        }
-      },
-      "presentation": { "reveal": "silent", "panel": "dedicated" }
     }
   ]
 }
