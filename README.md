@@ -147,9 +147,12 @@ carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
 `getDatasets`, `getLoadedDataset`, `loadDataset` and `onDatasetChange`. The `hud`
 member is the HUD handle, or null when the options do not ask for the HUD. The region
 mode is `off`, `simplified` or `accurate`, and it is `accurate` unless the options
-name another. `accurate` draws the traced boundary, which is the 49.3494 light year
-staircase the region data holds, `simplified` draws the smoothed boundary, and `off`
-draws no boundary and places no label. A mode change takes effect in the next frame and
+name another. `accurate` draws the traced set, a line through the midpoints of the
+edges the 49.3494 light year region grid holds, smoothed and reduced to 5,727 vertices;
+`simplified` draws the smoothed boundary; and `off` draws no boundary and places no label.
+Both sets are smoothed and both depart from the grid by well under one cell. `accurate` is
+the nearer of the two to the data and is a twelfth the size; `simplified` rounds every
+corner away, and that is the one thing it gives that `accurate` does not. A mode change takes effect in the next frame and
 does not rebuild the scene data.
 
 `regionNameAt(point)` reads the coarse region grid, whose cells are 197.3976 light years,
@@ -163,8 +166,11 @@ the demo page, and it owns the fragment, the message box and the test hooks.
 
 The boundary is one warm cream band with a soft edge. Its half width is 1.6 per cent of
 the viewport height in CSS pixels, held between 8 and 24, so the whole band measures 34.6
-CSS pixels at 1,080 rows. The width is what hides the staircase, and the map runs no blur:
-a 90 degree corner of the traced set draws as a round turn of the band's own half width.
+CSS pixels at 1,080 rows. The width is **not** what hides the raster — the line is smoothed
+for that, and the staircase is periodic, so the eye reads the repeat and not one step. What
+the width does is round a corner: the map runs no blur, because the coverage is the exact
+distance to the nearest segment under a `MAX` blend, so the sharpest corner of the traced set
+draws as a round turn of the band's own half width.
 
 Two fades multiply. The **range fade** is read for each pixel, from the camera to the
 plane point under it: nothing at 10,000 light years and below, rising to full at 20,000.
@@ -172,8 +178,9 @@ The **zoom fade** is read once for the frame, from the camera to the cursor: ful
 20,000 light years and below, falling to nothing at 30,000. A region label takes the same
 two fades, the range one read at the label's own plane anchor, so a name and the line
 under it read at the same strength and neither outlives the other. A close zoom therefore
-keeps the lines near the horizon and takes away the ones near the cursor, where the
-staircase would show. There the HUD's top bar still names the region under the cursor, and
+keeps the lines near the horizon and takes away the ones near the cursor, which would
+otherwise cross the frame as one band. There the HUD's top bar still names the region under
+the cursor, and
 `regionNameAt` answers for any point on the plane.
 
 A marker draws for every system at every zoom distance, from 10 to 120,000 light years,
@@ -222,6 +229,13 @@ the library default stays off, because a host that embeds the map in its own pag
 not ask for a coordinate grid. The grid fades in by the camera's distance to the cursor:
 it draws nothing at 12,000 light years and further, and it draws in full at 4,000 and
 nearer.
+
+Inside that band a level also stops at a distance from the cursor. A level reaches 100 of
+its own lines, and every level that carries no coordinate number also stops at 0.4 of the
+camera's distance to the cursor, whichever is the nearer. That disc holds the same share
+of the frame at every zoom, about a third of the height, so the dense lattice marks a
+neighbourhood of the cursor instead of running to the frame edge. The level that carries
+the numbers keeps its own reach, because a number has to sit on a line that draws.
 
 The grid draws in cyan, `rgb(96, 214, 224)`, which is the only cool line the map draws:
 the galactic core and the region boundary band are both warm, so the grid is told from

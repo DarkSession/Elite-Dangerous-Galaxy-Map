@@ -42,6 +42,15 @@ export const GRID_MAX_ALPHA = 0.45;
 /** How many of its own lines a level reaches each side of the cursor. */
 export const GRID_FADE_LINES = 100;
 
+/**
+ * The share of the camera's distance to the cursor a level that carries no number
+ * reaches. A disc of radius `0.4 * d` light years about the cursor projects to
+ * `0.4 * focalCss` CSS pixels at the cursor's own range, which is 0.346 of the viewport
+ * height: 374 CSS pixels on 1,080 rows. The dense lattice therefore marks the same part
+ * of the frame at every zoom instead of running to the frame edge.
+ */
+export const GRID_REACH_ZOOM = 0.4;
+
 /** The camera distance at which the grid draws at full strength, in light years. */
 export const GRID_NEAR_FULL_LY = 4000;
 
@@ -195,12 +204,27 @@ export function gridVisibility(distance: number): number {
 }
 
 /**
- * How much of a level's alpha is left at a distance from the cursor on the plane. A
- * level reaches 100 of its own lines each side of the cursor and no further.
+ * How much of a level's alpha is left at a distance from the cursor on the plane, under
+ * the level's **own** reach of 100 of its own lines each side of the cursor.
+ *
+ * This is one of the two reaches a level takes, and the level that carries the coordinate
+ * numbers is the only one that takes it alone. Every other level stops at the lesser of
+ * this reach and the zoom bound, which `gridReachPerLevel` works out and the shader
+ * applies as one ramp. The rule and its reading do not move; the second bound sits beside
+ * it.
  */
 export function gridDistanceFade(distance: number, spacing: number): number {
   const reach = GRID_FADE_LINES * spacing;
   return Math.min(1, Math.max(0, 1 - distance / reach));
+}
+
+/**
+ * How far a level that carries no number reaches from the cursor, in light years, at a
+ * camera distance to the cursor. The reach follows the zoom, so the lattice marks the
+ * same part of the frame however near or far the camera is.
+ */
+export function gridZoomReach(cameraDistance: number): number {
+  return GRID_REACH_ZOOM * cameraDistance;
 }
 
 /**
@@ -226,6 +250,44 @@ export function gridLabelLevel(focalCss: number, distance: number): number {
   const fine = GRID_LABEL_LEVELS[0] as number;
   const coarse = GRID_LABEL_LEVELS[1] as number;
   return gridScreenSpacing(focalCss, distance, fine) >= GRID_LABEL_CSS ? fine : coarse;
+}
+
+/**
+ * How far each level reaches from the cursor on the plane, in light years, in the order
+ * of `GRID_LEVELS`. A level that carries no number takes the lesser of its own
+ * `GRID_FADE_LINES * spacing` and `gridZoomReach`, which is the rule `gridDistanceFade`
+ * states with a zoom bound over it.
+ *
+ * The lesser of the two reaches and not the product of the two fades: both are the ramp
+ * `1 - r / reach`, so the lesser fade is exactly the fade of the lesser reach, and a
+ * product would take a line to nothing well before either reach ended.
+ *
+ * The level `gridLabelLevel` names is exempt and keeps its own reach. A coordinate label
+ * has to sit on a lit line, and the numbered level's crossings are the furthest apart of
+ * any that carry a number: at a camera distance of 1,000 light years a cursor at the
+ * middle of a cell sits 707 light years from its nearest crossing, against a zoom reach
+ * of 400. Cutting that level would leave the frame with lines and no numbers from 234 to
+ * 1,768 light years, and again below 177.
+ *
+ * The work is one reach for each level for each frame, so the shader holds one ramp for
+ * each level and the exemption never has to be written in GLSL.
+ *
+ * `out` is filled and returned when it is given, so the draw path allocates nothing for a
+ * frame. A caller that wants a fresh array leaves it out.
+ */
+export function gridReachPerLevel(
+  focalCss: number,
+  distance: number,
+  out: number[] = new Array<number>(GRID_LEVELS.length),
+): number[] {
+  const numbered = gridLabelLevel(focalCss, distance);
+  const zoom = gridZoomReach(distance);
+  for (let level = 0; level < GRID_LEVELS.length; level += 1) {
+    const spacing = GRID_LEVELS[level] as number;
+    const own = GRID_FADE_LINES * spacing;
+    out[level] = spacing === numbered ? own : Math.min(own, zoom);
+  }
+  return out;
 }
 
 /**
@@ -290,6 +352,13 @@ export interface GridPassFrame {
    */
   readonly band: number;
   /**
+   * How far each level reaches from the cursor on the plane, in light years, in the
+   * order of `GRID_LEVELS`. The renderer reads them from `gridReachPerLevel`, so the
+   * rule that cuts a level to the zoom lives beside the other two fades and a unit test
+   * reads it without a frame.
+   */
+  readonly reach: readonly number[];
+  /**
    * The background reading, a sixteenth of the frame on each axis. The shader samples it
    * with linear filtering, so the merge changes smoothly across the frame.
    */
@@ -318,13 +387,13 @@ export function createGridProgram(gl: WebGL2RenderingContext): Program {
     'uAlphaRange',
     'uBoldRange',
     'uFadeRange',
-    'uFadeLines',
     'uBand',
     'uBackground',
     'uMergeRange',
     'uMergeFloor',
     'uSpacing[0]',
     'uPhase[0]',
+    'uReach[0]',
   ]);
 }
 
@@ -336,6 +405,7 @@ export function createGridPass(
 ): GridPass {
   const spacings = new Float32Array(GRID_LEVELS);
   const phases = new Float32Array(GRID_LEVELS.length * 2);
+  const reaches = new Float32Array(GRID_LEVELS.length);
 
   return {
     draw(frame: GridPassFrame): number {
@@ -345,6 +415,7 @@ export function createGridPass(
         const spacing = GRID_LEVELS[level] as number;
         phases[level * 2] = gridPhase(frame.camera[0], spacing);
         phases[level * 2 + 1] = gridPhase(frame.camera[2], spacing);
+        reaches[level] = frame.reach[level] as number;
       }
 
       gl.useProgram(program.program);
@@ -401,7 +472,6 @@ export function createGridPass(
         GRID_FADE_LOW_CSS,
         GRID_FADE_HIGH_CSS,
       );
-      gl.uniform1f(program.uniforms['uFadeLines'] ?? null, GRID_FADE_LINES);
       gl.uniform1f(program.uniforms['uBand'] ?? null, frame.band);
       // The merge with the background. The constants live here and the shader is given
       // them, so no second copy of the rule exists.
@@ -418,6 +488,10 @@ export function createGridPass(
       gl.uniform1f(program.uniforms['uMergeFloor'] ?? null, GRID_LINE_MERGE_FLOOR);
       gl.uniform1fv(program.uniforms['uSpacing[0]'] ?? null, spacings);
       gl.uniform2fv(program.uniforms['uPhase[0]'] ?? null, phases);
+      // One reach for each level, worked out on the processor. The shader then holds
+      // one ramp for each level and neither the zoom bound nor the exemption of the
+      // numbered level is written twice.
+      gl.uniform1fv(program.uniforms['uReach[0]'] ?? null, reaches);
 
       // The grid draws over the finished frame, so it blends with alpha and reads no
       // depth. The region boundaries and the markers draw after it, so both cover it.

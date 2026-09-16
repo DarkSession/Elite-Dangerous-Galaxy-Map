@@ -52,6 +52,10 @@ export default tseslint.config(
       'playwright-report/**',
       'blob-report/**',
       'coverage/**',
+      // Scratch directories. `.gitignore` holds `*.local`, so nothing here is committed
+      // and nothing here ships. An offline spike is written to be read once and thrown
+      // away, and a lint error in one must not fail the lint of the code that ships.
+      '*.local/**',
     ],
   },
   js.configs.recommended,

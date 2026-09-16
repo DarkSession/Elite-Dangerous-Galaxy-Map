@@ -371,10 +371,21 @@ and gives the region overlay three modes.
   it takes effect in the next frame and does not rebuild the scene data.
 - **Two boundary sets from one trace.** The worker traces the region grid once and sends
   both sets in one message. The smoothed set is the line the map drew before. The traced
-  set is the 49.3494 light year staircase the region data holds: each chain is packed as
-  it was traced, with the straight runs collapsed to one segment, so it departs from the
-  trace by 0 and keeps every 90 degree turn. It holds 22,718 vertices, which is 266.23
-  KiB, so it is the smaller of the two.
+  set is a line through the **midpoints of the edges** the 49.3494 light year region grid
+  holds, smoothed by a capped average and then reduced. It takes no corner round. It
+  departs from those midpoints by 26.6 light years and from the lattice polyline the trace
+  walks by 31.1, both well inside one cell, and it holds **5,727** vertices, which is 67.11
+  KiB, a twelfth of the smoothed set.
+
+  It drew the lattice polyline itself until `smooth-traced-boundary-and-limit-grid-reach`.
+  That polyline departed from the trace by 0 and kept every 90 degree turn, and it read on
+  the screen as a zig-zag: the staircase is periodic and runs along the boundary, so the eye
+  reads the repeat and not one step. Measured as the root mean square departure from a
+  straight line fitted over 8 cells of arc, at 10,000 light years on 1,080 rows, it read
+  **1.26 CSS pixels** where the line drawn now reads **0.061** and the smoothed set reads
+  0.065. The lattice polyline is itself 17.4 light years off the data, because a cell corner
+  is up to half a cell from the edge it marks, so a curve is not less faithful for leaving
+  the staircase.
 - **The accurate data is the data already in the tree.** klightspeed's
   `RegionMapData.json`, which the request named as the accurate source, is the same
   raster as `@elite-dangerous-almanac/core/astro/codex-region-lookup`: a comparison of
@@ -491,7 +502,12 @@ coordinate grid as a plane fill with six decade levels, and replaces the demo da
   width and alpha follow its own spacing on the screen at that pixel, from the derivative
   of the plane coordinate, so no level draws moire and every level fades out toward the
   horizon. Where two levels cover a pixel the alpha is the larger and not the sum. Each
-  level fades to nothing at 100 of its own lines from the cursor. The camera phase of each
+  level fades to nothing at 100 of its own lines from the cursor, and a level that carries
+  no coordinate number also stops at 0.4 of the camera's distance to the cursor, whichever
+  reach is the nearer. That second bound holds the same share of the frame at every zoom,
+  so the dense lattice marks a neighbourhood of the cursor instead of running to the frame
+  edge. The processor works one reach out for each level for each frame and the shader
+  holds one ramp for each level. The camera phase of each
   level is worked out in `float64` on the processor, so the shader never adds two large
   numbers. Phase 5 multiplies one more factor into every level's alpha: a smooth step
   over the camera's distance to the cursor, which reads 0 at 12,000 light years and 1 at
@@ -700,9 +716,12 @@ fade per pixel, and ties a grid coordinate label to its own line.
   in the half-life form `1 - 0.5 ** (seconds * 1000 / halfLifeMs)`, so a label moves the
   same way at 30, 60 and 144 frames a second. The anchor keeps its cap of 1,200 CSS pixels
   a second. A **drift cap** goes on the smoothed target: the target may move at most
-  `carry + 120 * seconds` CSS pixels on the screen in a frame, where `carry` is how far the
-  map moved the point the filter already held. A label therefore travels with the map for
-  free and drifts over it at 120 CSS pixels a second at most. The cap is solved by
+  `carry + 1200 * seconds` CSS pixels on the screen in a frame, where `carry` is how far
+  the map moved the point the filter already held. A label therefore travels with the map
+  for free and drifts over it at 1,200 CSS pixels a second at most, which is the cap the
+  anchor stage already runs under, so the two stages cannot fight. The cap was 120 and it,
+  not the half life, set the speed of a handover: a 300 CSS pixel move took 2.65 seconds
+  and now takes 0.65. The cap is solved by
   bisection on the real projection, because the plane point that gives a wanted screen
   move has no closed form. The handover from the region's centre to the frame's own samples
   takes a hysteresis band of `ANCHOR_REACH_SHARE`, 0.25 of the frame, so it does not cross
@@ -733,10 +752,13 @@ fade per pixel, and ties a grid coordinate label to its own line.
 - **The browser reading views moved.** The three searches that are governed by the range
   fade read at a range of at least 20,000 light years and a zoom of exactly 20,000, and
   their viewports rise with the zoom so that one CSS pixel covers the light years it
-  covered before. `tests/region-views.test.ts` asserts the count each search holds: 23 and
-  2 straight runs for the width search over the smoothed and the traced set, 6,713 bends
-  for the join search, 10 lattice nodes for the traced corner search and 4,605 plane points
-  for the both-sets search.
+  covered before. `tests/region-views.test.ts` asserts the count each search holds. Since
+  `smooth-traced-boundary-and-limit-grid-reach` those are 23 and **6** straight runs for the
+  width search over the smoothed and the traced set, 81 bends for the join search, **1,070**
+  holders for the traced corner search and **1,126** plane points for the both-sets search.
+  The traced corner search was rewritten in that change: its old premises asked that the two
+  segments beside a node each run 770 light years, which the lattice set met and the smoothed
+  set does not, its median segment being 185.
 - **The tests that read an absolute pixel turn the overlay off.** The pass now draws at
   every zoom under 30,000 light years, where it drew nothing below 5,000. Seventeen browser
   tests outside `e2e/regions.spec.ts` read an absolute pixel value at such a zoom, and each
@@ -755,14 +777,16 @@ Puts a marker on the cursor, turns the grid cyan and draws its numbers on the pl
 answers the region boundary's raster with the band's own width, and gives a region label
 and the line beside it one fade rule.
 
-- **The boundary answers its raster with width and not with smoothing.** The blur stage
+- **The boundary drops the blur stage and widens the band.** The blur stage
   is gone: `region-blur.frag`, the two blur targets, the peak normalisation and the three
   coverage targets. The half width is now `clamp(0.016 * viewportHeightCss, 8, 24)` CSS
   pixels, so the whole band measures 34.6 at 1,080 rows and the pass holds one
-  full-resolution coverage target. Two readings carry the decision. A 90 degree corner is
+  full-resolution coverage target. One reading carries the decision: the sharpest corner is
   already round, because the coverage is an exact distance from the **segment** and the
-  blend is `MAX`, so the corner turns on the band's own half width. And the largest cell
-  the range fade lets draw is the cell at 10,000 light years, 4.62 CSS pixels at 1,080
+  blend is `MAX`, so the corner turns on the band's own half width, which the browser reads
+  at 24.05 CSS pixels against a half width of 24. A second reading was given at the time and
+  `smooth-traced-boundary-and-limit-grid-reach` retired it: that the largest cell the range
+  fade lets draw is the cell at 10,000 light years, 4.62 CSS pixels at 1,080
   rows against a band of 34.6, which moves the band's edge by about a quarter of its own
   ramp. With no blur the `MAX` blend holds a join and a straight run at the same number
   exactly, so the 3 per cent corner tolerance goes.
@@ -811,6 +835,53 @@ and the line beside it one fade rule.
   table stays out of the entry chunk and a host that never asks never fetches it. The HUD's
   information panel states it as the `REGION` field, which takes both columns and holds an
   empty value until the promise settles.
+
+## Phase 5.4: the smoothed traced boundary, the grid's reach and the label cap
+
+Three faults the owner found while reading the map after phase 5.3.
+
+- **The traced boundary is smoothed, and the band's width is not what hides the raster.**
+  The `accurate` set drew the lattice polyline, which reads as a zig-zag because the
+  staircase is periodic and the eye reads the repeat and not one step. It is now built
+  through the **edge midpoints**, which are the data's own boundary, and smoothed by a
+  capped average of half width 4 cells held within 0.5 cell, then reduced. It takes **no
+  corner round**: the band's coverage is the exact distance to the nearest segment under a
+  `MAX` blend, so the outside of a corner is already round to the half width, and two round
+  passes moved the roughness by 0.003 CSS pixels and the departure the wrong way while
+  taking the set from 5,727 vertices to 22,908.
+
+  The measures that decide it, at 10,000 light years on 1,080 rows: roughness, the root
+  mean square departure from a straight line fitted over 8 cells of arc, reads **0.061**
+  CSS pixels for the set drawn now, **0.065** for the smoothed set and **1.26** for the
+  lattice polyline. The set is a twelfth of the smoothed set, 5,727 vertices against
+  68,672, and 10 light years nearer the data. It beats the smoothed set on every axis that
+  can be measured; the one thing `simplified` still gives is a set with no corner at all,
+  which is why the mode stays.
+
+- **The grid's dense levels stop at a disc about the cursor.** `gridDistanceFade` gave a
+  level 100 of its own lines and never consulted the zoom, so inside the camera-distance
+  band the lattice ran to the frame edge. A level that carries no coordinate number now
+  takes the lesser of its own reach and `0.4 * cameraDistance`, which projects to 374 CSS
+  pixels at 1,080 rows however near or far the camera is. The level that carries the
+  numbers is **exempt** and keeps its own reach, because a number has to sit on a line that
+  draws: cutting it would leave the frame with lines and no numbers from 234 to 1,768 light
+  years and again below 177. The processor works one reach out for each level for each
+  frame and the shader holds one ramp for each level, so `uFadeLines` is gone.
+
+- **A region label reaches its place in a fifth of the time.** `TARGET_DRIFT_PIXELS` rises
+  from 120 to **1,200** CSS pixels a second, which is `ANCHOR_MAX_SPEED`, the cap the
+  anchor stage already runs under, so the two stages cannot fight. The cap and not the half
+  life set the speed: a 300 CSS pixel handover took 2.65 seconds and takes 0.65.
+  `TARGET_HALF_LIFE_MS` does not move. A label settled on its region's centre still does
+  not move over the map at all while the camera drags, and the target still does not
+  overtake the map.
+
+- **Ten stated label readings were already stale, and a sweep found them.** The readings of
+  "A zoom reads like a drag" and of the drag filter are **logged** by the unit tests and not
+  asserted, so a stale figure survived a green run. The requirement said the drag filter's
+  90th percentile was 0.67 against a bound of 0.7; measured on the tree before this change
+  it was 0.3768. All ten are re-measured. The lesson is the sweep, not the figures: a
+  reading a test prints rather than asserts needs its own task.
 
 ## Sources
 

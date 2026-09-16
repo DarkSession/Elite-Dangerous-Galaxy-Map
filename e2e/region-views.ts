@@ -4,12 +4,12 @@
 // boundary sets and not by hand: one where a chain of the smoothed set crosses the
 // reading row within 5 degrees of vertical, one where a chain of the traced set does the
 // same, one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
-// pixels, one lattice node where the traced line turns by 90 degrees, and one plane point
-// that sits on a chain of both sets.
+// pixels, the sharpest corner of the traced set, and one plane point that sits on a chain
+// of both sets.
 //
 // The crossing search runs once for each set, because a near-vertical straight run of the
-// smoothed set is not one of the traced staircase, and the width scenario reads each mode
-// over its own view.
+// smoothed set is not one of the traced set, and the width scenario reads each mode over
+// its own view.
 //
 // The three governed views sit at a zoom of 20,000 light years, where the zoom fade is
 // full and the range fade's slope at the reading point is zero. The both-sets point is
@@ -112,7 +112,10 @@ export const SMOOTHED_CROSSING: CrossingChoice = {
     yaw: 90,
     pitch: 89,
   },
-  viewport: { width: 3840, height: 2160 },
+  viewport: {
+    width: 3840,
+    height: 2160,
+  },
   chain: 2,
   from: 1503,
   to: 1505,
@@ -126,20 +129,23 @@ export const SMOOTHED_CROSSING: CrossingChoice = {
 /** The view the width reading of the traced set takes. */
 export const TRACED_CROSSING: CrossingChoice = {
   view: {
-    cursor: [400.7349548339844, 0, 10266.85546875],
+    cursor: [449.9320068359375, 0, -21390.630859375],
     distance: 20000,
-    yaw: 0,
+    yaw: 89.95,
     pitch: 89,
   },
-  viewport: { width: 3840, height: 2160 },
-  chain: 38,
-  from: 8227,
-  to: 8228,
-  point: [400.7349548339844, 0, 10266.85546875],
-  angleFromVertical: 0,
-  clearanceLy: 1653.205078125,
+  viewport: {
+    width: 3840,
+    height: 2160,
+  },
+  chain: 2,
+  from: 146,
+  to: 148,
+  point: [449.9320068359375, 0, -21390.630859375],
+  angleFromVertical: 0.021477466577023457,
+  clearanceLy: 2040.4387309777935,
   lightYearsPerPixel: 10.691671651659735,
-  heldCount: 2,
+  heldCount: 6,
 };
 
 /** The view the join reading takes. */
@@ -225,10 +231,13 @@ export const SHARP_CORNER: CornerChoice = {
   heldCount: 81,
 };
 
-/** The view the 90 degree corner reading of the traced set takes. */
+/**
+ * The view the corner reading of the traced set takes. It is the sharpest node the
+ * search holds, and its turn is read over the read radius and not between two segments.
+ */
 export const TRACED_CORNER: CornerChoice = {
   view: {
-    cursor: [400.7349548339844, 0, -9744.3251953125],
+    cursor: [4424.13427734375, 0, 32276.728515625],
     distance: 20000,
     yaw: 0,
     pitch: 89,
@@ -237,21 +246,25 @@ export const TRACED_CORNER: CornerChoice = {
     width: 3840,
     height: 2160,
   },
-  chain: 11,
-  vertex: 3536,
-  turnDegrees: 90,
+  chain: 78,
+  vertex: 3718,
+  turnDegrees: 88.47221654289281,
   reachPixels: 30,
-  bend: [400.7349548339844, 0, -9744.3251953125],
+  bend: [4424.13427734375, 0, 32276.728515625],
   bendLine: [
-    [400.7349548339844, 0, -9423.575045762707],
-    [400.7349548339844, 0, -9744.3251953125],
-    [721.4851043837764, 0, -9744.3251953125],
+    [4077.26513671875, 0, 31857.216796875],
+    [4249.98779296875, 0, 32079.2890625],
+    [4337.27734375, 0, 32182.119140625],
+    [4424.13427734375, 0, 32276.728515625],
+    [4473.21044921875, 0, 32227.36328125],
+    [4522.4541015625, 0, 32195.66015625],
+    [4678.53076171875, 0, 32077.560546875],
   ],
-  straightFrom: [785.6351342937348, 0, -9744.3251953125],
-  straightTo: [1085.0019405402074, 0, -9744.3251953125],
-  clearanceLy: 1677.87939453125,
+  straightFrom: [4765.7236328125, 0, 32029.8203125],
+  straightTo: [4929.9130859375, 0, 32189.564453125],
+  clearanceLy: 806.5218776674309,
   lightYearsPerPixel: 10.691671651659735,
-  heldCount: 6,
+  heldCount: 1070,
 };
 
 /**
@@ -260,11 +273,11 @@ export const TRACED_CORNER: CornerChoice = {
  * centre of the frame over the whole close end of the zoom band.
  */
 export const NEAR_BOTH_SETS: BothSetsChoice = {
-  point: [425.40960693359375, 0, -21390.783203125],
+  point: [449.9320068359375, 0, -21390.630859375],
   chain: 2,
-  segmentLengthLy: 4392.0963134765625,
-  smoothedGapLy: 0,
+  segmentLengthLy: 3602.201428901422,
+  smoothedGapLy: 0.15234375,
   tracedGapLy: 0,
-  clearanceLy: 3578.171421264255,
-  heldCount: 4098,
+  clearanceLy: 3633.759612205606,
+  heldCount: 1126,
 };

@@ -2,70 +2,43 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // Starts the dev server (see tasks.json), then opens Chrome on the container's X display
-      // with breakpoints wired to your TypeScript sources. The window shows up on noVNC at
-      // http://localhost:6080.
-      "name": "Vite: Chrome (GPU)",
-      "type": "chrome",
+      // Runs the dev server in a terminal. It opens no browser: open
+      // http://localhost:5173/Elite-Dangerous-Galaxy-Map/ yourself, either in the
+      // container's desktop at http://localhost:6080 or on the forwarded port.
+      // Breakpoints in this session stop in Vite's own Node process. For breakpoints in
+      // the page, start Chrome with the "chrome: open with the GPU flags" task and use
+      // the attach configuration below.
+      "name": "Vite: dev server",
+      "type": "node-terminal",
       "request": "launch",
-      "url": "http://localhost:5173",
+      "command": "pnpm dev --strictPort",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // Same, against the built bundle rather than the dev server -- the one that catches
+      // "works in dev, breaks in prod" minification and shader-inlining bugs. The page is
+      // at http://localhost:4173/Elite-Dangerous-Galaxy-Map/.
+      "name": "Vite: production preview",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm build:demo-site && pnpm preview --strictPort",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // Debugs the page. Start Chrome with --remote-debugging-port=9222 first: the
+      // "chrome: open with the GPU flags" task does that on the container's display, or
+      // start your own browser on the host and forward 5173.
+      "name": "Chrome: attach to :9222",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "vite: dev server",
-      "runtimeExecutable": "/usr/bin/google-chrome",
-      "runtimeArgs": [
-        // Chrome's setuid/namespace sandbox cannot start under the default container seccomp
-        // profile as a non-root user. The container is the isolation boundary here.
-        "--no-sandbox",
-        // ANGLE over Vulkan is the path that reaches the NVIDIA driver in this container. The
-        // gl-egl backend reaches only the Mesa software driver here, and without a backend
-        // Chrome silently drops to SwiftShader on the CPU. Check chrome://gpu after a change.
-        "--use-gl=angle",
-        "--use-angle=vulkan",
-        // Chrome blocklists most Linux driver/GPU combinations it has not been tested against,
-        // including this one inside a container.
-        "--ignore-gpu-blocklist",
-        "--enable-gpu-rasterization",
-        "--enable-zero-copy",
-        // Surfaces WebGL context-loss and shader compile errors on the console instead of a
-        // blank canvas.
-        "--enable-logging=stderr",
-        "--v=1"
-      ],
       // Vite serves dependencies from outside the project root; without this js-debug refuses
       // to map their source maps and pre-bundled deps show as [unmapped].
       "resolveSourceMapLocations": [
         "${workspaceFolder}/**",
         "!**/node_modules/.vite/**"
       ]
-    },
-    {
-      // Same, against the built bundle rather than the dev server -- the one that catches
-      // "works in dev, breaks in prod" minification and shader-inlining bugs.
-      "name": "Vite: Chrome on production preview",
-      "type": "chrome",
-      "request": "launch",
-      "url": "http://localhost:4173",
-      "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "vite: preview",
-      "runtimeExecutable": "/usr/bin/google-chrome",
-      "runtimeArgs": [
-        "--no-sandbox",
-        "--use-gl=angle",
-        "--use-angle=vulkan",
-        "--ignore-gpu-blocklist",
-        "--enable-gpu-rasterization"
-      ]
-    },
-    {
-      // For when you would rather drive the page from the host browser: forward 5173, open it
-      // there with --remote-debugging-port=9222, and attach. No GPU flags apply -- that Chrome
-      // is the host's, using the host's driver directly.
-      "name": "Vite: attach to host Chrome (:9222)",
-      "type": "chrome",
-      "request": "attach",
-      "port": 9222,
-      "url": "http://localhost:5173/*",
-      "webRoot": "${workspaceFolder}"
     },
     {
       "name": "Vitest: all tests",

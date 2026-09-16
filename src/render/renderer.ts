@@ -37,6 +37,7 @@ import {
   createGridProgram,
   gridLabelLevel,
   gridLevelReadings,
+  gridReachPerLevel,
   gridVisibility,
 } from './grid-pass';
 import type { GridLevelReading, GridPass } from './grid-pass';
@@ -381,6 +382,9 @@ export function createRenderer(
     glowPass.resize(width, height);
   };
 
+  // The six grid reaches, filled again for each frame the grid draws in. The buffer is
+  // held here so the draw path allocates nothing.
+  const gridReach: number[] = [0, 0, 0, 0, 0, 0];
   const syncPixel = new Uint8Array(4);
 
   // `gl.finish()` alone does not wait in this browser: the commands sit in the
@@ -586,6 +590,11 @@ export function createRenderer(
         pixelRatio,
         bounds: galaxyModel.bounds,
         band,
+        // A level that carries no number reaches the lesser of its own 100 lines and
+        // the share of the camera distance the zoom bound gives, so the dense lattice
+        // marks a neighbourhood of the cursor at every zoom. The numbered level is
+        // exempt, which is why the rule reads the same figures `gridLabelLevel` does.
+        reach: gridReachPerLevel(focalCss, view.distance, gridReach),
         background: backgroundPass.texture,
       });
     } else {

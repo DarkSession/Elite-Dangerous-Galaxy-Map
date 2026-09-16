@@ -870,15 +870,15 @@ describe('the target smoothing', () => {
   });
 
   test('cuts a move the drift cap does not allow', () => {
-    // A gap of 100 CSS pixels asks for 15 at this share. The map holds still here, so
+    // A gap of 300 CSS pixels asks for 45.05 at this share. The map holds still here, so
     // the label may add `TARGET_DRIFT_PIXELS` a second and no more.
-    const point = smoothed({ x: 100, z: 100 }, { x: 200, z: 100 });
+    const point = smoothed({ x: 100, z: 100 }, { x: 400, z: 100 });
     expect(point.x - 100).toBeCloseTo(TARGET_DRIFT_PIXELS * FRAME_SECONDS, 4);
   });
 
   test('gives the map its own move for free', () => {
     // The carried point projected 30 CSS pixels from where it projected the frame
-    // before, so the map moved it 30. The label may add 2 to that.
+    // before, so the map moved it 30. The label may add 20 to that.
     const point = smoothTarget({
       carried: { x: 100, z: 100 },
       carriedScreen: { x: 70, y: 100 },
@@ -2076,8 +2076,11 @@ describe('the drift of the smoothed target', () => {
     expect(overDrag.length).toBeGreaterThan(200);
     expect(overStill.length).toBeGreaterThan(200);
     expect(Math.max(...overDrag)).toBeLessThanOrEqual(bound + 0.01);
-    // The still run moves the map by nothing, so the whole move is the label's own.
-    expect(Math.max(...overStill)).toBeLessThanOrEqual(2.1);
+    // The still run moves the map by nothing, so the whole move is the label's own. Every
+    // label is settled here, so the reading is 0 and not merely small. The bound was 2.1
+    // while the cap was 2.0, which made it the cap and not a reading; 0.1 is the reading
+    // with room for the arithmetic.
+    expect(Math.max(...overStill)).toBeLessThanOrEqual(0.1);
   }, 120000);
 });
 
@@ -2145,19 +2148,29 @@ describe('the handover between the two target rules', () => {
     // is 300 CSS pixels away on the screen when the handover comes.
     let memory: LabelMemory = memoryOf([]);
     let handover = -1;
+    let held = 0;
     for (let shift = 0; shift <= 400 && handover < 0; shift += 1) {
       const next = step(shift, memory);
       memory = next.memory;
-      if (!next.centre) handover = shift;
+      if (next.centre) {
+        // The last frame of the centre rule is where the walk starts.
+        held = next.screen;
+        continue;
+      }
+      handover = shift;
     }
     expect(handover).toBeGreaterThan(0);
+    const mean = 606 + handover;
+    // The centre rule holds the target at the inset and the sample rule names the mean,
+    // so the walk covers 300 CSS pixels. The cap moves the target on the handover frame
+    // itself, so the start of the walk is read before that frame and not after it.
+    expect(Math.abs(held - mean)).toBeGreaterThan(290);
 
-    // The camera is still from here. One frame settles the carry of the pan, so every
-    // reading below is of the label's own drift over a map that holds still.
+    // The camera is still from here. The handover frame carries one CSS pixel of the
+    // pan and one frame settles that carry, so every reading below is of the label's own
+    // drift over a map that holds still.
     const settle = step(handover, memory);
     memory = settle.memory;
-    const mean = 606 + handover;
-    expect(Math.abs(settle.screen - mean)).toBeGreaterThan(290);
 
     let worst = 0;
     let arrived = -1;
@@ -2172,18 +2185,23 @@ describe('the handover between the two target rules', () => {
       screen = next.screen;
       memory = next.memory;
     }
+    // The handover frame and the settle frame are the first two frames of the walk.
+    const frames = arrived + 3;
     console.log(
       'the target walked to the new rule in',
-      arrived,
+      frames,
       'frames, worst move',
       worst,
     );
-    expect(worst).toBeLessThanOrEqual(2.1);
+    expect(worst).toBeLessThanOrEqual(20.1);
     // The approach is exponential, so the target never reaches the point exactly.
     expect(passed).toBe(0);
     expect(arrived).toBeGreaterThanOrEqual(0);
-    // Three seconds is 180 frames of 16.667 milliseconds.
-    expect(arrived).toBeLessThanOrEqual(180);
+    // The cap allows 20.0 CSS pixels in a frame, so a walk of 300 takes 15 frames at
+    // least and the user follows it.
+    expect(frames).toBeGreaterThanOrEqual(15);
+    // 0.8 seconds is 48 frames of 16.667 milliseconds.
+    expect(frames).toBeLessThanOrEqual(48);
   });
 });
 

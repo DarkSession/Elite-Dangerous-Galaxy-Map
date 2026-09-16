@@ -57,6 +57,26 @@ export const REGION_SIMPLIFY_TOLERANCE = 0.1;
 /** How many corner rounding passes each chain takes after the average. */
 export const REGION_ROUND_PASSES = 4;
 
+/** How many points on each side of a point the traced set's average reads. */
+export const REGION_TRACED_SMOOTH_HALF_WIDTH = 4;
+
+/** How many average passes each chain of the traced set takes. */
+export const REGION_TRACED_SMOOTH_PASSES = 2;
+
+/**
+ * How far a point of the traced set may move from its own edge midpoint, in cells. Half
+ * a cell is the quantisation floor: the data cannot say where inside a cell the boundary
+ * lies, so half a cell is the whole of the uncertainty and no more.
+ */
+export const REGION_TRACED_MOVE_CAP = 0.5;
+
+/**
+ * The tolerance the traced set's vertex reduction takes, in cells. It sits far below the
+ * noise of the raster, so it only drops a point that is nearly on the line through its
+ * two neighbours.
+ */
+export const REGION_TRACED_SIMPLIFY_TOLERANCE = 0.05;
+
 /**
  * How far a rounding cut reaches along a segment, in cells. The cut also never takes
  * more than a quarter of a segment, so a short segment is not cut away.
@@ -413,6 +433,31 @@ export function chainPoints(chain: TracedChain): Float64Array {
 }
 
 /**
+ * The polyline through the midpoint of every unit edge of a chain, with the chain's two
+ * ends kept. A chain of `n` nodes gives `n + 1` points.
+ *
+ * The trace runs along the corners of the cell lattice, and a corner sits up to half a
+ * cell from the edge it marks. The midpoint of a unit edge is the one point the two cells
+ * either side agree on, so it is the boundary the data states.
+ */
+export function midpointChain(points: Float64Array): Float64Array {
+  const count = points.length / 2;
+  if (count === 0) return new Float64Array(0);
+  const out = new Float64Array((count + 1) * 2);
+  out[0] = points[0] as number;
+  out[1] = points[1] as number;
+  for (let index = 0; index + 1 < count; index += 1) {
+    out[index * 2 + 2] =
+      ((points[index * 2] as number) + (points[index * 2 + 2] as number)) / 2;
+    out[index * 2 + 3] =
+      ((points[index * 2 + 1] as number) + (points[index * 2 + 3] as number)) / 2;
+  }
+  out[count * 2] = points[count * 2 - 2] as number;
+  out[count * 2 + 1] = points[count * 2 - 1] as number;
+  return out;
+}
+
+/**
  * Smooths a chain by an average along it, with the movement of every point capped,
  * and then reduces the vertex count.
  *
@@ -457,8 +502,11 @@ export function smoothChain(
  * ends stay, whatever their direction.
  *
  * The chain is a run of unit edges, so a direction is a pair of integers and the test is
- * an equality and not a tolerance. The departure of the packed line from the trace is
+ * an equality and not a tolerance. The departure of the collapsed line from the trace is
  * therefore 0 and not a small number.
+ *
+ * Nothing in `src/` calls this. It builds the **lattice polyline**, which the unit tests
+ * measure the traced set against, so it stays exported for them.
  */
 export function collapseChain(points: Float64Array): Float64Array {
   const count = points.length / 2;
@@ -520,14 +568,40 @@ export function packRegionLines(
 }
 
 /**
- * Packs the chains of a trace as they were traced, with the straight runs collapsed. The
- * result is the staircase the region data is: it departs from the trace by 0 and it keeps
- * every 90 degree turn.
+ * Smooths a chain of the traced set: the polyline through the edge midpoints, then a
+ * capped average along it, then the vertex reduction.
+ *
+ * The cap holds every interior point within `REGION_TRACED_MOVE_CAP` cells of **its own
+ * midpoint** and not of the pass before, so the cap bounds the whole departure. Half a
+ * cell is the quantisation floor of the data.
+ *
+ * The chain takes **no** corner round, which is what separates it from `smoothChain`. The
+ * band's coverage is the exact distance to the nearest segment under a `MAX` blend, so the
+ * outside of a corner is already round to the band's half width, and a round in the
+ * geometry does the same work a second time at four times the vertex count.
+ */
+export function tracedChain(points: Float64Array): Float64Array {
+  const start = midpointChain(points);
+  let out = start;
+  for (let pass = 0; pass < REGION_TRACED_SMOOTH_PASSES; pass += 1) {
+    out = capChain(
+      averageChain(out, REGION_TRACED_SMOOTH_HALF_WIDTH),
+      start,
+      REGION_TRACED_MOVE_CAP,
+    );
+  }
+  return simplifyChain(out, REGION_TRACED_SIMPLIFY_TOLERANCE);
+}
+
+/**
+ * Packs the chains of a trace as the traced set the `accurate` mode draws. Each chain runs
+ * through the midpoint of every unit edge and is then smoothed by `tracedChain`, so the
+ * set keeps the corners of the region data and carries none of the raster's saw tooth.
  */
 export function packTracedLines(grid: RegionGrid, trace: RegionTrace): RegionLines {
   return packChains(
     grid,
-    trace.chains.map((chain) => collapseChain(chainPoints(chain))),
+    trace.chains.map((chain) => tracedChain(chainPoints(chain))),
   );
 }
 

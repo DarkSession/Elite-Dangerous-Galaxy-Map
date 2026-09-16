@@ -1,39 +1,4 @@
-## Purpose
-
-Names the part of the galaxy the view sits in. The 42 galactic codex regions draw
-their boundaries on the galactic plane and carry a text label each, so the user can
-tell the Inner Orion Spur from the Galactic Centre without leaving the map.
-
-## Requirements
-
-### Requirement: The region data comes from the almanac
-
-The map SHALL read the 42 galactic codex regions from
-`@elite-dangerous-almanac/core`, pinned to an exact version. Each region SHALL carry an
-id from 1 to 42, a name, a footprint area, axis-aligned bounds on the galactic plane
-and a centroid on the galactic plane. A plane position SHALL resolve to one region or
-to none, on the grid of 4,096/83 light years the game uses.
-
-The map SHALL depend on two constants of the package: the galaxy origin
-(-49,985, -40,985, -24,105) and the sector edge of 1,280 light years. A unit test SHALL
-assert both, so a release of the package that changes them fails the suite rather than
-the map.
-
-#### Scenario: The region list
-
-- **WHEN** a unit test reads the region list
-- **THEN** it holds 42 regions, their ids run from 1 to 42 without a gap, and every
-  name is a non-empty string
-
-#### Scenario: Known positions resolve
-
-- **WHEN** a unit test resolves the regions at (0, 0, 0) and at (15, -35, 25,895)
-- **THEN** the first is `Inner Orion Spur` and the second is `Galactic Centre`
-
-#### Scenario: The package constants hold
-
-- **WHEN** a unit test reads the galaxy origin and the sector edge from the package
-- **THEN** the origin is (-49,985, -40,985, -24,105) and the edge is 1,280 light years
+## ADDED Requirements
 
 ### Requirement: The boundary sets are built from one trace of the region grid
 
@@ -277,130 +242,6 @@ same index in the other.
 - **WHEN** a test posts both boundary sets through a `MessageChannel` with their buffers in
   the transfer list
 - **THEN** the receiver gets equal contents for both and every sender buffer has length 0
-
-### Requirement: The region overlay has a switch
-
-The renderer SHALL expose a `regions` switch beside the switches for the volume, the
-clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
-lines and the labels.
-
-#### Scenario: The switch removes both parts
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
-  switches the regions off and takes a second screenshot
-- **THEN** the page holds no region label after the switch, and the second screenshot
-  differs from the first, because the first draws boundary lines
-
-#### Scenario: The switch is inert where nothing draws
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
-  fade in distance, and takes a screenshot with the regions on and one with them off
-- **THEN** the two image files are byte-identical
-
-### Requirement: The region data carries its attribution
-
-The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
-region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
-region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If **either build** carries the package's procedural
-naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
-
-The repository now emits two builds, the library and the demo site, so the search reads
-both. The demo site is the one the public loads, and the library is the one another project
-installs, so a table that reaches either one reaches a user.
-
-The file SHALL also name the sources the demo site adds: the two further Canonn Research
-Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
-from `public/`.
-
-#### Scenario: The notice names every source
-
-- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
-  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
-  `Notable Systems`
-
-#### Scenario: The bundle carries no unlicensed table
-
-- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
-  for the package's procedural naming tables
-- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
-  BSD 3-Clause text in full
-
-### Requirement: The handle reports the region at a plane point
-
-The handle SHALL carry `regionNameAt(point)`, which takes a position in game coordinates
-and returns the name of the codex region that holds it, or null. It SHALL read the coarse
-region grid, whose cells are **197.3976** light years, and SHALL answer in the same tick.
-
-The handle SHALL also carry `regionNameAtExact(point)`, which returns a promise of the same
-name resolved on the game's own region grid of **49.3494** light years, or of null. The two
-answers differ only within about 100 light years of a boundary, which is where the coarse
-grid cannot tell one region from its neighbour.
-
-`regionNameAt` is the reading for something that follows the cursor every frame, such as the
-HUD's top bar. `regionNameAtExact` is the reading for something that names one place once,
-such as the information panel of a selected system, where a wrong region is stated as a fact
-and a user cannot tell it is wrong.
-
-**The exact lookup SHALL NOT enter the main bundle.** The region cell table is about 199 KiB
-and only the region worker reads it today. `regionNameAtExact` SHALL load it on its first
-call and SHALL keep it after that, so the table arrives in a chunk of its own and a map that
-never asks never fetches it. A second call while a first load runs SHALL wait on the same
-load and SHALL NOT start a second one.
-
-Both lookups SHALL read the `x` and `z` of the point and SHALL ignore its `y`, because the
-region grid is a map of the galactic plane and a region has no upper or lower bound. A
-point outside the grid SHALL give null, and so SHALL a point inside it that the grid marks
-as no region.
-
-`regionNameAt` SHALL give null before the scene data has loaded, rather than throw, because
-the handle answers in the same tick the map is created and the grid arrives later.
-`regionNameAtExact` reads no scene data, so it SHALL answer from the table alone and SHALL
-NOT wait for the load. A failed load SHALL reject the promise rather than throw out of the
-call, and SHALL NOT be kept: the next call SHALL start a fresh load. A held rejection would
-make the region field read `Unknown` for every system for the life of the page after one
-network fault, and it would never recover.
-
-#### Scenario: The call names the region at a point
-
-- **WHEN** a browser test waits for `ready` and calls `regionNameAt` with Sol
-  (0, 0, 0), with the galactic centre (15, -35, 25895), and with a point far outside the
-  grid at (400000, 0, 0)
-- **THEN** the first gives `Inner Orion Spur`, the second gives `Galactic Centre`, and the
-  third gives null
-
-#### Scenario: The exact call names the region at a point
-
-- **WHEN** a browser test awaits `regionNameAtExact` with the same three points
-- **THEN** the readings are `Inner Orion Spur`, `Galactic Centre` and null
-
-#### Scenario: The exact call is right where the coarse one is not
-
-- **WHEN** a unit test finds a plane point whose coarse cell holds one region and whose own
-  49.3494 light year cell holds another, and both calls read it
-- **THEN** `regionNameAtExact` gives the region of the 49.3494 light year cell, and the two
-  readings differ
-
-#### Scenario: The height of the point does not change the answer
-
-- **WHEN** a browser test calls `regionNameAt` and `regionNameAtExact` with (0, 0, 0) and
-  with (0, 20000, 0)
-- **THEN** each call gives the same answer for both points
-
-#### Scenario: The call answers before the data loads
-
-- **WHEN** a browser test builds a second map through `window.galaxyMapFactory` and calls
-  `regionNameAt` with Sol before `ready` settles
-- **THEN** the call returns null and does not throw
-
-#### Scenario: The exact table stays out of the main bundle
-
-- **WHEN** a unit test reads the build output and looks for the region cell table in the
-  entry chunk, then a browser test loads a map, reads the requests the page made, calls
-  `regionNameAtExact` twice at once and reads the requests again
-- **THEN** the table is in no entry chunk, the page fetched it not at all before the calls,
-  and the two calls together fetched it once
 
 ### Requirement: The boundaries draw as one wide soft band over a smoothed line
 
@@ -1016,6 +857,133 @@ the tolerance SHALL read an exact bound.
   light years, which is the closest zoom the overlay draws at, and reads the frame time
   with the overlay on and with it off
 - **THEN** the two readings differ by 1 ms or less
+
+## MODIFIED Requirements
+
+### Requirement: The region overlay has three modes and starts on the traced set
+
+The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
+`accurate`. **`accurate` SHALL be the default.**
+
+- `off` SHALL draw no boundary line and place no label.
+- `simplified` SHALL draw the smoothed boundary set.
+- `accurate` SHALL draw the **traced set**, which the terminology note below separates from
+  the traced boundary the trace finds. It SHALL place the same labels
+  `simplified` places, and both SHALL draw through the same pass at the same width, which
+  the requirement "The boundaries draw as one wide soft band over a smoothed line" states.
+
+**The default was `simplified`.** Both sets are smoothed and both stay inside one cell of
+the data, so the choice between them is no longer accuracy against smoothness. It is
+**corners**. The traced set keeps them: its sharpest vertex turns by 92.61 degrees, while the
+smoothed set holds every vertex under 20 and turns its sharpest by 14.23. A real corner of
+the region data is a fact about the galaxy, so the default is the set that draws it. The
+traced set is also the nearer of the two to the data, 26.6 light years against 36.9, and the
+smaller, 5,727 vertices against 68,672. `simplified` stays, for a host that wants every
+corner rounded away.
+
+`GalaxyMapOptions` SHALL carry an optional `regionMode`. The handle SHALL carry
+`getRegionMode()` and `setRegionMode(mode)`. `setRegionMode` SHALL take effect in the next
+frame and SHALL NOT rebuild the scene data, because the worker builds both sets in one
+pass and the renderer holds both.
+
+A value that is not one of the three SHALL leave the mode unchanged, and `setRegionMode`
+SHALL report nothing: the reader of a whole data set reports its rejects, while a mode is
+one value the host controls directly.
+
+The `regions` pass switch SHALL stay as it is, a renderer probe the browser tests read. A
+switch of `off` and a mode of `off` SHALL draw the same frame, so the two never disagree.
+
+**Where the two sets differ.** The two sets differ in where the line sits, not in what the
+data says. The smoothed line may sit up to 49.3494 light years from the boundary the region
+data holds. **At 1,080 CSS rows** and a 60 degree vertical field of view, one CSS row covers
+`1.1547 * distance / 1080` light years, so the departure in CSS pixels is about
+`46,157 / distance`: 4.6 pixels at a range of 10,000 light years, 2.3 at 20,000 and 1.5 at
+30,000.
+
+A line draws only at a range of 10,000 light years and beyond, so the departure runs from
+about 4.6 CSS pixels at the near end of that band down to about 1.5 at the far end. The band
+is **34.6** CSS pixels wide at 1,080 rows.
+
+**The separation of the two sets is measured and not derived.** The figures above were
+derived from one set departing from the lattice polyline by up to one cell while the other
+departed by 0. Both sets now depart from that polyline, so their separation is bounded by
+**two** cells, 98.7 light years, and not by one. The measured separation is far under that
+bound: on the pinned package no point of either drawn set sits more than **15.7 light years**
+from the other set, which is `14,728 / distance` CSS pixels at 1,080 rows — **1.5** pixels at
+a range of 10,000 light years, 0.7 at 20,000 and 0.5 at 30,000. Note also that this
+requirement uses *the traced boundary* for the lattice polyline the trace found and *the
+traced set* for the line the `accurate` mode draws; they are no longer the same thing.
+
+**The mode therefore changes little on the screen, and that is the reason the default
+moves.** When the band was 6 CSS pixels the departure of one set from the other was most of a
+band and the choice was a real one. At 34.6 it is not, so the map draws the set that keeps a
+real corner and lets the smoothed set be the option. The two draw within 2 CSS pixels of each
+other above **7,400 light years**, which is below the 10,000 at which a line first draws, so
+the mode changes almost nothing at all at every range that draws.
+
+**Neither mode blurs.** The blur is gone from the pass, so the two sets differ in the line's
+**position** alone and in nothing else about how it is drawn.
+
+#### Scenario: The default mode is accurate
+
+- **WHEN** the browser test creates a map with no `regionMode` in the options and reads
+  `getRegionMode()`
+- **THEN** it is `accurate`
+
+#### Scenario: The options choose the mode
+
+- **WHEN** the browser test builds a map through the library entry point with
+  `regionMode` of `accurate`, of `off`, of the string `precise`, with an empty options
+  object and with no options at all, and reads `getRegionMode()` on each
+- **THEN** the readings are `accurate`, `off`, `accurate`, `accurate` and `accurate`, so a
+  value the map does not know takes the default as a bad value on `setRegionMode` leaves the
+  mode
+
+#### Scenario: Each mode draws its own frame
+
+- **WHEN** the browser test opens a view a unit test has chosen at the sharpest corner of
+  the traced set, at **1280x720** at a zoom of **12,000 light years**, and takes a digest of
+  the canvas in each of the three modes
+- **THEN** the three digests differ from one another.
+
+  The view has to sit at a corner. The two sets carry the same line along a straight run of
+  the boundary, so a view chosen anywhere else can draw the same frame in `simplified` and in
+  `accurate`, and the reading would then say nothing about the mode. 12,000 light years is
+  inside the band where the overlay draws in full. The scenario states the viewport because
+  the departure of the two sets follows it. Both sets are now smoothed, so the two lines sit
+  closer together than the **2.56** CSS pixels the one cell bound gave before this change. At
+  this view one CSS pixel covers 19.2 light years, so the measured separation of **15.7**
+  light years is **0.82** CSS pixels, and at the corner itself the two lines sit **11.4**
+  light years, **0.59** CSS pixels, apart, against a band of **23.0** CSS pixels. The band's
+  coverage is an exact distance from the line, so a shift of a part of a pixel still moves
+  every pixel of the band and the three digests differ
+
+#### Scenario: The off mode removes both parts
+
+- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, sets the mode to `off`
+  and reads the page and the frame
+- **THEN** the page holds no region label, and the frame is byte-identical to the frame
+  the same view draws with the `regions` pass switch off
+
+#### Scenario: The mode changes without a rebuild
+
+- **WHEN** the browser test opens a view, sets the mode to `simplified`, draws one frame,
+  sets it back to `accurate` and draws one more, and reads how many times the scene data
+  loaded
+- **THEN** the frames differ, the scene data loaded once, and neither change waited for a
+  load
+
+#### Scenario: The labels do not follow the mode
+
+- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0` in `simplified` and in
+  `accurate`, and reads the text of every label
+- **THEN** the two label sets hold the same names in the same order
+
+#### Scenario: A bad mode changes nothing
+
+- **WHEN** the browser test sets the mode to `simplified`, then calls `setRegionMode` with
+  the string `precise` and with `undefined`, and reads the mode
+- **THEN** it is still `simplified`
 
 ### Requirement: A region in view carries a label that fades with its own range
 
@@ -1891,197 +1859,23 @@ user sees at those zooms.
   half is open and the **zoom** half closes it. A gate on either half alone lets one of these
   two through
 
-### Requirement: The region overlay has three modes and starts on the traced set
+## REMOVED Requirements
 
-The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
-`accurate`. **`accurate` SHALL be the default.**
+### Requirement: The boundary set is traced from the region grid
 
-- `off` SHALL draw no boundary line and place no label.
-- `simplified` SHALL draw the smoothed boundary set.
-- `accurate` SHALL draw the **traced set**, which the terminology note below separates from
-  the traced boundary the trace finds. It SHALL place the same labels
-  `simplified` places, and both SHALL draw through the same pass at the same width, which
-  the requirement "The boundaries draw as one wide soft band over a smoothed line" states.
+**Reason**: The traced set is no longer packed as the trace found it. It is drawn through the
+edge midpoints of the trace and smoothed, so the two claims the requirement was built on -- a
+departure of 0 and every 90 degree turn kept -- are no longer the contract. The scenarios
+"The traced set departs by nothing" and "The traced set keeps every turn" state those claims
+in their names.
+**Migration**: The requirement "The boundary sets are built from one trace of the region grid"
+replaces it and carries every rule that still holds, including the whole of the smoothed set.
 
-**The default was `simplified`.** Both sets are smoothed and both stay inside one cell of
-the data, so the choice between them is no longer accuracy against smoothness. It is
-**corners**. The traced set keeps them: its sharpest vertex turns by 92.61 degrees, while the
-smoothed set holds every vertex under 20 and turns its sharpest by 14.23. A real corner of
-the region data is a fact about the galaxy, so the default is the set that draws it. The
-traced set is also the nearer of the two to the data, 26.6 light years against 36.9, and the
-smaller, 5,727 vertices against 68,672. `simplified` stays, for a host that wants every
-corner rounded away.
+### Requirement: The boundaries draw as one wide soft band
 
-`GalaxyMapOptions` SHALL carry an optional `regionMode`. The handle SHALL carry
-`getRegionMode()` and `setRegionMode(mode)`. `setRegionMode` SHALL take effect in the next
-frame and SHALL NOT rebuild the scene data, because the worker builds both sets in one
-pass and the renderer holds both.
-
-A value that is not one of the three SHALL leave the mode unchanged, and `setRegionMode`
-SHALL report nothing: the reader of a whole data set reports its rejects, while a mode is
-one value the host controls directly.
-
-The `regions` pass switch SHALL stay as it is, a renderer probe the browser tests read. A
-switch of `off` and a mode of `off` SHALL draw the same frame, so the two never disagree.
-
-**Where the two sets differ.** The two sets differ in where the line sits, not in what the
-data says. The smoothed line may sit up to 49.3494 light years from the boundary the region
-data holds. **At 1,080 CSS rows** and a 60 degree vertical field of view, one CSS row covers
-`1.1547 * distance / 1080` light years, so the departure in CSS pixels is about
-`46,157 / distance`: 4.6 pixels at a range of 10,000 light years, 2.3 at 20,000 and 1.5 at
-30,000.
-
-A line draws only at a range of 10,000 light years and beyond, so the departure runs from
-about 4.6 CSS pixels at the near end of that band down to about 1.5 at the far end. The band
-is **34.6** CSS pixels wide at 1,080 rows.
-
-**The separation of the two sets is measured and not derived.** The figures above were
-derived from one set departing from the lattice polyline by up to one cell while the other
-departed by 0. Both sets now depart from that polyline, so their separation is bounded by
-**two** cells, 98.7 light years, and not by one. The measured separation is far under that
-bound: on the pinned package no point of either drawn set sits more than **15.7 light years**
-from the other set, which is `14,728 / distance` CSS pixels at 1,080 rows — **1.5** pixels at
-a range of 10,000 light years, 0.7 at 20,000 and 0.5 at 30,000. Note also that this
-requirement uses *the traced boundary* for the lattice polyline the trace found and *the
-traced set* for the line the `accurate` mode draws; they are no longer the same thing.
-
-**The mode therefore changes little on the screen, and that is the reason the default
-moves.** When the band was 6 CSS pixels the departure of one set from the other was most of a
-band and the choice was a real one. At 34.6 it is not, so the map draws the set that keeps a
-real corner and lets the smoothed set be the option. The two draw within 2 CSS pixels of each
-other above **7,400 light years**, which is below the 10,000 at which a line first draws, so
-the mode changes almost nothing at all at every range that draws.
-
-**Neither mode blurs.** The blur is gone from the pass, so the two sets differ in the line's
-**position** alone and in nothing else about how it is drawn.
-
-#### Scenario: The default mode is accurate
-
-- **WHEN** the browser test creates a map with no `regionMode` in the options and reads
-  `getRegionMode()`
-- **THEN** it is `accurate`
-
-#### Scenario: The options choose the mode
-
-- **WHEN** the browser test builds a map through the library entry point with
-  `regionMode` of `accurate`, of `off`, of the string `precise`, with an empty options
-  object and with no options at all, and reads `getRegionMode()` on each
-- **THEN** the readings are `accurate`, `off`, `accurate`, `accurate` and `accurate`, so a
-  value the map does not know takes the default as a bad value on `setRegionMode` leaves the
-  mode
-
-#### Scenario: Each mode draws its own frame
-
-- **WHEN** the browser test opens a view a unit test has chosen at the sharpest corner of
-  the traced set, at **1280x720** at a zoom of **12,000 light years**, and takes a digest of
-  the canvas in each of the three modes
-- **THEN** the three digests differ from one another.
-
-  The view has to sit at a corner. The two sets carry the same line along a straight run of
-  the boundary, so a view chosen anywhere else can draw the same frame in `simplified` and in
-  `accurate`, and the reading would then say nothing about the mode. 12,000 light years is
-  inside the band where the overlay draws in full. The scenario states the viewport because
-  the departure of the two sets follows it. Both sets are now smoothed, so the two lines sit
-  closer together than the **2.56** CSS pixels the one cell bound gave before this change. At
-  this view one CSS pixel covers 19.2 light years, so the measured separation of **15.7**
-  light years is **0.82** CSS pixels, and at the corner itself the two lines sit **11.4**
-  light years, **0.59** CSS pixels, apart, against a band of **23.0** CSS pixels. The band's
-  coverage is an exact distance from the line, so a shift of a part of a pixel still moves
-  every pixel of the band and the three digests differ
-
-#### Scenario: The off mode removes both parts
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, sets the mode to `off`
-  and reads the page and the frame
-- **THEN** the page holds no region label, and the frame is byte-identical to the frame
-  the same view draws with the `regions` pass switch off
-
-#### Scenario: The mode changes without a rebuild
-
-- **WHEN** the browser test opens a view, sets the mode to `simplified`, draws one frame,
-  sets it back to `accurate` and draws one more, and reads how many times the scene data
-  loaded
-- **THEN** the frames differ, the scene data loaded once, and neither change waited for a
-  load
-
-#### Scenario: The labels do not follow the mode
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0` in `simplified` and in
-  `accurate`, and reads the text of every label
-- **THEN** the two label sets hold the same names in the same order
-
-#### Scenario: A bad mode changes nothing
-
-- **WHEN** the browser test sets the mode to `simplified`, then calls `setRegionMode` with
-  the string `precise` and with `undefined`, and reads the mode
-- **THEN** it is still `simplified`
-
-### Requirement: The region worker builds a flow field toward each region's centre
-
-The region worker SHALL build a **flow field** over the coarse region grid and SHALL send it
-in the same message as the boundary sets and the grid. The field SHALL hold one byte for
-each cell of the coarse grid, so it is 507 by 507 bytes, which is 251 KiB, and it SHALL be
-transferable without a copy.
-
-The byte of a cell SHALL name the step to take from that cell to come nearer its **own
-region's centroid while staying on its own region**. The step SHALL be one of the eight
-neighbours of the cell, or a ninth value that means the cell is at the end of its path. A
-cell that holds no region SHALL take the ninth value.
-
-One field SHALL cover all 42 regions, because a cell belongs to exactly one region and the
-step it holds is a step inside that region.
-
-The field SHALL be built by a breadth-first walk over the cells of one region at a time,
-from the cell that holds that region's centroid, or, where the centroid's own cell is not on
-the region, from the cell of the region nearest it. A cell reached by the walk SHALL point
-back along the edge the walk reached it by. A cell of the region the walk never reaches SHALL
-take the ninth value, because no path inside the region joins it to the centre.
-
-**The field is what lets a label cross a region that lies in its way.** A region is not a
-convex shape and it can show as separated patches, so the straight line on the plane from a
-label to its region's centre can run over a third region. The requirement "A region in view
-carries a label that fades with its own range" states how the label follows the field.
-
-The walk SHALL run once, off the main thread, over the 257,049 cells of the coarse grid. Its
-cost does not follow the star systems the map holds, and the main thread never builds it.
-
-#### Scenario: The field is sent with the boundary sets
-
-- **WHEN** a unit test runs the region worker's build and reads the response
-- **THEN** it carries the flow field beside the two boundary sets and the coarse grid, the
-  field holds 507 by 507 bytes, and its buffer is in the transfer list
-
-#### Scenario: Every step stays on its own region
-
-- **WHEN** a unit test walks every cell of the field that holds a region and takes the step
-  its byte names
-- **THEN** the cell the step reaches holds the same region id as the cell it left
-
-#### Scenario: Following the field reaches the centre
-
-- **WHEN** a unit test starts at every cell of the field that holds a region and follows the
-  steps until a cell takes the ninth value
-- **THEN** every walk ends and no walk visits a cell twice; every walk that started at a cell
-  the build's own walk reached ends at that region's root cell; and a walk that started at a
-  cell the build never reached ends at once, on that cell
-
-#### Scenario: The shipped data has no region the field cannot cross
-
-- **WHEN** a unit test builds the field over the shipped coarse grid and counts, for each of
-  the 42 regions, the cells of that region the build's walk did not reach
-- **THEN** the count is **0** for every region, so on the shipped data every label has a path
-  to its own region's centre.
-
-  The count is a fact of the pinned `@elite-dangerous-almanac/core` and of the 197.3976 light
-  year coarse cell, not a property the build guarantees. A release that splits a region into
-  parts the coarse grid cannot join makes this count non-zero and fails this test, which is
-  where such a release is meant to be caught
-
-#### Scenario: The field crosses a region that lies in the way
-
-- **WHEN** a unit test builds a grid holding one region shaped as two lobes joined by a
-  neck, with a second region filling the gap between the lobes, and follows the field from a
-  cell of the far lobe
-- **THEN** the walk goes through the neck and reaches the centre cell, and no cell of the
-  walk holds the second region. A straight line between the two ends crosses the second
-  region
+**Reason**: The requirement argues that the band's width makes smoothing unnecessary, which
+the sample disproved, and its scenario "A 90 degree corner of the traced set is not brighter
+than its line" names a corner the set no longer has.
+**Migration**: The requirement "The boundaries draw as one wide soft band over a smoothed
+line" replaces it. Every rule about the tone, the width, the coverage, the joins and the two
+fades is unchanged.

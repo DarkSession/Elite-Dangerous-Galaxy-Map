@@ -37,8 +37,6 @@ uniform vec2 uAlphaRange;
 uniform vec2 uBoldRange;
 // The screen spacings a level fades in over, in CSS pixels.
 uniform vec2 uFadeRange;
-// How many of its own lines a level reaches each side of the cursor.
-uniform float uFadeLines;
 // The camera distance band, from 0 to 1. It multiplies every level's alpha, so a wide
 // view draws no grid at all. The processor works it out once for the frame.
 uniform float uBand;
@@ -52,6 +50,12 @@ uniform vec2 uMergeRange;
 uniform float uMergeFloor;
 uniform float uSpacing[LEVEL_COUNT];
 uniform vec2 uPhase[LEVEL_COUNT];
+// How far each level reaches from the cursor on the plane, in light years. The processor
+// works one out for each level for each frame: a level that carries no number takes the
+// lesser of its own 100 lines and the share of the camera distance the zoom bound gives,
+// and the level that carries the numbers keeps its own 100 lines. The shader therefore
+// holds one ramp for each level and no rule of its own.
+uniform float uReach[LEVEL_COUNT];
 
 out vec4 fragColor;
 
@@ -110,7 +114,9 @@ void main() {
     vec2 toLineDevice = toLine / perDevice;
     vec2 coverage = clamp(0.5 * widthDevice + 0.5 - toLineDevice, vec2(0.0), vec2(1.0));
 
-    float fade = clamp(1.0 - radius / (uFadeLines * spacing), 0.0, 1.0);
+    // The floor holds the divide finite. A reach of 0 asks for nothing to draw, and
+    // 1 - radius / 1e-6 is below 0 at every radius the frame holds.
+    float fade = clamp(1.0 - radius / max(uReach[level], 1e-6), 0.0, 1.0);
     vec2 drawn = levelAlpha * coverage * fade;
 
     // Where two levels cover one point the grid takes the larger alpha and not the sum,

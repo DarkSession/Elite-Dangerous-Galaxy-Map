@@ -50,6 +50,64 @@ on the plane. A level therefore reaches 100 of its own lines each side of the cu
 no further, so the 10 light year level covers 1,000 light years and the 1,000 light year
 level covers 100,000.
 
+**A level that carries no number takes a reach that follows the zoom instead, where that is
+the smaller.** The reach of such a level SHALL be the **lesser** of its own `100 * s` and
+`0.4 * d` light years, where `d` is the camera's distance to the cursor, and its alpha SHALL
+be multiplied by the single ramp `clamp(1 - r / reach, 0, 1)`. The two are not multiplied
+together: both are the ramp `1 - r / reach`, so the lesser of the two fades is exactly the
+fade of the lesser of the two reaches, and a product would fade a line well before either
+reach ended.
+
+The sentence above about 100 of a level's own lines therefore states the reach of the
+numbered level, and the ceiling of every other level's.
+
+**The level that carries the numbers SHALL be exempt**, and SHALL keep its own reach of 100
+lines. The requirement "The grid carries coordinate labels on its own plane" names that level
+and gives a crossing a label only within 1.2 of its spacings. A label has to sit on a lit
+line, and the numbered level is picked so that its crossings are far apart: at a camera
+distance of 1,000 light years the numbers sit on the 1,000 light year level, a cursor at the
+middle of a cell is 707 light years from its nearest crossing, and a reach of `0.4 * d` is
+400, so `0.4 * d` first reaches 707 at a camera distance of 1,768 light years. Cutting that
+level would leave the frame with lines and no numbers from **234** light years, where the
+numbered level becomes 1,000, to **1,768**; and again below **177**, where the numbers sit on
+the 100 light year level and `0.4 * d` falls under the 70.7 light years a cursor can sit from
+its nearest crossing of it.
+
+The numbered level is 100 or 1,000 light years and never more, so it is **not** the coarsest
+level on the screen and every level above it is cut like every other. Cutting every level
+but the numbered one still takes the dense lattice away, which is the whole of what reads as
+a lattice. At a camera distance of 4,000 light years the numbered level is 1,000 light years
+and its crossings sit 233.8 CSS pixels apart, so it carries about 8 lines across a 1,920 CSS
+pixel frame, against the 100 light year level's 82, which the reach cuts to 32 inside the
+disc.
+
+**The exemption puts one step in the reach**, at the camera distance where the numbered level
+changes. That is 233.8 light years at 1,080 CSS rows. Below it the numbers sit on the 100
+light year level, which is then exempt and reaches 10,000 light years; above it they sit on
+the 1,000 light year level and the 100 light year level is cut to `0.4 * d`, which is 93.5
+light years there. Crossing that zoom downward, the 100 light year lines outside the reach
+disc appear in one frame. The frame holds about one and a half of that level's cells between
+the disc and its own edge **across** the frame at that zoom, and about three and a half **up**
+the frame at a pitch of 45, so the step is a few lines and not a lattice, and the lines it
+brings are the ones that were already inside the frame. It is accepted rather than
+smoothed, because a level that fades in over a zoom band would put a second band beside the
+camera distance band and give the grid two things to do at once.
+
+The zoom reach is a **fixed size on the screen**. A disc of radius `0.4 * d` light years
+around the cursor projects to `0.4 * focalCss` CSS pixels at the cursor's own range, and
+`focalCss` is `rows / (2 tan 30)`, so the radius is **0.346 of the viewport height** whatever
+the viewport and whatever the zoom: 374 CSS pixels on 1,080 rows. Every level below the
+numbered one therefore marks the same neighbourhood of the cursor at every zoom.
+
+Without this bound every level that draws runs past the frame. The grid draws only while the
+camera is nearer than 12,000 light years, which the band below states, and at the near end of
+that band, a camera distance of 4,000 light years and a pitch of 45 degrees, the top of the
+frame sits **7,727 light years** beyond the cursor. The field of view is 60 degrees vertically
+whatever the viewport, so the row count is not part of that figure. The 100 light year level
+reaches 10,000 there and the 1,000 light year level reaches 100,000, so both cover the whole
+frame. At a pitch of 5 degrees the top ray of the frame runs 25 degrees above the horizontal,
+the frame holds the horizon, and no per-level reach ever ends inside it.
+
 **The grid fades in as the camera comes near.** The alpha of every level SHALL be
 multiplied by a band over the camera's distance to the cursor: 0 at **12,000** light years
 and further, 1 at **4,000** and nearer, with a smooth step between, so the band reads 0.5
@@ -148,6 +206,88 @@ whose `x` or whose `z` lies outside the bounds carries no line.
 - **WHEN** the browser test opens the start view of 60,000 light years, reads the frame
   with the grid switch on, and reads it again with the switch off
 - **THEN** the two frames hold the same pixels
+
+#### Scenario: A level fades out at the zoom reach
+
+- **WHEN** a unit test reads the fade of the **10,000 light year** level at a camera distance
+  of 4,000 light years, at 0, 800 and 1,600 light years from the cursor on the plane, where
+  the numbered level is 1,000 light years
+- **THEN** the readings are 1, 0.5 and 0, so the reach is 1,600 light years, which is
+  `0.4 * 4000`. The level is named because the reading holds only for a level the zoom bound
+  binds: the 10,000 light year level's own reach is 1,000,000 light years, far above 1,600,
+  and it is not the numbered level, so it is not exempt
+
+#### Scenario: The reach is the lesser of the two
+
+- **WHEN** a unit test reads the combined fade of the 100 light year level at a camera
+  distance of 4,000 light years, at 1,000 light years from the cursor, where the numbered
+  level is 1,000 light years and the 100 light year level is therefore not exempt
+- **THEN** the reading is 0.375, which is the zoom fade at that distance, because the zoom
+  reach of 1,600 light years is below the level's own 10,000. It is not the product of the
+  two fades, which is 0.338
+
+#### Scenario: The level's own reach still binds where it is the smaller
+
+- **WHEN** a unit test reads the combined fade of the 10 light year level at a camera
+  distance of 4,000 light years, at 500 light years from the cursor
+- **THEN** the reading is 0.5, which is the level's own reach of 1,000 light years and not
+  the zoom reach of 1,600
+
+#### Scenario: The numbered level keeps its own reach
+
+- **WHEN** a unit test reads, at **1,080 CSS rows**, the combined fade of the numbered level
+  at a camera distance of 4,000 light years, at 1,000 light years from the cursor, and reads
+  the numbered level itself at the camera distances 200 and 4,000 light years
+- **THEN** the numbered level is 100 light years at 200 and 1,000 light years at 4,000, and
+  its fade at 1,000 light years from the cursor is 0.99, which is its own reach of 100,000
+  light years and not the zoom reach of 1,600
+
+#### Scenario: The lattice marks the same part of the frame at every zoom
+
+- **WHEN** the browser test turns the grid on at **1920x1080** at a pitch of 89 degrees, at
+  the camera distances 500, 1,000 and 2,000 light years, where the numbered level is 1,000
+  light years at all three, and measures in CSS pixels the **largest** radius about the cursor
+  at which the 100 light year level lights any pixel of the frame
+- **THEN** the three radii are within 20 CSS pixels of each other, and each is below 374 CSS
+  pixels, which is where the ramp reaches 0, by the distance over which the ramp falls under
+  one 8-bit step. On the pinned package they read **367.5**, **361.9** and **360.6** CSS
+  pixels, a spread of 6.9 and each 6.5 to 13.4 short of the 374 the ramp ends at.
+
+  The reading SHALL be the largest radius anywhere in the frame and NOT the radius along the
+  row through the cursor. The row reading is quantised by the level's own line spacing, which
+  runs from 187 CSS pixels at a camera distance of 500 light years down to 47 at 2,000, so at
+  the near zoom it can fall short by nearly a whole 187 and would fail a bound of 20 that the
+  behaviour itself holds
+
+#### Scenario: The lattice stops at its reach and the numbered level goes on
+
+- **WHEN** the browser test turns the grid on at **1920x1080** at a camera distance of 4,000
+  light years, at a yaw of **30 degrees**, with the cursor **50 light years** off a crossing
+  of the 100 light year level on both axes, at each of the pitches 45, 60 and 89 degrees,
+  samples the **row** through the middle of the frame, and counts the grid lines it crosses
+  between the cursor and 1,600 light years out, and between 1,600 and 3,200 light years out
+- **THEN** at every one of the three pitches the count of lines for each 1,000 light years
+  falls by at least a factor of **5** between the two bands, and every line the second band
+  carries belongs to the numbered level. On the pinned package the inner band carries **34**,
+  **35** and **36** lines at the pitches 45, 60 and 89 and the outer band carries **4** at all
+  three, which is **10.6**, **10.9** and **11.3** lines for each 1,000 light years against
+  **1.25**, a fall by a factor of 8.5 to 9.0. No line of the outer band sits off the numbered
+  level at any of the three pitches.
+
+  The row and not the column, and 45 degrees and not 5. At a pitch of 5 the horizon sits 82
+  CSS pixels above the middle of the frame, the whole 3,200 light year run compresses into 36
+  CSS pixels, and the 100 light year level's spacing along the depth axis is **2.1** CSS
+  pixels, under the 8 at which a level's alpha reaches 0. A column at that pitch therefore
+  counts lines that are not drawn, and reads the same with this change and without it.
+
+  The viewport, the yaw and the cursor offset are all premises. At 4:3 the 3,200 light year
+  mark falls outside the frame at a pitch of 45, so the second band has nothing to count. At a
+  yaw of 0 the row through the middle of the frame runs along one axis of the grid, so it lies
+  on a line of constant `z` and crosses none of that family; the yaw of 30 degrees makes it
+  cross both families. The cursor offset keeps the row itself off a line.
+
+  Without the zoom reach both bands carry the same count, so the ratio is 1 and the scenario
+  fails.
 
 ### Requirement: The grid draws in one call of three vertices
 
@@ -350,8 +490,22 @@ pixel saturation, so its screen fade holds at 1 and the band alone moves it.
 ### Requirement: The grid holds the frame budget
 
 The grid's vertex count is fixed at 3, but its fill is not: at a pitch of 5 degrees, which
-is the shallowest the camera reaches, its levels cross the whole frame and reach toward the
-horizon. The cost that has to be measured is therefore the fill and not the vertex count.
+is the shallowest the camera reaches, the numbered level crosses the whole frame and reaches
+toward the horizon, and the shader tests all six levels at every fragment whatever their
+reach. The cost that has to be measured is therefore the fill and not the vertex count, and
+the zoom reach does not lower it. The reach cuts what a level **draws**, not what the shader
+**reads**: the loop over the six levels runs for each fragment either way, and a level the
+reach has cut still costs its own spacing, its own derivative and its ramps. The
+readings below therefore SHALL NOT move because of the zoom reach, and a reading that falls
+is a reading of something else.
+
+Measured with the reach in place over three runs, the grid adds **0.05 to 0.14 milliseconds**
+at a pitch of 5 degrees and **0.05 to 0.08** at 89, against the 1 millisecond bound. The
+reading is stated as a range on purpose: the run-to-run spread of one build is about
+0.09 milliseconds at the shallow pitch, which is larger than the whole of what the grid costs,
+so a single figure here claims a precision the instrument does not have and two runs would
+disagree with it. Nothing smaller than that spread can be read from this scenario, and the
+zoom reach is expected to move the cost by nothing at all.
 
 The grid now carries a second pass as well. The background reading averages the scene down
 to a sixteenth of the frame on each axis, and the requirement "The frame carries a
