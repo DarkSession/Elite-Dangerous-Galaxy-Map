@@ -54,7 +54,7 @@ const FAR_FADE_DISTANCES = [20000, 25000, 31000];
 const DRAWING_MODES: RegionMode[] = ['simplified', 'accurate'];
 
 /**
- * The view the three modes are compared at. It looks at the 90 degree corner the traced
+ * The view the three modes are compared at. It looks at the sharpest corner the traced
  * set holds, from far enough back that the whole corner is in the frame. The two sets
  * carry the same line along a straight run of the boundary, so a view chosen there
  * cannot tell `simplified` from `accurate`. The zoom sits inside the band the overlay
@@ -890,7 +890,7 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
     systems: false,
   };
   // The reading radius belongs to the view. The join reads 8 CSS pixels past the edge of
-  // the band and the 90 degree corner of the traced set reads 6 past it, each the radius
+  // the band and the sharpest corner of the traced set reads 6 past it, each the radius
   // its own search states.
   const reach = choice.reachPixels;
 
@@ -971,17 +971,28 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
 }
 
 /**
- * The radius of the outer edge of the band around a 90 degree corner, in CSS pixels.
+ * The radius of the outer edge of the band around a corner, in CSS pixels.
  *
  * The coverage is an exact distance from the **segment** and the blend is `MAX`, so the
  * outside of a corner is an arc of the band's own half width centred on the node. The
  * reading marches out from the node along rays into the outer quadrant and takes the
  * last pixel the band still reaches.
+ *
+ * The sweep spans `180 - T` for a turn `T` while the band's own arc spans `T`, so the two
+ * agree only at `T = 90`. The search holds the turn above 80 degrees, where the fit runs
+ * 10 degrees onto the straight part at each end and the radius error is 0.370 CSS pixels,
+ * under a fifth of the bound of 2.0.
  */
 async function readCornerRadius(
   page: Page,
   choice: CornerChoice,
-): Promise<{ mean: number; least: number; most: number; rays: number }> {
+): Promise<{
+  median: number;
+  mean: number;
+  least: number;
+  most: number;
+  rays: number;
+}> {
   await lookFrom(page, choice.view);
   const node = await projectPoint(page, choice.bend);
   const first = await projectPoint(
@@ -1018,9 +1029,7 @@ async function readCornerRadius(
   const withoutOverlay = await luminanceRect(page, rect);
   await setPasses(page, { regions: true });
 
-  const alphaAt = (x: number, y: number): number => {
-    const column = Math.round(x - rect.x - 0.5);
-    const row = Math.round(y - rect.y - 0.5);
+  const alphaPixel = (column: number, row: number): number => {
     if (column < 0 || row < 0 || column >= rect.width || row >= rect.height) return 0;
     const index = row * rect.width + column;
     const under = withoutOverlay[index] as number;
@@ -1029,11 +1038,38 @@ async function readCornerRadius(
     return ((withOverlay[index] as number) - under) / room;
   };
 
-  // The alpha is `0.55 * smoothstep(0, 1, 1 - gap / halfWidth)`. The profile is flat at
-  // the edge, so a floor under-reads the radius: a floor of 0.005 sits at 0.961 of the
-  // half width, which is 0.9 CSS pixels inside it at 2,160 rows. The floor cannot go
-  // much lower, because the frame carries the band in 8 bits.
-  const EDGE_ALPHA = 0.005;
+  // The profile is read between pixel centres, not at the nearest one. A ray that steps
+  // by a quarter of a pixel reads the same pixel four times over otherwise, so the radius
+  // comes back as a whole number and the fit carries a half pixel of stair.
+  const alphaAt = (x: number, y: number): number => {
+    const column = x - rect.x - 0.5;
+    const row = y - rect.y - 0.5;
+    const left = Math.floor(column);
+    const top = Math.floor(row);
+    const fx = column - left;
+    const fy = row - top;
+    return (
+      alphaPixel(left, top) * (1 - fx) * (1 - fy) +
+      alphaPixel(left + 1, top) * fx * (1 - fy) +
+      alphaPixel(left, top + 1) * (1 - fx) * fy +
+      alphaPixel(left + 1, top + 1) * fx * fy
+    );
+  };
+
+  // The alpha is `peak * smoothstep(0, 1, 1 - gap / halfWidth)`. The ray is read where it
+  // falls to **half the peak**, not where it reaches a floor near 0.
+  //
+  // `smoothstep` is 0.5 exactly at `gap = halfWidth / 2`, so the half-alpha radius is half
+  // the radius wanted and the reading doubles it. That point is where the ramp is
+  // steepest, so a small error in alpha is a small error in radius. The old reading took
+  // a floor of 0.005 instead, on the flattest part of the ramp, where the frame's own 8
+  // bits are a third of the figure being read: the floor sits under one 8-bit step of the
+  // band over a bright background, so the radius it returned followed how bright the
+  // galaxy was under the corner and not how wide the band is. It under-read this corner
+  // by 2.4 CSS pixels, against an offset curve that is 24.00 at every ray of the sweep.
+  //
+  // The peak is read along the ray itself and not assumed, so the range fade, the zoom
+  // fade and the tone all divide out.
   const radii: number[] = [];
   const rays = 25;
   for (let step = 0; step <= rays; step += 1) {
@@ -1041,19 +1077,46 @@ async function readCornerRadius(
     // tenth of the quadrant away from each.
     const part = 0.1 + (0.8 * step) / rays;
     const angle = outerOne + span * part;
-    let edge = 0;
-    for (let radius = 1; radius <= reach; radius += 0.25) {
-      const alpha = alphaAt(
-        node.x + Math.cos(angle) * radius,
-        node.y + Math.sin(angle) * radius,
-      );
-      if (alpha >= EDGE_ALPHA) edge = radius;
+    const along = (radius: number): number =>
+      alphaAt(node.x + Math.cos(angle) * radius, node.y + Math.sin(angle) * radius);
+
+    let peak = 0;
+    for (let radius = 0; radius <= reach; radius += 0.25) {
+      peak = Math.max(peak, along(radius));
     }
-    radii.push(edge);
+    if (peak <= 0) continue;
+
+    // The first crossing of half the peak, walking out. The two samples that bracket it
+    // are interpolated, so the reading is not quantised to the step.
+    let edge = 0;
+    let last = peak;
+    for (let radius = 0.25; radius <= reach; radius += 0.25) {
+      const alpha = along(radius);
+      if (alpha < peak / 2) {
+        const gap = last - alpha;
+        const part2 = gap > 0 ? (last - peak / 2) / gap : 0;
+        edge = radius - 0.25 + 0.25 * part2;
+        break;
+      }
+      last = alpha;
+    }
+    if (edge > 0) radii.push(edge * 2);
   }
-  const mean = radii.reduce((sum, value) => sum + value, 0) / radii.length;
+  if (radii.length === 0) throw new Error('the corner sweep read no ray');
+  // The **median** and not the mean. `alphaAt` returns 0 where the background is already
+  // as bright as the band's own tone, because there is no room left to read a contribution
+  // in. A ray that crosses such a patch falls under half the peak early and reads short,
+  // and one ray of the sweep does. That is a hole in the reading and not a narrow corner,
+  // so the sweep takes the middle reading, which one dropout cannot move.
+  const sorted = [...radii].sort((one, two) => one - two);
+  const middle = sorted.length >> 1;
+  const median =
+    sorted.length % 2 === 1
+      ? (sorted[middle] as number)
+      : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
   return {
-    mean,
+    median,
+    mean: radii.reduce((sum, value) => sum + value, 0) / radii.length,
     least: Math.min(...radii),
     most: Math.max(...radii),
     rays: radii.length,
@@ -1104,16 +1167,25 @@ test.describe('the corner readings', () => {
     await setRegionMode(page, 'accurate');
     const reading = await readCornerRadius(page, TRACED_CORNER);
     const wanted = halfWidthCssAt(TRACED_CORNER.viewport.height);
-    console.log('the radius of the corner', { ...reading, wanted });
+    console.log('the radius of the corner', {
+      ...reading,
+      wanted,
+      turnDegrees: TRACED_CORNER.turnDegrees,
+    });
 
     // 24 is the clamp and not 1.6 per cent of 2,160 rows, which is 34.56.
     expect(wanted).toBe(24);
+    // The sweep runs `90 - T` onto the straight part at each end, where the tangent leaves
+    // the circle by `24 * (1 / cos(90 - T) - 1)`. That error is 0.370 CSS pixels at a turn
+    // of 80 degrees and reaches the whole bound of 2.0 at 67.4, so the reading fails below
+    // 80 rather than reporting a radius the fit cannot hold.
+    expect(TRACED_CORNER.turnDegrees).toBeGreaterThan(80);
     expect(reading.rays).toBeGreaterThan(8);
-    expect(reading.mean).toBeGreaterThan(wanted - 2);
-    expect(reading.mean).toBeLessThan(wanted + 2);
+    expect(reading.median).toBeGreaterThan(wanted - 2);
+    expect(reading.median).toBeLessThan(wanted + 2);
   });
 
-  test('a 90 degree corner of the traced set is not brighter than its line', async ({
+  test('the sharpest corner of the traced set is not brighter than its line', async ({
     page,
   }) => {
     await page.setViewportSize(TRACED_CORNER.viewport);
@@ -1125,15 +1197,23 @@ test.describe('the corner readings', () => {
       ...reading,
     });
 
-    expect(TRACED_CORNER.turnDegrees).toBe(90);
+    // The corner is the sharpest node the search holds, and its turn is read over the
+    // read radius and not between two segments. The floor is the one the radius reading
+    // needs.
+    expect(TRACED_CORNER.turnDegrees).toBeGreaterThan(80);
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
     expect(reading.straightAlpha).toBeGreaterThan(0.05);
-    // The bound is exact here and takes no tolerance. Both arms of this corner run along
-    // a screen axis, so a pixel row lands on the middle of each and the sampling loss of
-    // the scenario above is 0. A 90 degree corner is the hardest case the pass draws, and
-    // the `MAX` blend holds it at the coverage of one arm.
-    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha);
+    // The corner is no longer a lattice node, so neither arm runs along a screen axis and
+    // the reading carries the same half pixel sampling allowance the join reading carries.
+    // The band has a flat top, so the largest reading of a run is the reading of the pixel
+    // nearest the middle of the line, and how near that is follows where the pixel grid
+    // falls across the line. The `MAX` blend holds the corner at the coverage of one arm.
+    const offset = 0.5 / halfWidthCssAt(TRACED_CORNER.viewport.height);
+    const samplingLoss =
+      BAND_OPACITY * (3 * offset * offset - 2 * offset * offset * offset);
+    console.log('the half pixel sampling loss', samplingLoss);
+    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha + samplingLoss);
   });
 });
 

@@ -2,16 +2,15 @@
 //
 // Four scenarios of `openspec/specs/galactic-regions` name a view that a unit test has to
 // choose: one where a chain crosses the reading row within 5 degrees of vertical, one
-// where the drawn line turns by at least 30 degrees within a reach of 8 CSS pixels, one
-// lattice node where the traced line turns by 90 degrees, and one plane point that sits
-// on a chain of both sets. The second is measured over a reach and not between two
-// neighbouring segments, because the spec holds every vertex of the drawn line to 20
-// degrees. Every view comes from the boundary set itself, so nobody picks a place on the
-// map by hand.
+// where the drawn line turns by at least 30 degrees within a reach of 8 CSS pixels, the
+// sharpest corner of the traced set, and one plane point that sits on a chain of both
+// sets. Both turns are measured over a reach and not between two neighbouring segments,
+// because both sets are smoothed lines whose vertices sit far closer together than the
+// reading window. Every view comes from the boundary set itself, so nobody picks a place
+// on the map by hand.
 //
 // The crossing search runs once for each set, and the constants file holds one view for
-// each: a near-vertical straight run of the smoothed set is not one of the traced
-// staircase.
+// each: a near-vertical straight run of the smoothed set is not one of the traced set.
 //
 // Each search takes its zoom as a parameter and states its premises in CSS pixels, so a
 // premise holds at the viewport and the zoom its own scenario names. The overlay draws in
@@ -25,9 +24,14 @@
 // starts. A window that measures **along** the band keeps its figure: an arc, a run
 // length, the span of a comparison run, and the reach over which a bend turns. The
 // windows are not scaled by the band's growth. The old half width was 3 CSS pixels and the
-// new one is at most 24, so a scale of 8 would ask the traced corner search for arms of
-// 4,105 light years, where the longest straight segment of the traced set measures 4,392
-// and only two reach past 4,105.
+// new one is at most 24, so a scale of 8 would ask the traced corner search for a straight
+// run of 2,395 light years, where the longest straight run of the drawn traced set
+// measures 3,745.9 and only 7 of its 3,833 runs reach past 2,395.
+//
+// Every premise of the traced corner search is a length along the plane and none is the
+// length of one segment. The traced set's median segment is 185 light years, far under the
+// 320.8 the read radius covers, so a premise on one segment would read where the vertices
+// fall and not where the line goes.
 //
 // The search lives here and `region-views.test.ts` checks that the constants in
 // `e2e/region-views.ts` are what it gives. The browser test reads those constants,
@@ -541,8 +545,13 @@ export function findSharpCorner(
 
 /** A cell hash of the segments of a boundary set, for a nearest-segment reading. */
 interface SegmentIndex {
-  /** The shortest distance from a plane point to any segment of the set. */
-  gapTo(point: Plane): number;
+  /**
+   * The shortest distance from a plane point to any segment of the set. A segment is
+   * named by its first vertex. `keepOut` leaves a segment out of the reading, so a search
+   * can ask how near the **rest** of the set comes. It is optional, because a caller that
+   * reads the whole set wants no keep-out.
+   */
+  gapTo(point: Plane, keepOut?: (segment: number) => boolean): number;
 }
 
 /** The side of one cell of the segment hash, in light years. */
@@ -588,7 +597,7 @@ function indexSegments(lines: RegionLines): SegmentIndex {
   };
 
   return {
-    gapTo(point: Plane): number {
+    gapTo(point: Plane, keepOut?: (segment: number) => boolean): number {
       const cellX = Math.floor(point[0] / INDEX_CELL_LY);
       const cellZ = Math.floor(point[1] / INDEX_CELL_LY);
       let nearest = Number.POSITIVE_INFINITY;
@@ -599,6 +608,7 @@ function indexSegments(lines: RegionLines): SegmentIndex {
             const held = buckets.get((cellX + stepX) * 100000 + cellZ + stepZ);
             if (held === undefined) continue;
             for (const vertex of held) {
+              if (keepOut !== undefined && keepOut(vertex)) continue;
               const away = gapToSegment(point, vertex);
               if (away < nearest) nearest = away;
             }
@@ -731,53 +741,62 @@ export function findPointNearBothSets(
 /**
  * How far the traced corner reading reaches from the node, in CSS pixels past the edge of
  * the band. It is the window the browser reading reads, so the search adds the half width
- * to it.
+ * to it. The turn is read over that same radius, as the join search reads its bend over
+ * `JOIN_REACH_PIXELS`.
  */
 const TRACED_REACH_PIXELS = 6;
 
 /**
- * Where the straight run of the comparison sits along an arm. The near end is a clearance
- * from the band, in CSS pixels past its edge, so the search adds the half width to it. The
- * span is a length along the band and keeps its figure.
+ * Where the straight run of the comparison sits. The near end is a clearance from the
+ * band, in CSS pixels past its edge, so the search adds the half width to it. The span is
+ * a length along the band and keeps its figure.
  */
 const TRACED_RUN_FROM_PIXELS = 12;
 const TRACED_RUN_SPAN_PIXELS = 28;
 
 /**
- * How much arm each node must carry past the far end of the comparison run, in CSS
- * pixels. The arm length follows the run: an arm that ended inside the run would put the
- * far end of the run past the next node and off the straight line the reading compares
- * with.
+ * How far the rest of the boundary must stay from the node, in CSS pixels. The figure is
+ * **derived** and it is not a clearance past the edge of the band.
+ *
+ * Two scenarios read this node. The brightness reading reaches the read radius, which is
+ * the half width and 6 CSS pixels, so 30. The radius reading reaches the half width and
+ * 12, so 36, and marches each ray out to it. A line 60 CSS pixels from the node can still
+ * light a pixel 36 from it, and a line further away cannot, so the radius is the larger
+ * reading window plus the half width: `2 * halfWidth + 12`, which is 60 at a half width of
+ * 24.
  */
-const TRACED_ARM_MARGIN_PIXELS = 8;
+function tracedClearancePixels(halfWidth: number): number {
+  return 2 * halfWidth + TRACED_RUN_FROM_PIXELS;
+}
 
 /**
- * The neighbourhood arc and the fold reach of this search, in CSS pixels. They are its
- * own copies, because the join search reads at another zoom. The arc measures along the
- * band and keeps its figure; the fold reach is a window past the edge of the band, so the
- * search adds the half width to it.
- */
-const TRACED_NEIGHBOUR_ARC_PIXELS = 16;
-const TRACED_FOLD_REACH_PIXELS = 12;
-
-/**
- * Finds a lattice node where the traced line turns by 90 degrees.
+ * Finds the sharpest corner of the traced set that holds the reading conditions.
  *
- * Every vertex of the traced set is such a node: the set keeps a node only where the
- * direction of the unit edges changes, and the edges run along the axes of the grid. The
- * search therefore asks for the reading conditions and not for the turn: an arm that
- * reaches past the comparison run, a straight run of the same chain for the comparison,
- * and no other chain near.
+ * Every premise is a length along the plane and none is the length of one segment. The
+ * traced set is a smoothed line and not a sparse lattice: its median segment is 185 light
+ * years, far under the 320.8 the read radius covers, so a premise on one segment would
+ * read where the vertices fall and not where the line goes.
  *
- * The arm follows the run. The run ends the half width and 40 CSS pixels from the node,
- * which is 64 at a half width of 24, and the arm holds 8 CSS pixels more. A shorter arm
- * would put the far end of the run past the next node and off the straight line the
- * reading compares with.
+ * The turn is read **over the read radius**, by the angle between the chord back to that
+ * radius and the chord forward to it. A node whose window is short, at the end of a chain,
+ * is passed over. The search takes the sharpest node that holds every premise.
  *
- * The zoom is a parameter, and every window the search holds is in CSS pixels at it. The
- * bend line reaches the reading radius of this corner along each arm, which is the half
- * width and 6 CSS pixels more, so the reader classifies a pixel against the drawn line
- * and not against a shorter stub of it.
+ * One clearance premise tells the chain **returning** from elsewhere, which corrupts the
+ * reading, from the chain **continuing**, which is the line being read. The node's own
+ * contiguous run is excluded: the search walks out in each direction and keeps every
+ * segment until the chain first leaves the clearance disc. Nothing else — no other chain,
+ * and no later part of this one — may come inside the disc, and the distance is measured
+ * to the nearest point of a **segment** and not to the nearest vertex.
+ *
+ * Excluding the contiguous run and not a range of vertex indices is what keeps the near end
+ * of the comparison run alive: the run sits on the node's own line, and most of it lies
+ * inside the clearance disc on the excluded run.
+ *
+ * The comparison run is the longest run of the same chain that stays within
+ * `STRAIGHT_TOLERANCE_LY` of its chord, sits between the half width and 12 CSS pixels of
+ * the node and 28 CSS pixels further out, and is at least `JOIN_RUN_LEAST_PIXELS` long.
+ *
+ * The zoom is a parameter, and every window the search holds is in CSS pixels at it.
  */
 export function findTracedCorner(
   traced: RegionLines,
@@ -788,111 +807,140 @@ export function findTracedCorner(
   const halfWidth = regionBandHalfWidthCss(viewport.height);
   /** How far the browser reading reaches from the node, in CSS pixels. */
   const reachPixels = halfWidth + TRACED_REACH_PIXELS;
+  const reachLy = reachPixels * perPixel;
+  const clearanceLy = tracedClearancePixels(halfWidth) * perPixel;
   const runFromLy = (halfWidth + TRACED_RUN_FROM_PIXELS) * perPixel;
   const runToLy = runFromLy + TRACED_RUN_SPAN_PIXELS * perPixel;
-  // The arm has to reach past the far end of the comparison run.
-  const armLy = runToLy + TRACED_ARM_MARGIN_PIXELS * perPixel;
-  let held = 0;
-  let kept: CornerChoice | null = null;
+  const segments = indexSegments(traced);
 
+  interface Node {
+    chain: number;
+    vertex: number;
+    back: number;
+    forward: number;
+    turn: number;
+  }
+
+  // Every node whose window is long enough to read, sharpest first.
+  const nodes: Node[] = [];
   for (let chain = 0; chain < traced.chainCount; chain += 1) {
     const first = traced.first[chain] as number;
     const last = traced.last[chain] as number;
     for (let vertex = first + 1; vertex < last; vertex += 1) {
-      const bend = planeAt(traced, vertex);
-      const back = planeAt(traced, vertex - 1);
-      const forward = planeAt(traced, vertex + 1);
-      const armBack = gap(bend, back);
-      const armForward = gap(bend, forward);
-      if (armBack < armLy || armForward < armLy) continue;
-
-      const inX = bend[0] - back[0];
-      const inZ = bend[1] - back[1];
-      const outX = forward[0] - bend[0];
-      const outZ = forward[1] - bend[1];
-      const cosine = (inX * outX + inZ * outZ) / (armBack * armForward);
-      const turn = (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
-      if (Math.abs(turn - 90) > 1e-6) continue;
-
-      // The band lightens what it crosses, which it cannot do over the core itself.
-      const radius = Math.hypot(
-        bend[0] - GALACTIC_CENTRE[0],
-        bend[1] - GALACTIC_CENTRE[2],
-      );
-      if (radius < CENTRE_FLOOR_LY) continue;
-
-      // No other chain may come near the reading window, and this chain may not fold
-      // back over the corner.
-      const clearance = clearanceFrom(
-        traced,
-        bend,
-        (other) => other >= first && other <= last,
-      );
-      if (clearance < (halfWidth + CORNER_CLEARANCE_PIXELS) * perPixel) continue;
-      let folds = false;
-      for (const step of [-1, 1]) {
-        let arc = 0;
-        let other = vertex;
-        for (;;) {
-          const next = other + step;
-          if (next < first || next > last) break;
-          arc += gap(planeAt(traced, other), planeAt(traced, next));
-          other = next;
-          if (arc < TRACED_NEIGHBOUR_ARC_PIXELS * perPixel) continue;
-          const foldReach = (halfWidth + TRACED_FOLD_REACH_PIXELS) * perPixel;
-          if (gap(bend, planeAt(traced, other)) < foldReach) {
-            folds = true;
-          }
-        }
+      const here = planeAt(traced, vertex);
+      let back = vertex;
+      while (back > first && gap(planeAt(traced, back), here) < reachLy) back -= 1;
+      let forward = vertex;
+      while (forward < last && gap(planeAt(traced, forward), here) < reachLy) {
+        forward += 1;
       }
-      if (folds) continue;
+      const from = planeAt(traced, back);
+      const to = planeAt(traced, forward);
+      // Near an end of a chain the window is short, and a short window reads a larger
+      // turn than the reading really covers.
+      if (gap(from, here) < reachLy || gap(to, here) < reachLy) continue;
 
-      /** A point along an arm, at a distance from the corner in light years. */
-      const along = (to: Plane, away: number): Plane => {
-        const span = gap(bend, to);
-        return [
-          bend[0] + ((to[0] - bend[0]) * away) / span,
-          bend[1] + ((to[1] - bend[1]) * away) / span,
-        ];
-      };
-
-      const view: ChosenView = { cursor: game(bend), distance, yaw: 0, pitch: PITCH };
-      const straightFrom = along(forward, runFromLy);
-      const straightTo = along(forward, runToLy);
-      const inFrame = (point: Plane): boolean => {
-        const screen = project(view as View, game(point), viewport);
-        return (
-          screen.inFront &&
-          screen.x > 20 &&
-          screen.x < viewport.width - 20 &&
-          screen.y > 20 &&
-          screen.y < viewport.height - 20
-        );
-      };
-      if (!inFrame(straightFrom) || !inFrame(straightTo)) continue;
-
-      held += 1;
-      if (kept !== null) continue;
-      kept = {
-        view,
-        viewport: { width: viewport.width, height: viewport.height },
-        chain,
-        vertex,
-        turnDegrees: turn,
-        reachPixels: reachPixels,
-        bend: game(bend),
-        bendLine: [
-          game(along(back, reachPixels * perPixel)),
-          game(bend),
-          game(along(forward, reachPixels * perPixel)),
-        ],
-        straightFrom: game(straightFrom),
-        straightTo: game(straightTo),
-        clearanceLy: clearance,
-        lightYearsPerPixel: perPixel,
-        heldCount: 0,
-      };
+      const inX = here[0] - from[0];
+      const inZ = here[1] - from[1];
+      const outX = to[0] - here[0];
+      const outZ = to[1] - here[1];
+      const spanIn = Math.hypot(inX, inZ);
+      const spanOut = Math.hypot(outX, outZ);
+      if (spanIn === 0 || spanOut === 0) continue;
+      const cosine = (inX * outX + inZ * outZ) / (spanIn * spanOut);
+      const turn = (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
+      nodes.push({ chain, vertex, back, forward, turn });
     }
+  }
+  nodes.sort((a, b) => (b.turn === a.turn ? a.vertex - b.vertex : b.turn - a.turn));
+
+  let held = 0;
+  let kept: CornerChoice | null = null;
+  for (const found of nodes) {
+    const first = traced.first[found.chain] as number;
+    const last = traced.last[found.chain] as number;
+    const bend = planeAt(traced, found.vertex);
+
+    // The band lightens what it crosses, which it cannot do over the core itself.
+    const radius = Math.hypot(
+      bend[0] - GALACTIC_CENTRE[0],
+      bend[1] - GALACTIC_CENTRE[2],
+    );
+    if (radius < CENTRE_FLOOR_LY) continue;
+
+    // The node's own contiguous run: every segment out to the one on which the chain
+    // first leaves the clearance disc, in each direction. It is the line in and the line
+    // out, and it is not a range of vertex indices.
+    let runBack = found.vertex;
+    while (runBack > first && gap(planeAt(traced, runBack), bend) <= clearanceLy) {
+      runBack -= 1;
+    }
+    let runForward = found.vertex;
+    while (runForward < last && gap(planeAt(traced, runForward), bend) <= clearanceLy) {
+      runForward += 1;
+    }
+    // Nothing else may come inside the disc. A segment is named by its first vertex.
+    const clearance = segments.gapTo(
+      bend,
+      (segment) => segment >= runBack && segment < runForward,
+    );
+    if (clearance < clearanceLy) continue;
+
+    // The comparison run: the longest run of this chain that stays within the straight
+    // tolerance of its chord and sits inside the window the reading compares against.
+    let run: { from: number; to: number; length: number } | null = null;
+    for (let start = first; start < last; start += 1) {
+      const away = gap(bend, planeAt(traced, start));
+      if (away < runFromLy || away > runToLy) continue;
+      for (let end = start + 1; end <= last; end += 1) {
+        const away2 = gap(bend, planeAt(traced, end));
+        if (away2 < runFromLy || away2 > runToLy) break;
+        if (chordDeparture(traced, start, end) > STRAIGHT_TOLERANCE_LY) break;
+        const length = gap(planeAt(traced, start), planeAt(traced, end));
+        if (run === null || length > run.length) run = { from: start, to: end, length };
+      }
+    }
+    if (run === null || run.length < JOIN_RUN_LEAST_PIXELS * perPixel) continue;
+
+    const view: ChosenView = { cursor: game(bend), distance, yaw: 0, pitch: PITCH };
+    const straightFrom = planeAt(traced, run.from);
+    const straightTo = planeAt(traced, run.to);
+    const inFrame = (point: Plane): boolean => {
+      const screen = project(view as View, game(point), viewport);
+      return (
+        screen.inFront &&
+        screen.x > 20 &&
+        screen.x < viewport.width - 20 &&
+        screen.y > 20 &&
+        screen.y < viewport.height - 20
+      );
+    };
+    if (!inFrame(straightFrom) || !inFrame(straightTo)) continue;
+
+    // The reading polyline is the real vertices of the window, as the join search records
+    // them, so the browser classifies a pixel against the line the map drew.
+    const bendLine: [number, number, number][] = [];
+    for (let vertex = found.back; vertex <= found.forward; vertex += 1) {
+      bendLine.push(game(planeAt(traced, vertex)));
+    }
+
+    held += 1;
+    if (kept !== null) continue;
+    kept = {
+      view,
+      viewport: { width: viewport.width, height: viewport.height },
+      chain: found.chain,
+      vertex: found.vertex,
+      turnDegrees: found.turn,
+      reachPixels,
+      bend: game(bend),
+      bendLine,
+      straightFrom: game(straightFrom),
+      straightTo: game(straightTo),
+      clearanceLy: clearance,
+      lightYearsPerPixel: perPixel,
+      heldCount: 0,
+    };
   }
   if (kept === null) throw new Error('no traced corner meets the reading conditions');
   return { ...kept, heldCount: held };

@@ -10,6 +10,7 @@ import {
   chainPoints,
   collapseChain,
   fillRegionGrid,
+  midpointChain,
   packRegionLines,
   packTracedLines,
   REGION_CELL_LY,
@@ -21,10 +22,15 @@ import {
   REGION_SIMPLIFY_TOLERANCE,
   REGION_SMOOTH_HALF_WIDTH,
   REGION_SMOOTH_PASSES,
+  REGION_TRACED_MOVE_CAP,
+  REGION_TRACED_SIMPLIFY_TOLERANCE,
+  REGION_TRACED_SMOOTH_HALF_WIDTH,
+  REGION_TRACED_SMOOTH_PASSES,
   averageChain,
   capChain,
   roundChain,
   simplifyChain,
+  tracedChain,
   traceRegionChains,
   traceRegionLines,
 } from './region-lines';
@@ -43,6 +49,13 @@ import type { CoarseRegionGrid, RegionLines } from './types';
 
 /** The departure bound the spec states, in light years. It is one cell. */
 const DEPARTURE_LIMIT = REGION_DEPARTURE_LY;
+
+/**
+ * How many CSS pixels one cell measures at the worst view the range fade allows: a range
+ * of 10,000 light years, on 1,080 rows, at a 60 degree vertical field of view. It is the
+ * view every CSS pixel reading of the roughness is stated at.
+ */
+const CELL_CSS_PIXELS = REGION_CELL_LY / ((2 * 10000 * Math.tan(Math.PI / 6)) / 1080);
 
 let grid: RegionGrid;
 let trace: RegionTrace;
@@ -84,6 +97,16 @@ function tracedPolyline(source: RegionGrid, index: number): Float64Array {
       (source.origin[1] as number) + (nodes[read + 1] as number) * source.cell;
   }
   return out;
+}
+
+/**
+ * The polyline through the midpoints of the unit edges of one chain, in light years. It
+ * is the boundary the region data states: a lattice corner sits up to half a cell from
+ * the edge it marks, and the midpoint is the one point the two cells agree on.
+ */
+function midpointPolyline(source: RegionGrid, index: number): Float64Array {
+  const chain = chainPoints(trace.chains[index] as TracedChain);
+  return toLightYears(midpointChain(chain), source);
 }
 
 /** A polyline of one drawn chain in light years, as `x` then `z` per point. */
@@ -235,6 +258,50 @@ function worstGap(
   return { measured, bound };
 }
 
+/**
+ * The largest distance from any point of one polyline to another polyline, read exactly.
+ *
+ * The distance to a polyline changes by at most the distance moved, so every point of a
+ * piece whose two ends read `d0` and `d1` sits within `max(d0, d1) + half` of the other
+ * line, where `half` is half the length of the piece. The search cuts a piece in two only
+ * while that bound can still beat the largest reading it holds, so the answer is the true
+ * largest distance to within a hundredth of a light year.
+ *
+ * `worstGap` above answers a different question: it certifies that every point is inside a
+ * limit, and it stops cutting as soon as it can say so, which under-reads the largest
+ * distance on a line whose vertices sit far apart.
+ */
+function worstDeparture(from: Float64Array, to: SegmentIndex): number {
+  let worst = 0;
+  for (let segment = 0; segment + 3 < from.length; segment += 2) {
+    const ax = from[segment] as number;
+    const az = from[segment + 1] as number;
+    const bx = from[segment + 2] as number;
+    const bz = from[segment + 3] as number;
+    const stack: number[][] = [
+      [ax, az, nearestGap(to, ax, az), bx, bz, nearestGap(to, bx, bz)],
+    ];
+    while (stack.length > 0) {
+      const piece = stack.pop() as number[];
+      const x0 = piece[0] as number;
+      const z0 = piece[1] as number;
+      const d0 = piece[2] as number;
+      const x1 = piece[3] as number;
+      const z1 = piece[4] as number;
+      const d1 = piece[5] as number;
+      const ends = Math.max(d0, d1);
+      if (ends > worst) worst = ends;
+      const half = Math.hypot(x1 - x0, z1 - z0) / 2;
+      if (ends + half <= worst + 0.01 || half <= 0.005) continue;
+      const mx = (x0 + x1) / 2;
+      const mz = (z0 + z1) / 2;
+      const dm = nearestGap(to, mx, mz);
+      stack.push([x0, z0, d0, mx, mz, dm], [mx, mz, dm, x1, z1, d1]);
+    }
+  }
+  return worst;
+}
+
 /** The two cell ids on the sides of the edge between two neighbouring nodes. */
 function edgeOf(
   source: RegionGrid,
@@ -302,6 +369,117 @@ function turnOf(polyline: Float64Array): { turn: number; length: number } {
     turn += (Math.acos(cosine) * 180) / Math.PI;
   }
   return { turn, length };
+}
+
+/** How far apart the roughness reading takes its samples, in cells. */
+const ROUGHNESS_STEP_CELLS = 0.25;
+
+/** How much arc one roughness window spans, in cells. */
+const ROUGHNESS_SPAN_CELLS = 8;
+
+/**
+ * The roughness of a polyline: the root mean square departure from the straight line
+ * fitted to a sliding window of 8 cells of arc, one reading per window, in light years.
+ *
+ * The reading is of the **drawn line** and not of its vertices, so the polyline is first
+ * resampled at a fixed step along its arc. A reading at the vertices alone would measure
+ * where the vertices fall, and the two sets carry their vertices at very different
+ * spacings. Eight cells is about two periods of the worst saw tooth, the 45 degree
+ * staircase, and is short enough that a real bend does not dominate the reading.
+ *
+ * The fitted line is the total least squares fit, so the departure is measured
+ * perpendicular to it: the root mean square departure is then the square root of the
+ * smaller eigenvalue of the window's scatter matrix.
+ */
+function roughnessOf(polyline: Float64Array, cell: number): number[] {
+  const step = ROUGHNESS_STEP_CELLS * cell;
+  const samples: number[] = [polyline[0] as number, polyline[1] as number];
+  let carry = 0;
+  for (let segment = 0; segment + 3 < polyline.length; segment += 2) {
+    const ax = polyline[segment] as number;
+    const az = polyline[segment + 1] as number;
+    const bx = polyline[segment + 2] as number;
+    const bz = polyline[segment + 3] as number;
+    const span = Math.hypot(bx - ax, bz - az);
+    if (span === 0) continue;
+    let at = step - carry;
+    while (at <= span) {
+      samples.push(ax + ((bx - ax) * at) / span, az + ((bz - az) * at) / span);
+      at += step;
+    }
+    carry = span - (at - step);
+  }
+
+  const count = samples.length / 2;
+  const width = Math.round(ROUGHNESS_SPAN_CELLS / ROUGHNESS_STEP_CELLS) + 1;
+  const readings: number[] = [];
+  for (let start = 0; start + width <= count; start += 1) {
+    let meanX = 0;
+    let meanZ = 0;
+    for (let index = start; index < start + width; index += 1) {
+      meanX += samples[index * 2] as number;
+      meanZ += samples[index * 2 + 1] as number;
+    }
+    meanX /= width;
+    meanZ /= width;
+    let xx = 0;
+    let xz = 0;
+    let zz = 0;
+    for (let index = start; index < start + width; index += 1) {
+      const dx = (samples[index * 2] as number) - meanX;
+      const dz = (samples[index * 2 + 1] as number) - meanZ;
+      xx += dx * dx;
+      xz += dx * dz;
+      zz += dz * dz;
+    }
+    xx /= width;
+    xz /= width;
+    zz /= width;
+    const trace2 = xx + zz;
+    const determinant = xx * zz - xz * xz;
+    const smaller =
+      trace2 / 2 - Math.sqrt(Math.max(0, (trace2 * trace2) / 4 - determinant));
+    readings.push(Math.sqrt(Math.max(0, smaller)));
+  }
+  return readings;
+}
+
+/** The value at a part of the way through a list, once it is sorted. */
+function quantileOf(values: number[], part: number): number {
+  const sorted = [...values].sort((first, second) => first - second);
+  const at = Math.min(sorted.length - 1, Math.floor(part * sorted.length));
+  return sorted[at] as number;
+}
+
+/** The roughness of a whole set, in cells, as its median and its 90th percentile. */
+function roughnessOfSet(
+  read: (index: number) => Float64Array,
+  chains: number,
+  cell: number,
+): { median: number; ninetieth: number; windows: number } {
+  const readings: number[] = [];
+  for (let index = 0; index < chains; index += 1) {
+    for (const value of roughnessOf(read(index), cell)) readings.push(value);
+  }
+  return {
+    median: quantileOf(readings, 0.5) / cell,
+    ninetieth: quantileOf(readings, 0.9) / cell,
+    windows: readings.length,
+  };
+}
+
+/** The largest turn at a single vertex of a whole set, in degrees. */
+function sharpestVertexOf(set: RegionLines): number {
+  let worst = 0;
+  for (let index = 0; index < set.chainCount; index += 1) {
+    const drawn = drawnPolyline(set, index);
+    const count = drawn.length / 2;
+    for (let vertex = 1; vertex + 1 < count; vertex += 1) {
+      const turn = turnAt(drawn, vertex);
+      if (turn > worst) worst = turn;
+    }
+  }
+  return worst;
 }
 
 describe('the region grid', () => {
@@ -484,6 +662,111 @@ describe('the capped average', () => {
     );
     expect(capped[3]).toBeCloseTo(10 - REGION_MOVE_CAP, 12);
   });
+});
+
+describe('the midpoint polyline', () => {
+  test('gives one point for each unit edge and keeps the two ends', () => {
+    const nodes = Float64Array.from([0, 0, 1, 0, 2, 0, 2, 1]);
+    const midpoints = midpointChain(nodes);
+    expect(midpoints.length / 2).toBe(nodes.length / 2 + 1);
+    expect(Array.from(midpoints)).toEqual([0, 0, 0.5, 0, 1.5, 0, 2, 0.5, 2, 1]);
+  });
+
+  test('puts every interior point on the mean of the two nodes it sits between', () => {
+    for (const chain of trace.chains.slice(0, 20)) {
+      const nodes = chainPoints(chain);
+      const midpoints = midpointChain(nodes);
+      const count = nodes.length / 2;
+      expect(midpoints.length / 2).toBe(count + 1);
+      expect(midpoints[0]).toBe(nodes[0]);
+      expect(midpoints[1]).toBe(nodes[1]);
+      expect(midpoints[count * 2]).toBe(nodes[count * 2 - 2]);
+      expect(midpoints[count * 2 + 1]).toBe(nodes[count * 2 - 1]);
+      for (let index = 0; index + 1 < count; index += 1) {
+        expect(midpoints[index * 2 + 2]).toBeCloseTo(
+          ((nodes[index * 2] as number) + (nodes[index * 2 + 2] as number)) / 2,
+          12,
+        );
+        expect(midpoints[index * 2 + 3]).toBeCloseTo(
+          ((nodes[index * 2 + 1] as number) + (nodes[index * 2 + 3] as number)) / 2,
+          12,
+        );
+      }
+    }
+  });
+
+  test('caps a point against its own midpoint and not against the pass before', () => {
+    // The third midpoint is pushed 10 cells off the line. The cap brings it back to half
+    // a cell of that midpoint, whatever the pass before it read.
+    const nodes = Float64Array.from([0, 0, 1, 0, 2, 0, 3, 0]);
+    const midpoints = midpointChain(nodes);
+    const pushed = midpoints.slice();
+    pushed[5] = (midpoints[5] as number) + 10;
+    const capped = capChain(pushed, midpoints, REGION_TRACED_MOVE_CAP);
+    expect(capped[4]).toBeCloseTo(midpoints[4] as number, 12);
+    expect(capped[5]).toBeCloseTo(
+      (midpoints[5] as number) + REGION_TRACED_MOVE_CAP,
+      12,
+    );
+  });
+
+  test('moves no point of the traced pipeline past the cap from its own midpoint', () => {
+    let worst = 0;
+    for (const chain of trace.chains) {
+      const midpoints = midpointChain(chainPoints(chain));
+      let out = midpoints;
+      for (let pass = 0; pass < REGION_TRACED_SMOOTH_PASSES; pass += 1) {
+        out = capChain(
+          averageChain(out, REGION_TRACED_SMOOTH_HALF_WIDTH),
+          midpoints,
+          REGION_TRACED_MOVE_CAP,
+        );
+      }
+      for (let read = 0; read < midpoints.length; read += 2) {
+        const away = Math.hypot(
+          (out[read] as number) - (midpoints[read] as number),
+          (out[read + 1] as number) - (midpoints[read + 1] as number),
+        );
+        if (away > worst) worst = away;
+      }
+    }
+    console.log('the worst traced point movement is', worst, 'cells');
+    expect(worst).toBeLessThanOrEqual(REGION_TRACED_MOVE_CAP + 1e-9);
+  }, 120000);
+
+  test('drops no vertex further than the tolerance from the line that replaces it', () => {
+    let worst = 0;
+    for (const chain of trace.chains) {
+      const midpoints = midpointChain(chainPoints(chain));
+      let out = midpoints;
+      for (let pass = 0; pass < REGION_TRACED_SMOOTH_PASSES; pass += 1) {
+        out = capChain(
+          averageChain(out, REGION_TRACED_SMOOTH_HALF_WIDTH),
+          midpoints,
+          REGION_TRACED_MOVE_CAP,
+        );
+      }
+      const reduced = tracedChain(chainPoints(chain));
+      const line = indexSegments(toLightYears(reduced, grid), 200);
+      const before = toLightYears(out, grid);
+      for (let read = 0; read < before.length; read += 2) {
+        const away = nearestGap(
+          line,
+          before[read] as number,
+          before[read + 1] as number,
+        );
+        if (away > worst) worst = away;
+      }
+    }
+    console.log(
+      'the worst dropped traced vertex sits',
+      worst,
+      'light years from the line',
+    );
+    expect(worst).toBeLessThanOrEqual(
+      REGION_TRACED_SIMPLIFY_TOLERANCE * REGION_CELL_LY,
+    );
+  }, 120000);
 });
 
 describe('the corner rounding', () => {
@@ -796,63 +1079,125 @@ describe('the traced set', () => {
     expect(Array.from(collapseChain(pair))).toEqual([3, 4, 3, 5]);
   });
 
-  test('departs from the traced boundary by nothing', () => {
-    let drawnToTraced = 0;
-    let tracedToDrawn = 0;
+  test('the traced set stays near the data', () => {
+    let toMidpoints = 0;
+    let toLattice = 0;
+    let smoothedToMidpoints = 0;
+    let apart = 0;
     for (let index = 0; index < trace.chains.length; index += 1) {
-      const nodes = tracedPolyline(grid, index);
+      const midpoints = indexSegments(midpointPolyline(grid, index));
+      const lattice = indexSegments(tracedPolyline(grid, index));
       const drawn = drawnPolyline(traced, index);
-      drawnToTraced = Math.max(
-        drawnToTraced,
-        worstGap(drawn, indexSegments(nodes), 0).measured,
+      toMidpoints = Math.max(toMidpoints, worstDeparture(drawn, midpoints));
+      toLattice = Math.max(toLattice, worstDeparture(drawn, lattice));
+      const smoothed = drawnPolyline(lines, index);
+      smoothedToMidpoints = Math.max(
+        smoothedToMidpoints,
+        worstDeparture(smoothed, midpoints),
       );
-      tracedToDrawn = Math.max(
-        tracedToDrawn,
-        worstGap(nodes, indexSegments(drawn), 0).measured,
+      // The two drawn sets both depart from the lattice polyline, so their separation is
+      // bounded by two cells and not by one.
+      apart = Math.max(
+        apart,
+        worstDeparture(drawn, indexSegments(smoothed)),
+        worstDeparture(smoothed, indexSegments(drawn)),
       );
     }
-    console.log('the departure of the traced set', { drawnToTraced, tracedToDrawn });
-    // The packed set holds `float32` coordinates. One step of a `float32` near 50,000 is
-    // 0.0078 light years, so a node can land half a step from where the trace put it and
-    // the departure of an exact packer is not 0 but a fraction of one step.
-    expect(drawnToTraced).toBeLessThanOrEqual(0.01);
-    expect(tracedToDrawn).toBeLessThanOrEqual(0.01);
+    console.log('the departure of the traced set', {
+      toMidpoints,
+      toLattice,
+      smoothedToMidpoints,
+      apart,
+    });
+    expect(toMidpoints).toBeLessThanOrEqual(DEPARTURE_LIMIT);
+    expect(toLattice).toBeLessThanOrEqual(DEPARTURE_LIMIT);
+    expect(apart).toBeLessThanOrEqual(2 * DEPARTURE_LIMIT);
   }, 300000);
 
-  test('keeps every turn', () => {
+  test('the traced set reads as a line', () => {
+    const drawn = roughnessOfSet(
+      (index) => drawnPolyline(traced, index),
+      traced.chainCount,
+      REGION_CELL_LY,
+    );
+    const lattice = roughnessOfSet(
+      (index) => tracedPolyline(grid, index),
+      trace.chains.length,
+      REGION_CELL_LY,
+    );
+    const smoothed = roughnessOfSet(
+      (index) => drawnPolyline(lines, index),
+      lines.chainCount,
+      REGION_CELL_LY,
+    );
+    console.log('the roughness in cells', { drawn, lattice, smoothed });
+    console.log('the roughness in CSS pixels at 10,000 light years on 1,080 rows', {
+      drawnMedian: drawn.median * CELL_CSS_PIXELS,
+      latticeMedian: lattice.median * CELL_CSS_PIXELS,
+      smoothedMedian: smoothed.median * CELL_CSS_PIXELS,
+    });
+
+    expect(drawn.median).toBeLessThanOrEqual(0.03);
+    expect(drawn.ninetieth).toBeLessThanOrEqual(0.08);
+    expect(lattice.median).toBeGreaterThan(0.25);
+    expect(lattice.ninetieth).toBeGreaterThan(0.25);
+  }, 120000);
+
+  test('the traced set keeps the corners the smoothed set removes', () => {
+    const sharpest = sharpestVertexOf(traced);
+    const smoothed = sharpestVertexOf(lines);
+    console.log('the sharpest vertex turns', { sharpest, smoothed });
+    expect(sharpest).toBeGreaterThan(25);
+    expect(sharpest).toBeGreaterThan(smoothed);
+    expect(smoothed).toBeLessThanOrEqual(20);
+  });
+
+  test('the traced set holds the turn bounds of a line', () => {
     let drawnTurn = 0;
     let drawnLength = 0;
-    let nodeTurn = 0;
-    let nodeLength = 0;
-    for (let index = 0; index < trace.chains.length; index += 1) {
+    let worstChain = 0;
+    for (let index = 0; index < traced.chainCount; index += 1) {
       const drawn = turnOf(drawnPolyline(traced, index));
       drawnTurn += drawn.turn;
       drawnLength += drawn.length;
-      const nodes = turnOf(tracedPolyline(grid, index));
-      nodeTurn += nodes.turn;
-      nodeLength += nodes.length;
+      if (drawn.length > 0) {
+        worstChain = Math.max(worstChain, (drawn.turn / drawn.length) * 1000);
+      }
     }
     const drawnPer = (drawnTurn / drawnLength) * 1000;
-    const nodePer = (nodeTurn / nodeLength) * 1000;
-    console.log('the turn of the traced set', { drawnPer, nodePer });
-
-    // Collapsing the straight runs removes no turn and no length. The two readings part
-    // only by the `float32` rounding of the packed coordinates, so the bound is relative.
-    expect(Math.abs(drawnPer - nodePer) / nodePer).toBeLessThanOrEqual(1e-6);
-    expect(drawnPer).toBeGreaterThan(1000);
+    console.log('the turn of the traced set for each 1,000 light years', {
+      drawnPer,
+      worstChain,
+    });
+    expect(drawnPer).toBeLessThanOrEqual(60);
+    expect(worstChain).toBeLessThanOrEqual(100);
   });
 
   test('drops the straight runs', () => {
     let nodeCount = 0;
     for (const chain of trace.chains) nodeCount += chain.nodes.length / 2;
+    const segments: number[] = [];
+    for (let index = 0; index < traced.chainCount; index += 1) {
+      const drawn = drawnPolyline(traced, index);
+      for (let read = 0; read + 3 < drawn.length; read += 2) {
+        segments.push(
+          Math.hypot(
+            (drawn[read + 2] as number) - (drawn[read] as number),
+            (drawn[read + 3] as number) - (drawn[read + 1] as number),
+          ),
+        );
+      }
+    }
     console.log('the traced set holds', traced.vertexCount, 'of', nodeCount, 'nodes', {
       kiB: traced.positions.byteLength / 1024,
+      medianSegmentLy: quantileOf(segments, 0.5),
+      segments: segments.length,
     });
 
     // The bound is a range and not the reading, so a package release that redraws a
     // region fails "The package constants hold" and not this test.
-    expect(traced.vertexCount).toBeGreaterThanOrEqual(15000);
-    expect(traced.vertexCount).toBeLessThanOrEqual(40000);
+    expect(traced.vertexCount).toBeGreaterThanOrEqual(4000);
+    expect(traced.vertexCount).toBeLessThanOrEqual(12000);
     expect(traced.vertexCount).toBeLessThan(nodeCount);
     expect(traced.vertexCount).toBeLessThan(lines.vertexCount);
     expect(traced.positions.length).toBe(traced.vertexCount * 3);

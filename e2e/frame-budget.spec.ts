@@ -226,9 +226,9 @@ test('the closest zoom is under budget with every marker in range', async ({
   expect(mean).toBeLessThan(BUDGET_MS);
 });
 
-// The traced boundary set is the one the `accurate` mode draws. It holds 22,718 vertices
-// against the smoothed set's 68,672, over the same 123 instanced calls, so it is the
-// cheaper of the two. The views are at a corner of it, at close zooms. The pass now draws
+// The traced boundary set is the one the `accurate` mode draws. It holds 5,727 vertices,
+// which is 67.11 KiB, against the smoothed set's 68,672, over the same 123 instanced
+// calls, so it is by far the cheaper of the two. The views are at a corner of it, at close zooms. The pass now draws
 // at every zoom under 30,000 light years, so 4,000 is in the list. The radius rule reads
 // the cell at `max(cursorDistance, 10000)`, so every zoom of 10,000 and below gives the
 // same widest radius of 4.62 CSS pixels at this height, which is 11 taps on each of the

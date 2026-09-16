@@ -10,10 +10,11 @@
 //
 // The pass does not smooth the coverage. The band is 1.6 per cent of the viewport height
 // each side, which is 17.28 CSS pixels at 1,080 rows, and the coverage is an exact
-// distance to the segment blended with MAX, so a 90 degree corner of the traced set is
-// already a round turn of that half width. The range fade draws no line nearer than
-// 10,000 light years, where one region cell measures 4.62 CSS pixels, which is 0.133 of
-// the band, so the raster's staircase sits far inside the band's own ramp.
+// distance to the segment blended with MAX, so the sharpest corner of the traced set is
+// already a round turn of that half width. What the width does not do is hide the
+// raster: both sets are smoothed lines, and the drawn `accurate` set reads 0.06 CSS
+// pixels of roughness at the nearest range that draws against the lattice polyline's
+// 1.26.
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -56,9 +57,9 @@ export const REGION_FADE_IN_NEAR = 20000;
  * per pixel, from the camera to the plane point the pixel sees, and not from the zoom.
  *
  * A close zoom therefore keeps the lines near the horizon, where the plane is far, and
- * takes away the lines near the cursor, where the staircase is wider than the reading it
- * carries. The region labels read the same two figures at their own plane anchor, so a
- * name and the line under it read at the same strength.
+ * takes away the lines near the cursor, where one band would cross the whole frame. The
+ * region labels read the same two figures at their own plane anchor, so a name and the
+ * line under it read at the same strength.
  */
 export const REGION_RANGE_NONE = 10000;
 

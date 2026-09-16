@@ -79,16 +79,17 @@ export const SELECTION_DISTANCE_LY = 500;
 
 /**
  * What the region overlay draws. `off` draws no boundary and places no label.
- * `simplified` draws the smoothed boundary set, and `accurate` draws the traced one,
- * which is the staircase the region data is. `accurate` places the same labels.
+ * `simplified` draws the smoothed boundary set, and `accurate` draws the traced set,
+ * which runs through the midpoints of the region grid's own edges and is then smoothed.
+ * `accurate` places the same labels.
  */
 export type RegionMode = 'off' | 'simplified' | 'accurate';
 
 /**
- * The mode the map takes when the host names none. It is the traced set, which departs
- * from the region data by 0. The band is now wide enough to hide the raster's staircase
- * without moving the line, so the map draws the set the data holds and `simplified`
- * stays as the option for a host that wants the curve.
+ * The mode the map takes when the host names none. Both sets are smoothed and both sit
+ * well inside one grid cell of the data, so the choice between them is corners: the
+ * traced set keeps a real corner of the region data, and `simplified` rounds every corner
+ * away. The traced set is also the nearer of the two to the data and by far the smaller.
  */
 export const DEFAULT_REGION_MODE: RegionMode = 'accurate';
 
@@ -112,12 +113,13 @@ type RegionLookup =
 let regionLookup: Promise<RegionLookup> | null = null;
 
 function loadRegionLookup(): Promise<RegionLookup> {
-  regionLookup ??= import(
-    '@elite-dangerous-almanac/core/astro/codex-region-lookup'
-  ).catch((reason: unknown) => {
-    regionLookup = null;
-    throw reason;
-  });
+  regionLookup ??=
+    import('@elite-dangerous-almanac/core/astro/codex-region-lookup').catch(
+      (reason: unknown) => {
+        regionLookup = null;
+        throw reason;
+      },
+    );
   return regionLookup;
 }
 

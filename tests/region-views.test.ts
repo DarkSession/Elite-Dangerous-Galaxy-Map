@@ -3,7 +3,14 @@ import { project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
 import { regionBandHalfWidthCss } from '../src/render/region-pass';
 import type { View } from '../src/camera/view';
-import { buildRegionData } from '../src/scene-data/region-lines';
+import {
+  buildRegionData,
+  chainPoints,
+  collapseChain,
+  fillRegionGrid,
+  packChains,
+  traceRegionChains,
+} from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
 import {
   NEAR_BOTH_SETS,
@@ -22,11 +29,20 @@ import {
 
 let lines: RegionLines;
 let traced: RegionLines;
+let lattice: RegionLines;
 
 beforeAll(() => {
   const data = buildRegionData();
   lines = data.lines;
   traced = data.traced;
+  // The lattice polyline, which the packer no longer builds. The corner search reads it
+  // to show that it is not tuned to the set this change draws.
+  const grid = fillRegionGrid();
+  const trace = traceRegionChains(grid);
+  lattice = packChains(
+    grid,
+    trace.chains.map((chain) => collapseChain(chainPoints(chain))),
+  );
 }, 120000);
 
 /** The galactic centre in game coordinates, as the browser helpers hold it. */
@@ -87,7 +103,7 @@ function radiusOf(point: readonly [number, number, number]): number {
 
 /**
  * The premises of one crossing view. The search runs once for each set, because a
- * near-vertical straight run of the smoothed set is not one of the traced staircase.
+ * near-vertical straight run of the smoothed set is not one of the traced set.
  */
 function crossingTests(
   name: string,
@@ -321,51 +337,78 @@ describe('the point on a chain of both sets', () => {
   });
 });
 
-describe('the view at a 90 degree corner of the traced set', () => {
+describe('the view at the sharpest corner of the traced set', () => {
   test('is what the search of the traced set gives', () => {
     expect(
       findTracedCorner(traced, TRACED_CORNER.viewport, TRACED_CORNER.view.distance),
     ).toEqual(TRACED_CORNER);
   });
 
-  test('turns by 90 degrees at a vertex of the traced set', () => {
+  test('turns over the read radius by more than the 80 degree floor', () => {
     const vertex = TRACED_CORNER.vertex;
     expect(traced.first[TRACED_CORNER.chain] as number).toBeLessThan(vertex);
     expect(traced.last[TRACED_CORNER.chain] as number).toBeGreaterThan(vertex);
     expect(traced.positions[vertex * 3] as number).toBe(TRACED_CORNER.bend[0]);
     expect(traced.positions[vertex * 3 + 2] as number).toBe(TRACED_CORNER.bend[2]);
-    expect(TRACED_CORNER.turnDegrees).toBe(90);
-    // The reading window reaches the half width and 6 CSS pixels more.
+
+    // The reading window reaches the half width and 6 CSS pixels more, and the turn is
+    // read over it, by the chord back to that radius and the chord forward to it.
     expect(TRACED_CORNER.reachPixels).toBe(
       regionBandHalfWidthCss(TRACED_CORNER.viewport.height) + 6,
     );
+    const line = TRACED_CORNER.bendLine;
+    const bend = TRACED_CORNER.bend;
+    const from = line[0] as [number, number, number];
+    const to = line[line.length - 1] as [number, number, number];
+    const inX = bend[0] - from[0];
+    const inZ = bend[2] - from[2];
+    const outX = to[0] - bend[0];
+    const outZ = to[2] - bend[2];
+    const cosine =
+      (inX * outX + inZ * outZ) / (Math.hypot(inX, inZ) * Math.hypot(outX, outZ));
+    const turn = (Math.acos(cosine) * 180) / Math.PI;
+    expect(TRACED_CORNER.turnDegrees).toBeCloseTo(turn, 6);
+
+    // The floor is the one the radius scenario needs: the radius fit sweeps `180 - T`
+    // while the band's arc spans `T`, and the error reaches the whole 2.0 CSS pixel bound
+    // at a turn of 67.4 degrees.
+    expect(TRACED_CORNER.turnDegrees).toBeGreaterThan(80);
+
+    // Both ends of the window sit at least the read radius from the node.
+    const perPixel = TRACED_CORNER.lightYearsPerPixel;
+    expect(planeGap(bend, from) / perPixel).toBeGreaterThanOrEqual(
+      TRACED_CORNER.reachPixels,
+    );
+    expect(planeGap(bend, to) / perPixel).toBeGreaterThanOrEqual(
+      TRACED_CORNER.reachPixels,
+    );
   });
 
-  test('puts each arm at more than 72 CSS pixels', () => {
-    // The comparison run reaches the half width and 40 CSS pixels more from the node,
-    // which is 64 here, so a shorter arm would put its far end past the next node and off
-    // the straight line. The arm holds 8 CSS pixels more than the run.
-    const perPixel = TRACED_CORNER.lightYearsPerPixel;
-    const vertex = TRACED_CORNER.vertex;
-    const armOf = (step: number): number => {
-      const other = vertex + step;
-      return Math.hypot(
-        (traced.positions[other * 3] as number) - TRACED_CORNER.bend[0],
-        (traced.positions[other * 3 + 2] as number) - TRACED_CORNER.bend[2],
-      );
-    };
-    expect(armOf(-1) / perPixel).toBeGreaterThan(72);
-    expect(armOf(1) / perPixel).toBeGreaterThan(72);
+  test('names a run of the traced set, in order, that holds the corner', () => {
+    // Every point of the reading polyline is a vertex of that one chain, in the order the
+    // chain runs, so the browser test reads the drawn line and not a chord of it.
+    const at = TRACED_CORNER.bendLine.findIndex(
+      (point) =>
+        point[0] === TRACED_CORNER.bend[0] && point[2] === TRACED_CORNER.bend[2],
+    );
+    expect(at).toBeGreaterThan(0);
+    const start = TRACED_CORNER.vertex - at;
+    for (let index = 0; index < TRACED_CORNER.bendLine.length; index += 1) {
+      const point = TRACED_CORNER.bendLine[index] as [number, number, number];
+      expect(traced.positions[(start + index) * 3] as number).toBe(point[0]);
+      expect(traced.positions[(start + index) * 3 + 2] as number).toBe(point[2]);
+    }
   });
 
   test('holds a straight run of the same chain inside the frame', () => {
     const perPixel = TRACED_CORNER.lightYearsPerPixel;
     const halfWidth = regionBandHalfWidthCss(TRACED_CORNER.viewport.height);
     const run = planeGap(TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo);
-    // The run starts 12 CSS pixels past the edge of the band and spans 28 more, less a
-    // float remainder of about 4e-15, because the two ends are built from the same
-    // reading of a pixel.
-    expect(run / perPixel).toBeGreaterThanOrEqual(28 - 1e-9);
+    // The run is the longest chord-straight run of the chain inside a window that reaches
+    // from the half width and 12 CSS pixels out to 28 CSS pixels further, so it measures 8
+    // to 28 CSS pixels. The sharpest node is where a chain is least likely to stay
+    // straight over the whole window, so the bound is the 8 the join search asks for.
+    expect(run / perPixel).toBeGreaterThanOrEqual(8);
 
     // The run sits outside the window the reading reads, which reaches the half width and
     // 6 CSS pixels more.
@@ -382,12 +425,15 @@ describe('the view at a 90 degree corner of the traced set', () => {
     }
   });
 
-  test('carries no other chain near the reading', () => {
-    // The clearance is measured from the edge of the band.
+  test('carries nothing else inside the clearance disc', () => {
+    // The disc is derived: it is the larger of the two reading windows plus the band's
+    // half width. The radius reading reaches the half width and 12 CSS pixels and marches
+    // each ray out to it, so a line 60 CSS pixels away can still light a pixel it reads.
+    // The premise holds a node whose nearest foreign segment sits at exactly 60.
     const halfWidth = regionBandHalfWidthCss(TRACED_CORNER.viewport.height);
     expect(
       TRACED_CORNER.clearanceLy / TRACED_CORNER.lightYearsPerPixel,
-    ).toBeGreaterThan(halfWidth + 20);
+    ).toBeGreaterThanOrEqual(2 * halfWidth + 12);
   });
 
   test('sits away from the galactic core', () => {
@@ -406,25 +452,112 @@ describe('the view at a 90 degree corner of the traced set', () => {
   test('reads at a band half width of 24 CSS pixels', () => {
     expect(regionBandHalfWidthCss(TRACED_CORNER.viewport.height)).toBeCloseTo(24, 6);
   });
+
+  test('finds a corner of the lattice polyline as well', () => {
+    // The search is not tuned to the set this change draws. The lattice polyline is the
+    // set it replaces, and the same premises find a corner there too. A turn over a reach
+    // is not a turn at a vertex, so a lattice staircase reads past 90 over 320.8 light
+    // years.
+    const found = findTracedCorner(
+      lattice,
+      TRACED_CORNER.viewport,
+      TRACED_CORNER.view.distance,
+    );
+    console.log('the corner search over the lattice polyline', {
+      turnDegrees: found.turnDegrees,
+      heldCount: found.heldCount,
+      bend: found.bend,
+    });
+    expect(found.turnDegrees).toBeGreaterThan(80);
+    expect(found.heldCount).toBeGreaterThan(0);
+  }, 120000);
+
+  test('reads the nearest point of a segment and excludes the run by geometry', () => {
+    // One chain turns a right angle at the origin, and one foreign chain runs past it as
+    // a single long segment whose two vertices are 2,000 light years away. A reading of
+    // the nearest vertex would call the foreign chain 2,101 light years off; the nearest
+    // point of its segment is 645.
+    const perPixel = lightYearsPerPixel(20000, TRACED_CORNER.viewport);
+    const corner: [number, number][] = [
+      [-900, 0],
+      [-620, 0],
+      [-330, 0],
+      [-100, 0],
+      [0, 0],
+      [0, 100],
+      [0, 200],
+      [0, 390],
+      [0, 500],
+      [0, 600],
+      [0, 680],
+      [0, 800],
+    ];
+    const foreign: [number, number][] = [
+      [-2000, -645],
+      [2000, -645],
+    ];
+    const setOf = (first: readonly [number, number][]): RegionLines => {
+      const points = [...first, ...foreign];
+      const positions = new Float32Array(points.length * 3);
+      for (let index = 0; index < points.length; index += 1) {
+        const point = points[index] as [number, number];
+        positions[index * 3] = point[0];
+        positions[index * 3 + 2] = point[1];
+      }
+      return {
+        chainCount: 2,
+        vertexCount: points.length,
+        positions,
+        first: Uint32Array.from([0, first.length]),
+        last: Uint32Array.from([first.length - 1, points.length - 1]),
+      };
+    };
+
+    const found = findTracedCorner(
+      setOf(corner),
+      TRACED_CORNER.viewport,
+      TRACED_CORNER.view.distance,
+    );
+    expect(found.vertex).toBe(4);
+    expect(found.turnDegrees).toBeCloseTo(90, 6);
+    expect(found.clearanceLy).toBeCloseTo(645, 6);
+    expect(found.clearanceLy / perPixel).toBeGreaterThanOrEqual(60);
+
+    // The second vertex sits on the line the first three points draw, and it moves along
+    // that line from inside the clearance disc to outside it. The drawn line does not
+    // move, so the search reads the same corner, the same run and the same clearance. A
+    // rule that excluded a range of vertex indices, or that measured to a vertex, would
+    // answer differently.
+    const moved = corner.map((point, index) =>
+      index === 1 ? ([-660, 0] as [number, number]) : point,
+    );
+    expect(
+      findTracedCorner(
+        setOf(moved),
+        TRACED_CORNER.viewport,
+        TRACED_CORNER.view.distance,
+      ),
+    ).toEqual(found);
+  });
 });
 
 describe('the counts the four searches hold', () => {
   // Each count is a reading of the search under the view the spec states. The search
   // itself reports it, so a count that moves fails the equality test above as well.
-  test('the width search holds 23 runs of the smoothed set and 2 of the traced', () => {
+  test('the width search holds 23 runs of the smoothed set and 6 of the traced', () => {
     expect(SMOOTHED_CROSSING.heldCount).toBe(23);
-    expect(TRACED_CROSSING.heldCount).toBe(2);
+    expect(TRACED_CROSSING.heldCount).toBe(6);
   });
 
   test('the join search holds 81 bends', () => {
     expect(SHARP_CORNER.heldCount).toBe(81);
   });
 
-  test('the traced corner search holds 6 nodes', () => {
-    expect(TRACED_CORNER.heldCount).toBe(6);
+  test('the traced corner search holds 1,070 nodes', () => {
+    expect(TRACED_CORNER.heldCount).toBe(1070);
   });
 
-  test('the both-sets search holds 4,098 points', () => {
-    expect(NEAR_BOTH_SETS.heldCount).toBe(4098);
+  test('the both-sets search holds 1,126 points', () => {
+    expect(NEAR_BOTH_SETS.heldCount).toBe(1126);
   });
 });

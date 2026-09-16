@@ -766,10 +766,16 @@ export function targetShare(seconds: number): number {
  *
  * A label rides the map. The move the map itself makes under the label is free, and this
  * is the whole of what the label may add to it. A label can therefore never cross the
- * frame while the galaxy under it holds still, and it can never overtake the galaxy by
- * more than a fifth of a 1080 row frame in a second.
+ * frame in one frame while the galaxy under it holds still, and it can never overtake the
+ * galaxy by more than one 1080 row frame in 0.9 seconds.
+ *
+ * The cap is `ANCHOR_MAX_SPEED`, the cap the anchor stage runs under. The target then
+ * never asks the anchor for more than the anchor may give, so the two stages cannot
+ * fight. The cap, and not the half life, set the speed of a handover: at a gap of 300 CSS
+ * pixels the share of `TARGET_HALF_LIFE_MS` asks for 45 CSS pixels in a 16.667
+ * millisecond frame, and the old cap of 120 allowed 2.0.
  */
-export const TARGET_DRIFT_PIXELS = 120;
+export const TARGET_DRIFT_PIXELS = 1200;
 
 /** How many times the drift cut halves its range while it solves the share. */
 const DRIFT_PASSES = 24;
