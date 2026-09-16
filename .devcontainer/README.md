@@ -11,7 +11,7 @@ card instead of SwiftShader.
 | `libegl1`, `libgles2` | The vendor-neutral dispatch libraries the injected driver plugs into. The base image has none. |
 | `desktop-lite` feature | An X server on `:1` and noVNC on 6080, so headed Chrome has somewhere to draw. |
 | `google-chrome-stable` | Interactive debugging target for the `chrome: open with the GPU flags` task, at a path that does not move between Playwright releases. |
-| Playwright + Chromium | Browser cached in a named volume so a rebuild does not re-download it. |
+| Playwright + Chromium + Firefox | Browsers cached in a named volume so a rebuild does not re-download them. |
 | `gh` | GitHub CLI. Run `gh auth login` once per volume. |
 | `--shm-size=1g` | Docker's 64MB default kills Chromium renderers under a real scene. |
 
@@ -95,3 +95,31 @@ both cases. `playwright.config.ts` and `tasks.json` use the same flags.
 Assert on it rather than trusting it -- read `WEBGL_debug_renderer_info` in the page and fail the
 suite if it comes back SwiftShader, otherwise a silent fallback turns a GPU regression into a
 merely-slow test run.
+
+## Firefox
+
+Firefox draws text shadows on the CPU, and the map draws its labels with the DOM, so a Firefox
+run measures a cost the Chromium run does not show. `post-create.sh` installs it.
+
+Firefox needs no GPU flags. Headless Firefox reaches the card on its own, and the flags above are
+Chromium-only:
+
+```ts
+{ name: 'firefox', use: { ...devices['Desktop Firefox'] } }
+```
+
+Firefox hides the real card behind a generic name. It reports `NVIDIA GeForce GTX 980, or
+similar` for every NVIDIA card, which is still enough to tell hardware from software -- the
+software renderer names itself `llvmpipe`. To read the true string, turn the sanitizer off:
+
+```ts
+firefoxUserPrefs: { 'webgl.sanitize-unmasked-renderer': false }
+```
+
+Two failures to know, because both look like something else:
+
+- `Your Firefox profile cannot be loaded` in a dialog on the container desktop. Firefox cannot
+  write `~/.cache/mozilla`. `post-create.sh` gives node that directory; an older container needs
+  `sudo chown node:node /home/node/.cache` once.
+- `Sandbox: CanCreateUserNamespace() clone() failure: EPERM` on every start. The container blocks
+  unprivileged user namespaces. Firefox prints it and runs. It is not the cause of a failure.

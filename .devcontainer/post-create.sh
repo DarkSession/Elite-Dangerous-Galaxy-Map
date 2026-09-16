@@ -5,6 +5,10 @@
 set -euo pipefail
 
 # Named volumes mount owned by root; the browsers and Claude Code state live under them.
+# The volume at .cache/ms-playwright also makes docker create the parent .cache as root. Firefox
+# must write .cache/mozilla, and it cannot, so it stops with "Your Firefox profile cannot be
+# loaded". Give node the parent as well.
+sudo chown node:node /home/node/.cache
 sudo chown -R node:node /home/node/.cache/ms-playwright /home/node/.claude
 
 # The NVIDIA container toolkit injects the driver, but not the vendor-neutral dispatch libraries
@@ -25,9 +29,11 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends google-chrome-stable
 sudo rm -rf /var/lib/apt/lists/*
 
-# System libraries for the bundled browser, then the browser itself into the cache volume.
-sudo npx --yes playwright install-deps chromium
-npx --yes playwright install chromium
+# System libraries for the bundled browsers, then the browsers themselves into the cache volume.
+# Chromium runs the test suite. Firefox has a different text paint path, and the map draws its
+# labels with the DOM, so the browser suite measures that cost in both.
+sudo npx --yes playwright install-deps chromium firefox
+npx --yes playwright install chromium firefox
 
 # OpenSpec CLI: the project's specs and change proposals live in openspec/, and the slash
 # commands in .claude/ shell out to this binary. Global rather than a devDependency so it is
