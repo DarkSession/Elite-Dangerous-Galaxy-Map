@@ -905,6 +905,11 @@ describe('the region flow field', () => {
   test('every step stays on its own region', () => {
     const size = coarse.size;
     let steps = 0;
+    // The loop reads all 257,049 cells. A call to `expect` for each one costs seconds on a
+    // slow machine, and the test then goes past the 5 second limit. The loop therefore
+    // keeps the first fault it finds, and the assertions run once after it. The reading is
+    // the same, and the message names the cell.
+    let fault: string | null = null;
     for (let iz = 0; iz < size; iz += 1) {
       for (let ix = 0; ix < size; ix += 1) {
         const at = iz * size + ix;
@@ -915,23 +920,32 @@ describe('the region flow field', () => {
         const move = REGION_FLOW_STEPS[byte] as readonly [number, number];
         const nextX = ix + move[0];
         const nextZ = iz + move[1];
-        expect(nextX).toBeGreaterThanOrEqual(0);
-        expect(nextZ).toBeGreaterThanOrEqual(0);
-        expect(nextX).toBeLessThan(size);
-        expect(nextZ).toBeLessThan(size);
-        expect(coarse.ids[nextZ * size + nextX]).toBe(id);
+        if (nextX < 0 || nextZ < 0 || nextX >= size || nextZ >= size) {
+          fault ??= `the step from ${ix},${iz} goes off the grid to ${nextX},${nextZ}`;
+          continue;
+        }
+        const nextId = coarse.ids[nextZ * size + nextX] as number;
+        if (nextId !== id) {
+          fault ??= `the step from ${ix},${iz} leaves region ${id} for region ${nextId}`;
+          continue;
+        }
         steps += 1;
       }
     }
     console.log('the flow field holds', steps, 'steps of', flow.length, 'cells');
+    expect(fault).toBeNull();
     expect(steps).toBeGreaterThan(0);
   });
 
   test('a cell that holds no region names no step', () => {
+    // One assertion after the loop, for the reason the test above gives.
+    let fault: string | null = null;
     for (let at = 0; at < flow.length; at += 1) {
       if ((coarse.ids[at] as number) !== NO_REGION_ID) continue;
-      expect(flow[at]).toBe(REGION_FLOW_END);
+      if ((flow[at] as number) === REGION_FLOW_END) continue;
+      fault ??= `cell ${at} holds no region and names the step ${String(flow[at])}`;
     }
+    expect(fault).toBeNull();
   });
 
   test('following the field reaches the centre', () => {
