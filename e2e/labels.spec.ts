@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { startState, waitForReady } from './helpers';
+import {
+  readRegionLabelRanges,
+  settleLabels,
+  startState,
+  waitForReady,
+} from './helpers';
 
 /** How many views this file has opened, so each one gets its own address. */
 let visits = 0;
@@ -85,6 +90,86 @@ async function readRegionsOnScreen(page: Page, spacing = 16): Promise<Set<string
     return Array.from(found);
   }, spacing);
   return new Set(names);
+}
+
+/**
+ * What share of the plane samples each region holds, in per cent, worked out by the test
+ * itself. It sweeps the same grid of screen points and resolves each one against the
+ * coarse region grid. The share is of the points that land on a region, so a frame that
+ * is half sky still gives shares that add to 100.
+ */
+async function readRegionSharesOnScreen(
+  page: Page,
+  spacing = 16,
+): Promise<Map<string, number>> {
+  const rows = await page.evaluate((step: number) => {
+    const read = window.__galaxyMap?.regionNameAtScreen;
+    if (read === undefined) return [];
+    const counts = new Map<string, number>();
+    let total = 0;
+    for (let y = step / 2; y < window.innerHeight; y += step) {
+      for (let x = step / 2; x < window.innerWidth; x += step) {
+        const name = read(x, y);
+        if (name === null) continue;
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+        total += 1;
+      }
+    }
+    return Array.from(counts, ([name, count]) => ({
+      name,
+      share: total === 0 ? 0 : (100 * count) / total,
+    }));
+  }, spacing);
+  rows.sort((first, second) => second.share - first.share);
+  return new Map(rows.map((row) => [row.name, row.share]));
+}
+
+/**
+ * How many pixels of the frame the region pass changes. The reading draws the frame
+ * twice, once with the pass and once without it, and counts the bytes that differ. A
+ * frame with no boundary in it reads 0.
+ */
+async function changedByRegionPass(page: Page): Promise<number> {
+  const read = async (on: boolean): Promise<number[]> =>
+    page.evaluate((next: boolean) => {
+      const probe = window.__galaxyMap;
+      const canvas = document.getElementById('map');
+      if (probe?.readRect === undefined || !(canvas instanceof HTMLCanvasElement)) {
+        return [];
+      }
+      probe.setPasses?.({ regions: next });
+      probe.drawNow?.();
+      // `readRect` takes CSS pixels and reads the device pixels under them.
+      const bytes = probe.readRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      return Array.from(bytes);
+    }, on);
+  const withPass = await read(true);
+  const withoutPass = await read(false);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ regions: true });
+    window.__galaxyMap?.drawNow?.();
+  });
+  let changed = 0;
+  for (let index = 0; index < withPass.length; index += 4) {
+    if (
+      withPass[index] !== withoutPass[index] ||
+      withPass[index + 1] !== withoutPass[index + 1] ||
+      withPass[index + 2] !== withoutPass[index + 2]
+    ) {
+      changed += 1;
+    }
+  }
+  return changed;
+}
+
+/**
+ * The range fade of the boundary and of a label, read at a range in light years. It is
+ * the same smooth step `src/render/region-pass.ts` holds, written out here so the test
+ * reads a figure of its own and not the one the page computed.
+ */
+function rangeFade(rangeLy: number): number {
+  const t = Math.min(1, Math.max(0, (rangeLy - 10000) / (20000 - 10000)));
+  return t * t * (3 - 2 * t);
 }
 
 /** How near the frame edge a pushed label sits, in CSS pixels. */
@@ -210,60 +295,86 @@ test.describe('the labels at 1280 by 720', () => {
   });
 
   test('the region the camera is inside is named at every zoom', async ({ page }) => {
-    // Every zoom is every zoom the overlay draws in. The band takes the labels away
-    // below 5,000 light years, and the HUD's top bar names the region there instead.
-    for (const distance of [20000, 15000, 10000]) {
+    // Every zoom is every zoom the overlay draws in, which is the same set of zooms the
+    // boundary draws in. The label takes the range fade at its own plane anchor, so the
+    // name goes at the same distance the line beside it goes. The anchor sits near the
+    // cursor, so a zoom of 4,000 light years takes the name away and the HUD's top bar
+    // names the region there instead.
+    for (const distance of [20000, 15000, 10000, 7500, 4000]) {
       await openView(page, `#c=0,0,0&d=${distance}&p=35&y=0`);
-      const labels = await readLabels(page);
-      const spur = labels.find((label) => label.name === 'Inner Orion Spur');
-      expect(
-        spur,
-        `no Inner Orion Spur label at ${distance} light years`,
-      ).toBeDefined();
-      expect(insideViewport(spur as LabelReading, 1280, 720)).toBe(true);
+      await settleLabels(page);
+      const ranges = await readRegionLabelRanges(page);
+      const spur = ranges.find((label) => label.name === 'Inner Orion Spur');
+      console.log(
+        `the Inner Orion Spur label at ${distance} light years`,
+        spur === undefined ? 'is not on the page' : JSON.stringify(spur),
+      );
+
+      if (distance === 20000) {
+        expect(spur, 'no Inner Orion Spur label at 20,000 light years').toBeDefined();
+        const box = await readLabelBox(page, 'Inner Orion Spur');
+        expect(insideViewport(box as LabelReading, 1280, 720)).toBe(true);
+      }
+      if (distance === 4000) {
+        // The anchor sits about 4,000 light years away, where the range fade reads 0.
+        expect(spur, 'an Inner Orion Spur label at 4,000 light years').toBeUndefined();
+      }
+      if (spur === undefined) continue;
+      // The zoom fade is 1 at and below 20,000 light years, so the opacity is the range
+      // fade alone.
+      expect(Math.abs(spur.opacity - rangeFade(spur.rangeLy))).toBeLessThan(0.05);
     }
-
-    // 7,500 light years is the middle of the smooth step, so the name is on the page
-    // at part of its strength.
-    await openView(page, '#c=0,0,0&d=7500&p=35&y=0');
-    const fading = await readLabels(page);
-    const spur = fading.find((label) => label.name === 'Inner Orion Spur');
-    expect(spur, 'no Inner Orion Spur label at 7,500 light years').toBeDefined();
-    console.log(
-      'the label opacity at 7,500 light years',
-      (spur as LabelReading).opacity,
-    );
-    expect((spur as LabelReading).opacity).toBeGreaterThan(0.2);
-    expect((spur as LabelReading).opacity).toBeLessThan(0.8);
-
-    await openView(page, '#c=0,0,0&d=4000&p=35&y=0');
-    expect(await readLabels(page)).toEqual([]);
   });
 
-  test('the sweep does not run below the band', async ({ page }) => {
-    await openView(page, '#c=0,0,0&d=4000&p=35&y=0');
-    // The counter is cumulative, so it is reset after the view is set. An earlier frame
-    // would otherwise leave the count above 0.
-    await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
-    await page.evaluate(async () => {
-      for (let frame = 0; frame < 60; frame += 1) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      }
-    });
-    const sampling = await page.evaluate(
-      () =>
-        window.__galaxyMap?.labelSampling?.() ?? {
-          frames: -1,
-          meanMs: -1,
-          worstMs: -1,
-        },
-    );
-    console.log('the sampling below the band', sampling);
+  test('the sweep does not run when the frame can carry no label', async ({ page }) => {
+    // The two views read the two halves of the gate. At a pitch of 89 degrees the whole
+    // frame lies inside the range floor, so the range half closes. At 60,000 light years
+    // the plane runs far past the floor and the zoom half closes.
+    for (const fragment of ['#c=0,0,0&d=4000&p=89&y=0', '#c=0,0,0&d=60000&p=35&y=0']) {
+      await openView(page, fragment);
+      // The counter is cumulative, so it is reset after the view is set. An earlier
+      // frame would otherwise leave the count above 0.
+      await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
+      await page.evaluate(async () => {
+        for (let frame = 0; frame < 60; frame += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+      });
+      const sampling = await page.evaluate(
+        () =>
+          window.__galaxyMap?.labelSampling?.() ?? {
+            frames: -1,
+            meanMs: -1,
+            worstMs: -1,
+          },
+      );
+      console.log('the sampling at', fragment, sampling);
 
-    expect(await readLabels(page)).toEqual([]);
-    expect(sampling.frames).toBe(0);
-    expect(sampling.meanMs).toBe(0);
-    expect(sampling.worstMs).toBe(0);
+      expect(await readLabels(page), `a label at ${fragment}`).toEqual([]);
+      expect(sampling.frames, `frames at ${fragment}`).toBe(0);
+      expect(sampling.meanMs, `meanMs at ${fragment}`).toBe(0);
+      expect(sampling.worstMs, `worstMs at ${fragment}`).toBe(0);
+    }
+  });
+
+  test('no label where no line draws', async ({ page }) => {
+    // Every plane point of this frame is under 10,000 light years from the camera, so
+    // the band draws nothing. Before this requirement the names stood over a frame with
+    // no lines under them.
+    await openView(
+      page,
+      '#c=1840.85884,-15539.75557,16507.94703&d=20016.72348&p=58.57998&y=24.66002&g=1',
+    );
+    const labels = await readLabels(page);
+    const changed = await changedByRegionPass(page);
+    console.log(
+      'the labels over the frame with no lines',
+      labels.map((label) => label.name),
+      'and the pixels the region pass changes',
+      changed,
+    );
+    expect(labels).toEqual([]);
+    expect(changed, 'the frame holds a boundary').toBe(0);
   });
 
   test('a region with nothing on screen carries no label', async ({ page }) => {
@@ -285,36 +396,34 @@ test.describe('the labels at 1280 by 720', () => {
   test('the camera keeps the label of the region it sits in when it turns away', async ({
     page,
   }) => {
-    // The view moved from 500 light years to 12,000, because the fade places no label
-    // at 500. The shares are measured by the test and not written into it, because the
-    // shares at the new distance are not the shares the old one gave.
+    // The zoom is 20,000 light years so that the range fade takes nothing: the camera
+    // sits 11,472 light years above the plane and the nearest plane point in the frame
+    // is 12,657 away, so every anchor clears the 10,000 light year floor. The 5 per cent
+    // clause then reads the placement alone. The shares are measured by the test and not
+    // written into it.
     for (const yaw of [0, 180]) {
-      await openView(page, `#c=0,0,0&d=12000&p=35&y=${yaw}`);
+      await openView(page, `#c=0,0,0&d=20000&p=35&y=${yaw}`);
       const labels = await readLabels(page);
-      const counts = await readSampleCounts(page);
-      const total = await readSampleTotal(page);
-      const share = (name: string): number =>
-        (100 * (counts.find((row) => row.name === name)?.count ?? 0)) / total;
+      const shares = await readRegionSharesOnScreen(page);
+      const share = (name: string): number => shares.get(name) ?? 0;
       console.log(
-        `the samples at a yaw of ${yaw}, of`,
-        total,
-        'landed:',
-        counts.map((row) => `${row.name} ${row.count} ${share(row.name).toFixed(1)}%`),
+        `the shares the test measured at a yaw of ${yaw}:`,
+        Array.from(shares).map(([name, value]) => `${name} ${value.toFixed(1)}%`),
       );
 
       expect(labels.map((label) => label.name)).toContain('Inner Orion Spur');
       for (const label of labels) {
         expect(
           share(label.name),
-          `${label.name} holds under 1 percent of the samples`,
+          `${label.name} holds under 1 percent of the screen`,
         ).toBeGreaterThanOrEqual(1);
       }
-      for (const row of counts) {
-        if (share(row.name) < 5) continue;
+      for (const [name, value] of shares) {
+        if (value < 5) continue;
         expect(
           labels.map((label) => label.name),
-          `${row.name} holds ${share(row.name).toFixed(1)} percent and carries no label`,
-        ).toContain(row.name);
+          `${name} holds ${value.toFixed(1)} percent and carries no label`,
+        ).toContain(name);
       }
     }
   });

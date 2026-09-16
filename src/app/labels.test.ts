@@ -21,8 +21,11 @@ import {
   ANCHOR_REACH_SHARE,
   HELD_SHARE,
   LABEL_INSET,
+  farthestPlaneRange,
   labelCandidates,
   labelFade,
+  labelRangeFade,
+  labelSweepRuns,
   MAX_LABELS,
   SAMPLE_SPACING,
   samplePointCount,
@@ -38,8 +41,21 @@ import type {
 // The test builds the coarse grid the page gets from the region worker. The page
 // never imports this module: it would pull the 199 KiB region lookup into the main
 // bundle, which `tests/main-bundle.test.ts` holds the line against.
-import { buildCoarseRegionGrid, fillRegionGrid } from '../scene-data/region-lines';
-import { REGIONS } from '../scene-data/regions';
+import {
+  buildCoarseRegionGrid,
+  buildRegionFlow,
+  fillRegionGrid,
+} from '../scene-data/region-lines';
+import {
+  REGION_RANGE_FULL,
+  REGION_RANGE_NONE,
+  regionFade,
+} from '../render/region-pass';
+import {
+  coarseRegionFlowStepAt,
+  coarseRegionIdAt,
+  REGIONS,
+} from '../scene-data/regions';
 import type { Region } from '../scene-data/regions';
 import type { CoarseRegionGrid } from '../scene-data/types';
 
@@ -126,6 +142,9 @@ function samplesOf(
     },
     toPlane(x: number, y: number) {
       return { x, z: y };
+    },
+    flowStepAtPlane() {
+      return null;
     },
   };
 }
@@ -462,17 +481,41 @@ describe('the placement', () => {
 });
 
 describe('the label fade', () => {
-  test('takes the same band of zoom distance the boundary lines take', () => {
+  test('is the boundary line zoom fade itself and holds no second copy', () => {
+    for (const distance of [500, 4000, 7500, 10000, 20000, 25000, 30000, 60000]) {
+      expect(labelFade(distance)).toBe(regionFade(distance));
+    }
+  });
+
+  test('keeps the far end of the band alone', () => {
     expect(labelFade(30000)).toBe(0);
     expect(labelFade(60000)).toBe(0);
     expect(labelFade(20000)).toBe(1);
-    expect(labelFade(10000)).toBe(1);
-    expect(labelFade(7500)).toBeCloseTo(0.5, 12);
-    expect(labelFade(5000)).toBe(0);
-    expect(labelFade(4000)).toBe(0);
-    expect(labelFade(500)).toBe(0);
     expect(labelFade(25000)).toBeGreaterThan(0);
     expect(labelFade(25000)).toBeLessThan(1);
+  });
+
+  test('carries no close step, which the range fade now holds', () => {
+    // The six readings below were 0 under the close step the old band held. The range
+    // fade at each label's own anchor holds that end now, exactly as it does for the
+    // lines, so a name and the line under it can no longer part company at a zoom.
+    expect(labelFade(10000)).toBe(1);
+    expect(labelFade(7500)).toBe(1);
+    expect(labelFade(5000)).toBe(1);
+    expect(labelFade(4000)).toBe(1);
+    expect(labelFade(500)).toBe(1);
+    expect(labelFade(0)).toBe(1);
+  });
+
+  test('reads the range fade at the label own anchor', () => {
+    expect(labelRangeFade(REGION_RANGE_NONE)).toBe(0);
+    expect(labelRangeFade(4000)).toBe(0);
+    expect(labelRangeFade(REGION_RANGE_FULL)).toBe(1);
+    expect(labelRangeFade(30000)).toBe(1);
+    expect(labelRangeFade(15000)).toBeCloseTo(0.5, 12);
+    // The two constants are the composite pass's own, so no copy is made.
+    expect(REGION_RANGE_NONE).toBe(10000);
+    expect(REGION_RANGE_FULL).toBe(20000);
   });
 });
 
@@ -748,10 +791,14 @@ describe('the label target', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME).slice(
-        0,
-        MAX_LABELS,
-      );
+      const shown = labelCandidates(
+        samples,
+        VIEWPORT,
+        REGIONS,
+        memory,
+        measure,
+        FRAME,
+      ).slice(0, MAX_LABELS);
       for (const one of shown) {
         const region = REGIONS.find((candidate) => candidate.id === one.id) as Region;
         const onCentre =
@@ -923,7 +970,12 @@ describe('the anchor filter', () => {
   test('moves the carried point its share of the gap to the target', () => {
     const gap = Math.hypot(10, 10);
     const share = anchorStep(gap, FRAME_SECONDS) / gap;
-    const filtered = filterAnchor({ x: 210, z: 110 }, { x: 200, z: 100 }, identity, FRAME_SECONDS);
+    const filtered = filterAnchor(
+      { x: 210, z: 110 },
+      { x: 200, z: 100 },
+      identity,
+      FRAME_SECONDS,
+    );
     expect(filtered.x).toBeCloseTo(210 - 10 * share, 9);
     expect(filtered.z).toBeCloseTo(110 - 10 * share, 9);
     // The step is under the cap, so the cap does not touch it.
@@ -964,7 +1016,12 @@ describe('the anchor filter', () => {
   });
 
   test('takes no step when the carried point is the target', () => {
-    const filtered = filterAnchor({ x: 200, z: 100 }, { x: 200, z: 100 }, identity, FRAME_SECONDS);
+    const filtered = filterAnchor(
+      { x: 200, z: 100 },
+      { x: 200, z: 100 },
+      identity,
+      FRAME_SECONDS,
+    );
     expect(filtered).toEqual({ x: 200, z: 100 });
   });
 
@@ -1170,6 +1227,7 @@ describe('the anchor over a pan', () => {
       regionAtPlane: regionAt,
       toScreen: (x: number, z: number) => ({ x: x + offset.x, y: z + offset.y }),
       toPlane: (x: number, y: number) => ({ x: x - offset.x, z: y - offset.y }),
+      flowStepAtPlane: () => null,
     };
   }
 
@@ -1388,9 +1446,14 @@ describe('the anchor over a pan', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const one = labelCandidates(samples, VIEWPORT, REGIONS, memory, undefined, FRAME).find(
-        (candidate) => candidate.id === id,
-      );
+      const one = labelCandidates(
+        samples,
+        VIEWPORT,
+        REGIONS,
+        memory,
+        undefined,
+        FRAME,
+      ).find((candidate) => candidate.id === id);
       expect(one).toBeDefined();
       if (one === undefined) return;
 
@@ -1564,11 +1627,23 @@ describe('the anchor as the camera turns', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, WIDE_VIEWPORT, grid);
-      const anchor = labelCandidates(samples, WIDE_VIEWPORT, REGIONS, memory, undefined, FRAME).find(
-        (candidate) => candidate.id === id,
-      )?.anchor;
+      const anchor = labelCandidates(
+        samples,
+        WIDE_VIEWPORT,
+        REGIONS,
+        memory,
+        undefined,
+        FRAME,
+      ).find((candidate) => candidate.id === id)?.anchor;
       if (anchor !== undefined) anchors.push(anchor);
-      const placed = chooseLabels(samples, WIDE_VIEWPORT, measure, REGIONS, memory, FRAME);
+      const placed = chooseLabels(
+        samples,
+        WIDE_VIEWPORT,
+        measure,
+        REGIONS,
+        memory,
+        FRAME,
+      );
       memory = rememberLabels(placed);
       sets.push(
         placed
@@ -1628,10 +1703,14 @@ describe('the label walk under a zoom', () => {
     for (const view of views) {
       frame += 1;
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME).slice(
-        0,
-        MAX_LABELS,
-      );
+      const shown = labelCandidates(
+        samples,
+        VIEWPORT,
+        REGIONS,
+        memory,
+        measure,
+        FRAME,
+      ).slice(0, MAX_LABELS);
       for (const one of shown) {
         const region = REGIONS.find((candidate) => candidate.id === one.id) as Region;
         const centre = samples.toScreen(region.centroid[0], region.centroid[1]);
@@ -1767,7 +1846,14 @@ describe('the label after a view jump', () => {
     const run = (view: View, frames: number, read: boolean): void => {
       for (let frame = 0; frame < frames; frame += 1) {
         const samples = sampleFrame(view, VIEWPORT, grid);
-        const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME);
+        const shown = labelCandidates(
+          samples,
+          VIEWPORT,
+          REGIONS,
+          memory,
+          measure,
+          FRAME,
+        );
         const one = shown.find((candidate) => candidate.id === spur.id);
         if (read && one !== undefined && arrived < 0) {
           const target = samples.toScreen(one.target.x, one.target.z);
@@ -1821,7 +1907,14 @@ describe('the frame the placement runs', () => {
     memory: LabelMemory,
     timing: FrameTiming,
   ): { plane: PlanePoint; target: PlanePoint; memory: LabelMemory } {
-    const shown = labelCandidates(samples, VIEWPORT, regions, memory, undefined, timing);
+    const shown = labelCandidates(
+      samples,
+      VIEWPORT,
+      regions,
+      memory,
+      undefined,
+      timing,
+    );
     const one = shown.find((candidate) => candidate.id === 1) as (typeof shown)[0];
     return { plane: one.plane, target: one.target, memory: rememberLabels(shown) };
   }
@@ -2091,5 +2184,195 @@ describe('the handover between the two target rules', () => {
     expect(arrived).toBeGreaterThanOrEqual(0);
     // Three seconds is 180 frames of 16.667 milliseconds.
     expect(arrived).toBeLessThanOrEqual(180);
+  });
+});
+
+describe('the sweep skip gate', () => {
+  test('is skipped only when nothing could draw', () => {
+    // A pitch of 89 degrees puts the whole frame inside the range floor, so no label
+    // could draw and the sweep does not run. A pitch of 20 degrees at the same zoom
+    // holds the horizon, the plane runs past 10,000 light years and the sweep runs. A
+    // gate on the zoom alone would skip both.
+    const steep = viewAt(4000, 89);
+    const shallow = viewAt(4000, 20);
+    console.log('the greatest plane range', {
+      steep: farthestPlaneRange(steep, WIDE),
+      shallow: farthestPlaneRange(shallow, WIDE),
+    });
+    expect(farthestPlaneRange(steep, WIDE)).toBeLessThan(REGION_RANGE_NONE);
+    expect(farthestPlaneRange(shallow, WIDE)).toBeGreaterThan(REGION_RANGE_NONE);
+    expect(labelSweepRuns(steep, WIDE)).toBe(false);
+    expect(labelSweepRuns(shallow, WIDE)).toBe(true);
+  });
+
+  test('reads the two top corners and not the top centre', () => {
+    // At the reported view the camera sits 1,542 light years above the plane at a pitch
+    // of 58.6 degrees. The top centre reads about 3,223 light years and the corners
+    // about 4,300, so a gate on the centre under-reads by about a third.
+    const view: View = {
+      cursor: [1840.85884, -15539.75557, 16507.94703],
+      distance: 20016.72348,
+      yaw: 24.66002,
+      pitch: 58.57998,
+    };
+    const corners = farthestPlaneRange(view, WIDE);
+    console.log('the reported view reads', corners, 'light years at the corners');
+    expect(corners).toBeGreaterThan(4000);
+    expect(corners).toBeLessThan(REGION_RANGE_NONE);
+    expect(labelSweepRuns(view, WIDE)).toBe(false);
+  });
+
+  test('takes a frame that holds the horizon as beyond every range', () => {
+    // A pitch of 5 degrees puts the horizon inside the frame, so the top corner ray
+    // never meets the plane.
+    expect(farthestPlaneRange(viewAt(4000, 5), WIDE)).toBe(Number.POSITIVE_INFINITY);
+    expect(labelSweepRuns(viewAt(4000, 5), WIDE)).toBe(true);
+  });
+
+  test('keeps the zoom half, which closes the default far view', () => {
+    // At 60,000 light years the plane runs out to about 395,000, so the range half is
+    // open and the zoom half is what closes the gate.
+    const far = viewAt(60000, 35);
+    expect(farthestPlaneRange(far, WIDE)).toBeGreaterThan(REGION_RANGE_NONE);
+    expect(labelFade(60000)).toBe(0);
+    expect(labelSweepRuns(far, WIDE)).toBe(false);
+  });
+});
+
+describe('a region that lies in the way', () => {
+  /** How many cells the two-lobed grid holds per axis. */
+  const LOBE_SIZE = 64;
+
+  /** The side of one cell of that grid, in light years. */
+  const LOBE_CELL = 5;
+
+  /**
+   * A grid holding one region shaped as two lobes joined by a neck, with a second region
+   * filling the gap between the lobes.
+   *
+   * The grid is placed so that the centroid of the region of id 1 sits at the middle of
+   * the cell (32, 10), which is inside the near lobe, so the flow field walks out from
+   * there. The straight line from the far lobe to that cell crosses the second region.
+   */
+  function twoLobes(): CoarseRegionGrid {
+    const centroid = (REGIONS[0] as Region).centroid;
+    const ids = new Uint8Array(LOBE_SIZE * LOBE_SIZE);
+    for (let iz = 0; iz < LOBE_SIZE; iz += 1) {
+      for (let ix = 0; ix < LOBE_SIZE; ix += 1) {
+        // The rows 22 to 41 hold the second region everywhere but the neck, which is the
+        // four columns at the low `x` edge.
+        const gap = iz >= 22 && iz <= 41 && ix >= 4;
+        ids[iz * LOBE_SIZE + ix] = gap ? 2 : 1;
+      }
+    }
+    return {
+      size: LOBE_SIZE,
+      origin: [
+        (centroid[0] as number) - 32.5 * LOBE_CELL,
+        (centroid[1] as number) - 10.5 * LOBE_CELL,
+      ],
+      cell: LOBE_CELL,
+      ids,
+    };
+  }
+
+  const grid = twoLobes();
+  const flow = buildRegionFlow(grid);
+  /** The centre of the region, which is the target both scenarios walk to. */
+  const centre: PlanePoint = {
+    x: (REGIONS[0] as Region).centroid[0] as number,
+    z: (REGIONS[0] as Region).centroid[1] as number,
+  };
+  /** A plane point in the far lobe, on the same `x` as the centre. */
+  const farLobe: PlanePoint = {
+    x: centre.x,
+    z: (grid.origin[1] as number) + 53.5 * LOBE_CELL,
+  };
+  // The projection is the identity, so one light year of the plane is one CSS pixel and
+  // every reading of these two scenarios is a reading of the rule and not of a camera.
+  const toScreen = (x: number, z: number): AnchorPoint => ({ x, y: z });
+  const onRegion = (x: number, z: number): boolean =>
+    coarseRegionIdAt(grid, x, z) === 1;
+  const flowStep = (x: number, z: number): readonly [number, number] | null =>
+    coarseRegionFlowStepAt(grid, flow, x, z);
+
+  test('the straight line between the two ends crosses the second region', () => {
+    expect(coarseRegionIdAt(grid, farLobe.x, farLobe.z)).toBe(1);
+    expect(coarseRegionIdAt(grid, centre.x, centre.z)).toBe(1);
+    const middle = { x: centre.x, z: (centre.z + farLobe.z) / 2 };
+    expect(coarseRegionIdAt(grid, middle.x, middle.z)).toBe(2);
+  });
+
+  test('a label walks around a region in its way', () => {
+    let carried = farLobe;
+    let offRegion = 0;
+    let onSecond = 0;
+    let arrived = 600;
+    let held = 0;
+    for (let frame = 0; frame < 600; frame += 1) {
+      const before = toScreen(carried.x, carried.z);
+      const next = smoothTarget({
+        carried,
+        carriedScreen: before,
+        target: centre,
+        toScreen,
+        onRegion,
+        flowStep,
+        seconds: FRAME_SECONDS,
+      });
+      const id = coarseRegionIdAt(grid, next.x, next.z);
+      if (id !== 1) offRegion += 1;
+      if (id === 2) onSecond += 1;
+      const step = Math.hypot(next.x - carried.x, next.z - carried.z);
+      if (arrived === 600) {
+        if (step <= 1e-9) held += 1;
+        if (Math.hypot(next.x - centre.x, next.z - centre.z) <= 1) arrived = frame;
+      }
+      carried = next;
+    }
+    const left = Math.hypot(carried.x - centre.x, carried.z - centre.z);
+    console.log('the target reached the centre at frame', arrived, 'and ends', left);
+    // Under the rule this replaces the target held its first position in all 600 frames.
+    expect(arrived).toBeLessThan(600);
+    expect(held).toBe(0);
+    expect(offRegion).toBe(0);
+    expect(onSecond).toBe(0);
+    expect(left).toBeLessThan(1);
+  });
+
+  test('a blocked anchor keeps moving', () => {
+    let carried = farLobe;
+    const moves: number[] = [];
+    const places: AnchorPoint[] = [];
+    let arrived = 600;
+    for (let frame = 0; frame < 600; frame += 1) {
+      const before = toScreen(carried.x, carried.z);
+      places.push(before);
+      const next = filterAnchor(
+        carried,
+        centre,
+        toScreen,
+        FRAME_SECONDS,
+        onRegion,
+        flowStep,
+      );
+      const after = toScreen(next.x, next.z);
+      moves.push(Math.hypot(after.x - before.x, after.y - before.y));
+      carried = next;
+      if (arrived === 600 && Math.hypot(after.x - centre.x, after.y - centre.z) <= 1) {
+        arrived = frame;
+      }
+    }
+    console.log('the anchor reached its target at frame', arrived);
+    expect(arrived).toBeLessThan(600);
+    // No run of 60 consecutive frames leaves the anchor within 1 CSS pixel of where it
+    // started that run, until the anchor is within 1 CSS pixel of its target.
+    for (let start = 0; start + 60 < arrived; start += 1) {
+      const from = places[start] as AnchorPoint;
+      const to = places[start + 60] as AnchorPoint;
+      expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeGreaterThan(1);
+    }
+    for (const move of moves)
+      expect(move).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS + 1e-6);
   });
 });

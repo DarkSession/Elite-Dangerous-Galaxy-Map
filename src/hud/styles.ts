@@ -549,10 +549,12 @@ const styleText = `
 .gm-hud__field--wide {
   grid-column: 1 / -1;
 }
-/* The position field fills two cells, so a grid of n fields fills n + 1 cells. An even
-   count of fields leaves the last one alone on its row. It takes both columns, so the
-   grid shows no empty cell. */
-.gm-hud__field:last-child:nth-child(even) {
+/* The position field and the region field each fill two cells, and the two distances
+   fill one each, so the four fields every record shows fill six cells and leave the grid
+   full. A grid of n fields therefore fills n + 2 cells, and an odd count of fields leaves
+   the last one alone on its row. It takes both columns, so the grid shows no empty
+   cell. */
+.gm-hud__field:last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
 .gm-hud__field-head {

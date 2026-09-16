@@ -4,7 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { RegionMode } from '../src/app/create-map';
-import { GALACTIC_CENTRE, openMap, projectPoint } from './helpers';
+import {
+  GALACTIC_CENTRE,
+  openMap,
+  projectPoint,
+  readRegionLabelRanges,
+  settleLabels,
+} from './helpers';
+import type { RegionLabelRange } from './helpers';
 import {
   NEAR_BOTH_SETS,
   SHARP_CORNER,
@@ -391,7 +398,7 @@ test('the region shaders compile', async ({ page }) => {
   );
   expect(ribbon).toBeNull();
 
-  for (const fragment of ['region-blur.frag', 'region-composite.frag']) {
+  for (const fragment of ['region-composite.frag']) {
     const built = await page.evaluate(
       (sources) => {
         const compile = window.__galaxyMap?.compileTestProgram;
@@ -500,7 +507,14 @@ test('the boundary draws in full at the close end of the band', async ({ page })
     await look(page, NEAR_BOTH_SETS.point, CLOSE_END_NONE);
     const closeChange = await contributionNear(page, NEAR_BOTH_SETS.point);
     expect(closeChange, `${mode} at ${CLOSE_END_NONE} light years`).toBe(0);
-    expect(await page.locator('.region-label').count()).toBe(0);
+    // The clause is about the anchor's range and not about the zoom. The frame still
+    // holds plane points tens of thousands of light years up it, so regions far up the
+    // frame do carry names; what has gone is every name near the cursor.
+    const labels = await readRegionLabelRanges(page);
+    console.log('the labels at the close end', labels);
+    for (const label of labels) {
+      expect(label.rangeLy, label.name).toBeGreaterThan(10000);
+    }
   }
 });
 
@@ -649,6 +663,9 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
 /** The luminance of the band's own tone, which the composite writes over the frame. */
 const TONE_LUMINANCE = 0.2126 * 0.86 + 0.7152 * 0.74 + 0.0722 * 0.6;
 
+/** The opacity the band draws at, which `src/render/region-pass.ts` holds. */
+const BAND_OPACITY = 0.55;
+
 /** What one row of pixels across the band gives. */
 interface BandReading {
   /** How wide the run of changed pixels is, in CSS pixels. */
@@ -675,14 +692,21 @@ interface BandReading {
  * channel and therefore on the luminance as well. The alpha is what the width and the
  * peak are properties of, and the frame under the band is not the same at two views.
  */
-async function readBandRow(page: Page, choice: CrossingChoice): Promise<BandReading> {
+async function readBandRow(
+  page: Page,
+  choice: CrossingChoice,
+  reachCss = 20,
+): Promise<BandReading> {
   await lookFrom(page, choice.view);
   const ratio = await devicePixelRatio(page);
   const centre = await projectPoint(page, choice.point);
+  // The row reaches past the whole band on both sides, so the run of changed pixels
+  // ends inside the window at every viewport the band's share gives.
+  const reach = Math.round(reachCss * ratio);
   const row = {
-    x: Math.round(centre.x * ratio) - 20,
+    x: Math.round(centre.x * ratio) - reach,
     y: Math.round(centre.y * ratio),
-    width: 40,
+    width: reach * 2,
     height: 1,
   };
   await setPasses(page, { regions: true });
@@ -743,108 +767,94 @@ async function readBandRow(page: Page, choice: CrossingChoice): Promise<BandRead
   };
 }
 
-test.describe('the band across a chain', () => {
-  // Both crossing views sit at 3,840 by 2,160 at a zoom of 20,000 light years, which is
-  // the viewport and the zoom `e2e/region-views.ts` holds for them. One CSS pixel covers
-  // 10.69 light years there, so the region grid cell is 4.62 CSS pixels and the blur runs
-  // at its widest. The reading point sits beyond the range fade at that zoom, so the line
-  // draws in full. The module reads 1280x720 otherwise.
-  test.use({ viewport: { width: 3840, height: 2160 }, deviceScaleFactor: 1 });
+/**
+ * The half width of the band at a viewport height, in CSS pixels. It is 1.6 per cent of
+ * the height, clamped to 8 and 24, which `src/render/region-pass.ts` owns. The browser
+ * test holds its own copy, because Playwright cannot import the renderer module: it
+ * reaches the PNG of the detail grid, which only Vite can load.
+ */
+function halfWidthCssAt(height: number): number {
+  return Math.min(24, Math.max(8, 0.016 * height));
+}
 
-  test('is one tone, lightens what it crosses, and widens with the blur', async ({
-    page,
-  }) => {
+/**
+ * The scenario "The band is the stated share of the viewport", at one viewport.
+ *
+ * The reading is the width at half the peak, which is the half width itself: the alpha is
+ * `smoothstep(0, 1, 1 - gap / halfWidth)`, which reads 0.5 at a coverage of 0.5, that is
+ * at a gap of `halfWidth / 2`, so the width at half maximum is `2 * halfWidth / 2`.
+ */
+function bandShareTests(height: number, wholeBandCss: number): void {
+  const wanted = halfWidthCssAt(height);
+  test('reads the stated share of the viewport height', async ({ page }) => {
     await openMap(page);
 
-    // Each mode reads its own crossing view, because a near-vertical straight run of the
-    // smoothed set is not one of the traced staircase. The two rows serve both readings:
-    // the run of changed pixels and the width at half the peak.
     await setRegionMode(page, 'simplified');
-    const simplified = await readBandRow(page, SMOOTHED_CROSSING);
+    const simplified = await readBandRow(page, SMOOTHED_CROSSING, wholeBandCss);
     await setRegionMode(page, 'accurate');
-    const accurate = await readBandRow(page, TRACED_CROSSING);
+    const accurate = await readBandRow(page, TRACED_CROSSING, wholeBandCss);
 
     for (const [mode, reading] of [
       ['simplified', simplified],
       ['accurate', accurate],
     ] as const) {
       console.log('the band reading', {
+        height,
         mode,
         runCss: reading.runCss,
         widthCss: reading.widthCss,
         peakAlpha: reading.peakAlpha,
         darkened: reading.darkened,
-        withOverlay: reading.withOverlay.map((value) => Number(value.toFixed(3))),
-        withoutOverlay: reading.withoutOverlay.map((value) => Number(value.toFixed(3))),
       });
       // The band is one tone of luminance 0.755, so it lightens every pixel it crosses.
       expect(reading.darkened, `${mode} darkened pixels`).toBe(0);
       expect(reading.middleIsLighter, `${mode} middle`).toBe(true);
-      expect(reading.runCss, `${mode} run`).toBeGreaterThanOrEqual(5);
-      expect(reading.runCss, `${mode} run`).toBeLessThanOrEqual(16);
+      // The half-maximum width is the half width, and the whole band, where the
+      // contribution reaches 0, is twice it.
+      expect(reading.widthCss, `${mode} half-maximum width`).toBeGreaterThan(
+        wanted - 1,
+      );
+      expect(reading.widthCss, `${mode} half-maximum width`).toBeLessThan(wanted + 1);
+      expect(reading.runCss, `${mode} whole band`).toBeGreaterThan(wholeBandCss - 3);
+      expect(reading.runCss, `${mode} whole band`).toBeLessThan(wholeBandCss + 3);
     }
 
-    // `simplified` never blurs, so it gives the unblurred band at every zoom.
-    // `accurate` blurs at a radius of 4.62 CSS pixels here, which is the region grid
-    // cell at this zoom and this height.
-    expect(simplified.widthCss, 'the simplified width').toBeGreaterThanOrEqual(3);
-    expect(simplified.widthCss, 'the simplified width').toBeLessThanOrEqual(3.5);
-    expect(accurate.widthCss, 'the accurate width').toBeGreaterThanOrEqual(4.6);
-    expect(accurate.widthCss, 'the accurate width').toBeLessThanOrEqual(4.9);
-
-    // The normalisation is what holds the two peaks together. Without it the blurred
-    // band would draw at about three fifths of the unblurred band's alpha.
-    const ratio = accurate.peakAlpha / simplified.peakAlpha;
-    expect(Math.abs(ratio - 1), 'the peak alpha of the two modes').toBeLessThan(0.15);
+    // Both sets draw through the same pass at the same half width, so the two modes give
+    // the same band.
+    expect(Math.abs(accurate.widthCss - simplified.widthCss)).toBeLessThan(1);
   });
+}
+
+test.describe('the band across a chain at 1920x1080', () => {
+  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  // 1.6 per cent of 1,080 rows is 17.28, inside the clamp, so the whole band is 34.6.
+  bandShareTests(1080, 34.6);
 });
 
-test.describe('the band across a chain at half the height', () => {
-  // The same two views at 1,920 by 1,080. One CSS pixel covers 21.38 light years here, so
-  // the region grid cell is 2.31 CSS pixels and the standard deviation falls to its floor
-  // of 1. This is the reading the floor buys: the rule this change replaces ran no blur at
-  // a radius under 3, so both modes gave the same unblurred width here.
-  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+test.describe('the band across a chain at 1280x720', () => {
+  test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  // 1.6 per cent of 720 rows is 11.52, inside the clamp, so the whole band is 23.0.
+  bandShareTests(720, 23.0);
+});
 
-  test('the far band is wider than the unblurred one as well', async ({ page }) => {
-    await openMap(page);
+test.describe('the band across a chain at 640x360', () => {
+  test.use({ viewport: { width: 640, height: 360 }, deviceScaleFactor: 1 });
+  // The clamp acts here: 1.6 per cent of 360 rows is 5.76, below the floor of 8, so the
+  // half width is 8 and the whole band is 16.0.
+  bandShareTests(360, 16.0);
 
-    await setRegionMode(page, 'simplified');
-    const simplified = await readBandRow(page, SMOOTHED_CROSSING);
-    await setRegionMode(page, 'accurate');
-    const accurate = await readBandRow(page, TRACED_CROSSING);
-
-    for (const [mode, reading] of [
-      ['simplified', simplified],
-      ['accurate', accurate],
-    ] as const) {
-      console.log('the far band reading', {
-        mode,
-        runCss: reading.runCss,
-        widthCss: reading.widthCss,
-        peakAlpha: reading.peakAlpha,
-        darkened: reading.darkened,
-      });
-      expect(reading.darkened, `${mode} darkened pixels`).toBe(0);
-      expect(reading.middleIsLighter, `${mode} middle`).toBe(true);
-    }
-
-    expect(simplified.widthCss, 'the simplified width').toBeGreaterThanOrEqual(3);
-    expect(simplified.widthCss, 'the simplified width').toBeLessThanOrEqual(3.5);
-    expect(accurate.widthCss, 'the accurate width').toBeGreaterThanOrEqual(3.75);
-    expect(accurate.widthCss, 'the accurate width').toBeLessThanOrEqual(4.18);
-
-    const ratio = accurate.peakAlpha / simplified.peakAlpha;
-    expect(Math.abs(ratio - 1), 'the peak alpha of the two modes').toBeLessThan(0.15);
+  test('takes its half width from the floor and not from the share', () => {
+    expect(0.016 * 360).toBeCloseTo(5.76, 6);
+    expect(halfWidthCssAt(360)).toBe(8);
   });
 });
 
 /** What the join reading gives for one chosen corner. */
 interface JoinReading {
-  /** The largest change the overlay makes within the reach of the bend. */
-  readonly bendChange: number;
-  /** The largest change it makes on the straight run of the same chain. */
-  readonly straightChange: number;
+  /** The largest alpha the overlay writes within the reach of the bend. */
+  readonly bendAlpha: number;
+  /** The largest alpha it writes on the straight run of the same chain. */
+  readonly straightAlpha: number;
   /** How many pixels the reading found on the drawn line inside the bend. */
   readonly insideCount: number;
   /** How many of those the overlay left unchanged. */
@@ -853,13 +863,35 @@ interface JoinReading {
 
 /**
  * Reads the overlay's own contribution around a corner and on a straight run of the same
- * chain, both from one frame. The overlay draws at less than full opacity, so an absolute
- * reading would follow the galaxy under it.
+ * chain, both from one frame.
+ *
+ * The reading is the band's **alpha** and not the change in luminance. The band adds
+ * `alpha * (tone - background)` to a pixel, so a change in luminance follows the galaxy
+ * under the pixel as well as the band over it. The bend and the comparison run sit tens of
+ * CSS pixels apart, where the picture under them is not the same, and a reading of the
+ * change there compares two backgrounds as much as two parts of the band.
+ *
+ * The reading also draws the band over an empty frame: every other pass goes off, so the
+ * background under the bend and under the run is the same black and the alpha of a pixel
+ * is its luminance over the band's own tone. The frame carries 8 bits a channel, and over
+ * the galaxy one bit of luminance is about 2 per cent of the alpha, which is larger than
+ * the difference this reading has to resolve.
  */
 async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> {
   await lookFrom(page, choice.view);
-  // The reading radius belongs to the view. The join reads 8 CSS pixels and the 90
-  // degree corner of the traced set reads 6, which is the radius its scenario states.
+  /** Every pass of the picture under the band. */
+  const scene = {
+    volume: false,
+    clouds: false,
+    points: false,
+    stars: false,
+    glow: false,
+    grid: false,
+    systems: false,
+  };
+  // The reading radius belongs to the view. The join reads 8 CSS pixels past the edge of
+  // the band and the 90 degree corner of the traced set reads 6 past it, each the radius
+  // its own search states.
   const reach = choice.reachPixels;
 
   const bend = await projectPoint(page, choice.bend);
@@ -880,11 +912,14 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
     width: Math.ceil(Math.max(bend.x, straightFrom.x, straightTo.x) + reach + 4) - left,
     height: Math.ceil(Math.max(bend.y, straightFrom.y, straightTo.y) + reach + 4) - top,
   };
-  await setPasses(page, { regions: true });
+  await setPasses(page, { ...scene, regions: true });
   const withOverlay = await luminanceRect(page, rect);
-  await setPasses(page, { regions: false });
+  await setPasses(page, { ...scene, regions: false });
   const withoutOverlay = await luminanceRect(page, rect);
-  await setPasses(page, { regions: true });
+  const restore = Object.fromEntries(
+    Object.keys(scene).map((name) => [name, true]),
+  ) as Record<string, boolean>;
+  await setPasses(page, { ...restore, regions: true });
 
   /** The distance from a point to the drawn line inside the reading window. */
   const gapToBendLine = (point: { x: number; y: number }): number => {
@@ -900,25 +935,27 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
     return nearest;
   };
 
-  let bendChange = 0;
-  let straightChange = 0;
+  let bendAlpha = 0;
+  let straightAlpha = 0;
   let unchangedInside = 0;
   let insideCount = 0;
   for (let row = 0; row < rect.height; row += 1) {
     for (let column = 0; column < rect.width; column += 1) {
       const index = row * rect.width + column;
       const point = { x: rect.x + column + 0.5, y: rect.y + row + 0.5 };
-      const change = Math.abs(
-        (withOverlay[index] as number) - (withoutOverlay[index] as number),
-      );
+      // The alpha of this pixel, from the two readings and the band's own tone.
+      const under = withoutOverlay[index] as number;
+      const room = TONE_LUMINANCE - under;
+      const alpha =
+        Math.abs(room) < 0.05 ? 0 : ((withOverlay[index] as number) - under) / room;
       const toBend = Math.hypot(point.x - bend.x, point.y - bend.y);
       if (toBend <= reach) {
-        if (change > bendChange) bendChange = change;
+        if (alpha > bendAlpha) bendAlpha = alpha;
         // A pixel on the middle of the drawn line must be drawn. A quad per segment
         // with no fill at a join leaves a notch here.
         if (gapToBendLine(point) <= 0.8) {
           insideCount += 1;
-          if (change <= 0.001) unchangedInside += 1;
+          if (alpha <= 0.001) unchangedInside += 1;
         }
         continue;
       }
@@ -926,11 +963,101 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
         toBend > reach * 1.5 &&
         gapToSegment(point, straightFrom, straightTo) <= 1.2
       ) {
-        if (change > straightChange) straightChange = change;
+        if (alpha > straightAlpha) straightAlpha = alpha;
       }
     }
   }
-  return { bendChange, straightChange, insideCount, unchangedInside };
+  return { bendAlpha, straightAlpha, insideCount, unchangedInside };
+}
+
+/**
+ * The radius of the outer edge of the band around a 90 degree corner, in CSS pixels.
+ *
+ * The coverage is an exact distance from the **segment** and the blend is `MAX`, so the
+ * outside of a corner is an arc of the band's own half width centred on the node. The
+ * reading marches out from the node along rays into the outer quadrant and takes the
+ * last pixel the band still reaches.
+ */
+async function readCornerRadius(
+  page: Page,
+  choice: CornerChoice,
+): Promise<{ mean: number; least: number; most: number; rays: number }> {
+  await lookFrom(page, choice.view);
+  const node = await projectPoint(page, choice.bend);
+  const first = await projectPoint(
+    page,
+    choice.bendLine[0] as [number, number, number],
+  );
+  const last = await projectPoint(
+    page,
+    choice.bendLine[choice.bendLine.length - 1] as [number, number, number],
+  );
+
+  // The two arms leave the node toward the ends of the reading polyline. The outer
+  // quadrant is the one the two arms do not span, so it lies between the two opposite
+  // directions.
+  const away = (point: { x: number; y: number }): number =>
+    Math.atan2(point.y - node.y, point.x - node.x);
+  const outerOne = away(first) + Math.PI;
+  const outerTwo = away(last) + Math.PI;
+  let span = outerTwo - outerOne;
+  while (span > Math.PI) span -= 2 * Math.PI;
+  while (span < -Math.PI) span += 2 * Math.PI;
+
+  // The window holds the whole arc and a margin of 12 CSS pixels beyond it.
+  const reach = Math.ceil(halfWidthCssAt(choice.viewport.height) + 12);
+  const rect = {
+    x: Math.floor(node.x) - reach,
+    y: Math.floor(node.y) - reach,
+    width: reach * 2,
+    height: reach * 2,
+  };
+  await setPasses(page, { regions: true });
+  const withOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: false });
+  const withoutOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: true });
+
+  const alphaAt = (x: number, y: number): number => {
+    const column = Math.round(x - rect.x - 0.5);
+    const row = Math.round(y - rect.y - 0.5);
+    if (column < 0 || row < 0 || column >= rect.width || row >= rect.height) return 0;
+    const index = row * rect.width + column;
+    const under = withoutOverlay[index] as number;
+    const room = TONE_LUMINANCE - under;
+    if (Math.abs(room) < 0.05) return 0;
+    return ((withOverlay[index] as number) - under) / room;
+  };
+
+  // The alpha is `0.55 * smoothstep(0, 1, 1 - gap / halfWidth)`. The profile is flat at
+  // the edge, so a floor under-reads the radius: a floor of 0.005 sits at 0.961 of the
+  // half width, which is 0.9 CSS pixels inside it at 2,160 rows. The floor cannot go
+  // much lower, because the frame carries the band in 8 bits.
+  const EDGE_ALPHA = 0.005;
+  const radii: number[] = [];
+  const rays = 25;
+  for (let step = 0; step <= rays; step += 1) {
+    // The two ends of the quadrant sit on the arms themselves, so the sweep keeps a
+    // tenth of the quadrant away from each.
+    const part = 0.1 + (0.8 * step) / rays;
+    const angle = outerOne + span * part;
+    let edge = 0;
+    for (let radius = 1; radius <= reach; radius += 0.25) {
+      const alpha = alphaAt(
+        node.x + Math.cos(angle) * radius,
+        node.y + Math.sin(angle) * radius,
+      );
+      if (alpha >= EDGE_ALPHA) edge = radius;
+    }
+    radii.push(edge);
+  }
+  const mean = radii.reduce((sum, value) => sum + value, 0) / radii.length;
+  return {
+    mean,
+    least: Math.min(...radii),
+    most: Math.max(...radii),
+    rays: radii.length,
+  };
 }
 
 test.describe('the corner readings', () => {
@@ -953,10 +1080,37 @@ test.describe('the corner readings', () => {
 
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
-    expect(reading.straightChange).toBeGreaterThan(0.05);
-    // The bend may read 3 per cent above the straight run. The coverage is a
-    // point-sampled ridge, so the sampled peak of a turn moves with its own phase.
-    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange * 1.03);
+    expect(reading.straightAlpha).toBeGreaterThan(0.05);
+
+    // The bound carries the half pixel sampling loss, which is a term of the reading and
+    // not of the pass. The band has a flat top, so the largest reading of a run is the
+    // reading of the pixel nearest the middle of the line, and how near that is follows
+    // where the pixel grid falls across the line. This chain of the smoothed set runs at
+    // an angle, so its best pixel centre sits up to half a pixel off the middle. The loss
+    // there is `opacity * (3u^2 - 2u^3)` at `u = 0.5 / halfWidth`, which is 0.00071 at a
+    // half width of 24. The bound follows the viewport, because the half width does.
+    const offset = 0.5 / halfWidthCssAt(SHARP_CORNER.viewport.height);
+    const samplingLoss =
+      BAND_OPACITY * (3 * offset * offset - 2 * offset * offset * offset);
+    console.log('the half pixel sampling loss', samplingLoss);
+    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha + samplingLoss);
+  });
+
+  test('the corner of the traced set is round to the band half width', async ({
+    page,
+  }) => {
+    await page.setViewportSize(TRACED_CORNER.viewport);
+    await openMap(page);
+    await setRegionMode(page, 'accurate');
+    const reading = await readCornerRadius(page, TRACED_CORNER);
+    const wanted = halfWidthCssAt(TRACED_CORNER.viewport.height);
+    console.log('the radius of the corner', { ...reading, wanted });
+
+    // 24 is the clamp and not 1.6 per cent of 2,160 rows, which is 34.56.
+    expect(wanted).toBe(24);
+    expect(reading.rays).toBeGreaterThan(8);
+    expect(reading.mean).toBeGreaterThan(wanted - 2);
+    expect(reading.mean).toBeLessThan(wanted + 2);
   });
 
   test('a 90 degree corner of the traced set is not brighter than its line', async ({
@@ -974,10 +1128,12 @@ test.describe('the corner readings', () => {
     expect(TRACED_CORNER.turnDegrees).toBe(90);
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
-    expect(reading.straightChange).toBeGreaterThan(0.05);
-    // The corner reads up to 1.010 of a straight run at this radius, which the
-    // requirement's 3 per cent covers.
-    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange * 1.03);
+    expect(reading.straightAlpha).toBeGreaterThan(0.05);
+    // The bound is exact here and takes no tolerance. Both arms of this corner run along
+    // a screen axis, so a pixel row lands on the middle of each and the sampling loss of
+    // the scenario above is 0. A 90 degree corner is the hardest case the pass draws, and
+    // the `MAX` blend holds it at the coverage of one arm.
+    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha);
   });
 });
 
@@ -1031,13 +1187,13 @@ test.describe('the region mode', () => {
     // The pass switch is a renderer probe and the mode is a host setting. One does not
     // move the other.
     await setPasses(page, { regions: false });
-    expect(await regionMode(page)).toBe('simplified');
+    expect(await regionMode(page)).toBe('accurate');
     await setPasses(page, { regions: true });
   });
 
-  test('is simplified by default', async ({ page }) => {
+  test('is accurate by default', async ({ page }) => {
     await openMap(page);
-    expect(await regionMode(page)).toBe('simplified');
+    expect(await regionMode(page)).toBe('accurate');
   });
 
   test('takes the value the options name', async ({ page }) => {
@@ -1071,13 +1227,13 @@ test.describe('the region mode', () => {
     console.log('the option reading', modes);
 
     expect(modes).not.toBeNull();
-    expect(modes?.none).toBe('simplified');
-    expect(modes?.empty).toBe('simplified');
+    expect(modes?.none).toBe('accurate');
+    expect(modes?.empty).toBe('accurate');
     expect(modes?.accurate).toBe('accurate');
     expect(modes?.off).toBe('off');
     // A value the map does not know leaves the default, as a bad value does on the
     // setter.
-    expect(modes?.bad).toBe('simplified');
+    expect(modes?.bad).toBe('accurate');
   });
 
   test('draws a different frame in each of the three modes', async ({ page }) => {
@@ -1144,6 +1300,11 @@ test.describe('the region mode', () => {
     const started = workers;
     expect(started).toBeGreaterThan(0);
 
+    // The default mode is `accurate`, so the reading starts from `simplified` and the
+    // first change is the one that moves the frame.
+    await page.evaluate(() => {
+      window.galaxyMap?.setRegionMode('simplified');
+    });
     const first = await canvasDigest(page);
     const accurateMs = await page.evaluate(() => {
       const at = performance.now();
@@ -1189,21 +1350,103 @@ test.describe('the region name at a point', () => {
     });
   });
 
+  test('the exact call names the region at a point', async ({ page }) => {
+    await openMap(page);
+    const names = await page.evaluate(async () => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      return {
+        sol: await map.regionNameAtExact([0, 0, 0]),
+        centre: await map.regionNameAtExact([15, -35, 25895]),
+        outside: await map.regionNameAtExact([400000, 0, 0]),
+      };
+    });
+    console.log('the exact region name at a point', names);
+
+    expect(names).toEqual({
+      sol: 'Inner Orion Spur',
+      centre: 'Galactic Centre',
+      outside: null,
+    });
+  });
+
+  // The browser part of the scenario "The exact table stays out of the main bundle". The
+  // unit part is in `tests/main-bundle.test.ts`.
+  test('the exact table arrives with the calls and arrives once', async ({ page }) => {
+    const scripts: string[] = [];
+    page.on('request', (request) => {
+      if (request.resourceType() === 'script') scripts.push(request.url());
+    });
+    // The region worker bundles its own copy of the table, so its chunk carries the table
+    // under another name. This reading counts the chunks the page asks for by this name,
+    // which the build gives the table alone.
+    const tableScripts = (): string[] =>
+      scripts.filter((url) => url.includes('codex-region-lookup'));
+
+    await openMap(page);
+    expect(tableScripts(), 'the page fetched the table before a call').toEqual([]);
+
+    // Two calls at once. The second must wait on the load the first started.
+    const names = await page.evaluate(async () => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      return Promise.all([
+        map.regionNameAtExact([0, 0, 0]),
+        map.regionNameAtExact([15, -35, 25895]),
+      ]);
+    });
+    // A second load would start in the same tick, so a short wait holds both requests.
+    await page.waitForTimeout(500);
+    console.log('the chunks that carry the table', tableScripts());
+
+    expect(names).toEqual(['Inner Orion Spur', 'Galactic Centre']);
+    expect(tableScripts()).toHaveLength(1);
+  });
+
+  test('the exact call is right where the coarse one is not', async ({ page }) => {
+    // The unit scenario of `src/scene-data/region-lines.test.ts` found this point. It is
+    // the point nearest Sol whose own 49.3494 light year cell and whose 197.3976 light
+    // year coarse cell name different regions.
+    await openMap(page);
+    const names = await page.evaluate(async () => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      const point: [number, number, number] = [-857.675, 0, -1379.602];
+      return {
+        coarse: map.regionNameAt(point),
+        exact: await map.regionNameAtExact(point),
+      };
+    });
+    console.log('the two readings at the point the grids disagree on', names);
+
+    expect(names).toEqual({
+      coarse: 'Inner Orion Spur',
+      exact: 'Sanguineous Rim',
+    });
+  });
+
   test('gives the same answer at any height', async ({ page }) => {
     await openMap(page);
-    const names = await page.evaluate(() => {
+    const names = await page.evaluate(async () => {
       const map = window.galaxyMap;
       if (map === undefined) return null;
       return {
         plane: map.regionNameAt([0, 0, 0]),
         above: map.regionNameAt([0, 20000, 0]),
+        exactPlane: await map.regionNameAtExact([0, 0, 0]),
+        exactAbove: await map.regionNameAtExact([0, 20000, 0]),
       };
     });
     console.log('the region name at a height', names);
 
-    expect((names as { plane: string; above: string }).plane).toBe(
-      (names as { plane: string; above: string }).above,
-    );
+    const reading = names as {
+      plane: string;
+      above: string;
+      exactPlane: string;
+      exactAbove: string;
+    };
+    expect(reading.plane).toBe(reading.above);
+    expect(reading.exactPlane).toBe(reading.exactAbove);
   });
 
   test('answers before the scene data loads', async ({ page }) => {
@@ -1226,5 +1469,183 @@ test.describe('the region name at a point', () => {
     console.log('the region name before the data', reading);
 
     expect(reading).toEqual({ before: null, after: 'Inner Orion Spur' });
+  });
+});
+
+/**
+ * The strongest band alpha over the pixels whose own plane point lies within a window of
+ * a range, and where that pixel sits.
+ */
+interface StrengthReading {
+  readonly peakAlpha: number;
+  readonly x: number;
+  readonly y: number;
+  /** How many pixels of the frame lie inside the range window. */
+  readonly pixels: number;
+}
+
+/**
+ * Reads the strongest band alpha over the pixels at a range from the camera.
+ *
+ * The pixels at a range make a thin ribbon across the frame, and the ribbon crosses
+ * several boundary bands. The reading takes the greatest alpha of the ribbon, which is
+ * the pixel nearest the centre of the band it crosses. The scenario states why the
+ * greatest alpha of a cross-section is the right reading and what it costs: at 1,080 CSS
+ * rows the half width is 17.28 device pixels, so the nearest pixel departs from the
+ * exact centre by at most 0.0025.
+ *
+ * The alpha comes from two frames, one with the region pass and one without it. A pixel
+ * reads `alpha * tone + (1 - alpha) * frame`, so the two frames and the band's own tone
+ * give the alpha back.
+ */
+async function readStrengthAtRange(
+  page: Page,
+  rangeLy: number,
+  windowLy: number,
+  tone: number,
+): Promise<StrengthReading> {
+  return page.evaluate(
+    (job) => {
+      const probe = window.__galaxyMap;
+      const canvas = document.getElementById('map');
+      if (
+        probe?.readRect === undefined ||
+        probe.planePointAt === undefined ||
+        !(canvas instanceof HTMLCanvasElement)
+      ) {
+        return { peakAlpha: -1, x: -1, y: -1, pixels: 0 };
+      }
+      const wideCss = canvas.clientWidth;
+      const tallCss = canvas.clientHeight;
+      probe.setPasses?.({ regions: true });
+      probe.drawNow?.();
+      const withPass = probe.readRect(0, 0, wideCss, tallCss);
+      probe.setPasses?.({ regions: false });
+      probe.drawNow?.();
+      const withoutPass = probe.readRect(0, 0, wideCss, tallCss);
+      probe.setPasses?.({ regions: true });
+      probe.drawNow?.();
+      const size = probe.drawingBufferSize?.() ?? [wideCss, tallCss];
+      const ratio = size[0] / wideCss;
+      const wide = Math.round(wideCss * ratio);
+      const tall = Math.round(tallCss * ratio);
+
+      const view = window.galaxyMap?.getView();
+      const planePointAt = probe.planePointAt;
+      if (view === undefined || planePointAt === undefined) {
+        return { peakAlpha: -1, x: -1, y: -1, pixels: 0 };
+      }
+      const toRadians = Math.PI / 180;
+      const pitch = view.pitch * toRadians;
+      const yaw = view.yaw * toRadians;
+      const horizontal = Math.cos(pitch);
+      const camera: [number, number, number] = [
+        view.cursor[0] - horizontal * Math.sin(yaw) * view.distance,
+        view.cursor[1] + Math.sin(pitch) * view.distance,
+        view.cursor[2] - horizontal * Math.cos(yaw) * view.distance,
+      ];
+      // The range to the plane point under a device pixel. A ray that misses the plane
+      // reads as beyond every range, so the search below treats the sky as far.
+      const rangeAt = (x: number, y: number): number => {
+        const point = planePointAt((x + 0.5) / ratio, (y + 0.5) / ratio);
+        if (point === null) return Number.POSITIVE_INFINITY;
+        return Math.hypot(
+          point[0] - camera[0],
+          point[1] - camera[1],
+          point[2] - camera[2],
+        );
+      };
+      // The range falls as the row goes down the frame, so a binary search finds the
+      // first row at or under a bound.
+      const firstRowUnder = (x: number, bound: number): number => {
+        let low = 0;
+        let high = tall;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (rangeAt(x, middle) <= bound) high = middle;
+          else low = middle + 1;
+        }
+        return low;
+      };
+
+      const luminance = (bytes: Uint8Array, index: number): number =>
+        (0.2126 * (bytes[index] as number) +
+          0.7152 * (bytes[index + 1] as number) +
+          0.0722 * (bytes[index + 2] as number)) /
+        255;
+
+      let peakAlpha = 0;
+      let peakX = -1;
+      let peakY = -1;
+      let pixels = 0;
+      for (let x = 0; x < wide; x += 1) {
+        const top = firstRowUnder(x, job.rangeLy + job.windowLy);
+        const under = firstRowUnder(x, job.rangeLy - job.windowLy);
+        for (let y = top; y < under && y < tall; y += 1) {
+          const index = (y * wide + x) * 4;
+          const room = job.tone - luminance(withoutPass, index);
+          pixels += 1;
+          if (Math.abs(room) < 0.05) continue;
+          const alpha =
+            (luminance(withPass, index) - luminance(withoutPass, index)) / room;
+          if (alpha > peakAlpha) {
+            peakAlpha = alpha;
+            peakX = x;
+            peakY = y;
+          }
+        }
+      }
+      return { peakAlpha, x: peakX, y: peakY, pixels };
+    },
+    { rangeLy, windowLy, tone },
+  );
+}
+
+test.describe('the label and the line at the same range', () => {
+  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+
+  test('read at the same strength', async ({ page }) => {
+    await openMap(page);
+    await look(page, [0, 0, 0], 18000);
+    await settleLabels(page);
+
+    // The label in the middle of the fade carries the reading. A label at an opacity of
+    // 1 would agree with any band the window holds, so it reads nothing.
+    const labels = await readRegionLabelRanges(page);
+    const inFade = labels
+      .filter((label) => label.opacity > 0.05 && Number.isFinite(label.rangeLy))
+      .sort((first, second) => first.opacity - second.opacity);
+    console.log(
+      'the labels at 18,000 light years',
+      labels.map(
+        (label) =>
+          `${label.name} ${label.opacity.toFixed(3)} at ${label.rangeLy.toFixed(0)} ly`,
+      ),
+    );
+    expect(inFade.length, 'a label inside the fade').toBeGreaterThan(0);
+    const chosen = inFade[0] as RegionLabelRange;
+
+    const reading = await readStrengthAtRange(
+      page,
+      chosen.rangeLy,
+      100,
+      TONE_LUMINANCE,
+    );
+    const bandStrength = reading.peakAlpha / BAND_OPACITY;
+    console.log('the label and the band', {
+      name: chosen.name,
+      opacity: chosen.opacity,
+      rangeLy: chosen.rangeLy,
+      peakAlpha: reading.peakAlpha,
+      bandStrength,
+      at: [reading.x, reading.y],
+      pixels: reading.pixels,
+    });
+
+    expect(reading.pixels, 'pixels inside the range window').toBeGreaterThan(0);
+    // The band alpha divided by the band's own opacity is the fade the line takes, and
+    // the label's opacity is the fade the name takes. The two agree within 0.05, which
+    // the scenario's table accounts for.
+    expect(Math.abs(chosen.opacity - bandStrength)).toBeLessThan(0.05);
   });
 });

@@ -35,7 +35,6 @@ the map.
 - **WHEN** a unit test reads the galaxy origin and the sector edge from the package
 - **THEN** the origin is (-49,985, -40,985, -24,105) and the edge is 1,280 light years
 
-
 ### Requirement: The boundary set is traced from the region grid
 
 The map SHALL build the region boundary sets off the main thread. The build SHALL
@@ -205,665 +204,131 @@ same index in the other.
   the transfer list
 - **THEN** the receiver gets equal contents for both and every sender buffer has length 0
 
-### Requirement: The boundaries draw as one soft band inside a zoom band
+### Requirement: The region overlay has a switch
 
-The boundary chains SHALL draw as lines on the plane `y = 0`, after the tone map, so no
-look constant of the far view changes them and none of them changes the far view. They
-SHALL be drawn camera-relative, as every other pass is.
+The renderer SHALL expose a `regions` switch beside the switches for the volume, the
+clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
+lines and the labels.
 
-Which set draws SHALL follow the region mode: the smoothed set in `simplified`, the traced
-set in `accurate`, and neither in `off`. Both sets draw through the same pass, with the same
-half width, the same tone and the same join rule. The **drawn** band is not always the same
-width: the blur runs in `accurate` alone, and it widens the band there, which the table below
-states.
+#### Scenario: The switch removes both parts
 
-**The line is one soft tone.** The two-tone ribbon, a light core of 2 CSS pixels inside a
-dark outline of 1 CSS pixel each side, SHALL be replaced by a single band with a soft
-falloff, which is the line the game draws.
+- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
+  switches the regions off and takes a second screenshot
+- **THEN** the page holds no region label after the switch, and the second screenshot
+  differs from the first, because the first draws boundary lines
 
-- The tone SHALL be `(0.86, 0.74, 0.60)`, a warm cream.
-- The opacity SHALL be **0.55** where the overlay draws in full.
-- The **half width SHALL be 3 CSS pixels**, so the whole band is 6 CSS pixels across
-  whatever the device pixel ratio is. The line was 4 CSS pixels wide with a 2 pixel core.
-- The coverage the pass writes SHALL be `max(0, 1 - gap / 3)`, where `gap` is the distance
-  from the middle of the line in CSS pixels, evaluated for each device pixel of the ribbon
-  quad, in a single-channel buffer at the **full drawing buffer resolution**.
-- The alpha SHALL be `smoothstep(0, 1, coverage / peak)`, where `peak` is the normalisation
-  the next part defines. The `smoothstep` **clamps at 1**, so the band has a flat top.
+#### Scenario: The switch is inert where nothing draws
 
-The flat top is what holds the join rule after the blur. A blur lifts the inside of a corner
-above a straight run's peak: measured against the normalisation, the largest reading near a
-90 degree corner is **1.04** of a straight run's at a radius of 3 CSS pixels, 1.07 at 3.85,
-1.10 at 4.62, 1.13 at 5.77 and 1.15 at the cap of 8. The reading is not at the apex, which
-sits a little under the straight run, but about one CSS pixel inside the turn. Without the
-clamp a corner would therefore draw brighter than its own line. Before the blur the `MAX`
-blend equation held that rule by itself; the clamp holds it now, and the scenario "A 90 degree
-corner of the traced set is not brighter than its line" reads it.
-
-**The corner rule SHALL carry a tolerance of 3 per cent**, and the scenarios that read it
-SHALL state it. The clamp holds the corner at exactly 1 of the normalisation, but the drawn
-straight run is a **sample** of the ridge and reads 0.91 to 1.00 of it as the line's own phase
-moves. A corner therefore reads up to 1.022 of a straight run at a radius of 3 CSS pixels,
-1.015 at 3.85, 1.010 at 4.62, 1.006 at 5.77 and 1.002 at 8, over every pair of phases. The
-traced arms run along the lattice, so a chain holds one phase over a whole run and a bad phase
-does not average out. Before the blur the `MAX` equation made the corner and the arm the same
-number and no tolerance was needed.
-
-The dark outline is what carried the old line over the bright disc. The warm tone carries
-it instead: its luminance is 0.755, above every part of the frame but the core itself, so
-the band lightens the picture nearly everywhere and needs no darker edge to be seen.
-
-**The coverage passes through a blur before it is drawn.** The pass SHALL write each
-segment's coverage into a buffer, blur that buffer, and read the blurred buffer once to
-write the band over the frame.
-
-- The blur SHALL be separable and symmetric, one pass on each axis, over the
-  full-resolution single-channel buffer. Its kernel SHALL be a Gaussian of standard
-  deviation `sigma` CSS pixels, sampled one **CSS pixel** apart with a linear filter on
-  the coverage texture, with `2 * ceil(3 * sigma) + 1` taps.
-- **`sigma` SHALL be `max(radius / 3, 1)` CSS pixels.** The largest radius is 8, which gives
-  a standard deviation of 2.667 and **17** taps, so the count never passes 17 and no cap ever
-  cuts the kernel. The smallest standard deviation is the floor of 1, which gives 7 taps.
-- The step is one CSS pixel and not one device pixel so that the tap count does not follow
-  the device pixel ratio. A step of one device pixel would need 33 taps at a ratio of 2 and a
-  radius of 8, and a cap of 17 would then cut the kernel at 1.9 standard deviations and
-  narrow the band by an amount that follows the display. The floor of 1 CSS pixel on the
-  standard deviation is what keeps a step of one CSS pixel a good sample of the kernel at
-  every radius.
-- **The blur SHALL run in `accurate` at every zoom the overlay draws at.** `simplified`
-  SHALL NOT blur and its normalisation SHALL be 1.
-- The radius SHALL be `min(cell, 8)` CSS pixels, where `cell` is the region grid's own cell
-  of **49.3494 light years** measured on the screen at a range of
-  `max(cursorDistance, 10000)` light years. The radius is the **whole** cell, because the
-  corner the blur has to round is one whole cell tall and one whole cell wide.
-
-**The radius reads the cursor, with a floor at the nearest range that draws.** Most of the
-frame sits near the cursor's own range, so the cursor is what the radius follows above
-10,000 light years: 3.85 CSS pixels at a zoom of 12,000 at 1,080 rows, 2.31 at 20,000 and
-1.54 at 30,000. The floor of 10,000 light years is what holds at a close zoom. The range
-fade draws no line nearer than that, so the largest staircase a close frame can hold is the
-cell at 10,000 light years, which is **4.62 CSS pixels** at 1,080 rows and 3.08 at 720, and
-the radius reads 4.62 at every zoom of 10,000 light years and below. The cap of 8 therefore
-never acts at 1,080 rows or below, and acts at 2,160 rows and above, where the cell at
-10,000 light years is 9.23 CSS pixels.
-
-A line at a range of 10,000 light years is still in the frame at a zoom of 20,000, where its
-staircase is 4.62 CSS pixels and the radius is 2.31. The floored standard deviation still
-softens it, and it draws at the bottom of the range fade, so it is the faintest line in the
-frame. Reading the radius at 10,000 light years at every zoom would instead widen every far
-line to hold one fading near one, which is the fault the paragraph below states.
-
-Reading the radius at the cursor is what the pass did before, and it cannot hold once the
-near lines are gone: at a zoom of 4,000 light years the cell at the cursor is 11.5 CSS pixels
-and the cap gives a radius of 8, but every line the frame draws is 10,000 light years off or
-further, where the cell is 4.62. A radius of 8 would smear a band 6 CSS pixels wide over
-lines whose staircase is a fifth of that.
-
-**The floor on the standard deviation is what smooths the far lines.** Above a zoom of about
-15,390 light years at 1,080 rows the radius falls under 3 CSS pixels, and the rule this
-replaces stopped blurring there. The traced line at those zooms is a staircase of 1 to 2 CSS
-pixels a step, which the drawn band cannot separate from its own edge but which still
-flickers as the camera moves. With the floor the band at every radius under 3 draws exactly
-as the radius 3.00 row of the table below draws, because the kernel is the same.
-
-`simplified` never blurs, because the smoothed set has no staircase. The blur exists for
-`accurate` alone, which is the mode the fault was reported against.
-
-**The blurred coverage SHALL be normalised, and the band SHALL widen with the radius.**
-
-The coverage across a straight line is a triangular ridge, not an unbounded ramp. A blur
-lowers its peak and widens it. The pass SHALL therefore divide the blurred coverage by the
-kernel's own response at the ridge, so the band's peak alpha is the stated opacity at every
-radius. Without it the band at a zoom of 10,000 light years in `accurate` at 1,080 rows,
-whose radius is 4.62 CSS pixels, would draw at about four fifths of the opacity of the same
-band at 20,000, whose radius is 2.31 and whose standard deviation the floor holds at 1.
-
-The coverage is point-sampled on the device pixel grid, so what a straight run gives depends
-on where the middle of the line falls between two pixels. The **normalisation** and the
-**half-maximum width** are readings of the continuous kernel in CSS pixels and do not follow
-the device pixel ratio. The **sampled peak** does: the figures below are at a ratio of 1,
-which is the worst case, and a higher ratio samples the same ridge more finely and draws the
-spread in toward 1.00. The readings are:
-
-| radius, CSS pixels | normalisation | sampled peak | half-maximum width, CSS pixels |
-| ------------------ | ------------- | ------------ | ------------------------------ |
-| no blur            | 1.000         | 0.83 to 1.00 | 3.00 to 3.50                   |
-| under 3.00         | 0.758         | 0.69 to 0.76 | 3.80 to 4.13                   |
-| 3.00               | 0.758         | 0.69 to 0.76 | 3.80 to 4.13                   |
-| 3.85               | 0.679         | 0.63 to 0.68 | 4.24 to 4.49                   |
-| 4.62               | 0.613         | 0.58 to 0.61 | 4.68 to 4.88                   |
-| 5.77               | 0.530         | 0.51 to 0.53 | 5.37 to 5.60                   |
-| 8.00               | 0.411         | 0.40 to 0.41 | 6.90 to 7.05                   |
-
-The sampled peak column is stated to 2 decimal places, and a reading SHALL fall inside its
-range within **0.01** at each end. The width column is stated to 2 decimal places and holds
-within **0.05** CSS pixels. The columns are rounded readings of a continuous rule, not bounds
-the rule was built to meet.
-
-The **lower end** of each width range is the continuous reading, which a line whose middle
-falls on a sample gives. The **upper end** is the widest the point-sampled profile reads over
-the phases between two samples. The lower end therefore does not follow the device pixel
-ratio and the upper end draws in toward it as the ratio rises.
-
-The **normalisation** column is the continuous response of the same taps at the ridge, which
-the processor works out. The **sampled peak** column is what one row of device pixels reads
-as the line's own phase moves. Dividing the second by the first leaves the band's alpha
-rippling along its own length by at most **9 per cent** at a radius of 3 CSS pixels, 7 per
-cent at 3.85, 6 per cent at 4.62, 5 per cent at 5.77 and 3 per cent at 8. That is smaller than the ripple the
-line carries today: the unblurred point-sampled ridge reads 0.83 to 1.00, which is 17 per
-cent. The blur therefore makes this worse for no radius.
-
-A radius between two rows reads between them. At 720 CSS rows and a zoom of 10,000 light
-years the radius is 3.08, and its readings sit between the 3.00 row and the 3.85 row.
-
-**The `under 3.00` row holds every radius the floor acts at, and it is the 3.00 row.** The
-standard deviation is `max(radius / 3, 1)`, so a radius of 2.99 and a radius of 0.50 both
-give a standard deviation of 1 and 7 taps, which is the same kernel the radius of 3.00 gives.
-One kernel gives one normalisation, one sampled peak and one width, so the row is a copy of
-the 3.00 row and not a rounding of it.
-
-This is what the floor buys. The rule this replaces stopped the blur below a radius of 3,
-stating that the standard deviation of `radius / 3` was then under one device pixel and the
-sampling dominated: at a radius of 1.5 the readings spread from 0.80 to 0.93. The floor takes
-the standard deviation away from the radius at exactly that point, so the kernel is never
-sampled badly and the band never goes back to the unblurred staircase.
-
-The normalisation does not change the width. The band's half-maximum width SHALL follow the
-radius, by the table above: 3.0 to 3.5 CSS pixels in `simplified`, which never blurs, 3.80 to
-4.13 in `accurate` at every radius under 3, and 4.68 to 4.88 at a radius of 4.62, which is
-the largest radius 1,080 rows gives. The cap of 8 gives 6.90 to 7.05 and acts at 2,160 rows
-and above. That is wanted: a wider, softer band is the game's own line.
-
-What the blur changes besides the width is every corner: a 90 degree corner of the traced
-set is a convex turn, and a blur rounds it. That is the purpose.
-
-**A line goes out by its own range to the camera, and the overlay goes out by the zoom at
-the far end alone.** Two fades SHALL multiply.
-
-**The range fade** SHALL be read for each pixel, from the camera's distance to the point of
-the galactic plane under that pixel:
-
-- nothing at **10,000** light years and below,
-- rising on a smooth step to full at **20,000**,
-- full above 20,000.
-
-**The zoom fade** SHALL be read once for the frame, from the camera's distance to the
-cursor:
-
-- full at **20,000** light years and below,
-- falling on a smooth step to nothing at **30,000** and above.
-
-The zoom band has no close end. The range fade above holds that end per pixel instead,
-because a zoom band could not tell a line that shows its staircase from one that does not, because
-a zoom is one number for the whole frame. At a zoom of 8,000 light years the boundary a few
-hundred light years from the cursor steps about 6 CSS pixels a cell, and the boundary near
-the horizon is 40,000 light years off and steps under 1.2. The close end took both away, so
-a user who zoomed in to read a neighbourhood lost the region lines of the whole galaxy
-around them and not only the one under the cursor.
-
-The range fade takes away the lines that carry the staircase and keeps the ones that do not.
-The largest cell that can draw is therefore the cell at 10,000 light years, which is **4.62
-CSS pixels at 1,080 rows** and 3.08 at 720. That reading is the floor the blur radius above
-takes, so a close frame is blurred for the widest staircase it can hold.
-
-**The plane point under the pixel** is what the range is measured to. The boundary chains
-are drawn on the plane `y = 0`, so for any pixel a line covers, that point is the line's own
-point and the reading is exact. Where the ray through the pixel does not meet the plane in
-front of the camera, which is a pixel above the horizon, the fade SHALL be full. Nothing of
-the boundary set is drawn there, and the blur can only carry coverage a few pixels into it.
-
-The range fade above is the only fade the line takes over its own distance, and it needs
-no second channel in the coverage buffer: the composite pass reads the plane point under
-each pixel from the frame's own projection, so the coverage buffer SHALL stay one channel.
-
-**What the close zoom shows instead.** Below 10,000 light years of range the map draws no
-boundary, and below a zoom of 5,000 light years it places no region name. The user reads the
-region from the HUD's top bar, which names the region under the cursor at every zoom. The
-requirement "The handle reports the region at a plane point" states that, and the handle
-carries it as `regionNameAt`, with `regionNameAtScreen` beside it.
-
-**The labels keep the zoom band they hold.** The requirement "A region in view carries a
-label" states it: none at 30,000 light years and above, full from 20,000 down to 10,000,
-falling to none at 5,000 and below. A label names the region the view sits in, and the view
-sits at one distance, so a reading per frame is the right reading for a name. A label is
-also a box of text 100 CSS pixels wide, which a range fade would take away on one side and
-keep on the other. The lines and the labels therefore do not read at the same strength at
-every zoom.
-
-Where two segments of a chain meet, the line SHALL NOT be brighter than a straight run of
-the same chain, and SHALL show no gap. A join is where a naive draw of one quad per
-segment shows its seams: the two quads overlap, and drawn straight onto the frame the
-overlap blends twice. The rule SHALL hold for the traced set as well, whose joins are 90
-degree corners and are the hardest case the pass draws.
-
-**The chosen views are constants and they move again.** `tests/region-views.ts` searches
-the boundary set for the views the scenarios below open, and `e2e/region-views.ts` holds what
-it found. Every view it holds SHALL be searched again.
-
-**The two premises below govern three of the four searches**: the width search, the join
-search and the traced-corner search. Each of those reads a window of the frame and compares
-two parts of it, or compares it with the same window drawn another way, so the whole window
-must carry one strength of the range fade.
-
-**The both-sets search is exempt from both premises.** The view it finds is the one the fade
-scenarios open, at zooms of 9,000, 15,000, 20,000, 25,000 and 31,000 light years. It exists
-to be read inside both fades, so a premise that put it outside them would take away the only
-view that reads them. It keeps its viewport of **1280x720**, and its window of 8 CSS pixels
-holds one chain and no other at every one of those zooms.
-
-**Premise one: the reading point SHALL sit at a range of at least 20,000 light years from
-the camera.** Each of the three searches puts the **cursor on the reading point**, so the
-range of that point is the zoom itself, and a zoom of 20,000 light years holds the premise
-exactly.
-
-The range fade is a smooth step that ends at 20,000 light years, so its slope there is
-**zero**. A window around a point at that range therefore carries one strength over the whole
-of itself, to better than a millionth: the three searches work at a pitch of 89 degrees, where
-every plane point of a window a few tens of CSS pixels wide sits within about 3 light years of
-the cursor's own range, and the fade's flat top reads no difference over 3 light years.
-
-Inside the fade the strength follows the range, and the slope is steepest in the middle. At a
-range of 15,000 light years a window of 40 CSS pixels spans about 430 light years, which the
-fade reads as 6 per cent, twice the 3 per cent the corner rule allows. A window there would
-fail the corner rule on the fade and not on the drawing. This is why the premise is a floor
-and not a band.
-
-**Premise two: the zoom SHALL be at most 20,000 light years**, where the zoom fade is full.
-Above it the whole overlay fades out. With premise one the two together fix the zoom of each
-of the three views at **exactly 20,000 light years**.
-
-**The viewport and the zoom of the three governed views SHALL move together**, so that one
-CSS pixel covers the number of light years it covers today:
-
-| search        | view today          | view after          | light years a CSS pixel covers |
-| ------------- | ------------------- | ------------------- | ------------------------------ |
-| width         | 1920x1080 at 10,000 | 3840x2160 at 20,000 | 10.69                          |
-| traced corner | 1920x1080 at 10,000 | 3840x2160 at 20,000 | 10.69                          |
-| join          | 1920x1080 at 12,000 | 3200x1800 at 20,000 | 12.83                          |
-
-Every window these three searches state in CSS pixels therefore holds the same number of
-light years it holds today, and every count of runs, bends and nodes they report is a count
-over the same geometry. The zoom of each is 20,000 light years, which is premise two's
-bound, and the rows follow it.
-
-The blur radius is the same as well, because the radius is read in CSS pixels from the same
-cell. At 2,160 rows and a range of 20,000 light years the cell measures **4.62 CSS pixels**,
-which is what the readings at 1,080 rows and 10,000 light years were taken at. At 1,800 rows
-and 20,000 light years it measures **3.85**, which is what the join reading at 1,080 rows and
-12,000 light years was taken at. Both are rows of the table above.
-
-**The counts in this requirement were measured at the old viewports and zooms, and the
-implementation SHALL measure them again.** The premises above change which runs, bends,
-nodes and points each search holds, so the counts the requirement stated before are
-readings of the old rule and are taken out of this delta. The implementation SHALL run each
-of the four searches under the new premises, SHALL write the counts it finds back into this
-requirement, and SHALL NOT carry the old ones over. A count is a fact of the data and the
-view, so a stated count that nobody measured is worse than no count at all.
-
-**These are the counts the four searches hold under the new premises**, each read from the
-search itself:
-
-| search                 | what the count holds      | count |
-| ---------------------- | ------------------------- | ----- |
-| width, of the smoothed set | straight runs         | 23    |
-| width, of the traced set   | straight runs         | 2     |
-| join                   | bends of the smoothed set | 6,713 |
-| traced corner          | lattice nodes             | 10    |
-| both sets              | plane points              | 4,605 |
-
-Each count is the number of candidates that hold every premise of its search, and not the
-number the search keeps. `tests/region-views.test.ts` SHALL assert each of the five counts,
-so a count that moves fails a test and nobody can carry a stale count forward.
-
-The join count and the traced corner count are the same numbers the old rule gave, and the
-two searches did not stand still. The width the searches read is stated in CSS pixels, and
-the table above moves the viewport and the zoom together, so one CSS pixel covers the same
-12.83 and 10.69 light years it covered before. The same candidates therefore hold. The
-both-sets count is 4,605 under the wider rule, because the fade scenarios now open its
-point at zooms up to 31,000 light years. The search keeps every other chain outside the 8
-CSS pixel window at the widest of those zooms, which is 397.73 light years, and that is
-more than the 384.90 its 20 CSS pixel clearance asks for at 12,000. The base spec records
-4,613, but the old code counted no holders, so the two figures are readings of different
-rules and their difference is not a measurement.
-
-**The width search SHALL take the zoom as given** and SHALL NOT derive it from the run it
-found. It SHALL hold the run over the reading row with at least **100 CSS pixels** of it
-above and below, in place of crossing the whole frame. At 2,160 rows and 20,000 light years
-one CSS pixel is 10.69 light years, so the run needs 2,138 light years, which is what the
-same rule asked for at 1,080 rows and 10,000.
-
-The search SHALL drop the premise that the view sits within 16,000 light years of the
-galactic centre. That premise was there so the disc under the line could be brighter than
-the **dark outline**, and the outline is gone. In its place the reading point SHALL sit at
-least **5,000 light years** from the galactic centre, which keeps the reading off the bright
-core, where the band no longer lightens. The clearance SHALL stay at **60 CSS pixels**.
-
-The search SHALL run **once for each set**, and `e2e/region-views.ts` SHALL hold one crossing
-view for each. A near-vertical straight run of the smoothed set is not a near-vertical
-straight run of the traced staircase, so one view cannot serve both modes.
-
-**The other three searches SHALL state their reading windows in CSS pixels, not in light
-years**, and SHALL each take the zoom and the viewport its scenario names. They SHALL hold:
-
-- the **join** search: a clearance of 20 CSS pixels, a fold reach of 12 CSS pixels, a
-  neighbourhood of 16 CSS pixels of arc, and a comparison run between 16 and 40 CSS pixels
-  from the bend and at least 8 CSS pixels long. The straight run must sit outside the
-  reading window, which reaches 12 CSS pixels;
-- the **traced corner** search: arms of **48 CSS pixels**, a clearance of 20 CSS pixels, a
-  neighbourhood of 16 CSS pixels of arc, a fold reach of 12 CSS pixels, and a comparison run
-  between 12 and 40 CSS pixels from the node, against a read radius of 6. The polyline the
-  reading classifies a pixel against SHALL reach the read radius, 6 CSS pixels along each
-  arm. The arms SHALL be longer than the far end of the run, or the comparison reads past
-  the next node and off the drawn line; 48 leaves 8 CSS pixels of arm beyond the run;
-- the **both sets** search: a clearance of 20 CSS pixels.
-
-**All three searches SHALL take the same radius floor the width search takes**, a floor of
-**5,000 light years** from the galactic centre, and SHALL drop the ceiling of 16,000 that
-each holds today. The ceiling was there so the disc under the line could be brighter than
-the dark outline, which is gone. The join search holds no radius premise today and SHALL
-take none.
-
-**The three searches SHALL hold their windows per search and not in one module constant.**
-`NEIGHBOUR_ARC_LY` and the fold reach are shared between the join search and the traced
-corner search today, and the two scenarios read at different zooms, so one light year figure
-cannot serve both once the windows are stated in CSS pixels. Each search SHALL derive its
-own windows from the zoom and the viewport it is given.
-**The cost.** With the overlay on at 1920x1080 in `accurate` at a zoom of **4,000 light
-years**, where the blur radius is at its largest for that height, 4.62 CSS pixels and 11
-taps, the draw time SHALL be at most **1 ms** more than the same view drawn with the overlay
-off, read with `measureFrames`. The overlay SHALL stay inside the frame budget
-`real-systems` states, which the browser suite already measures at a 20,000 light year view
-with a full set.
-
-**The pass now runs at every zoom under 30,000 light years**, where the close end of the
-zoom band stops it only above 30,000. A close zoom therefore pays for the ribbon draw, the
-two blur passes and the composite. The cost reading above is taken at a close zoom for that
-reason.
-
-The ribbon draw is the whole boundary set whatever the zoom, and the two blur passes and the
-composite are full-screen passes whose cost follows the drawing buffer and the tap count.
-None of the three reads a star system, so the cost is the same for a set of none and a set of
-10,000, and it does not follow the 400 billion systems of the galaxy.
-
-`debug` SHALL carry `regionCoverageSize()`, which returns the width and the height of the
-coverage buffer, and null before the first frame that draws the overlay. It reports the
-storage and not a reading of it, so a test can hold the buffer at the full drawing buffer
-size and can hold a frame above the band to taking none.
-
-Every target of the pass SHALL take its storage in the first frame that needs it, and the
-**blur SHALL take none in a frame that does not blur**. `simplified` is the mode the map
-starts in and it blurs at no zoom, so that mode SHALL hold one full-resolution target and
-not three.
-
-#### Scenario: The coverage buffer holds the whole drawing buffer
-
-- **WHEN** the browser test reads `debug.regionCoverageSize()` at a zoom of 40,000 light
-  years, which is above the band, and again at a zoom inside the band, and reads
-  `debug.drawingBufferSize()` at the second view
-- **THEN** the first reading is null and the second is the drawing buffer's own width and
-  height.
-
-  A smaller target cannot hold the band. The coverage is a point-sampled ridge and not a
-  band limited field, so the sampled peak of a straight run moves from 0.67 to 1.00 with
-  the line's own phase at half resolution, and one normalisation cannot hold a peak that
-  moves by a third
-
-#### Scenario: Nothing at the far view
-
-- **WHEN** the browser test renders the default view at 1280x720 with the region
-  overlay on, and again with it switched off
+- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
+  fade in distance, and takes a screenshot with the regions on and one with them off
 - **THEN** the two image files are byte-identical
 
-#### Scenario: The boundary draws in full at the close end of the band
+### Requirement: The region data carries its attribution
 
-- **WHEN** the browser test opens a view a unit test has found **on** a chain of both sets,
-  at a zoom of **20,000 light years** and again at **4,000**, at 1280x720, with the overlay
-  on and again with it off, in each of `simplified` and `accurate`, and reads the frames
-  within 8 CSS pixels of the projection of the centre
-- **THEN** at 20,000 light years the frame with the overlay differs from the frame without it
-  in both modes; at 4,000 the two frames are identical within that window and the page holds
-  no region label.
+The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
+region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
+region tables, and Frontier Developments' media-usage rules, which are non-commercial,
+for the game data behind them. If **either build** carries the package's procedural
+naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
 
-  The band this scenario reads is the range band and not the zoom band, so the reading at
-  4,000 light years is a window and not the whole frame.
+The repository now emits two builds, the library and the demo site, so the search reads
+both. The demo site is the one the public loads, and the library is the one another project
+installs, so a table that reaches either one reaches a user.
 
-  20,000 light years is the closest range at which a line draws in full: the range fade
-  reaches 1 at 20,000 and the zoom fade leaves 20,000 at 1, so both readings are 1 at the
-  cursor's own range. At 4,000 the centre sits at the cursor, where the range fade is 0. The
-  rest of the frame is not read there, because a line near the horizon is over 10,000 light
-  years off and does draw, which is the whole point of the range fade.
+The file SHALL also name the sources the demo site adds: the two further Canonn Research
+Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
+from `public/`.
 
-  The centre has to be on both sets and not only on the traced one, because the smoothed line
-  may sit 49.3 light years from the traced one. The two lines coincide over most of their
-  length, so such a point exists: the search gives a point on a traced segment within half a
-  light year of the smoothed set
+#### Scenario: The notice names every source
 
-#### Scenario: A far line still draws while the near line is gone
+- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
+- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
+  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
+  `Notable Systems`
 
-- **WHEN** the browser test opens a view at a zoom of **4,000 light years** at a pitch of
-  **30 degrees**, in `accurate`, with the overlay on and again with it off, and counts the
-  pixels the overlay changed in the **top 10 per cent of the rows** and in the rows **below 30
-  per cent**
-- **THEN** the top band holds changed pixels and the lower band holds none.
+#### Scenario: The bundle carries no unlicensed table
 
-  The bands are set by the geometry and not by eye. The vertical field of view is 60 degrees,
-  so the horizon sits at `0.5 - 0.5 * tan(pitch) / tan(30)` of the frame height from the top.
-  A pitch of 30 degrees puts it at the top edge, so every row of the frame reads the plane. A
-  lower pitch would put the horizon inside the frame and the rows above it would be sky, which
-  is why this scenario does not read at a pitch of 5.
+- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
+  for the package's procedural naming tables
+- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
+  BSD 3-Clause text in full
 
-  At a zoom of 4,000 light years and a pitch of 30 the camera sits **2,000 light years** above
-  the plane. The rows whose plane point is beyond 20,000 light years, where the range fade is
-  1, are the top **11.0 per cent**; the rows whose plane point is under 10,000, where the fade
-  is 0, are everything below **21.1 per cent**. The two bands this scenario reads, 10 per cent
-  and 30 per cent, sit inside those and do not touch.
+### Requirement: The handle reports the region at a plane point
 
-  The close end of the zoom band this replaces cleared both bands
+The handle SHALL carry `regionNameAt(point)`, which takes a position in game coordinates
+and returns the name of the codex region that holds it, or null. It SHALL read the coarse
+region grid, whose cells are **197.3976** light years, and SHALL answer in the same tick.
 
-#### Scenario: A boundary is visible at medium zoom
+The handle SHALL also carry `regionNameAtExact(point)`, which returns a promise of the same
+name resolved on the game's own region grid of **49.3494** light years, or of null. The two
+answers differ only within about 100 light years of a boundary, which is where the coarse
+grid cannot tell one region from its neighbour.
 
-- **WHEN** the browser test opens a view at 20,000 light years centred on a plane point
-  that a unit test has found within 25 light years of a boundary chain, and reads the
-  luminance at the projection of that point and at the projection of a plane point
-  1,000 light years away from any chain
-- **THEN** the first reading is at least 0.05 above the second, and with the overlay
-  switched off the two readings differ by less than a fifth of the difference with it on
+`regionNameAt` is the reading for something that follows the cursor every frame, such as the
+HUD's top bar. `regionNameAtExact` is the reading for something that names one place once,
+such as the information panel of a selected system, where a wrong region is stated as a fact
+and a user cannot tell it is wrong.
 
-#### Scenario: The overlay fades out across the close end of the band
+**The exact lookup SHALL NOT enter the main bundle.** The region cell table is about 199 KiB
+and only the region worker reads it today. `regionNameAtExact` SHALL load it on its first
+call and SHALL keep it after that, so the table arrives in a chunk of its own and a map that
+never asks never fetches it. A second call while a first load runs SHALL wait on the same
+load and SHALL NOT start a second one.
 
-- **WHEN** the browser test opens the view a unit test has found **on** a chain of both sets,
-  the same view the scenario "The boundary draws in full at the close end of the band" opens,
-  at zooms of **20,000**, **15,000** and **9,000 light years**, with the overlay on and again
-  with it off, in each of `simplified` and `accurate`, and reads the overlay's own
-  contribution as the **largest** difference within 8 CSS pixels of the projection of the
-  centre, the frame with the overlay less the frame without it
-- **THEN** in both modes the contribution at 15,000 is between a fifth and four fifths of the
-  contribution at 20,000, and the contribution at 9,000 is zero.
+Both lookups SHALL read the `x` and `z` of the point and SHALL ignore its `y`, because the
+region grid is a map of the galactic plane and a region has no upper or lower bound. A
+point outside the grid SHALL give null, and so SHALL a point inside it that the grid marks
+as no region.
 
-  The centre sits at the cursor, so its range to the camera is the zoom. 15,000 light years is
-  the middle of the smooth step, where the range fade reads 0.5, and 9,000 is below the 10,000
-  at which it reaches 0. The bounds are wide because the reading is a pixel of the frame and
-  not the fade itself.
+`regionNameAt` SHALL give null before the scene data has loaded, rather than throw, because
+the handle answers in the same tick the map is created and the grid arrives later.
+`regionNameAtExact` reads no scene data, so it SHALL answer from the table alone and SHALL
+NOT wait for the load. A failed load SHALL reject the promise rather than throw out of the
+call, and SHALL NOT be kept: the next call SHALL start a fresh load. A held rejection would
+make the region field read `Unknown` for every system for the life of the page after one
+network fault, and it would never recover.
 
-  The view is named and not taken from the scenario before it, because the 8 CSS pixel window
-  has to hold one chain and no other: the search that finds this view keeps every other chain
-  clear of it, and the 25 light year search the medium zoom scenario uses does not
+#### Scenario: The call names the region at a point
 
-#### Scenario: The overlay fades out across the far end of the zoom band
+- **WHEN** a browser test waits for `ready` and calls `regionNameAt` with Sol
+  (0, 0, 0), with the galactic centre (15, -35, 25895), and with a point far outside the
+  grid at (400000, 0, 0)
+- **THEN** the first gives `Inner Orion Spur`, the second gives `Galactic Centre`, and the
+  third gives null
 
-- **WHEN** the browser test opens the same view at zooms of **20,000**, **25,000** and
-  **31,000 light years** and reads the same contribution, in each of `simplified` and
-  `accurate`
-- **THEN** in both modes the contribution at 25,000 is between a fifth and four fifths of the
-  contribution at 20,000, and the contribution at 31,000 is zero.
+#### Scenario: The exact call names the region at a point
 
-  25,000 light years is the middle of the far smooth step. The range fade is 1 at every one of
-  these three views, because the centre's range is the zoom and every zoom here is above
-  20,000, so this scenario reads the zoom fade alone
+- **WHEN** a browser test awaits `regionNameAtExact` with the same three points
+- **THEN** the readings are `Inner Orion Spur`, `Galactic Centre` and null
 
-#### Scenario: The line is one tone and lightens what it crosses
+#### Scenario: The exact call is right where the coarse one is not
 
-- **WHEN** the browser test opens the crossing view of the drawn set at **3840x2160** at a
-  zoom of **20,000 light years**, reads one row of pixels across the chain, converts the run
-  from device pixels to CSS pixels by the device pixel ratio, and compares it with the same
-  row with the overlay off, in each of `simplified` and `accurate`
-- **THEN** in both modes the middle of the run is lighter than both ends, no pixel of the run
-  has a lower **luminance** than the same pixel with the overlay off, by
-  `0.2126 r + 0.7152 g + 0.0722 b`, which is the reading the band is built to raise and not
-  every channel of it, and the whole run of changed pixels is between 5 and 16 CSS pixels
-  wide.
+- **WHEN** a unit test finds a plane point whose coarse cell holds one region and whose own
+  49.3494 light year cell holds another, and both calls read it
+- **THEN** `regionNameAtExact` gives the region of the 49.3494 light year cell, and the two
+  readings differ
 
-  The band is one tone and its luminance is 0.755, so it lightens every pixel of the disc it
-  crosses. The old two-tone line could darken a pixel with its outline, and the scenario it
-  replaces could not hold that.
+#### Scenario: The height of the point does not change the answer
 
-  The band's half width is 3 CSS pixels, so the ramp covers 6, but the run of changed pixels
-  is **5 or 6** and not always 6. The coverage is point-sampled on the device pixel grid, and
-  the sample at a gap of exactly 3 carries no coverage. Where the middle of the line falls on
-  a sample the samples sit at gaps 0, 1, 2 and 3 and the run is 5; where it falls between two
-  samples they sit at 0.5, 1.5 and 2.5 and the run is 6. The phase of a found view is not
-  controllable, which is why the bound carries both. The same phase is what spreads the
-  table's unblurred width over 3.00 to 3.50 CSS pixels.
+- **WHEN** a browser test calls `regionNameAt` and `regionNameAtExact` with (0, 0, 0) and
+  with (0, 20000, 0)
+- **THEN** each call gives the same answer for both points
 
-  5 or 6 is the **unblurred** run, which is what `simplified` gives at every zoom. The blur
-  widens it: at the radius of 4.62 CSS pixels this view gives, `accurate` changes about 9 to
-  10 CSS pixels. The bound of 5 to 16 covers both modes, and the scenario that follows
-  measures the difference between them at half maximum.
+#### Scenario: The call answers before the data loads
 
-  The viewport and the zoom are both doubled from the readings this scenario held before,
-  from 1920x1080 at 10,000 light years to 3840x2160 at 20,000. One CSS pixel covers the same
-  10.69 light years, the blur radius is the same 4.62, and every bound above is therefore
-  unchanged. The doubling is what puts the reading beyond the range fade and inside the zoom
-  fade at once.
+- **WHEN** a browser test builds a second map through `window.galaxyMapFactory` and calls
+  `regionNameAt` with Sol before `ready` settles
+- **THEN** the call returns null and does not throw
 
-  The band lightens the frame here because the search keeps the reading at least 5,000 light
-  years from the galactic centre. Over the core itself the tone's luminance of 0.755 sits
-  under the picture and the band would darken it, which is why the premise is in the search
-  and not left to chance
+#### Scenario: The exact table stays out of the main bundle
 
-#### Scenario: The blurred band is wider than the unblurred one
+- **WHEN** a unit test reads the build output and looks for the region cell table in the
+  entry chunk, then a browser test loads a map, reads the requests the page made, calls
+  `regionNameAtExact` twice at once and reads the requests again
+- **THEN** the table is in no entry chunk, the page fetched it not at all before the calls,
+  and the two calls together fetched it once
 
-- **WHEN** the browser test reads the half-maximum width of the same two rows, in
-  `simplified` and in `accurate`, at the same viewport and zoom
-- **THEN** the width in `simplified` is between **3.0 and 3.5 CSS pixels**, the width in
-  `accurate` is between **4.6 and 4.9**, and the peak alpha of the two differs by less than
-  15 per cent.
-
-  `simplified` never blurs, so it gives the unblurred band at every zoom. `accurate` blurs at
-  a radius of 4.62 CSS pixels here, which is the cell at the range this view reads at and this
-  height. The peak clause is what checks the normalisation: without it the blurred band would
-  read at about three fifths of the unblurred band's alpha
-
-#### Scenario: The far band is wider than the unblurred one as well
-
-- **WHEN** the browser test reads the half-maximum width of the same two rows at **1920x1080**
-  at a zoom of **20,000 light years**, where the blur radius is 2.31 CSS pixels and the floor
-  holds the standard deviation at 1, in `simplified` and in `accurate`
-- **THEN** the width in `simplified` is between **3.0 and 3.5 CSS pixels**, the width in
-  `accurate` is between **3.75 and 4.18**, and the peak alpha of the two differs by less than
-  15 per cent.
-
-  This is the reading the floor buys. The rule this replaces ran no blur at a radius of 2.31,
-  so both modes gave the same 3.0 to 3.5 here and the traced staircase drew unsoftened
-
-#### Scenario: The blur keeps a straight run and rounds a corner
-
-- **WHEN** a unit test builds the coverage field of a straight line and of a line that turns
-  by 90 degrees, both by the pass's own ramp rule point-sampled on a device pixel grid at a
-  ratio of 1, applies the pass's own blur kernel and its normalisation at radii of 0.50, 1.50,
-  2.99, 3.00, 3.85, 4.62, 5.77 and 8.00 CSS pixels, which are the table's own rows and three
-  radii the floor acts at, and reads the peak and the half-maximum contour of each over
-  **twelve sub-pixel phases** of the line
-- **THEN** every reading falls inside the table this requirement states, within the
-  tolerances it gives; the three radii under 3.00 read the same normalisation, sampled peak
-  and width as the 3.00 row, to three decimal places, because the floor gives them the same
-  kernel; the normalised peak is at most 1 and at least 0.91 at every radius
-  and phase; and the blurred corner's contour departs from a **sharp corner of the same
-  width** by at least 0.2 and at most 1.0 of the radius at the turn, and by less than 0.1 of
-  it along each arm, the departure at a radius under 3.00 being read against the 3.00 radius
-  the floor gives it.
-
-  The departure is measured against a sharp corner of the same width, and not against the
-  unblurred corner, because the blur does two things at once: it rounds the turn and it
-  widens the band. Only the first one is this scenario's property. The reference is the
-  contour a sharp corner holds at the blurred straight run's own half-maximum half width: at
-  the turn that contour sits at the half width outside the bend and at the root of two times
-  the half width inside it, and along each arm it sits at the half width. The test reads the
-  departure at the turn along the bisector, on the inside and on the outside, and takes the
-  larger of the two. It reads the departure along each arm at 8, 11, 14 and 17 CSS pixels
-  from the turn, on both sides, and takes the largest.
-
-  Against the unblurred corner the two halves cannot both hold. That comparison gives 0.27 to
-  0.53 of the radius at the turn and 0.14 to 0.25 along the arms, because it counts the
-  widening as a departure. Against the sharp corner the readings are 0.226 to 0.288 of the
-  radius at the turn and 0.000 to 0.013 along the arms.
-
-  The phases are what make this a real test. A single phase hides the sampling, and the
-  sampling is where the earlier draft of this requirement was wrong.
-
-  This is a unit test and not a browser test, because the property is a property of the
-  kernel, the ramp and the pixel grid. The browser tests below read what they give on screen
-
-#### Scenario: A join is not brighter than the line
-
-- **WHEN** the browser test opens a view at **3200x1800** at a zoom of **20,000 light
-  years**, a unit test having chosen the place so that the drawn line **turns by at least 30
-  degrees within a reach of 8 CSS pixels** and sits at the cursor, whose range is the zoom, and reads the luminance of every pixel the overlay changes within 8 CSS pixels of
-  that place
-- **THEN** taking each pixel's change as the frame with the overlay less the frame
-  without it, no pixel at the bend has a change more than **3 per cent** above the largest
-  change on a straight run of the same chain in the same frame, and no pixel inside the bend
-  is unchanged.
-
-  The bend is measured over a reach and not between two neighbouring segments, because
-  the requirement above holds every single vertex of the smoothed set to 20 degrees, so no
-  two neighbouring segments of it can meet under 160 degrees. The comparison is of the
-  overlay's own contribution, because the overlay draws at less than full opacity and the
-  galaxy under a corner can be brighter than the galaxy under a straight run
-
-#### Scenario: A 90 degree corner of the traced set is not brighter than its line
-
-- **WHEN** the browser test sets the mode to `accurate`, opens a view a unit test has chosen
-  at a lattice node where the traced line turns by 90 degrees and sits at the cursor, whose
-  range is the zoom, at **3840x2160** at a zoom of **20,000 light years**, and reads the
-  overlay's own contribution at every pixel within **6 CSS pixels** of the node
-- **THEN** no pixel at the corner has a contribution more than **3 per cent** above the
-  largest contribution on a straight run of the same chain in the same frame, and no pixel
-  inside the corner is unchanged.
-
-  The tolerance is the sampling of the ridge and not the clamp, which the requirement above
-  states: the corner reads up to 1.010 of a straight run at this radius.
-
-  **This is the scenario that reads the clamp.** The viewport, the zoom and the range are
-  what put the blur under it: at 2,160 rows the radius is 4.62 CSS pixels, the widest the
-  radius rule gives, and the node sits beyond the range fade, so the line draws in full. A
-  smaller viewport gives a smaller radius, and a node inside the range fade draws at a part
-  of its alpha, and either reading would compare a corner against a straight run that the
-  fade or the radius already changed.
-
-  The read radius of 6 CSS pixels reads this node alone. The search asks each arm to be at
-  least 48 CSS pixels, so the nodes each side sit well outside the reading. The straight run
-  the reading is compared with SHALL be a part of the same chain that holds its direction over
-  at least 20 CSS pixels, which an arm of 48 CSS pixels does.
-
-  The reading radius is a property of the view and not of the module. `readJoin` in
-  `e2e/regions.spec.ts` SHALL take it from the view the unit test wrote, so the join scenario
-  keeps its 8 CSS pixels and this one takes 6, and the window each reading excludes follows
-  its own radius
-
-#### Scenario: The overlay costs under a millisecond
-
-- **WHEN** the browser test opens a view at 1920x1080 in `accurate` at a zoom of 4,000
-  light years and reads `measureFrames` with the overlay off and with it on
-- **THEN** the two readings differ by 1 ms or less.
-
-  4,000 light years is the costliest frame the pass can draw. The radius rule reads the cell
-  at `max(cursorDistance, 10000)`, so every zoom of 10,000 light years and below gives the
-  same widest radius of 4.62 CSS pixels, which is 11 taps on each of the two blur passes. The
-  pass runs at every zoom under 30,000 light years, so the cost is read where the kernel is
-  widest
-
-### Requirement: A region in view carries a label
+### Requirement: A region in view carries a label that fades with its own range
 
 The page SHALL draw region labels as text over the canvas. A region SHALL be a candidate
 for a label when it covers enough of the frame to be worth naming, measured by sampling.
@@ -1052,10 +517,31 @@ The carried target is still dropped, and the frame's own target still taken whol
 no longer resolves to its region or goes out of reach of the frame. That is the rule for a
 camera that really jumps, and the cap does not apply to it: there is nothing to walk from.
 
-Where the smoothed point falls on another region, the carried point SHALL be kept. A
-region can show as two separated patches, and the point between this frame's target and
-the one before then falls in the gap. Taking this frame's target instead would carry the
-label to the other patch in one frame.
+**Where the smoothed point falls on another region, the point SHALL follow the flow field
+rather than stand still.** A region is not a convex shape and it can show as two separated
+patches, so the straight line on the plane from the carried point to this frame's target can
+run over a third region.
+
+The page SHALL read the flow field at the carried point's own cell of the coarse grid, SHALL
+take the step that cell names, and SHALL move the smoothed point along that step by the
+screen distance the straight step would have moved it. The field's step is a step inside the
+region toward the region's own centre, so the point walks around whatever lies between the
+two and arrives on a path that never leaves its own region.
+
+**Where the field names no step**, which is a cell it marks as the end of a path or a cell
+outside the grid, the carried point SHALL be kept for that frame. Taking this frame's target
+instead would carry the label to the other patch in one frame.
+
+**A label SHALL NOT be able to stop for good while a path to its region's centre exists.**
+The rule this replaces kept the carried point whenever the straight step left the region.
+That test fails in every frame at the same share, so a label whose region's centre lay behind
+a third region never moved again, however long the centre stayed in view. The scenario "A
+label walks around a region in its way" reads the new rule.
+
+Where the field names no step because the carried point sits in a patch of its region with no
+path to the centre, the label still holds. The requirement "The region worker builds a flow
+field toward each region's centre" states that the shipped data holds no such patch, and a
+unit test counts them, so the case is a guard and not a behaviour a user meets.
 
 **A held anchor goes to its smoothed target at once, and answers the sampling noise
 slowly.** A region that carried a label in the frame before SHALL carry its anchor's plane
@@ -1149,8 +635,14 @@ almost every wheel notch.
 
 A region is not always a convex shape, so the straight line from the carried point to the
 target can go over a neighbour. The step SHALL get shorter, halving up to six times, to
-land on the region where a shorter step does. Where none does, the step SHALL stand: the
-anchor comes back to the region as it walks.
+land on the region where a shorter step does.
+
+**Where no shorter step does, the step SHALL follow the flow field**, read at the carried
+point's own cell of the coarse grid and scaled to the screen distance the straight step
+asked for. The anchor then walks around what lies between it and its target rather than
+pressing into the edge that stops it. Where the field names no step there, the straight step
+SHALL stand: the target is always on the region, so the anchor comes back to the region as
+it walks.
 
 A region that carried no label in the frame before SHALL start at the target.
 
@@ -1194,27 +686,75 @@ The sampling SHALL cost, at 1920x1080, less than 2 milliseconds of the main thre
 mean over 300 frames and less than 4 milliseconds in any single frame. The page SHALL
 expose both figures so a test can read them.
 
-**Labels SHALL keep a band of zoom distance**: none at 30,000 light years and above, full
-from 20,000 down to 10,000, falling on a smooth step to none at **5,000** and below. A label
-SHALL carry the fade as the opacity of its element.
+**A label SHALL fade exactly as the boundary at the same place fades.** A name and the line
+it names SHALL read at the same strength, so a label's opacity SHALL be the product of the
+same two fades the requirement "The boundaries draw as one wide soft band" states:
 
-The band is the label's own, and it is no longer the band the boundaries take. The
-boundaries hold the far end of it, from 20,000 to 30,000 light years, and take a **range
-fade** in place of the close end, so a far line still draws at a close zoom. A label does not
-take the range fade. A label names the region the view sits in, and the view sits in one
-region at a close zoom, so a name that faded by the range of its own anchor would go out
-exactly where it is the only name the frame needs. The HUD's top bar carries the name below
-5,000 light years.
+- the **zoom fade**, read once for the frame from the camera's distance to the cursor: 1 at
+  20,000 light years and below, falling on a smooth step to 0 at **30,000** and above;
+- the **range fade**, read from the camera's distance to the label's **own plane anchor**:
+  0 at **10,000** light years and below, rising on a smooth step to 1 at **20,000** and
+  above. These are `REGION_RANGE_NONE` and `REGION_RANGE_FULL`, the same two constants the
+  composite pass takes, and no copy SHALL be made of them.
 
-Below 5,000 light years the page SHALL place **no** label and SHALL NOT run the sampling
-sweep. The sweep costs up to 2 milliseconds of the main thread, and a frame that shows no
-name has no reason to pay it. The user reads the region from the HUD's top bar at those
-zooms.
+A label SHALL carry the product as the opacity of its element, and a label whose product is
+**0** SHALL be left out of the overlay and SHALL NOT be placed. Every scenario that counts
+the labels on the page therefore counts the labels a user can see, and a frame in which no
+name could be read holds no label element at all.
 
-The placement rules above are a pure function of the frame's samples and do not read the
+**Why the label reads the range at one point while the line reads it per pixel.** The line
+is a band of pixels and each pixel has its own plane point, so the pass reads the fade per
+pixel. A label is one DOM element with one opacity: it names one place, its anchor is that
+place, and the anchor is already a plane point the placement holds. Reading the fade there
+gives the label the strength the boundary has under it. An earlier rule rejected a range
+fade for labels because a box of text 100 CSS pixels wide would be taken away on one side
+and kept on the other; that objection is about a per-pixel fade, and it does not reach a
+fade read once at the anchor.
+
+**The close end of the label's old zoom band goes.** The band held labels full from 20,000
+down to 10,000 and faded them to none at 5,000. The range fade holds that end now, as it
+does for the lines, so the label's zoom fade SHALL keep the far end alone and SHALL NOT
+carry a close step. Where the two disagreed before, the map showed a name with no line under
+it, or a line with no name beside it.
+
+The label's zoom fade is then the **same function** the boundary's is, so the page SHALL
+hold one of them and SHALL NOT keep a second copy. The two constants the old close step
+took, `REGION_CLOSE_NONE` and `REGION_CLOSE_FULL`, SHALL go: nothing reads them once the
+close step is gone, and a constant nobody reads is a rule a later reader will try to obey.
+
+**What the user gives up, and what carries it.** The region the camera sits in has its
+anchor near the cursor, so it is the **first** label to go as the user zooms in, not the
+last. Below a zoom at which nothing on the plane reaches 10,000 light years, the frame
+carries no region name at all. The HUD's top bar names the region under the cursor at every
+zoom, and the requirement "The handle reports the region at a plane point" states it, so the
+name is never lost; it moves from the map to the bar.
+
+**The page SHALL skip the sampling sweep when no plane point in the frame can carry a
+label.** The sweep SHALL run only when **both** of these hold:
+
+- the **zoom fade is above 0**, which is a zoom below 30,000 light years. This half is
+  unchanged and it is what keeps the default far view from sweeping;
+- the **greatest range to the plane the frame holds** is above `REGION_RANGE_NONE`. This
+  half replaces the old floor of "a zoom below 5,000 light years", which no longer matches
+  what draws.
+
+The greatest range SHALL be read from the camera alone in constant time, by unprojecting the
+frame's **two top corners**, intersecting each ray with `y = 0` and taking the greater. A ray
+that misses the plane SHALL count as beyond it, so a frame holding the horizon always sweeps.
+The corners and not the top centre: at a pitch of 58.6 degrees and a camera 1,542 light years
+up the top centre reads 3,223 light years and the corners about 4,300, so a gate on the
+centre under-reads by about a third.
+
+This is the same reading the gate replaced was reaching for. The sweep costs up to 2
+milliseconds of the main thread, and a frame in which every label would draw at opacity 0
+has no reason to pay it. Unlike the zoom floor, this gate takes the pitch and the camera's
+height into account, so it skips exactly the frames that carry nothing.
+
+The placement rules above are a pure function of the frame's samples and do not read either
 fade, so the unit scenarios below hold at every camera distance they name. Several of them
-sit at camera distances of 2,000, 640, 800 and 10 light years, where no label now reaches
-the screen, the anchor scenarios among them. They are kept as regression bounds on the
+sit at camera distances of 2,000, 640, 800 and 10 light years, where the label each of them
+reads no longer reaches the screen, the anchor scenarios among them. Other regions further up
+those frames do carry names, because the plane runs past 10,000 light years there. They are kept as regression bounds on the
 placement itself, and their figures were measured there; they are not claims about what a
 user sees at those zooms.
 
@@ -1227,18 +767,84 @@ user sees at those zooms.
 
 - **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`
 - **THEN** a label reading `Galactic Centre` is on the page, its box lies inside the
-  viewport, and it is placed even though at least 12 other regions hold more samples
+  viewport, and it is placed even though at least 12 other regions hold more samples.
+
+  The zoom is 20,000 light years, where the zoom fade is 1 and the cursor's own range is at
+  the top of the range fade, so this view reads the placement and not the fade
 
 #### Scenario: The region the camera is inside is named at every zoom
 
 - **WHEN** the browser test opens `#c=0,0,0&p=35&y=0` at each of 20,000, 15,000, 10,000,
-  7,500 and 4,000 light years
-- **THEN** a label reading `Inner Orion Spur` is on the page at 20,000, at 15,000 and at
-  10,000, and its box lies inside the viewport; at 7,500 that label is on the page at an
-  opacity between 0.2 and 0.8; and at 4,000 the page holds no region label.
+  7,500 and 4,000 light years, and at each zoom reads the `Inner Orion Spur` label, its
+  opacity, and the range from the camera to that label's own plane anchor
+- **THEN** at 20,000 the label is on the page with its box inside the viewport; at every
+  zoom at which it is on the page its opacity is `smoothstep(10000, 20000, range)` within
+  **0.05**; and at 4,000 the `Inner Orion Spur` label is not on the page at all, because its
+  anchor sits about 4,000 light years away and the range fade reads 0 there.
 
-  "Every zoom" is every zoom the overlay draws in. The band above takes the labels away
-  below 5,000 light years, and the HUD's top bar names the region there instead
+  "Every zoom" is every zoom the overlay draws in, and that is now the same set of zooms the
+  boundary draws in. The label's anchor sits near the cursor, so the label goes as the user
+  zooms in, at the same distance the line beside it goes. The HUD's top bar names the region
+  at every zoom instead
+
+#### Scenario: A label and the line beside it read at the same strength
+
+- **WHEN** the browser test opens `#c=0,0,0&d=18000&p=35&y=0` at **1920x1080**, reads a
+  region label's
+  opacity and the range `r` from the camera to that label's own plane anchor, then takes a
+  cross-section across a boundary band whose own plane point is within **100** light years of
+  `r`, and reads the **greatest** alpha of that cross-section
+- **THEN** the label's opacity and the band's alpha divided by the band's own opacity of
+  0.55 agree within **0.05**, so the name and the line at the same distance carry the same
+  strength.
+
+  The reading is taken on a line at the anchor's range and **not** at the anchor itself. An
+  anchor sits in the interior of its region, which the box rule pushes away from the edge, so
+  the coverage at the anchor's own pixel is 0 and there is no band alpha to read there.
+
+  **Why the greatest alpha of a cross-section, and not a pixel chosen by its distance from
+  the centre.** The alpha is `smoothstep(0, 1, max(0, 1 - gap / halfWidth))`, which with
+  `u = gap / halfWidth` is `1 - 3u**2 + 2u**3`. It reads exactly 1 only at `u = 0`, and it
+  falls away faster than a reader expects: at a tenth of the half width it is already
+  **0.972**, a departure of 0.028. The greatest alpha of a cross-section is the pixel nearest
+  the centre, which is within half a device pixel of it. At 1,080 CSS rows and a device pixel
+  ratio of 1 the half width is 17.28 device pixels, so `u` is at most 0.029 and the departure
+  at most **0.0025**. A higher ratio makes `u` smaller, so a ratio of 1 is the worst case.
+
+  The viewport is the other way about, because the half width follows it: at 720 CSS rows the
+  half width is 11.52 and the departure 0.0055, and at the clamp floor of 8 it is 0.0112. The
+  scenario names 1920x1080, and at the worst viewport the map supports the sum below reads
+  0.033 against the same bound of 0.05, so the reading holds everywhere.
+
+  **The 0.05 bound and what it has to carry.** Three terms, each at its worst:
+
+  | source | worst cost |
+  | --- | --- |
+  | reading the nearest pixel rather than the exact centre | 0.0025 |
+  | the 100 light year range window, at a slope of `1.5 / 10,000` a light year | 0.015 |
+  | 8-bit quantisation of the band's alpha, `1 / 255 / 0.55` | 0.007 |
+  | **sum** | **0.025** |
+
+  That leaves half the bound for the projection of the anchor and the plane point under the
+  pixel. A window of 200 light years would cost 0.030 on its own and take the sum past 0.04,
+  which is why the window is 100
+
+#### Scenario: No label where no line draws
+
+- **WHEN** the browser test opens
+  `#c=1840.85884,-15539.75557,16507.94703&d=20016.72348&p=58.57998&y=24.66002&g=1`, where
+  every plane point in the frame is under 10,000 light years from the camera, and reads the
+  region labels
+- **THEN** the page holds no region label, and the frame holds no boundary either. Before
+  this requirement the names stood over a frame with no lines under them
+
+#### Scenario: The sweep is skipped only when nothing could draw
+
+- **WHEN** a unit test reads whether the sampling sweep ran, at a pitch of **89 degrees** at
+  a zoom of 4,000 light years, and at a pitch of **20 degrees** at the same zoom
+- **THEN** the sweep does not run at 89 degrees, where the whole frame is under the range
+  floor, and does run at 20 degrees, where the frame holds the horizon and the plane runs
+  past 10,000 light years. A gate on the zoom alone would skip both
 
 #### Scenario: A region with nothing on screen carries no label
 
@@ -1251,18 +857,37 @@ user sees at those zooms.
 
 #### Scenario: The camera keeps the label of the region it sits in when it turns away
 
-- **WHEN** the browser test opens `#c=0,0,0&d=12000&p=35&y=0` and then
-  `#c=0,0,0&d=12000&p=35&y=180`, where the camera looks away from the Inner Orion Spur's
-  centroid, and in each view works out for itself what share of the plane samples each
+- **WHEN** the browser test opens `#c=0,0,0&d=20000&p=35&y=0` and then
+  `#c=0,0,0&d=20000&p=35&y=180`, where the camera turns through 180 degrees over the region
+  it sits in, and in each view works out for itself what share of the plane samples each
   region holds, by resolving a grid of screen points against the coarse region grid rather
   than reading the counts the label code made
 - **THEN** both views hold a label reading `Inner Orion Spur`, every label on the page names
   a region whose measured share is at least 1 percent, and no region whose measured share is
   at least 5 percent is left without a label.
 
-  The view moved from 500 light years to 12,000, because the fade above places no label at
-  500. The shares are measured by the test and not written into it, because the shares at
-  the new distance are not the shares the old one gave
+  **The zoom is 20,000 light years so that the range fade takes nothing.** The camera sits
+  `20,000 * sin 35` = 11,472 light years above the plane, and the bottom edge ray is 65
+  degrees below horizontal, so the nearest plane point in the frame is 12,657 light years
+  away. Every anchor therefore clears the 10,000 light year floor and the 5 per cent clause
+  stays an invariant of the **placement**, which is what this scenario reads.
+
+  At a zoom of 12,000 it would not be. There the camera is 6,883 light years up, the nearest
+  plane point is 7,594, and the bottom 37 per cent of the frame's rows read ranges under
+  10,000. A region holding well over 5 per cent whose anchor landed in that band would draw
+  at opacity 0 and be left out, so the clause would pass or fail on where the shipped data
+  puts one centroid.
+
+  **The centre rule fires in both views, and that is not what this scenario reads.** The
+  Inner Orion Spur's centroid sits at `x = -2,451.1, z = 3,802.0`, which is 4,524 light years
+  from Sol. At this zoom the frame's plane footprint reaches 11,034 light years behind the
+  cursor along the look direction, so a centroid that near projects inside the frame at both
+  yaws. What this scenario reads is that a 180 degree turn drops no label and leaves no large
+  region unnamed. The branch that answers a centre outside the frame has its own scenario,
+  "A label whose centre is outside the frame goes to the visible part".
+
+  The shares are measured by the test and not written into it, because the shares at this
+  distance are not the shares another gives
 
 #### Scenario: A label anchor moves with the camera and does not snap
 
@@ -1285,6 +910,23 @@ user sees at those zooms.
 - **THEN** the anchor is a sample the region itself holds, it is not the mean, and the
   region under it is that region. Taking the sample nearest the mean without restricting
   it to the region's own samples would put the anchor on the region the mean landed on
+
+#### Scenario: A label walks around a region in its way
+
+- **WHEN** a unit test builds a region shaped as two lobes joined by a neck, with a second
+  region filling the gap between the lobes, carries a label's target in the far lobe, puts
+  this frame's target on the region's centre in the near lobe, and runs 600 frames of 1/60
+  second with the camera still
+- **THEN** the target reaches the centre, every frame's target sits on the label's own
+  region, and no frame's target sits on the second region. Under the rule this replaces the
+  target held its first position in all 600 frames
+
+#### Scenario: A blocked anchor keeps moving
+
+- **WHEN** the same unit test carries the label's anchor in the far lobe and reads how far
+  the anchor moves on the screen in each of the 600 frames
+- **THEN** no run of 60 consecutive frames leaves the anchor within 1 CSS pixel of where it
+  started that run, until the anchor is within 1 CSS pixel of its target
 
 #### Scenario: A region on the threshold does not blink
 
@@ -1512,74 +1154,538 @@ user sees at those zooms.
   the mean and the worst sampling time the page exposes over 300 frames
 - **THEN** the mean is under 2 milliseconds and the worst single frame is under 4
 
-#### Scenario: The sweep does not run below the band
+#### Scenario: The sweep does not run when the frame can carry no label
 
-- **WHEN** the browser test opens `#c=0,0,0&d=4000&p=35&y=0`, draws 60 frames and reads
-  `labelSampling()`, which carries `frames`, `meanMs` and `worstMs`
-- **THEN** the page holds no region label, `frames` is 0 and both `meanMs` and `worstMs` are
-  0, so the sweep ran in no frame of the sixty
+- **WHEN** the browser test opens `#c=0,0,0&d=4000&p=89&y=0`, where the whole frame lies
+  inside the range floor, draws 60 frames and reads `labelSampling()`, which carries
+  `frames`, `meanMs` and `worstMs`; then opens `#c=0,0,0&d=60000&p=35&y=0`, the default far
+  view, and reads the same
+- **THEN** in each view the page holds no region label, `frames` is 0 and both `meanMs` and
+  `worstMs` are 0, so the sweep ran in no frame of the sixty.
 
-### Requirement: The region overlay has a switch
+  The two views read the two halves of the gate. At a pitch of 89 degrees and a zoom of
+  4,000 the top corner ray meets the plane at 6,243 light years, under the floor, so the
+  range half closes. At 60,000 light years the plane runs out to about 395,000, so the range
+  half is open and the **zoom** half closes it. A gate on either half alone lets one of these
+  two through
 
-The renderer SHALL expose a `regions` switch beside the switches for the volume, the
-clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
-lines and the labels.
+### Requirement: The boundaries draw as one wide soft band
 
-#### Scenario: The switch removes both parts
+The boundary chains SHALL draw as lines on the plane `y = 0`, after the tone map, so no
+look constant of the far view changes them and none of them changes the far view. They
+SHALL be drawn camera-relative, as every other pass is.
 
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
-  switches the regions off and takes a second screenshot
-- **THEN** the page holds no region label after the switch, and the second screenshot
-  differs from the first, because the first draws boundary lines
+Which set draws SHALL follow the region mode: the smoothed set in `simplified`, the traced
+set in `accurate`, and neither in `off`. Both sets draw through the same pass, with the same
+half width, the same tone and the same join rule, and the drawn band is the same width in
+both.
 
-#### Scenario: The switch is inert where nothing draws
+**The line is one soft tone.**
 
-- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
-  fade in distance, and takes a screenshot with the regions on and one with them off
+- The tone SHALL be `(0.86, 0.74, 0.60)`, a warm cream.
+- The opacity SHALL be **0.55** where the overlay draws in full.
+- **The half width SHALL be 1.6 per cent of the viewport height in CSS pixels, clamped to
+  8 and 24 CSS pixels**, so the whole band runs from 16 to 48 CSS pixels across and
+  measures **34.6** at 1,080 CSS rows. The clamp acts at 500 CSS rows and below, and at
+  1,500 and above.
+- The coverage the pass writes SHALL be `max(0, 1 - gap / halfWidth)`, where `gap` is the
+  distance from the middle of the line in CSS pixels, evaluated for each device pixel of the
+  ribbon quad, in a single-channel buffer at the **full drawing buffer resolution**.
+- The alpha SHALL be `smoothstep(0, 1, coverage)`. The `smoothstep` **clamps at 1**, so the
+  band has a flat top.
+- Where two quads of one join overlap, the buffer SHALL keep the larger coverage, which is
+  the smaller distance. A join therefore reads as a straight run reads and not as twice one.
+
+The width is a share of the viewport and not a fixed number of CSS pixels because the band
+is wide. A fixed 34.6 CSS pixels would cover a tenth of a 360 row window and a sixtieth of a
+2,160 row one, and the boundary would read as a different thing on each. The clamp holds the
+band readable at a small window and stops it growing past a reading at a large one.
+
+**The width is what hides the raster, and it replaces the blur.** The region data is a grid
+of 49.3494 light year cells, so the traced boundary is a staircase whose step is one cell.
+The pass SHALL NOT blur. Two readings say why the band alone is enough, and both rest on
+the range fade below, which draws no line nearer than 10,000 light years.
+
+- **The corner is already round.** The coverage is an exact distance from the **segment**
+  and not from an infinite line, and the pass blends with `MAX`, so a 90 degree corner of
+  the traced set is a round turn of the band's own half width, **17.28 CSS pixels** at 1,080
+  rows. A blur of standard deviation 1 to 2.667 CSS pixels cannot make it rounder.
+- **The staircase is far smaller than the band.** One cell measures `46,157 / range` CSS
+  pixels at 1,080 rows and a 60 degree vertical field of view. The nearest range that draws
+  is 10,000 light years, where a cell is **4.62** CSS pixels against a band of 34.6, which is
+  **0.133** of it. A step of the staircase therefore moves the band's edge by about a quarter
+  of the edge's own ramp, and every line further out moves it less.
+
+The readings are what the range fade buys. At a range of 1,000 light years a cell would
+measure 46.2 CSS pixels, which is more than the whole band, and the traced set would read as
+the staircase it is. The range fade draws nothing there, which is why the width alone is
+enough and the blur is not.
+
+The normalisation SHALL therefore be 1 in both modes, and the pass SHALL hold **one**
+full-resolution coverage target and not three.
+
+The dark outline is what carried the old 6 CSS pixel line over the bright disc. The warm
+tone carries it instead: its luminance is 0.755, above every part of the frame but the core
+itself, so the band lightens the picture nearly everywhere and needs no darker edge to be
+seen.
+
+**A line goes out by its own range to the camera, and the overlay goes out by the zoom at
+the far end alone.** Two fades SHALL multiply.
+
+**The range fade** SHALL be read for each pixel, from the camera's distance to the point of
+the galactic plane under that pixel:
+
+- nothing at **10,000** light years and below,
+- rising on a smooth step to full at **20,000**,
+- full above 20,000.
+
+**The zoom fade** SHALL be read once for the frame, from the camera's distance to the
+cursor:
+
+- full at **20,000** light years and below,
+- falling on a smooth step to nothing at **30,000** and above.
+
+The zoom band has no close end. The range fade above holds that end per pixel instead,
+because a zoom band could not tell a line that shows its staircase from one that does not, because
+a zoom is one number for the whole frame. At a zoom of 8,000 light years the boundary a few
+hundred light years from the cursor steps about 6 CSS pixels a cell, and the boundary near
+the horizon is 40,000 light years off and steps under 1.2. The close end took both away, so
+a user who zoomed in to read a neighbourhood lost the region lines of the whole galaxy
+around them and not only the one under the cursor.
+
+The range fade takes away the lines that carry the staircase and keeps the ones that do not.
+The largest cell that can draw is therefore the cell at 10,000 light years, which is **4.62
+CSS pixels at 1,080 rows** and 3.08 at 720. That reading is what the band's width answers:
+4.62 against 34.6 is 0.133 of the band, so the widest staircase a frame can hold moves the
+band's edge by about a quarter of its own ramp.
+
+**The plane point under the pixel** is what the range is measured to. The boundary chains
+are drawn on the plane `y = 0`, so for any pixel a line covers, that point is the line's own
+point and the reading is exact. Where the ray through the pixel does not meet the plane in
+front of the camera, which is a pixel above the horizon, the fade SHALL be full. Nothing of
+the boundary set is drawn there.
+
+The range fade above is the only fade the line takes over its own distance, and it needs
+no second channel in the coverage buffer: the composite pass reads the plane point under
+each pixel from the frame's own projection, so the coverage buffer SHALL stay one channel.
+
+**What the close zoom shows instead.** Below 10,000 light years of range the map draws no
+boundary, and it places no region name whose own anchor is that near either. The user reads the
+region from the HUD's top bar, which names the region under the cursor at every zoom. The
+requirement "The handle reports the region at a plane point" states that, and the handle
+carries it as `regionNameAt`, with `regionNameAtScreen` beside it.
+
+**The labels take both fades as well.** The requirement "A region in view carries a label
+that fades with its own range" states it: the label takes the zoom fade of this requirement
+and the range fade of this requirement, the second read once at the label's own plane anchor
+rather than per pixel. A name and the line under it therefore read at the same strength at
+every zoom, which is the whole point of giving them one rule.
+
+Where two segments of a chain meet, the line SHALL NOT be brighter than a straight run of
+the same chain, and SHALL show no gap. A join is where a naive draw of one quad per
+segment shows its seams: the two quads overlap, and drawn straight onto the frame the
+overlap blends twice. The rule SHALL hold for the traced set as well, whose joins are 90
+degree corners and are the hardest case the pass draws. With no blur in the pass the `MAX`
+blend equation holds the rule by itself: for the traced set, whose arms run along the screen
+axes, the corner and the arm read the same number **to the last digit** and the reading
+carries no tolerance.
+
+A chain that runs at an angle to the screen needs one term, and it is a term of the
+**instrument** and not of the pass. Comparing the largest reading of two places on a band
+compares two samples of a flat top, and only a line a pixel row lands on is sampled at its
+middle. The scenario "A join is not brighter than the line" therefore allows the **half pixel
+sampling loss**, `opacity * (3u**2 - 2u**3)` at `u = 0.5 / halfWidth`, which is 0.00071 at a
+half width of 24. The 3 per cent tolerance the blur needed is gone, and 0.00071 is three per
+cent of it.
+
+**The chosen views are constants and they move again.** `tests/region-views.ts` searches
+the boundary set for the views the scenarios below open, and `e2e/region-views.ts` holds what
+it found. Every view it holds SHALL be searched again.
+
+**The two premises below govern three of the four searches**: the width search, the join
+search and the traced-corner search. Each of those reads a window of the frame and compares
+two parts of it, or compares it with the same window drawn another way, so the whole window
+must carry one strength of the range fade.
+
+**The both-sets search is exempt from both premises.** The view it finds is the one the fade
+scenarios open, at zooms of 9,000, 15,000, 20,000, 25,000 and 31,000 light years. It exists
+to be read inside both fades, so a premise that put it outside them would take away the only
+view that reads them. It keeps its viewport of **1280x720**, and its window of 8 CSS pixels
+holds one chain and no other at every one of those zooms.
+
+**Premise one: the reading point SHALL sit at a range of at least 20,000 light years from
+the camera.** Each of the three searches puts the **cursor on the reading point**, so the
+range of that point is the zoom itself, and a zoom of 20,000 light years holds the premise
+exactly.
+
+The range fade is a smooth step that ends at 20,000 light years, so its slope there is
+**zero**. A window around a point at that range therefore carries one strength over the whole
+of itself, to better than a millionth: the three searches work at a pitch of 89 degrees, where
+every plane point of a window a few tens of CSS pixels wide sits within about 3 light years of
+the cursor's own range, and the fade's flat top reads no difference over 3 light years.
+
+Inside the fade the strength follows the range, and the slope is steepest in the middle. At a
+range of 15,000 light years a window of 40 CSS pixels spans about 430 light years, which the
+fade reads as 6 per cent, twice the 3 per cent the corner rule allows. A window there would
+fail the corner rule on the fade and not on the drawing. This is why the premise is a floor
+and not a band.
+
+**Premise two: the zoom SHALL be at most 20,000 light years**, where the zoom fade is full.
+Above it the whole overlay fades out. With premise one the two together fix the zoom of each
+of the three views at **exactly 20,000 light years**.
+
+**The viewport and the zoom of the three governed views SHALL move together**, so that one
+CSS pixel covers the number of light years it covers today:
+
+| search        | view today          | view after          | light years a CSS pixel covers |
+| ------------- | ------------------- | ------------------- | ------------------------------ |
+| width         | 1920x1080 at 10,000 | 3840x2160 at 20,000 | 10.69                          |
+| traced corner | 1920x1080 at 10,000 | 3840x2160 at 20,000 | 10.69                          |
+| join          | 1920x1080 at 12,000 | 3200x1800 at 20,000 | 12.83                          |
+
+Every window these three searches state in CSS pixels therefore holds the same number of
+light years it holds today, and every count of runs, bends and nodes they report is a count
+over the same geometry. The zoom of each is 20,000 light years, which is premise two's
+bound, and the rows follow it.
+
+The cell on the screen is the same as well, because it is read in CSS pixels from the same
+zoom and viewport. At 2,160 rows and a range of 20,000 light years the cell measures **4.62
+CSS pixels**, which is what the readings at 1,080 rows and 10,000 light years were taken at.
+At 1,800 rows and 20,000 light years it measures **3.85**.
+
+**The counts in this requirement were measured at the old viewports and zooms, and the
+implementation SHALL measure them again.** The premises above change which runs, bends,
+nodes and points each search holds, so the counts the requirement stated before are
+readings of the old rule and are taken out of this delta. The implementation SHALL run each
+of the four searches under the new premises, SHALL write the counts it finds back into this
+requirement, and SHALL NOT carry the old ones over. A count is a fact of the data and the
+view, so a stated count that nobody measured is worse than no count at all.
+
+**These are the counts the four searches hold** under the premises and the restated
+windows of this requirement, each read from the search itself.
+
+| search                     | what the count holds      | count |
+| -------------------------- | ------------------------- | ----- |
+| width, of the smoothed set | straight runs             | 23    |
+| width, of the traced set   | straight runs             | 2     |
+| join                       | bends of the smoothed set | 81    |
+| traced corner              | lattice nodes             | 6     |
+| both sets                  | plane points              | 4,098 |
+
+The same four searches held 23, 2, 6,713, 10 and 4,605 against the 6 CSS pixel band, at
+these viewports and zooms. The two width counts do not move, because their clearance of 60
+CSS pixels is far wider than the band at either width. The other three fall, because the
+restatement holds a reading window and a comparison run clear of a band that is now 24 CSS
+pixels of half width: the join search keeps 81 bends of 6,713, the traced corner search 6
+nodes of 10, and the both-sets search 4,098 points of 4,605.
+
+Each count is the number of candidates that hold every premise of its search, and not the
+number the search keeps. `tests/region-views.test.ts` SHALL assert each of the five counts
+it finds, so a count that moves fails a test and nobody can carry a stale count forward.
+
+**The width search SHALL take the zoom as given** and SHALL NOT derive it from the run it
+found. It SHALL hold the run over the reading row with at least **100 CSS pixels** of it
+above and below, in place of crossing the whole frame. At 2,160 rows and 20,000 light years
+one CSS pixel is 10.69 light years, so the run needs 2,138 light years, which is what the
+same rule asked for at 1,080 rows and 10,000.
+
+The search SHALL drop the premise that the view sits within 16,000 light years of the
+galactic centre. That premise was there so the disc under the line could be brighter than
+the **dark outline**, and the outline is gone. In its place the reading point SHALL sit at
+least **5,000 light years** from the galactic centre, which keeps the reading off the bright
+core, where the band no longer lightens. The clearance SHALL stay at **60 CSS pixels**.
+
+The search SHALL run **once for each set**, and `e2e/region-views.ts` SHALL hold one crossing
+view for each. A near-vertical straight run of the smoothed set is not a near-vertical
+straight run of the traced staircase, so one view cannot serve both modes.
+
+**The other three searches SHALL state their reading windows in CSS pixels, not in light
+years**, and SHALL each take the zoom and the viewport its scenario names. They SHALL hold:
+
+- the **join** search: a clearance of 20 CSS pixels, a fold reach of 12 CSS pixels, a
+  neighbourhood of 16 CSS pixels of arc, and a comparison run between 16 and 40 CSS pixels
+  from the bend and at least 8 CSS pixels long. The straight run must sit outside the
+  reading window, which reaches 12 CSS pixels;
+- the **traced corner** search: arms of **48 CSS pixels**, a clearance of 20 CSS pixels, a
+  neighbourhood of 16 CSS pixels of arc, a fold reach of 12 CSS pixels, and a comparison run
+  between 12 and 40 CSS pixels from the node, against a read radius of 6. The polyline the
+  reading classifies a pixel against SHALL reach the read radius, 6 CSS pixels along each
+  arm. The arms SHALL be longer than the far end of the run, or the comparison reads past
+  the next node and off the drawn line, and the arm SHALL be **derived** from the run's far
+  end and not stated as a figure of its own: it is that end plus 8 CSS pixels, which is 72
+  at a half width of 24. The 48 above is the reading against the 6 CSS pixel band and moves
+  with the run under the additive restatement below;
+- the **both sets** search: a clearance of 20 CSS pixels.
+
+**All three searches SHALL take the same radius floor the width search takes**, a floor of
+**5,000 light years** from the galactic centre, and SHALL drop the ceiling of 16,000 that
+each holds today. The ceiling was there so the disc under the line could be brighter than
+the dark outline, which is gone. The join search holds no radius premise today and SHALL
+take none.
+
+**The three searches SHALL hold their windows per search and not in one module constant.**
+`NEIGHBOUR_ARC_LY` and the fold reach are shared between the join search and the traced
+corner search today, and the two scenarios read at different zooms, so one light year figure
+cannot serve both once the windows are stated in CSS pixels. Each search SHALL derive its
+own windows from the zoom and the viewport it is given.
+**The cost.** With the overlay on at 1920x1080 in `accurate` at a zoom of **4,000 light
+years**, which is the closest zoom the overlay draws at, the draw time SHALL be at most **1 ms** more than the same view drawn with the overlay
+off, read with `measureFrames`. The overlay SHALL stay inside the frame budget
+`real-systems` states, which the browser suite already measures at a 20,000 light year view
+with a full set.
+
+**The pass runs at every zoom under 30,000 light years.** A close zoom therefore pays for
+the ribbon draw and the composite. The cost reading above is taken at a close zoom for that
+reason, and it has more room than it had: the two blur passes are gone.
+
+The ribbon draw is the whole boundary set whatever the zoom, and the composite is a
+full-screen pass whose cost follows the drawing buffer. Neither reads a star system, so the
+cost is the same for a set of none and a set of 10,000, and it does not follow the 400
+billion systems of the galaxy.
+
+`debug` SHALL carry `regionCoverageSize()`, which returns the width and the height of the
+coverage buffer, and null before the first frame that draws the overlay. It reports the
+storage and not a reading of it, so a test can hold the buffer at the full drawing buffer
+size and can hold a frame above the band to taking none.
+
+The pass SHALL take its coverage storage in the first frame that needs it, so the overlay
+costs no memory at 30,000 light years and above. It SHALL hold **one** full-resolution
+target in both modes, where it held three.
+
+**Every window and every count above is a reading of a 6 CSS pixel band, and the band is
+now 34.6 CSS pixels at 1,080 rows.** The searches SHALL restate each window that was
+measured against the old band so that a window holding one band still holds one band, and
+SHALL then run again and write the counts they find into this requirement, in place of the
+five stated above. `tests/region-views.test.ts` SHALL assert each count, so a count that
+moves fails a test and nobody can carry a stale count forward.
+
+**Three windows already collide with the new band**, and the restatement SHALL start with
+them. The join search asks for a comparison run **16 to 40 CSS pixels** from the bend and
+holds the straight run outside a reading window that reaches **12 CSS pixels**; the traced
+corner search reads **16 CSS pixels** of arc; and the join, the traced corner and the
+both-sets searches each ask for **20 CSS pixels** of clearance. At 3200x1800 the half width is the clamp, 24 CSS pixels, so every one of those
+windows falls inside the band itself and reads band against band.
+
+**The restatement SHALL be additive and SHALL NOT scale a window by the band's growth.** A
+window that measures a **clearance from the band** — the width search's 20 CSS pixels, the
+join search's reading window and the distance from the bend at which its comparison run
+starts — SHALL become the half width **plus** the figure it already holds. The width search's
+own clearance of 60 CSS pixels, which the paragraph above holds at 60, follows the same rule:
+the stated figure stays 60 and the search adds the half width to it, so the reading row holds
+one band and 60 clear CSS pixels on each side of it. A window that
+measures **along** the band — an arc, a run length, a comparison span — SHALL stay as it is,
+because it already measures what it needs to measure.
+
+Scaling every window by the band's growth does not work, and the figures say why. The old
+half width was 3 CSS pixels and the new one is at most 24, a factor of 8, which would ask
+the traced corner search for two straight arms of 384 CSS pixels. At 3840x2160 and a zoom of
+20,000 light years that is **4,105 light years**, about 83 cells. The longest straight
+segment in the whole traced set measures **4,392 light years** and only **2** segments reach
+past 4,105, so no two of them meet at a 90 degree node and the search returns nothing. The
+join search moves the same way: scaling its bend reach changes what counts as a bend, and
+its count ran from 6,713 to 13,380 when this was tried.
+
+The premises themselves do not move. The range fade still reaches full at 20,000 light
+years, so premise one still holds there with a slope of zero, and premise two still fixes
+the zoom of the three governed views at 20,000. The viewport table stays as it is: it was
+set by the premises and not by the kernel.
+
+**The corner tolerance of 3 per cent goes.** It was there because a blur lifted the inside
+of a corner above a straight run's peak, and because the blurred ridge was a sample of a
+kernel whose phase moved. With no blur the `MAX` blend equation holds the corner and the arm
+at the same number exactly, as it did before the blur was added, so every scenario that read
+the tolerance SHALL read an exact bound.
+
+#### Scenario: The coverage buffer holds the whole drawing buffer
+
+- **WHEN** the browser test reads `debug.regionCoverageSize()` at a zoom of 40,000 light
+  years, then at a zoom of 15,000, at a device pixel ratio of 1 and again at 2
+- **THEN** the first reading is null and the others are the drawing buffer's own width and
+  height
+
+#### Scenario: The band is the stated share of the viewport
+
+- **WHEN** the browser test opens the crossing view of the traced set at **1920x1080**, at
+  **1280x720** and at **640x360**, and reads the **half-maximum width** of the band across a
+  straight run, in CSS pixels, in each
+- **THEN** the readings are **17.3**, **11.5** and **8.0** CSS pixels, each within **1.0**
+  CSS pixel.
+
+  The half-maximum width is the **half width** and not the whole band. The alpha is
+  `smoothstep(0, 1, 1 - gap / halfWidth)`, which is 0.5 at a coverage of 0.5, that is at a
+  gap of `halfWidth / 2`, so the width at half maximum is `2 * halfWidth / 2`. The base
+  spec's own table reads 3.00 to 3.50 for a half width of 3, which is the same rule.
+
+  The whole band, which is where the contribution reaches 0, is **34.6**, **23.0** and
+  **16.0** CSS pixels at the three viewports. The third is the clamp: 1.6 per cent of 360
+  rows is 5.76, below the floor of 8, so the half width is 8 and not 5.76
+
+#### Scenario: Nothing at the far view
+
+- **WHEN** the browser test renders the default view at 1280x720 with the region
+  overlay on and with it off, and compares the two image files
 - **THEN** the two image files are byte-identical
 
+#### Scenario: The boundary draws in full at the close end of the band
 
-### Requirement: The region data carries its attribution
+- **WHEN** the browser test opens a view a unit test has found **on** a chain of both sets,
+  at a zoom of **20,000 light years** and again at **4,000**, at 1280x720, with the overlay
+  on and again with it off, in each of `simplified` and `accurate`, and reads the frames
+  within 8 CSS pixels of the projection of the centre
+- **THEN** at 20,000 light years the frame with the overlay differs from the frame without it
+  in both modes; at 4,000 the two frames are identical within that window, and no label
+  names a region whose anchor is within 10,000 light years of the camera.
 
-The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
-region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
-region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If **either build** carries the package's procedural
-naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
+  The label clause is about the anchor's range and not the zoom. At a pitch of 35 degrees the
+  frame at 4,000 light years still holds plane points out to about 26,300 light years, so
+  regions far up the frame do carry names; what has gone is every name near the cursor, along
+  with every line near it.
 
-The repository now emits two builds, the library and the demo site, so the search reads
-both. The demo site is the one the public loads, and the library is the one another project
-installs, so a table that reaches either one reaches a user.
+  The band this scenario reads is the range band and not the zoom band, so the reading at
+  4,000 light years is a window and not the whole frame.
 
-The file SHALL also name the sources the demo site adds: the two further Canonn Research
-Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
-from `public/`.
+  20,000 light years is the closest range at which a line draws in full: the range fade
+  reaches 1 at 20,000 and the zoom fade leaves 20,000 at 1, so both readings are 1 at the
+  cursor's own range. At 4,000 the centre sits at the cursor, where the range fade is 0. The
+  rest of the frame is not read there, because a line near the horizon is over 10,000 light
+  years off and does draw, which is the whole point of the range fade.
 
-#### Scenario: The notice names every source
+  The centre has to be on both sets and not only on the traced one, because the smoothed line
+  may sit 49.3 light years from the traced one. The two lines coincide over most of their
+  length, so such a point exists: the search gives a point on a traced segment within half a
+  light year of the smoothed set
 
-- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
-  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
-  `Notable Systems`
+#### Scenario: A far line still draws while the near line is gone
 
-#### Scenario: The bundle carries no unlicensed table
+- **WHEN** the browser test opens a view at a zoom of **4,000 light years** at a pitch of
+  **30 degrees**, in `accurate`, with the overlay on and again with it off, and counts the
+  pixels the overlay changed in the **top 10 per cent of the rows** and in the rows **below 30
+  per cent**
+- **THEN** the top band holds changed pixels and the lower band holds none.
 
-- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
-  for the package's procedural naming tables
-- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
-  BSD 3-Clause text in full
+  The bands are set by the geometry and not by eye. The vertical field of view is 60 degrees,
+  so the horizon sits at `0.5 - 0.5 * tan(pitch) / tan(30)` of the frame height from the top.
+  A pitch of 30 degrees puts it at the top edge, so every row of the frame reads the plane. A
+  lower pitch would put the horizon inside the frame and the rows above it would be sky, which
+  is why this scenario does not read at a pitch of 5.
 
-### Requirement: The region overlay has three modes
+  At a zoom of 4,000 light years and a pitch of 30 the camera sits **2,000 light years** above
+  the plane. The rows whose plane point is beyond 20,000 light years, where the range fade is
+  1, are the top **11.0 per cent**; the rows whose plane point is under 10,000, where the fade
+  is 0, are everything below **21.1 per cent**. The two bands this scenario reads, 10 per cent
+  and 30 per cent, sit inside those and do not touch.
+
+  The close end of the zoom band this replaces cleared both bands
+
+#### Scenario: A boundary is visible at medium zoom
+
+- **WHEN** the browser test opens a view at 20,000 light years centred on a plane point
+  a unit test has found on a chain, reads the frame with the overlay on and with it off,
+  and takes the largest change of any pixel
+- **THEN** the first reading is at least 0.05 above the second, and with the overlay
+  off the change is 0
+
+#### Scenario: The overlay fades out across the close end of the band
+
+- **WHEN** the browser test opens the view a unit test has found **on** a chain of both sets,
+  the same view the scenario "The boundary draws in full at the close end of the band" opens,
+  at zooms of **20,000**, **15,000** and **9,000 light years**, with the overlay on and again
+  with it off, in each of `simplified` and `accurate`, and reads the overlay's own
+  contribution as the **largest** difference within 8 CSS pixels of the projection of the
+  centre, the frame with the overlay less the frame without it
+- **THEN** in both modes the contribution at 15,000 is between a fifth and four fifths of the
+  contribution at 20,000, and the contribution at 9,000 is zero.
+
+  The centre sits at the cursor, so its range to the camera is the zoom. 15,000 light years is
+  the middle of the smooth step, where the range fade reads 0.5, and 9,000 is below the 10,000
+  at which it reaches 0. The bounds are wide because the reading is a pixel of the frame and
+  not the fade itself.
+
+  The view is named and not taken from the scenario before it, because the 8 CSS pixel window
+  has to hold one chain and no other: the search that finds this view keeps every other chain
+  clear of it, and the 25 light year search the medium zoom scenario uses does not
+
+#### Scenario: The overlay fades out across the far end of the zoom band
+
+- **WHEN** the browser test opens the same view at zooms of **20,000**, **25,000** and
+  **31,000** light years and reads the band's contribution in each mode
+- **THEN** in both modes the contribution at 25,000 is between a fifth and four fifths of
+  the contribution at 20,000, and the contribution at 31,000 is 0
+
+#### Scenario: The line is one tone and lightens what it crosses
+
+- **WHEN** the browser test opens the crossing view of the drawn set at **3840x2160** at a
+  zoom of **20,000 light years**, reads a row across a straight run of the band, and
+  compares the middle of the run with its two ends
+- **THEN** in both modes the middle of the run is lighter than both ends, and no pixel of
+  the run is darker than the frame drawn with the overlay off
+
+#### Scenario: A join is not brighter than the line
+
+- **WHEN** the browser test opens a view at **3200x1800** at a zoom of **20,000 light
+  years** on a bend of the smoothed set and reads the band's contribution at the bend and
+  along a straight run of the same chain
+- **THEN** no pixel at the bend has a contribution above the largest contribution of the
+  straight run by more than the **half pixel sampling loss**, and no pixel of the bend has a
+  contribution of 0.
+
+  The sampling loss is `opacity * (3u**2 - 2u**3)` at `u = 0.5 / halfWidth`, which is
+  **0.00071** at an opacity of 0.55 and a half width of 24. It is derived and not chosen.
+
+  **Why a comparison of two peaks needs it.** The band's top is flat, so the largest reading
+  of a run is the reading of the pixel nearest the middle of the line, and how near that is
+  depends on where the pixel grid falls across the line. An arm of the traced set runs along
+  a screen axis and a pixel row lands on its middle exactly; a chain of the smoothed set runs
+  at an angle and cannot. The measured deficit is **0.000217**, which is the loss at an offset
+  of 0.275 CSS pixels, inside the half pixel the bound allows. The rule is about the pass, and
+  without this term the reading is about the pixel grid
+
+#### Scenario: A 90 degree corner of the traced set is not brighter than its line
+
+- **WHEN** the browser test sets the mode to `accurate`, opens a view a unit test has chosen
+  at a 90 degree corner of the traced set at **3840x2160** at a zoom of **20,000 light
+  years**, and reads the band's contribution at the corner and along each arm
+- **THEN** no pixel at the corner has a contribution above the largest contribution of the
+  arms. Both arms run along a screen axis, so a pixel row lands on the middle of each and the
+  sampling loss of the scenario above is 0 here. The `MAX` blend holds this exactly, and the
+  reading carries **no tolerance**: the corner and the arm read the same number to the last
+  digit
+
+#### Scenario: The corner of the traced set is round to the band's half width
+
+- **WHEN** the browser test reads the outer edge of the band around the same 90 degree
+  corner and fits a radius to it
+- **THEN** the radius is the band's own half width, **24.0 CSS pixels** at 2,160 rows,
+  within **2.0** CSS pixels, so the corner is round without a blur.
+
+  24 is the clamp and not 1.6 per cent of 2,160, which is 34.56. The clamp holds the half
+  width at 24 from 1,500 rows up, and the scenario above this one opens the same corner at
+  3840x2160
+
+#### Scenario: The overlay costs under a millisecond
+
+- **WHEN** the browser test opens a view at 1920x1080 in `accurate` at a zoom of 4,000
+  light years, which is the closest zoom the overlay draws at, and reads the frame time
+  with the overlay on and with it off
+- **THEN** the two readings differ by 1 ms or less
+
+### Requirement: The region overlay has three modes and starts on the traced set
 
 The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
-`accurate`. `simplified` SHALL be the default.
+`accurate`. **`accurate` SHALL be the default.**
 
 - `off` SHALL draw no boundary line and place no label.
-- `simplified` SHALL draw the smoothed boundary set, which is the set the map draws today.
-- `accurate` SHALL draw the traced boundary set, which the requirement below defines. It
-  SHALL place the same labels `simplified` places, and its line SHALL take the wider blur
-  radius the requirement "The boundaries draw as one soft band inside a zoom band"
-  states.
+- `simplified` SHALL draw the smoothed boundary set.
+- `accurate` SHALL draw the traced boundary set. It SHALL place the same labels
+  `simplified` places, and both SHALL draw through the same pass at the same width, which
+  the requirement "The boundaries draw as one wide soft band" states.
+
+**The default was `simplified`.** The smoothed set exists to turn the raster's staircase
+into a curve, and it buys that by moving the line: its departure from the region data
+measures 49.342 light years against a bound of 49.3494, so it has spent the whole of what
+the data's own resolution allows. The band is now wide enough to hide the staircase without
+moving the line at all, so the map's default is the set that departs from the data by 0.
+`simplified` stays, for a host that wants the curve.
 
 `GalaxyMapOptions` SHALL carry an optional `regionMode`. The handle SHALL carry
 `getRegionMode()` and `setRegionMode(mode)`. `setRegionMode` SHALL take effect in the next
@@ -1593,50 +1699,42 @@ one value the host controls directly.
 The `regions` pass switch SHALL stay as it is, a renderer probe the browser tests read. A
 switch of `off` and a mode of `off` SHALL draw the same frame, so the two never disagree.
 
-**Where the two sets differ, now that the overlay stops at 5,000 light years.** The two
-sets differ in where the line sits, not in what the data says. The smoothed line may sit up
-to 49.3494 light years from the boundary the region data holds. **At 1,080 CSS rows** and a
-60 degree vertical field of view, one CSS row covers `1.1547 * distance / 1080` light
-years, so the departure in CSS pixels is about `46,157 / distance`: 9.2 pixels at a zoom of
-5,000 light years, 4.6 at 10,000, 2.3 at 20,000 and 1.5 at 30,000.
+**Where the two sets differ.** The two sets differ in where the line sits, not in what the
+data says. The smoothed line may sit up to 49.3494 light years from the boundary the region
+data holds. **At 1,080 CSS rows** and a 60 degree vertical field of view, one CSS row covers
+`1.1547 * distance / 1080` light years, so the departure in CSS pixels is about
+`46,157 / distance`: 4.6 pixels at a range of 10,000 light years, 2.3 at 20,000 and 1.5 at
+30,000.
 
-The overlay draws between 5,000 and 30,000 light years, so the departure runs from about
-9.2 CSS pixels at the near end of that band down to about 1.5 at the far end. `accurate` is
-therefore worth choosing at the **near end**, from 5,000 to about 12,000 light years, where
-the departure is 9.2 down to 3.8 CSS pixels at 1,080 rows, and 6.2 down to 2.6 at 720 rows,
-and the user sees which line they are given.
-Above about 25,000 the two sets draw within 2 CSS pixels of each other and the mode changes
-almost nothing on the screen.
+A line draws only at a range of 10,000 light years and beyond, so the departure runs from
+about 4.6 CSS pixels at the near end of that band down to about 1.5 at the far end. The band
+is **34.6** CSS pixels wide at 1,080 rows, so the two sets sit between a **seventh** and a
+**twenty-third** of a band apart everywhere the overlay draws.
 
-**What the blur costs the mode.** The blur radius in `accurate` is the cell on the screen,
-capped at 8 CSS pixels, which at 1,080 CSS rows is 8 at a zoom of 5,770 and below and 4.62 at
-10,000, and the pass skips the blur above about 15,390 where the radius falls under 3. That is of
-the same order as the departure itself, so the blur rounds the staircase into a smooth line
-without moving it: a symmetric kernel leaves the middle of a straight run where it was, and
-the departure figures above still hold. What the mode buys at the near end is the line's
-**position**, and the blur takes only its corners.
+**The mode therefore changes little on the screen, and that is the reason the default
+moves.** When the band was 6 CSS pixels the same 4.6 pixel departure was most of a band and
+the choice was a real one. At 34.6 it is not, so the map should draw the set that departs
+from the region data by **0** and let the smoothed set be the option. Above about 25,000
+light years the two draw within 2 CSS pixels of each other and the mode changes almost
+nothing at all.
 
-This paragraph said before that the close zoom is what makes the difference matter, because
-the departure reaches about 4,600 CSS pixels at a zoom of 10 and 1,080 rows. The overlay no
-longer draws there at all. What the mode now answers is which side of a boundary a
-**region** lies on at the zoom a user reads the galaxy at, and not which side one system
-lies on at the zoom a user reads one system at. The requirement "The boundaries draw as one soft
-band inside a zoom band" records that trade and why it was taken.
+**Neither mode blurs.** The blur is gone from the pass, so the two sets differ in the line's
+**position** alone and in nothing else about how it is drawn.
 
-#### Scenario: The default mode is simplified
+#### Scenario: The default mode is accurate
 
 - **WHEN** the browser test creates a map with no `regionMode` in the options and reads
   `getRegionMode()`
-- **THEN** it is `simplified`
+- **THEN** it is `accurate`
 
 #### Scenario: The options choose the mode
 
 - **WHEN** the browser test builds a map through the library entry point with
   `regionMode` of `accurate`, of `off`, of the string `precise`, with an empty options
   object and with no options at all, and reads `getRegionMode()` on each
-- **THEN** the readings are `accurate`, `off`, `simplified`, `simplified` and
-  `simplified`, so a value the map does not know takes the default as a bad value on
-  `setRegionMode` leaves the mode
+- **THEN** the readings are `accurate`, `off`, `accurate`, `accurate` and `accurate`, so a
+  value the map does not know takes the default as a bad value on `setRegionMode` leaves the
+  mode
 
 #### Scenario: Each mode draws its own frame
 
@@ -1650,8 +1748,8 @@ band inside a zoom band" records that trade and why it was taken.
   `accurate`, and the reading would then say nothing about the mode. 12,000 light years is
   inside the band where the overlay draws in full. The scenario states the viewport because
   the departure of the two sets follows it: at 1280x720 the two lines sit about **2.56** CSS
-  pixels apart there against a band 6 CSS pixels wide, which is under half a band and still
-  moves enough pixels to change a digest
+  pixels apart there against a band of **23.0** CSS pixels, which is about a ninth of a band
+  and still moves enough pixels to change a digest
 
 #### Scenario: The off mode removes both parts
 
@@ -1662,8 +1760,8 @@ band inside a zoom band" records that trade and why it was taken.
 
 #### Scenario: The mode changes without a rebuild
 
-- **WHEN** the browser test opens a view, sets the mode to `accurate`, draws one frame,
-  sets it back to `simplified` and draws one more, and reads how many times the scene data
+- **WHEN** the browser test opens a view, sets the mode to `simplified`, draws one frame,
+  sets it back to `accurate` and draws one more, and reads how many times the scene data
   loaded
 - **THEN** the frames differ, the scene data loaded once, and neither change waited for a
   load
@@ -1676,41 +1774,76 @@ band inside a zoom band" records that trade and why it was taken.
 
 #### Scenario: A bad mode changes nothing
 
-- **WHEN** the browser test sets the mode to `accurate`, then calls `setRegionMode` with
+- **WHEN** the browser test sets the mode to `simplified`, then calls `setRegionMode` with
   the string `precise` and with `undefined`, and reads the mode
-- **THEN** it is still `accurate`
-### Requirement: The handle reports the region at a plane point
+- **THEN** it is still `simplified`
 
-The handle SHALL carry `regionNameAt(point)`, which takes a position in game coordinates
-and returns the name of the codex region that holds it, or null.
+### Requirement: The region worker builds a flow field toward each region's centre
 
-The lookup SHALL read the `x` and `z` of the point and SHALL ignore its `y`, because the
-region grid is a map of the galactic plane and a region has no upper or lower bound. A
-point outside the grid SHALL give null, and so SHALL a point inside it that the grid marks
-as no region.
+The region worker SHALL build a **flow field** over the coarse region grid and SHALL send it
+in the same message as the boundary sets and the grid. The field SHALL hold one byte for
+each cell of the coarse grid, so it is 507 by 507 bytes, which is 251 KiB, and it SHALL be
+transferable without a copy.
 
-The call SHALL give null before the scene data has loaded, rather than throw, because the
-handle answers in the same tick the map is created and the grid arrives later.
+The byte of a cell SHALL name the step to take from that cell to come nearer its **own
+region's centroid while staying on its own region**. The step SHALL be one of the eight
+neighbours of the cell, or a ninth value that means the cell is at the end of its path. A
+cell that holds no region SHALL take the ninth value.
 
-The HUD names the region under the cursor in its top bar, which `map-hud` states. Before
-this requirement the only way to ask was `debug.regionNameAtScreen`, and `debug` is not
-part of the supported surface.
+One field SHALL cover all 42 regions, because a cell belongs to exactly one region and the
+step it holds is a step inside that region.
 
-#### Scenario: The call names the region at a point
+The field SHALL be built by a breadth-first walk over the cells of one region at a time,
+from the cell that holds that region's centroid, or, where the centroid's own cell is not on
+the region, from the cell of the region nearest it. A cell reached by the walk SHALL point
+back along the edge the walk reached it by. A cell of the region the walk never reaches SHALL
+take the ninth value, because no path inside the region joins it to the centre.
 
-- **WHEN** a browser test waits for `ready` and calls `regionNameAt` with Sol
-  (0, 0, 0), with the galactic centre (15, -35, 25895), and with a point far outside the
-  grid at (400000, 0, 0)
-- **THEN** the first gives `Inner Orion Spur`, the second gives `Galactic Centre`, and the
-  third gives null
+**The field is what lets a label cross a region that lies in its way.** A region is not a
+convex shape and it can show as separated patches, so the straight line on the plane from a
+label to its region's centre can run over a third region. The requirement "A region in view
+carries a label that fades with its own range" states how the label follows the field.
 
-#### Scenario: The height of the point does not change the answer
+The walk SHALL run once, off the main thread, over the 257,049 cells of the coarse grid. Its
+cost does not follow the star systems the map holds, and the main thread never builds it.
 
-- **WHEN** a browser test calls `regionNameAt` with (0, 0, 0) and with (0, 20000, 0)
-- **THEN** the two readings are equal
+#### Scenario: The field is sent with the boundary sets
 
-#### Scenario: The call answers before the data loads
+- **WHEN** a unit test runs the region worker's build and reads the response
+- **THEN** it carries the flow field beside the two boundary sets and the coarse grid, the
+  field holds 507 by 507 bytes, and its buffer is in the transfer list
 
-- **WHEN** a browser test builds a second map through `window.galaxyMapFactory` and calls
-  `regionNameAt` with Sol before `ready` settles
-- **THEN** the call returns null and does not throw
+#### Scenario: Every step stays on its own region
+
+- **WHEN** a unit test walks every cell of the field that holds a region and takes the step
+  its byte names
+- **THEN** the cell the step reaches holds the same region id as the cell it left
+
+#### Scenario: Following the field reaches the centre
+
+- **WHEN** a unit test starts at every cell of the field that holds a region and follows the
+  steps until a cell takes the ninth value
+- **THEN** every walk ends and no walk visits a cell twice; every walk that started at a cell
+  the build's own walk reached ends at that region's root cell; and a walk that started at a
+  cell the build never reached ends at once, on that cell
+
+#### Scenario: The shipped data has no region the field cannot cross
+
+- **WHEN** a unit test builds the field over the shipped coarse grid and counts, for each of
+  the 42 regions, the cells of that region the build's walk did not reach
+- **THEN** the count is **0** for every region, so on the shipped data every label has a path
+  to its own region's centre.
+
+  The count is a fact of the pinned `@elite-dangerous-almanac/core` and of the 197.3976 light
+  year coarse cell, not a property the build guarantees. A release that splits a region into
+  parts the coarse grid cannot join makes this count non-zero and fails this test, which is
+  where such a release is meant to be caught
+
+#### Scenario: The field crosses a region that lies in the way
+
+- **WHEN** a unit test builds a grid holding one region shaped as two lobes joined by a
+  neck, with a second region filling the gap between the lobes, and follows the field from a
+  cell of the far lobe
+- **THEN** the walk goes through the neck and reaches the centre cell, and no cell of the
+  walk holds the second region. A straight line between the two ends crosses the second
+  region

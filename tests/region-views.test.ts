@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import { project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
-import { regionBlurRadiusCss } from '../src/render/region-pass';
+import { regionBandHalfWidthCss } from '../src/render/region-pass';
 import type { View } from '../src/camera/view';
 import { buildRegionData } from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
@@ -47,11 +47,6 @@ const BOTH_SETS_ZOOMS = [9000, 15000, 20000, 25000, 31000] as const;
 /** How many light years one CSS pixel covers at the cursor. */
 function lightYearsPerPixel(distance: number, viewport: Viewport): number {
   return (2 * distance * Math.tan(Math.PI / 6)) / viewport.height;
-}
-
-/** The focal length of the projection in CSS pixels, at a viewport. */
-function focalCssOf(viewport: Viewport): number {
-  return viewport.height / 2 / Math.tan(Math.PI / 6);
 }
 
 /** The shortest distance from a plane point to any segment of a boundary set. */
@@ -147,9 +142,11 @@ function crossingTests(
 
     test('carries no other part of the boundary near the reading', () => {
       // The reading takes a row of a few tens of pixels. The nearest other part of the
-      // boundary is far outside it.
+      // boundary is far outside it. The clearance is measured from the edge of the band,
+      // so it holds the half width and 60 CSS pixels more.
       const pixels = choice.clearanceLy / choice.lightYearsPerPixel;
-      expect(pixels).toBeGreaterThan(60);
+      const halfWidth = regionBandHalfWidthCss(choice.viewport.height);
+      expect(pixels).toBeGreaterThan(halfWidth + 60);
     });
 
     test('sits away from the galactic core', () => {
@@ -171,13 +168,10 @@ function crossingTests(
       );
     });
 
-    test('reads at a blur radius of 4.62 CSS pixels', () => {
-      const radius = regionBlurRadiusCss(
-        focalCssOf(choice.viewport),
-        choice.view.distance,
-        true,
-      );
-      expect(radius).toBeCloseTo(4.62, 2);
+    test('reads at a band half width of 24 CSS pixels', () => {
+      // 1.6 per cent of 2,160 rows is 34.56, above the clamp of 24. The pass no longer
+      // blurs, so the half width is the whole of the band's own rule.
+      expect(regionBandHalfWidthCss(choice.viewport.height)).toBeCloseTo(24, 6);
     });
   });
 }
@@ -242,14 +236,18 @@ describe('the view at a bend of a chain', () => {
 
   test('holds a straight run of the same chain inside the frame', () => {
     const perPixel = SHARP_CORNER.lightYearsPerPixel;
+    const halfWidth = regionBandHalfWidthCss(SHARP_CORNER.viewport.height);
     const run = planeGap(SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo);
-    // The window of 16 to 40 CSS pixels gives a run of 8 to 24.
+    // The run starts 16 CSS pixels past the edge of the band and spans 24 more, so it
+    // measures 8 to 24 CSS pixels.
     expect(run / perPixel).toBeGreaterThanOrEqual(8);
 
-    // The run sits outside the reading window and inside the frame. The reading excludes
-    // 1.5 times its own reach, which is 12 CSS pixels here.
+    // The run sits outside the reading window and inside the frame. The reading window
+    // reaches the half width and 12 CSS pixels more.
     for (const end of [SHARP_CORNER.straightFrom, SHARP_CORNER.straightTo]) {
-      expect(planeGap(SHARP_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(16);
+      expect(planeGap(SHARP_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(
+        halfWidth + 16,
+      );
       const screen = project(SHARP_CORNER.view as View, end, SHARP_CORNER.viewport);
       expect(screen.inFront).toBe(true);
       expect(screen.x).toBeGreaterThan(20);
@@ -260,8 +258,10 @@ describe('the view at a bend of a chain', () => {
   });
 
   test('carries no other chain near the reading', () => {
+    // The clearance is measured from the edge of the band.
+    const halfWidth = regionBandHalfWidthCss(SHARP_CORNER.viewport.height);
     expect(SHARP_CORNER.clearanceLy / SHARP_CORNER.lightYearsPerPixel).toBeGreaterThan(
-      20,
+      halfWidth + 20,
     );
   });
 
@@ -274,13 +274,9 @@ describe('the view at a bend of a chain', () => {
     ).toBeCloseTo(SHARP_CORNER.lightYearsPerPixel, 10);
   });
 
-  test('reads at a blur radius of 3.85 CSS pixels', () => {
-    const radius = regionBlurRadiusCss(
-      focalCssOf(SHARP_CORNER.viewport),
-      SHARP_CORNER.view.distance,
-      true,
-    );
-    expect(radius).toBeCloseTo(3.85, 2);
+  test('reads at a band half width of 24 CSS pixels', () => {
+    // 1.6 per cent of 1,800 rows is 28.8, above the clamp of 24.
+    expect(regionBandHalfWidthCss(SHARP_CORNER.viewport.height)).toBeCloseTo(24, 6);
   });
 });
 
@@ -300,10 +296,12 @@ describe('the point on a chain of both sets', () => {
     // The point sits in the middle of a traced segment far longer than the frame, so the
     // line leaves it on both sides.
     expect(NEAR_BOTH_SETS.segmentLengthLy).toBeGreaterThan(100);
-    // One CSS pixel covers 19.2 light years at 1280x720 and 12,000, so a clearance of
-    // 20 CSS pixels is 385.
+    // One CSS pixel covers 19.2 light years at 1280x720 and 12,000, and the clearance is
+    // measured from the edge of the band, whose half width is 11.52 CSS pixels at 720
+    // rows, so 20 CSS pixels of clear frame ask for 606 light years.
     expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(
-      20 * lightYearsPerPixel(BOTH_SETS_ZOOM, BOTH_SETS_VIEWPORT),
+      (regionBandHalfWidthCss(BOTH_SETS_VIEWPORT.height) + 20) *
+        lightYearsPerPixel(BOTH_SETS_ZOOM, BOTH_SETS_VIEWPORT),
     );
   });
 
@@ -312,7 +310,8 @@ describe('the point on a chain of both sets', () => {
     // zooms. One CSS pixel covers the most light years at the widest of them, so the
     // rule binds there and holds at the other four.
     for (const zoom of BOTH_SETS_ZOOMS) {
-      const window = 8 * lightYearsPerPixel(zoom, BOTH_SETS_VIEWPORT);
+      const halfWidth = regionBandHalfWidthCss(BOTH_SETS_VIEWPORT.height);
+      const window = (8 + halfWidth) * lightYearsPerPixel(zoom, BOTH_SETS_VIEWPORT);
       expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(window);
     }
   });
@@ -336,12 +335,16 @@ describe('the view at a 90 degree corner of the traced set', () => {
     expect(traced.positions[vertex * 3] as number).toBe(TRACED_CORNER.bend[0]);
     expect(traced.positions[vertex * 3 + 2] as number).toBe(TRACED_CORNER.bend[2]);
     expect(TRACED_CORNER.turnDegrees).toBe(90);
-    expect(TRACED_CORNER.reachPixels).toBe(6);
+    // The reading window reaches the half width and 6 CSS pixels more.
+    expect(TRACED_CORNER.reachPixels).toBe(
+      regionBandHalfWidthCss(TRACED_CORNER.viewport.height) + 6,
+    );
   });
 
-  test('puts each arm at more than 48 CSS pixels', () => {
-    // The comparison run reaches 40 CSS pixels from the node, so a shorter arm would put
-    // its far end past the next node and off the straight line.
+  test('puts each arm at more than 72 CSS pixels', () => {
+    // The comparison run reaches the half width and 40 CSS pixels more from the node,
+    // which is 64 here, so a shorter arm would put its far end past the next node and off
+    // the straight line. The arm holds 8 CSS pixels more than the run.
     const perPixel = TRACED_CORNER.lightYearsPerPixel;
     const vertex = TRACED_CORNER.vertex;
     const armOf = (step: number): number => {
@@ -351,20 +354,25 @@ describe('the view at a 90 degree corner of the traced set', () => {
         (traced.positions[other * 3 + 2] as number) - TRACED_CORNER.bend[2],
       );
     };
-    expect(armOf(-1) / perPixel).toBeGreaterThan(48);
-    expect(armOf(1) / perPixel).toBeGreaterThan(48);
+    expect(armOf(-1) / perPixel).toBeGreaterThan(72);
+    expect(armOf(1) / perPixel).toBeGreaterThan(72);
   });
 
   test('holds a straight run of the same chain inside the frame', () => {
     const perPixel = TRACED_CORNER.lightYearsPerPixel;
+    const halfWidth = regionBandHalfWidthCss(TRACED_CORNER.viewport.height);
     const run = planeGap(TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo);
-    // The window of 12 to 40 CSS pixels gives a run of 28, less a float remainder of
-    // about 4e-15, because the two ends are built from the same reading of a pixel.
+    // The run starts 12 CSS pixels past the edge of the band and spans 28 more, less a
+    // float remainder of about 4e-15, because the two ends are built from the same
+    // reading of a pixel.
     expect(run / perPixel).toBeGreaterThanOrEqual(28 - 1e-9);
 
-    // The reading excludes 1.5 times its own reach, which is 9 CSS pixels here.
+    // The run sits outside the window the reading reads, which reaches the half width and
+    // 6 CSS pixels more.
     for (const end of [TRACED_CORNER.straightFrom, TRACED_CORNER.straightTo]) {
-      expect(planeGap(TRACED_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(12);
+      expect(planeGap(TRACED_CORNER.bend, end) / perPixel).toBeGreaterThanOrEqual(
+        halfWidth + 12,
+      );
       const screen = project(TRACED_CORNER.view as View, end, TRACED_CORNER.viewport);
       expect(screen.inFront).toBe(true);
       expect(screen.x).toBeGreaterThan(20);
@@ -375,9 +383,11 @@ describe('the view at a 90 degree corner of the traced set', () => {
   });
 
   test('carries no other chain near the reading', () => {
+    // The clearance is measured from the edge of the band.
+    const halfWidth = regionBandHalfWidthCss(TRACED_CORNER.viewport.height);
     expect(
       TRACED_CORNER.clearanceLy / TRACED_CORNER.lightYearsPerPixel,
-    ).toBeGreaterThan(20);
+    ).toBeGreaterThan(halfWidth + 20);
   });
 
   test('sits away from the galactic core', () => {
@@ -393,13 +403,8 @@ describe('the view at a 90 degree corner of the traced set', () => {
     ).toBeCloseTo(TRACED_CORNER.lightYearsPerPixel, 10);
   });
 
-  test('reads at a blur radius of 4.62 CSS pixels', () => {
-    const radius = regionBlurRadiusCss(
-      focalCssOf(TRACED_CORNER.viewport),
-      TRACED_CORNER.view.distance,
-      true,
-    );
-    expect(radius).toBeCloseTo(4.62, 2);
+  test('reads at a band half width of 24 CSS pixels', () => {
+    expect(regionBandHalfWidthCss(TRACED_CORNER.viewport.height)).toBeCloseTo(24, 6);
   });
 });
 
@@ -411,15 +416,15 @@ describe('the counts the four searches hold', () => {
     expect(TRACED_CROSSING.heldCount).toBe(2);
   });
 
-  test('the join search holds 6,713 bends', () => {
-    expect(SHARP_CORNER.heldCount).toBe(6713);
+  test('the join search holds 81 bends', () => {
+    expect(SHARP_CORNER.heldCount).toBe(81);
   });
 
-  test('the traced corner search holds 10 nodes', () => {
-    expect(TRACED_CORNER.heldCount).toBe(10);
+  test('the traced corner search holds 6 nodes', () => {
+    expect(TRACED_CORNER.heldCount).toBe(6);
   });
 
-  test('the both-sets search holds 4,605 points', () => {
-    expect(NEAR_BOTH_SETS.heldCount).toBe(4605);
+  test('the both-sets search holds 4,098 points', () => {
+    expect(NEAR_BOTH_SETS.heldCount).toBe(4098);
   });
 });

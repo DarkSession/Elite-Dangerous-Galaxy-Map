@@ -66,7 +66,6 @@ listener the HUD added, and leave a `host` the caller gave in the page.
   again with an import of `../camera/view`, and again with a read of `map.debug.look`
 - **THEN** the first run is clean and each of the other four fails on that line
 
-
 ### Requirement: The HUD names its elements and carries its own style
 
 Every element the HUD builds SHALL carry a class whose name starts with `gm-hud`. The root
@@ -101,7 +100,6 @@ every panel readable when the font does not load.
   a host other than the page's own origin blocked and recorded
 - **THEN** no request was blocked and the panels are laid out
 
-
 ### Requirement: The HUD does not take the map's input
 
 The HUD root SHALL take no pointer events. Each panel SHALL take them. A pixel of the
@@ -127,7 +125,6 @@ on a panel SHALL NOT orbit the map and SHALL NOT move the cursor.
 - **WHEN** the browser test presses the left button on the map options panel, moves 100
   pixels, and releases
 - **THEN** yaw and pitch have not changed
-
 
 ### Requirement: The top bar names the map, the region and the zoom
 
@@ -457,10 +454,10 @@ selection. It SHALL hold, in this order:
 
 1. A header with the system's name, a copy button beside the name, and a close button.
 2. A grid of fields: the position in game coordinates with a copy button, the distance
-   from Sol, the range
-   from the camera, and then `primaryStar`, `allegiance`, `government`, `primaryEconomy`,
-   `security`, `population` and `bodyCount`. A field the record does not carry SHALL be
-   left out, not shown empty.
+   from Sol, the range from the camera, the **galactic region**, and then `primaryStar`,
+   `allegiance`, `government`, `primaryEconomy`, `security`, `population` and `bodyCount`. A
+   field the record does not carry SHALL be left out, not shown empty. The first four
+   fields are worked out from the position and are always shown.
 3. The categories, as one chip per category in the record's colour, the primary first and
    then the secondary ones in the order the record gave them.
 4. The description, when the record carries one.
@@ -468,11 +465,8 @@ selection. It SHALL hold, in this order:
 6. A footer with a **centre view** button and one button per entry of the `actions` option.
 
 The field grid SHALL hold **two columns**, as the mockup draws it, and the position field
-SHALL carry the mockup's label `POSITION`. An **even** count of fields leaves the last field
-alone on its row, and that field SHALL take both columns, so the grid shows no empty cell.
-
-The parity follows from the span: `POSITION` fills two cells, so a grid of `n` fields fills
-`n + 1` cells and the last field is alone on its row when `n` is even.
+SHALL carry the mockup's label `POSITION`. A field alone on its row SHALL take both columns,
+so the grid shows no empty cell.
 
 **`POSITION` SHALL take both columns.** It holds the longest value of the panel, three
 coordinates of up to three decimal places each, and one column of two is too narrow for it:
@@ -482,8 +476,14 @@ the value wraps onto a second line, and the copy button beside the label crowds 
 hold a whole number of light years and a unit, which is the shortest value the panel shows,
 so the pair fits one row with room to spare.
 
-Every field after those three SHALL fill the grid in the order this requirement states, two
-to a row, and the last field alone on its row SHALL take both columns as before.
+**`REGION` SHALL take both columns**, on the row under those two. A region name runs to 26
+characters, as `Outer Scutum-Centaurus Arm` does, and one column of two is too narrow for
+it, by the same reading `POSITION` takes.
+
+The first four fields therefore fill exactly **six cells**, whatever the record holds. Every
+field after them SHALL fill the grid in the order this requirement states, two to a row, so
+an **odd** count of those later fields leaves the last one alone on its row, and it SHALL
+take both columns.
 
 **The position SHALL NOT be rounded to a whole light year.** Each of the three game
 coordinates SHALL be shown to at most **3 decimal places**, with the trailing zeros dropped
@@ -503,6 +503,29 @@ them.
 The **range from the camera** follows the view, so the panel SHALL rewrite it at most 10
 times a second, by the same rule as the top bar. Every other field changes only with the
 selection.
+
+**`REGION` SHALL name the codex region the system sits in, resolved exactly.** The panel
+SHALL read it through the handle's `regionNameAtExact`, which resolves on the game's own
+49.3494 light year grid, and SHALL NOT read `regionNameAt`, whose coarse grid has cells of
+197.3976 light years. The panel states one system's region as a fact, and a user cannot tell
+a wrong one from a right one, so a system within about 100 light years of a boundary must
+not be given its neighbour's name. `galactic-regions` states both calls.
+
+The lookup is a promise, because the region table loads on its first use. The field SHALL
+therefore:
+
+- be placed as soon as the panel opens, with an **empty value**, so the grid does not reflow
+  when the answer arrives;
+- take the name when the promise resolves;
+- read **`Unknown`** where the promise resolves to null, which is a position the region map
+  does not cover, and where the promise rejects.
+
+A lookup whose selection has changed before it resolves SHALL be dropped, so a slow first
+load cannot write the region of a system the user has left.
+
+The first lookup of a page fetches the region table; every one after it answers from the
+table already loaded. Only the first selection therefore shows an empty region field for
+more than a frame.
 
 **Centre view** SHALL move the view's cursor to the system and SHALL keep the distance,
 the yaw and the pitch. The selection itself already centres the system and caps the
@@ -584,16 +607,20 @@ SHALL NOT let a failure in it stop the frame loop.
 
 #### Scenario: An odd count of fields leaves no empty cell
 
-- **WHEN** the browser test selects a record that gives **four** fields, the three above and
-  a primary star, and again a record that gives **five**, and reads the box of the last field
+- **WHEN** the browser test selects a record that gives **five** fields, the four above and a
+  primary star, and again a record that gives **six**, and reads the box of the last field
   and the box of the grid in each
-- **THEN** with four fields the last field is as wide as the grid, because it is alone on its
-  row; with five fields the last field is one column wide and the grid holds no empty cell.
+- **THEN** with five fields the last field is as wide as the grid, because it is alone on its
+  row; with six fields the last field is one column wide and the grid holds no empty cell.
 
-  `POSITION` takes two cells, so a grid of `n` fields fills `n + 1` cells. The last field is
-  alone on its row when `n` is **even**, and an **odd** count fills the grid with no empty
-  cell, which is what this scenario's heading says. The rule that widens a field alone on
-  its row therefore reads an even count
+  `POSITION` and `REGION` each take two cells, and `DISTANCE FROM SOL` and `RANGE` take one
+  each, so the four always-shown fields fill **six** cells and leave the grid full. A record
+  that gives `n` later fields therefore fills `6 + n` cells, and the last of them is alone on
+  its row when `n` is **odd**. Five fields in total is one later field, which is odd; six is
+  two, which is even.
+
+  The heading counts the whole grid and the rule counts the later fields, which is why the
+  two parities read the other way round from each other
 
 #### Scenario: A record with no description hides that section
 
@@ -663,6 +690,45 @@ SHALL NOT let a failure in it stop the frame loop.
   1.4 seconds, and reads both
 - **THEN** only the position's button shows a tick
 
+#### Scenario: The panel names the system's region
+
+- **WHEN** the browser test selects a system at Sol (0, 0, 0) and waits for the region field
+  to fill, then selects one at the galactic centre (15, -35, 25895) and waits again
+- **THEN** the readings are `Inner Orion Spur` and `Galactic Centre`
+
+#### Scenario: The region field is exact
+
+- **WHEN** the browser test selects a system at a position a unit test has found whose
+  coarse region cell holds one region and whose own 49.3494 light year cell holds another,
+  and reads the panel's region field and the handle's `regionNameAt` for the same position
+- **THEN** the panel shows the region of the 49.3494 light year cell, and the two readings
+  differ
+
+#### Scenario: The grid does not reflow when the region arrives
+
+- **WHEN** the browser test selects a system, reads the screen box of every field before the
+  region field fills, and reads them again after it fills
+- **THEN** every box is unchanged, and the region field held an empty value in the first
+  reading
+
+#### Scenario: A position off the region map reads Unknown
+
+- **WHEN** the browser test selects a system at **(-49900, 0, 75800)**, which lies inside
+  the model bounds and outside the region map, and waits for the region field
+- **THEN** the field reads `Unknown`.
+
+  The point has to be inside the model bounds. `src/scene-data/real-systems.ts` rejects a
+  record outside them with `out-of-bounds`, so a system at (400000, 0, 0) never exists, no
+  panel opens and there is no field to read. The model bounds run -49,985 to 50,015 in `x`
+  and -24,105 to 75,895 in `z`, and this point sits in the far corner of them, well outside
+  the region map
+
+#### Scenario: A stale lookup does not write
+
+- **WHEN** the browser test selects one system, selects a second before the first lookup
+  resolves, and reads the region field after both have resolved
+- **THEN** the field names the second system's region
+
 #### Scenario: A refused write does not break the panel
 
 - **WHEN** the browser test replaces the clipboard write with one that rejects, selects a
@@ -702,7 +768,6 @@ large with its caption and the system's name. A click anywhere in the lightbox, 
 
 - **WHEN** the browser test selects a record with images and reads the image elements
 - **THEN** each carries `loading="lazy"` and `referrerpolicy="no-referrer"`
-
 
 ### Requirement: Every HUD control works from the keyboard
 
@@ -874,4 +939,3 @@ the number of systems and not the number of open lists.
   under the HUD root, opens the dataset dialog, counts again, closes it and counts once
   more
 - **THEN** the second count is under 600 more than the first, and the third is the first
-

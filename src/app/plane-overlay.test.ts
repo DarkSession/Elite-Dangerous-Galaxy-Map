@@ -1,0 +1,246 @@
+import { describe, expect, test } from 'vitest';
+import { project } from '../camera/projection';
+import type { View } from '../camera/view';
+import {
+  placeOnPlane,
+  planeHomography,
+  planeMatrix3d,
+  planePlacement,
+} from './plane-overlay';
+import type { PlanePlacement } from './plane-overlay';
+
+const VIEWPORT = { width: 1920, height: 1080 };
+
+function viewAt(distance: number, pitch: number, yaw = 0): View {
+  return { cursor: [0, 0, 0], distance, yaw, pitch };
+}
+
+/** A placement of a rectangle on the plane, with an element box of its own. */
+function placementOf(
+  view: View,
+  widthLy: number,
+  heightLy: number,
+  anchor: readonly [number, number] = [0, 0],
+  box: readonly [number, number] = [160, 160],
+): PlanePlacement {
+  return {
+    view,
+    viewport: VIEWPORT,
+    planeY: 0,
+    anchor,
+    widthLy,
+    heightLy,
+    widthCss: box[0] as number,
+    heightCss: box[1] as number,
+  };
+}
+
+/** The four plane corners of a placement, in the order the element's box holds them. */
+function cornersOf(
+  placement: PlanePlacement,
+): readonly (readonly [number, number, number])[] {
+  const x = placement.anchor[0] as number;
+  const z = placement.anchor[1] as number;
+  const halfWidth = placement.widthLy / 2;
+  const halfHeight = placement.heightLy / 2;
+  return [
+    [x - halfWidth, placement.planeY, z + halfHeight],
+    [x + halfWidth, placement.planeY, z + halfHeight],
+    [x + halfWidth, placement.planeY, z - halfHeight],
+    [x - halfWidth, placement.planeY, z - halfHeight],
+  ];
+}
+
+/** Reads the four screen corners the transform gives, through the homography itself. */
+function transformedCorners(
+  placed: NonNullable<ReturnType<typeof planePlacement>>,
+): readonly { x: number; y: number }[] {
+  return placed.corners.map((point) => ({ x: point.x, y: point.y }));
+}
+
+/** An element that records every style write, so a test can count them. */
+function fakeElement(): { element: HTMLElement; writes: string[] } {
+  const held = new Map<string, string>();
+  const writes: string[] = [];
+  const style = {
+    getPropertyValue(name: string): string {
+      return held.get(name) ?? '';
+    },
+    setProperty(name: string, value: string): void {
+      writes.push(name);
+      held.set(name, value);
+    },
+  };
+  return { element: { style } as unknown as HTMLElement, writes };
+}
+
+describe('a plane element', () => {
+  test('projects to the quad the camera sees', () => {
+    const view = viewAt(1000, 30);
+    const placement = placementOf(view, 200, 200);
+    const placed = planePlacement(placement);
+    expect(placed).not.toBeNull();
+    const corners = transformedCorners(
+      placed as NonNullable<ReturnType<typeof planePlacement>>,
+    );
+    const wanted = cornersOf(placement).map((point) => project(view, point, VIEWPORT));
+    for (let index = 0; index < 4; index += 1) {
+      const one = corners[index] as { x: number; y: number };
+      const other = wanted[index] as { x: number; y: number };
+      expect(Math.abs(one.x - other.x)).toBeLessThan(0.01);
+      expect(Math.abs(one.y - other.y)).toBeLessThan(0.01);
+    }
+  });
+
+  test('the homography takes the local box to those four corners', () => {
+    const view = viewAt(1000, 30);
+    const placement = placementOf(view, 200, 200, [0, 0], [160, 90]);
+    const placed = planePlacement(placement);
+    expect(placed).not.toBeNull();
+    const kept = placed as NonNullable<ReturnType<typeof planePlacement>>;
+    const homography = planeHomography(160, 90, kept.corners) as Float64Array;
+    expect(homography).not.toBeNull();
+    const local: readonly (readonly [number, number])[] = [
+      [0, 0],
+      [160, 0],
+      [160, 90],
+      [0, 90],
+    ];
+    for (let index = 0; index < 4; index += 1) {
+      const [u, v] = local[index] as readonly [number, number];
+      const w = (homography[6] as number) * u + (homography[7] as number) * v + 1;
+      const x =
+        ((homography[0] as number) * u +
+          (homography[1] as number) * v +
+          (homography[2] as number)) /
+        w;
+      const y =
+        ((homography[3] as number) * u +
+          (homography[4] as number) * v +
+          (homography[5] as number)) /
+        w;
+      const wanted = kept.corners[index] as { x: number; y: number };
+      expect(Math.abs(x - wanted.x)).toBeLessThan(0.01);
+      expect(Math.abs(y - wanted.y)).toBeLessThan(0.01);
+    }
+  });
+
+  test('the far edge is shorter than the near edge', () => {
+    const placed = planePlacement(placementOf(viewAt(1000, 30), 400, 400));
+    expect(placed).not.toBeNull();
+    const corners = (placed as NonNullable<ReturnType<typeof planePlacement>>).corners;
+    const lengthOf = (first: number, second: number): number => {
+      const one = corners[first] as { x: number; y: number };
+      const other = corners[second] as { x: number; y: number };
+      return Math.hypot(one.x - other.x, one.y - other.y);
+    };
+    // The top edge of the element is the far one: its local `y` runs along the game `-z`
+    // axis, and the camera sits on the `-z` side at a yaw of 0.
+    const far = lengthOf(0, 1);
+    const near = lengthOf(3, 2);
+    console.log('the two edges measure', { far, near });
+    // An affine placement gives two edges of equal length, so this reading separates the
+    // two.
+    expect(far).toBeLessThan(near * 0.95);
+  });
+
+  test('the matrix3d holds the homography in its four columns', () => {
+    const homography = Float64Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(planeMatrix3d(homography)).toBe(
+      'matrix3d(1, 4, 0, 7, 2, 5, 0, 8, 0, 0, 1, 0, 3, 6, 0, 1)',
+    );
+  });
+
+  test('a quad crossing the near plane is dropped', () => {
+    // The element is wide enough that one corner falls behind the camera at a low pitch.
+    const placed = planePlacement(placementOf(viewAt(1000, 5), 200000, 200000));
+    expect(placed).toBeNull();
+  });
+
+  test('a singular placement is dropped', () => {
+    // An element of no height on the plane projects its four corners onto one line.
+    expect(planePlacement(placementOf(viewAt(1000, 30), 200, 0))).toBeNull();
+    // A homography over three collinear screen points is singular as well.
+    const collinear = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+      { x: 30, y: 0 },
+    ];
+    expect(planeHomography(160, 90, collinear)).toBeNull();
+  });
+
+  test('a quad wholly outside the viewport is dropped', () => {
+    const placed = planePlacement(
+      placementOf(viewAt(1000, 89), 10, 10, [40000, 40000]),
+    );
+    expect(placed).toBeNull();
+  });
+
+  test('the screen bounding box holds the whole quad', () => {
+    const placed = planePlacement(placementOf(viewAt(2000, 20), 800, 800));
+    expect(placed).not.toBeNull();
+    const kept = placed as NonNullable<ReturnType<typeof planePlacement>>;
+    for (const corner of kept.corners) {
+      expect(corner.x).toBeGreaterThanOrEqual(kept.box.left - 1e-9);
+      expect(corner.x).toBeLessThanOrEqual(kept.box.left + kept.box.width + 1e-9);
+      expect(corner.y).toBeGreaterThanOrEqual(kept.box.top - 1e-9);
+      expect(corner.y).toBeLessThanOrEqual(kept.box.top + kept.box.height + 1e-9);
+    }
+  });
+
+  test('two plane elements at a low pitch overlap by their boxes', () => {
+    // At a low pitch the plane is stretched hard, so an element covers far more of the
+    // screen than its own 160 by 160 rectangle. The overlap test therefore reads the
+    // screen bounding box of the four projected corners and not the element's own box.
+    const view = viewAt(2000, 8);
+    const first = planePlacement(placementOf(view, 800, 800, [-300, 0]));
+    const second = planePlacement(placementOf(view, 800, 800, [300, 0]));
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    const one = (first as NonNullable<typeof first>).box;
+    const other = (second as NonNullable<typeof second>).box;
+    const overlaps = (a: typeof one, b: typeof one): boolean =>
+      a.left < b.left + b.width &&
+      b.left < a.left + a.width &&
+      a.top < b.top + b.height &&
+      b.top < a.top + a.height;
+    console.log('the two screen boxes', { one, other });
+    expect(overlaps(one, other)).toBe(true);
+
+    // The element's own rectangle, 160 by 160 CSS pixels upright on its anchor, is what
+    // the upright overlay elements test with. The two do not overlap by it.
+    const uprightOf = (x: number): typeof one => {
+      const anchor = project(view, [x, 0, 0], VIEWPORT);
+      return { left: anchor.x - 80, top: anchor.y - 80, width: 160, height: 160 };
+    };
+    expect(overlaps(uprightOf(-300), uprightOf(300))).toBe(false);
+  });
+
+  test('the placement writes no style it already holds', () => {
+    const { element, writes } = fakeElement();
+    const placement = placementOf(viewAt(1000, 30), 200, 200);
+    expect(placeOnPlane(element, placement)).not.toBeNull();
+    expect(writes.length).toBeGreaterThan(0);
+    const after = writes.length;
+    expect(placeOnPlane(element, placement)).not.toBeNull();
+    expect(writes).toHaveLength(after);
+  });
+
+  test('a drop writes no style and does not throw', () => {
+    const { element, writes } = fakeElement();
+    expect(
+      placeOnPlane(element, placementOf(viewAt(1000, 5), 200000, 200000)),
+    ).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  test('the ring of a square element is square at a steep pitch', () => {
+    // At 89 degrees the camera looks straight down, so a square of the plane projects to
+    // a square on the screen.
+    const placed = planePlacement(placementOf(viewAt(1000, 89), 200, 200));
+    expect(placed).not.toBeNull();
+    const box = (placed as NonNullable<ReturnType<typeof planePlacement>>).box;
+    expect(Math.abs(box.height / box.width - 1)).toBeLessThan(0.05);
+  });
+});

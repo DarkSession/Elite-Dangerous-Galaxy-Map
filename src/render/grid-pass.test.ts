@@ -18,11 +18,13 @@ import {
   gridLevelWidth,
   GRID_BG_HIGH,
   GRID_BG_LOW,
+  GRID_COLOR,
+  GRID_COLOR_DEEP,
+  GRID_LABEL_COLOR,
+  GRID_LABEL_COLOR_DEEP,
   GRID_LABEL_MERGE_FLOOR,
-  GRID_LABEL_TINT_MAX,
   GRID_LINE_MERGE_FLOOR,
-  GRID_LINE_TINT_MAX,
-  gridBackgroundTint,
+  gridBackgroundColour,
   gridBackgroundWeight,
 } from './grid-pass';
 import type { GridLevelReading } from './grid-pass';
@@ -164,9 +166,17 @@ describe('the camera distance band', () => {
 });
 
 describe('the background merge', () => {
-  test('is one rule for the weight and the tint', () => {
+  test('is one rule for the weight and the darkening', () => {
     const floors = [GRID_LINE_MERGE_FLOOR, GRID_LABEL_MERGE_FLOOR];
-    const maxima = [GRID_LINE_TINT_MAX, GRID_LABEL_TINT_MAX];
+    // The line's pair and the label's pair. The label's is lighter at both ends,
+    // because text needs more contrast than a line.
+    const pairs: [
+      readonly [number, number, number],
+      readonly [number, number, number],
+    ][] = [
+      [GRID_COLOR, GRID_COLOR_DEEP],
+      [GRID_LABEL_COLOR, GRID_LABEL_COLOR_DEEP],
+    ];
     const luminances = [0.0, GRID_BG_LOW, 0.3, GRID_BG_HIGH, 0.9];
 
     for (const floor of floors) {
@@ -185,17 +195,29 @@ describe('the background merge', () => {
       }
     }
 
-    for (const maximum of maxima) {
-      expect(gridBackgroundTint(0.0, maximum)).toBeCloseTo(0, 9);
-      expect(gridBackgroundTint(GRID_BG_LOW, maximum)).toBeCloseTo(0, 9);
-      expect(gridBackgroundTint(GRID_BG_HIGH, maximum)).toBeCloseTo(maximum, 9);
-      expect(gridBackgroundTint(0.9, maximum)).toBeCloseTo(maximum, 9);
-      let before = gridBackgroundTint(luminances[0] as number, maximum);
+    for (const [light, deep] of pairs) {
+      // The colour is the light one at the low edge and below, and the deep one at the
+      // high edge and above.
+      expect(gridBackgroundColour(0.0, light, deep)).toEqual([...light]);
+      expect(gridBackgroundColour(GRID_BG_LOW, light, deep)).toEqual([...light]);
+      for (const luminance of [GRID_BG_HIGH, 0.9]) {
+        const colour = gridBackgroundColour(luminance, light, deep);
+        for (let channel = 0; channel < 3; channel += 1) {
+          expect(colour[channel] as number).toBeCloseTo(deep[channel] as number, 9);
+        }
+      }
+      // Each channel runs one way over the band, because the mix is one share.
+      let before = gridBackgroundColour(luminances[0] as number, light, deep);
       for (const luminance of luminances.slice(1)) {
-        const tint = gridBackgroundTint(luminance, maximum);
-        expect(tint).toBeGreaterThanOrEqual(before - 1e-9);
-        expect(tint).toBeLessThanOrEqual(maximum + 1e-9);
-        before = tint;
+        const colour = gridBackgroundColour(luminance, light, deep);
+        for (let channel = 0; channel < 3; channel += 1) {
+          const one = colour[channel] as number;
+          const other = before[channel] as number;
+          const falls = (deep[channel] as number) <= (light[channel] as number);
+          if (falls) expect(one).toBeLessThanOrEqual(other + 1e-9);
+          else expect(one).toBeGreaterThanOrEqual(other - 1e-9);
+        }
+        before = colour;
       }
     }
   });
@@ -204,9 +226,9 @@ describe('the background merge', () => {
     // The label keeps more of itself, but only where the merge acts at all.
     const table: [number, number, number][] = [
       [0.02, 1.0, 1.0],
-      [0.2, 0.911, 0.886],
-      [0.3, 0.751, 0.683],
-      [0.8, 0.45, 0.3],
+      [0.2, 0.959, 0.927],
+      [0.3, 0.887, 0.797],
+      [0.8, 0.75, 0.55],
     ];
     for (const [luminance, label, line] of table) {
       const labelWeight = gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR);
@@ -248,22 +270,24 @@ describe('the distance fade', () => {
 });
 
 describe('the label level', () => {
-  // The scenario "The label level follows the zoom".
-  test('is the smallest level at least 400 CSS pixels apart at the cursor', () => {
+  // The scenario "The label level follows the zoom". Two levels carry numbers: 100 light
+  // years while its own lines are at least 400 CSS pixels apart at the cursor, and 1,000
+  // at every zoom above that. The six decade levels still draw lines.
+  test('is 100 light years while that level is 400 CSS pixels apart', () => {
     const focal = focalCss(1080);
 
+    expect(gridLabelLevel(focal, 100)).toBe(100);
     expect(gridLabelLevel(focal, 200)).toBe(100);
-    expect(gridLabelLevel(focal, 1000)).toBe(1000);
-    expect(gridLabelLevel(focal, 3000)).toBe(10000);
+    expect(gridLabelLevel(focal, 233)).toBe(100);
+    expect(gridLabelLevel(focal, 234)).toBe(1000);
   });
 
-  test('holds the 1,000 light year level over the band from 234 to 2,337 light years', () => {
+  test('is 1,000 light years at every zoom above that and takes no coarser level', () => {
     const focal = focalCss(1080);
 
-    expect(gridLabelLevel(focal, 234)).toBe(1000);
-    expect(gridLabelLevel(focal, 2337)).toBe(1000);
-    expect(gridLabelLevel(focal, 233)).toBe(100);
-    expect(gridLabelLevel(focal, 2339)).toBe(10000);
+    for (const distance of [300, 1000, 2337, 2339, 3000, 11000, 60000]) {
+      expect(gridLabelLevel(focal, distance)).toBe(1000);
+    }
   });
 });
 
@@ -415,7 +439,13 @@ describe('the merge uniforms', () => {
       .of('getUniformLocation')
       .map((call) => call.args[1] as string);
 
-    for (const name of ['uBackground', 'uMergeRange', 'uMergeFloor', 'uTintMax']) {
+    for (const name of [
+      'uBackground',
+      'uMergeRange',
+      'uMergeFloor',
+      'uColorLight',
+      'uColorDeep',
+    ]) {
       expect(declared).toContain(name);
       expect(new RegExp(`uniform [a-zA-Z0-9]+ ${name};`).test(fragmentSource)).toBe(
         true,

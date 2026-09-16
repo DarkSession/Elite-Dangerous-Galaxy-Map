@@ -35,6 +35,8 @@ export interface RegionLinesResponse {
   /** The traced boundary set, which the `accurate` region mode draws. */
   readonly traced: RegionLines;
   readonly grid: CoarseRegionGrid;
+  /** The flow field over the coarse grid, one byte per cell. */
+  readonly flow: Uint8Array;
 }
 
 /** The buffers a point cloud message moves instead of copying. */
@@ -84,6 +86,7 @@ export function regionResponseTransferables(
     ...regionLinesTransferables(response.lines),
     ...regionLinesTransferables(response.traced),
     ...coarseRegionGridTransferables(response.grid),
+    response.flow.buffer as ArrayBuffer,
   ];
 }
 
@@ -97,5 +100,6 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...regionLinesTransferables(scene.regionLines),
     ...regionLinesTransferables(scene.regionLinesTraced),
     ...coarseRegionGridTransferables(scene.regionGrid),
+    scene.regionFlow.buffer as ArrayBuffer,
   ];
 }

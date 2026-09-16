@@ -24,7 +24,11 @@ uniform vec2 uBoundsX;
 uniform vec2 uBoundsZ;
 // Device pixels for each CSS pixel.
 uniform float uPixelRatio;
-uniform vec3 uColor;
+// The line's colour over a dark background and over the brightest one. The two are the
+// same hue, so the line never leaves cyan and is never taken for a warm thing in the
+// frame.
+uniform vec3 uColorLight;
+uniform vec3 uColorDeep;
 // The width of a level at its finest and when it is fully bold, in CSS pixels.
 uniform vec2 uWidthRange;
 // The alpha of a level at its finest and when it is fully bold.
@@ -46,8 +50,6 @@ uniform sampler2D uBackground;
 uniform vec2 uMergeRange;
 // How much of the alpha is left over the brightest background.
 uniform float uMergeFloor;
-// How far the colour moves toward the background over the brightest background.
-uniform float uTintMax;
 uniform float uSpacing[LEVEL_COUNT];
 uniform vec2 uPhase[LEVEL_COUNT];
 
@@ -123,13 +125,16 @@ void main() {
   // The merge with the background under this pixel. The reading is a sixteenth of the
   // frame on each axis and the sampler filters it, so the weight changes smoothly and a
   // line does not step where two texels meet.
+  // The reading gives the luminance alone. The line does not take the background's own
+  // colour: it darkens toward a deep blue of its own hue, so it keeps hue contrast over
+  // the cream core as well as over the dark space between the arms.
   vec3 background = texture(uBackground, vNdc * 0.5 + 0.5).rgb;
   float backgroundLuminance = dot(background, vec3(0.2126, 0.7152, 0.0722));
   float merge = smoothstep(uMergeRange.x, uMergeRange.y, backgroundLuminance);
   // The floor is not zero. A grid the user cannot find over the core is not a
   // coordinate grid.
   float weight = 1.0 - (1.0 - uMergeFloor) * merge;
-  vec3 colour = mix(uColor, background, uTintMax * merge);
+  vec3 colour = mix(uColorLight, uColorDeep, merge);
 
   fragColor = vec4(colour, alpha * weight);
 }

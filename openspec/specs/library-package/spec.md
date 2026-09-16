@@ -59,12 +59,17 @@ bytes, which fails on the next comment and guards nothing. The finished chunk me
 170,932 bytes, which is over the old bound. 200,000 keeps the guard well under the reading a
 leaked lookup gives.
 
+With this change in, the entry chunk measures **198,764** bytes, which leaves about 1.2 kB
+under the bound. That is little room, and the next change that touches the entry chunk
+SHALL read the bound again rather than assume it holds.
+
 **The library build is now measured.** At commit `7cd18d7` the page build's entry chunk
 measured 152,506 bytes and its HUD chunk 27,419. The first library build measured 162,593
 bytes for the entry chunk and 31,201 for the HUD chunk, before the dataset catalog and the
 dataset dialog. With the whole change in, the library build measures **170,932** bytes for
-the entry chunk and **47,271** bytes for the HUD chunk. A reading SHALL come from a fresh
-build and not from a `dist/` left in the tree.
+the entry chunk and **47,271** bytes for the HUD chunk. With the cursor marker, the plane
+overlay and the exact region lookup in, it measures **198,764** bytes. A reading SHALL come
+from a fresh build and not from a `dist/` left in the tree.
 
 The library entry chunk is larger than the page chunk although it holds less code. Vite's
 library mode compresses and mangles the output but keeps the line breaks, while the page
@@ -96,8 +101,25 @@ chunk's 54.8 kB, so the library is the smaller of the two over the wire. The pag
 #### Scenario: The entry chunk stays under the bound
 
 - **WHEN** a test runs the library build and reads the size of the entry chunk
-- **THEN** the size is under 200,000 bytes, and the region cell lookup is in the region
-  worker chunk alone
+- **THEN** the size is under 200,000 bytes, and the region cell lookup is in **no entry
+  chunk** and in **no chunk the entry chunk imports at load**.
+
+  **How many chunks carry it follows the build, and the scenario SHALL NOT assert a fixed
+  count.** `vite.config.lib.ts` marks `@elite-dangerous-almanac/core` and its subpaths
+  **external**, so a host holds one copy of the package. `regionNameAtExact` imports the
+  lookup by a bare specifier, and in the library build that specifier stays a bare specifier
+  in the output: no chunk of `dist/` carries the table except the region worker's, which
+  bundles it because the worker build sets `rollupOptions: { external: [] }`.
+
+  A build that **bundles** the package instead carries it in two chunks, the worker's and
+  one lazily loaded chunk that `regionNameAtExact` fetches on its first call. Both shapes
+  hold the two rules above, which are what the bound is for, and neither is a fault.
+
+  The rule was that the lookup sat in the region worker chunk alone. The handle now answers
+  an exact region for one plane point, which the information panel of `map-hud` states, and
+  that answer needs the 199 KiB cell table on the main thread. A dynamic import keeps it out
+  of the entry chunk, which is what the bound is for: a host that never asks for an exact
+  region never fetches it, and the entry chunk is the same size it was.
 
 ### Requirement: The demo site builds apart from the library
 

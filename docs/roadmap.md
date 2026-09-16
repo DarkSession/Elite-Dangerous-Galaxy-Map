@@ -743,6 +743,75 @@ fade per pixel, and ties a grid coordinate label to its own line.
   one whose reading is not about the overlay switches the overlay off. `e2e/look.spec.ts`
   holds none of them, so the committed baseline image does not move.
 
+## Phase 5.3: the cursor marker, the cyan grid and the region band
+
+Change: `cursor-marker-cyan-grid-and-region-band`. Status: implemented.
+
+Two look figures were tuned by eye after the first build, on the owner's reading: the cursor
+marker's box is **96 CSS pixels** and not 160, and a coordinate label's width is held to
+**0.6** of a level's spacing and not to a whole one.
+
+Puts a marker on the cursor, turns the grid cyan and draws its numbers on the plane,
+answers the region boundary's raster with the band's own width, and gives a region label
+and the line beside it one fade rule.
+
+- **The boundary answers its raster with width and not with smoothing.** The blur stage
+  is gone: `region-blur.frag`, the two blur targets, the peak normalisation and the three
+  coverage targets. The half width is now `clamp(0.016 * viewportHeightCss, 8, 24)` CSS
+  pixels, so the whole band measures 34.6 at 1,080 rows and the pass holds one
+  full-resolution coverage target. Two readings carry the decision. A 90 degree corner is
+  already round, because the coverage is an exact distance from the **segment** and the
+  blend is `MAX`, so the corner turns on the band's own half width. And the largest cell
+  the range fade lets draw is the cell at 10,000 light years, 4.62 CSS pixels at 1,080
+  rows against a band of 34.6, which moves the band's edge by about a quarter of its own
+  ramp. With no blur the `MAX` blend holds a join and a straight run at the same number
+  exactly, so the 3 per cent corner tolerance goes.
+- **A region label and the line beside it take one fade rule.** The label's zoom fade is
+  now `regionFade` itself and not a second copy, and its opacity is multiplied by the
+  range fade read at the label's **own plane anchor**. The close step of the old label
+  band goes with `REGION_CLOSE_NONE` and `REGION_CLOSE_FULL`. A label whose product is 0
+  is left out of the overlay and not placed transparent, so every reading of the page
+  counts the labels a user can see. The region the camera sits in is therefore the first
+  name to go as the user zooms in, and the HUD's top bar carries it there.
+- **The sampling sweep reads the frame and not the zoom.** It runs only where the zoom
+  fade is above 0 **and** the greatest range to the plane the frame holds is above
+  `REGION_RANGE_NONE`. The greatest range comes from the frame's two top corners,
+  unprojected and met with `y = 0`, and a ray that misses the plane counts as beyond. A
+  gate on the zoom alone let through a frame that could carry nothing.
+- **The range figures were reviewed and kept.** `REGION_RANGE_NONE` is 10,000 light years
+  and `REGION_RANGE_FULL` is 20,000, as the phase before set them, and the zoom fade still
+  runs from 20,000 to 30,000. The change reads them in two more places and moves neither.
+- **A label walks around what stands in its way.** `buildRegionFlow(coarse)` writes one
+  direction byte per coarse cell, from a breadth-first walk out of each region's root, so
+  a step along the field always stays on its own region and always reaches the centre. The
+  label filter takes that step where the straight one leaves the region, so a label in a
+  two-lobed region crosses the neck instead of stopping at it. The field ships with the
+  boundary sets, in the same message and transfer list.
+- **The grid is cyan.** `rgb(96, 214, 224)` over a dark background, moving to
+  `rgb(16, 74, 120)` over a bright one, and the numbers take `rgb(140, 235, 240)` and
+  `rgb(20, 88, 140)`. The line no longer takes the background's own colour: it moves
+  between two fixed colours by the same weight it always read, so over the core it removes
+  light rather than adding it. Two things in the frame are warm, the core and the boundary
+  band, and a cyan line is told from both by hue at any brightness.
+- **The grid's numbers lie on the plane.** `src/app/plane-overlay.ts` solves the exact
+  projective homography that takes an element's own box to the quad the camera sees of a
+  rectangle on the plane, and writes it as a CSS `matrix3d` with `transform-origin: 0 0`.
+  Each number names the three game coordinates of its crossing, as `x : y : z`, at a cap
+  height of one tenth of the level's spacing and a whole width of at most 0.6 of a spacing. The
+  plane label that stood at the lower edge of the canvas is gone. Two levels carry numbers,
+  100 and 1,000 light years, and a frame holds at most eight.
+- **The cursor marker.** `src/app/cursor-marker.ts` draws one SVG element, a ring with four
+  arrows around it, through the same plane overlay, so it lies on the cursor's own plane
+  and follows the cursor off the plane. The `cursorMarker` option, `setCursorMarkerVisible`
+  and `getCursorMarkerVisible` drive it. Plane elements carry `z-index: 0` and the upright
+  overlay elements carry `z-index: 1`, because a positioned element with `z-index: auto`
+  paints in the same level as one with `z-index: 0`.
+- **The handle answers an exact region.** `regionNameAtExact(point)` reads the game's own
+  49.3494 light year grid through a module-level cached dynamic import, so the 199 KiB cell
+  table stays out of the entry chunk and a host that never asks never fetches it. The HUD's
+  information panel states it as the `REGION` field, which takes both columns and holds an
+  empty value until the promise settles.
+
 ## Sources
 
 - Galaxy density model: [galaxy-density-model.md](galaxy-density-model.md) in this

@@ -344,7 +344,8 @@ test.describe('the grid geometry', () => {
     await setView(page, [0, 0, 0], 1000);
     const onPlane = await gridRedAt(page, [100, 0, 0]);
     const planeAtZero = await page.evaluate(
-      () => document.querySelector('.gm-grid-plane-label')?.textContent ?? '',
+      () =>
+        document.querySelector('.gm-grid-label')?.textContent?.split(' : ')[1] ?? '',
     );
     const cameraAtZero = await page.evaluate(() => {
       const view = window.galaxyMap?.getView();
@@ -356,7 +357,8 @@ test.describe('the grid geometry', () => {
     const offPlane = await gridRedAt(page, [100, -600, 0]);
     const stale = await gridRedAt(page, [100, 0, 0]);
     const planeAtLow = await page.evaluate(
-      () => document.querySelector('.gm-grid-plane-label')?.textContent ?? '',
+      () =>
+        document.querySelector('.gm-grid-label')?.textContent?.split(' : ')[1] ?? '',
     );
     const cameraAtLow = await page.evaluate(() => {
       const view = window.galaxyMap?.getView();
@@ -373,8 +375,9 @@ test.describe('the grid geometry', () => {
       cameraAtLow,
     });
 
-    expect(planeAtZero).toContain('0');
-    expect(planeAtLow).toContain('-600');
+    // The `y` of the plane is the middle number of every crossing label.
+    expect(planeAtZero).toBe('0');
+    expect(planeAtLow).toBe('-600');
     // The camera sits above the plane in both frames.
     expect(cameraAtZero).toBeGreaterThan(0);
     expect(cameraAtLow).toBeGreaterThan(-600);
@@ -467,6 +470,7 @@ test.describe('the grid look', () => {
     expect(crossing).toBeLessThanOrEqual(Math.max(alongZ, alongX) + 1 / 255);
   });
 
+  // The scenario "The bold level reads over the galactic core".
   test('reads over the galactic core', async ({ page }) => {
     await openMap(page, '#c=15,-35,25895&d=1000&p=89&y=0');
     await setView(page, GALACTIC_CENTRE, 1000);
@@ -497,10 +501,11 @@ test.describe('the grid look', () => {
     }, GALACTIC_CENTRE);
     console.log('the grid over the core', reading);
 
-    // The bound was 12 of 255 before the merge. Over a background of 0.55 luminance and
-    // above the merge leaves 0.30 of the level's alpha, so the same line moves a channel
-    // by about a third of what it moved. The floor is what holds this bound above zero.
-    expect((reading as NonNullable<typeof reading>).best).toBeGreaterThanOrEqual(4);
+    // The bound was 4 of 255 under the floor of 0.30 and the tint toward the background.
+    // The floor is now 0.55 and the line over the core is a deep blue against cream
+    // rather than a dimmed orange, so the same line moves a channel by more than twice
+    // what it moved.
+    expect((reading as NonNullable<typeof reading>).best).toBeGreaterThanOrEqual(10);
   });
 
   test('antialiases a line across its width', async ({ page }) => {
@@ -980,16 +985,20 @@ test.describe('the grid and the background', () => {
     // the line's blue to rise there.
     expect(dark.pointB).toBeLessThan(60);
 
-    // The reading is a magnitude. `rgb(255, 154, 60)` has a luminance of 0.662 and the
-    // tone-mapped core reads about 0.93, so a line over the core removes light.
-    expect(core.best).toBeGreaterThanOrEqual(2);
+    // The reading is a magnitude. Over the core the line is `rgb(16, 74, 120)`, whose
+    // luminance is 0.254, and the tone-mapped core reads about 0.93, so a line over the
+    // core removes light rather than adding it.
+    // The floor holds the grid readable over the core.
+    expect(core.best).toBeGreaterThanOrEqual(24);
     expect(dark.best).toBeGreaterThanOrEqual(2);
+    // The ratio under 1 holds the grid back over the core.
     const ratio = core.best / dark.best;
-    expect(ratio).toBeGreaterThanOrEqual(0.02);
-    expect(ratio).toBeLessThanOrEqual(0.2);
+    expect(ratio).toBeGreaterThanOrEqual(0.4);
+    expect(ratio).toBeLessThanOrEqual(0.8);
   });
 
-  test('takes the background hue over the core', async ({ page }) => {
+  // The scenario "The line darkens over the core and keeps its hue".
+  test('darkens over the core and keeps its hue', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
     const core = await changeAt(page, CORE_VIEW, 4000);
     const dark = await changeAt(page, DARK_VIEW, 4000);
@@ -998,78 +1007,17 @@ test.describe('the grid and the background', () => {
       dark: dark.change,
     });
 
-    // Over the dark space every channel rises and red rises the most.
+    // Over the dark space the line is a light cyan, whose blue is its largest channel,
+    // so every channel rises and blue rises the most.
     for (const channel of dark.change) expect(channel).toBeGreaterThan(0);
-    expect(dark.change[0]).toBeGreaterThan(dark.change[1]);
-    expect(dark.change[0]).toBeGreaterThan(dark.change[2]);
+    expect(dark.change[2]).toBeGreaterThan(dark.change[0]);
+    expect(dark.change[2]).toBeGreaterThan(dark.change[1]);
 
-    // Over the core no channel rises by more than 2 of 255, and blue falls. Taking 0.60
-    // of the background's hue leaves the line its warmth, so blue is where it reads.
-    for (const channel of core.change) expect(channel).toBeLessThanOrEqual(2);
-    expect(core.change[2]).toBeLessThan(0);
-  });
-
-  test('recedes a label over a bright background', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=2000&p=89&y=0');
-    // The region overlay draws at every zoom under 30,000 light years now, and this
-    // reading is an absolute one, so the overlay goes.
-    await setPasses(page, { regions: false });
-    await setGrid(page, true);
-
-    /** The opacity and the shadow of the crossing label nearest the frame centre. */
-    const labelAt = async (
-      cursor: readonly [number, number, number],
-    ): Promise<{ opacity: number; shadow: string; count: number }> => {
-      await page.evaluate((where) => {
-        window.galaxyMap?.setView({
-          cursor: where as [number, number, number],
-          distance: 2000,
-          yaw: 0,
-          pitch: 89,
-        });
-      }, cursor);
-      // The reading goes back to the processor without waiting for the card, so the
-      // labels of a frame read the reading of the frame before. A few real frames put
-      // the reading of this view under the labels.
-      await page.waitForTimeout(300);
-      return page.evaluate(() => {
-        const labels = [
-          ...document.querySelectorAll('.gm-grid-label'),
-        ] as HTMLElement[];
-        let best: HTMLElement | null = null;
-        let bestRange = Infinity;
-        for (const label of labels) {
-          const box = label.getBoundingClientRect();
-          const dx = box.left + box.width / 2 - 960;
-          const dy = box.top + box.height / 2 - 540;
-          const range = dx * dx + dy * dy;
-          if (range < bestRange) {
-            bestRange = range;
-            best = label;
-          }
-        }
-        if (best === null) return { opacity: -1, shadow: '', count: labels.length };
-        return {
-          opacity: Number(best.style.opacity),
-          shadow: best.style.textShadow,
-          count: labels.length,
-        };
-      });
-    };
-
-    const core = await labelAt(CORE_VIEW);
-    const dark = await labelAt(DARK_VIEW);
-    console.log('the label opacity in the two views', { core, dark });
-
-    expect(core.count).toBeGreaterThan(0);
-    expect(dark.count).toBeGreaterThan(0);
-    expect(core.opacity).toBeGreaterThanOrEqual(0.4 * 0.8);
-    expect(core.opacity).toBeLessThanOrEqual(0.55 * 0.8);
-    expect(dark.opacity).toBeGreaterThan(0.75 * 0.8);
-    for (const shadow of [core.shadow, dark.shadow]) {
-      expect(shadow).not.toContain('#000');
-      expect(shadow).not.toContain('rgb(0, 0, 0)');
-    }
+    // Over the core the line is a deep blue against a cream background, so every channel
+    // falls, and red falls most because red is where the two stand furthest apart.
+    for (const channel of core.change) expect(channel).toBeLessThan(0);
+    expect(core.change[0]).toBeLessThan(core.change[1]);
+    expect(core.change[0]).toBeLessThan(core.change[2]);
   });
 });
 
@@ -1154,61 +1102,57 @@ test.describe('the grid switch and its probes', () => {
     expect(off.levels).toBe(0);
   });
 
+  // The scenario "The label level follows the zoom".
   test('follows the label level through the zoom', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
     await setGrid(page, true);
 
     const readings: number[] = [];
-    for (const distance of [200, 1000, 3000]) {
+    for (const distance of [100, 200, 300, 1000, 3000, 11000]) {
       await setView(page, [0, 0, 0], distance);
       readings.push(await spacingOf(page));
     }
     console.log('the label level', readings);
 
-    expect(readings).toEqual([100, 1000, 10000]);
+    // Only 100 and 1,000 light years ever carry a number.
+    expect(readings).toEqual([100, 100, 1000, 1000, 1000, 1000]);
   });
 });
 
 test.describe('the grid labels', () => {
-  test('read the coordinates of their own crossing', async ({ page }) => {
-    await openMap(page, '#c=1000,0,2000&d=1000&p=89&y=0');
+  // The scenario "A crossing label reads its own coordinates".
+  test('read the three coordinates of their own crossing', async ({ page }) => {
+    await openMap(page, '#c=1000,-600,2000&d=1000&p=89&y=0');
     await setGrid(page, true);
-    await setView(page, [1000, 0, 2000], 1000);
+    await setView(page, [1000, -600, 2000], 1000);
 
-    const labels = await page.evaluate(() => {
-      const out: { text: string; left: number; top: number; screen: number[] }[] = [];
-      for (const element of document.querySelectorAll('.gm-grid-label')) {
-        const text = element.textContent ?? '';
-        const parts = text.split(', ').map((part) => Number(part));
-        const box = (element as HTMLElement).getBoundingClientRect();
-        const canvas = document.querySelector('canvas')?.getBoundingClientRect();
-        const screen = window.galaxyMap?.debug.project([
-          parts[0] as number,
-          0,
-          parts[1] as number,
-        ]) ?? { x: -1, y: -1 };
-        out.push({
-          text,
-          left: box.left + box.width / 2 - (canvas?.left ?? 0),
-          top: box.top + box.height / 2 - (canvas?.top ?? 0),
-          screen: [screen.x, screen.y],
-        });
+    const texts = await page.evaluate(() =>
+      [...document.querySelectorAll('.gm-grid-label')].map(
+        (element) => element.textContent ?? '',
+      ),
+    );
+    console.log('the crossing labels', texts);
+
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) {
+      const parts = text.split(' : ');
+      expect(parts, text).toHaveLength(3);
+      const numbers = parts.map((part) => Number(part.replace(/,/g, '')));
+      for (const part of parts) expect(part, text).toMatch(/^-?[\d,]+$/);
+      expect((numbers[0] as number) % 1000, text).toBe(0);
+      expect(numbers[1], text).toBe(-600);
+      expect((numbers[2] as number) % 1000, text).toBe(0);
+      // A number of four digits or more carries a thousands separator. A crossing at
+      // `x` = 0 reads `0` and one at `y` = -600 reads `-600`, and neither carries one.
+      for (const part of parts) {
+        const digits = part.replace(/[-,]/g, '').length;
+        expect(part.includes(','), `${text} / ${part}`).toBe(digits >= 4);
       }
-      return out;
-    });
-    console.log('the crossing labels', labels.slice(0, 6), { count: labels.length });
-
-    expect(labels.length).toBeGreaterThan(0);
-    for (const label of labels) {
-      const parts = label.text.split(', ');
-      expect(parts).toHaveLength(2);
-      for (const part of parts) expect(Number(part) % 1000).toBe(0);
-      expect(Math.abs(label.left - (label.screen[0] as number))).toBeLessThanOrEqual(2);
-      expect(Math.abs(label.top - (label.screen[1] as number))).toBeLessThanOrEqual(2);
     }
   });
 
-  test('cap the crossing label count at 32', async ({ page }) => {
+  // The scenario "The label count is capped".
+  test('cap the crossing label count at 8', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=5&y=0');
     await setGrid(page, true);
     await setView(page, [0, 0, 0], 1000, 5);
@@ -1219,21 +1163,37 @@ test.describe('the grid labels', () => {
     console.log('the label count at a pitch of 5', count);
 
     expect(count).toBeGreaterThan(0);
-    expect(count).toBeLessThanOrEqual(32);
+    expect(count).toBeLessThanOrEqual(8);
   });
 
-  test('read the height of the plane', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+  // The scenario "The plane label goes". The grid carried one more element at the lower
+  // edge of the canvas, which read the `y` of the plane on its own. That `y` is the
+  // middle number of every crossing label now.
+  test('carry the plane height in every crossing label', async ({ page }) => {
+    await openMap(page, '#c=0,-600,0&d=1000&p=89&y=0');
     await setGrid(page, true);
     await setView(page, [0, -600, 0], 1000);
 
-    const label = await page.evaluate(
-      () => document.querySelector('.gm-grid-plane-label')?.textContent ?? null,
-    );
-    console.log('the plane label', label);
+    const reading = await page.evaluate(() => {
+      const host = document.getElementById('labels');
+      const crossings = [...document.querySelectorAll('.gm-grid-label')];
+      return {
+        // Every label element of the host is a crossing label, so the overlay holds no
+        // label of its own beside them.
+        extra:
+          (host?.querySelectorAll('[class*="grid"]').length ?? 0) - crossings.length,
+        readings: window.galaxyMap?.debug.gridLabelReadings().length ?? -1,
+        texts: crossings.map((element) => element.textContent ?? ''),
+      };
+    });
+    console.log('the labels and the plane height', reading);
 
-    expect(label).not.toBeNull();
-    expect(label).toContain('-600');
+    expect(reading.texts.length).toBeGreaterThan(0);
+    expect(reading.readings).toBe(reading.texts.length);
+    expect(reading.extra).toBe(0);
+    for (const text of reading.texts) {
+      expect(text.split(' : ')[1], text).toBe('-600');
+    }
   });
 
   test('go with the switch', async ({ page }) => {
@@ -1241,17 +1201,473 @@ test.describe('the grid labels', () => {
     await setGrid(page, true);
     await setView(page, [0, 0, 0], 1000);
     const on = await page.evaluate(
-      () => document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label').length,
+      () => document.querySelectorAll('.gm-grid-label').length,
     );
 
     await setGrid(page, false);
     const off = await page.evaluate(
-      () => document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label').length,
+      () => document.querySelectorAll('.gm-grid-label').length,
     );
     console.log('the labels with the switch', { on, off });
 
     expect(on).toBeGreaterThan(0);
     expect(off).toBe(0);
+  });
+
+  // The scenario "A label lies on the plane".
+  test('lie on the plane and not upright on the screen', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=30&y=0');
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 1000, 30);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      const held = map.debug.gridLabelReadings();
+      if (held.length === 0) return null;
+      // The label nearest the cursor, which projects to the middle of the frame.
+      const centre = map.debug.project(map.getView().cursor);
+      let best = held[0] as (typeof held)[0];
+      let bestRange = Infinity;
+      for (const label of held) {
+        const range = Math.hypot(label.x - centre.x, label.y - centre.y);
+        if (range < bestRange) {
+          bestRange = range;
+          best = label;
+        }
+      }
+      const corners = best.corners;
+      const edge = (first: number, second: number): number => {
+        const one = corners[first] as { x: number; y: number };
+        const other = corners[second] as { x: number; y: number };
+        return Math.hypot(one.x - other.x, one.y - other.y);
+      };
+      const angle = (first: number, second: number): number => {
+        const one = corners[first] as { x: number; y: number };
+        const other = corners[second] as { x: number; y: number };
+        return Math.atan2(other.y - one.y, other.x - one.x);
+      };
+      // The grid line of constant `z` through the same crossing runs along the game
+      // `x` axis, which is the direction the label's own width runs in.
+      const cursor = map.getView().cursor;
+      const from = map.debug.project([cursor[0] - 100, cursor[1], cursor[2]]);
+      const to = map.debug.project([cursor[0] + 100, cursor[1], cursor[2]]);
+      return {
+        text: best.text,
+        far: edge(0, 1),
+        near: edge(3, 2),
+        topAngle: angle(0, 1),
+        bottomAngle: angle(3, 2),
+        lineAngle: Math.atan2(to.y - from.y, to.x - from.x),
+      };
+    });
+    expect(reading).not.toBeNull();
+    const read = reading as NonNullable<typeof reading>;
+    console.log('the label quad at a pitch of 30 degrees', read);
+
+    // The top edge is the far one: the element's local `y` runs along the game `-z`
+    // axis and the camera sits on the `-z` side at a yaw of 0.
+    expect(read.far).toBeLessThan(read.near * 0.95);
+    const away = (angle: number): number => {
+      const gap = Math.abs(angle - read.lineAngle) % (2 * Math.PI);
+      return Math.min(gap, 2 * Math.PI - gap) * (180 / Math.PI);
+    };
+    expect(away(read.topAngle)).toBeLessThan(2);
+    expect(away(read.bottomAngle)).toBeLessThan(2);
+  });
+
+  // The scenario "A label follows the grid cell it sits in".
+  test('hold one share of the cell at every zoom', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+
+    const shares: number[] = [];
+    for (const distance of [800, 1000, 1250]) {
+      await setView(page, [0, 0, 0], distance);
+      const reading = await page.evaluate(() => {
+        const held = window.galaxyMap?.debug.gridLabelReadings() ?? [];
+        const first = held[0];
+        if (first === undefined) return null;
+        return {
+          spacing: window.galaxyMap?.debug.gridSpacingLy() ?? 0,
+          share: first.capHeightCss / first.spacingCss,
+        };
+      });
+      expect(reading).not.toBeNull();
+      expect(reading?.spacing).toBe(1000);
+      shares.push(reading?.share ?? 0);
+    }
+    console.log('the cap height over the spacing', shares);
+
+    const first = shares[0] as number;
+    for (const share of shares) {
+      expect(Math.abs(share / first - 1)).toBeLessThan(0.02);
+      expect(share).toBeLessThanOrEqual(0.1 + 1e-6);
+    }
+  });
+
+  // The scenario "A label fades with its distance from the cursor".
+  test('fade with the distance from the cursor', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=200&p=89&y=0');
+    await setGrid(page, true);
+
+    /** The reach of the label of the crossing at the origin, or -1. */
+    const reachAt = async (
+      cursor: readonly [number, number, number],
+    ): Promise<number> => {
+      await setView(page, cursor, 200);
+      return page.evaluate(() => {
+        const held = window.galaxyMap?.debug.gridLabelReadings() ?? [];
+        const label = held.find((one) => one.text.startsWith('0 : 0 : 0'));
+        return label?.reach ?? -1;
+      });
+    };
+
+    // The 100 light year level carries the numbers at a zoom of 200 light years.
+    const spacing = await spacingOf(page);
+    const away = await reachAt([90, 0, 0]);
+    const on = await reachAt([0, 0, 0]);
+    console.log('the reach at 90 light years and at the crossing', {
+      spacing,
+      away,
+      on,
+    });
+
+    expect(spacing).toBe(100);
+    expect(away).toBeGreaterThan(0.23);
+    expect(away).toBeLessThan(0.27);
+    expect(Math.abs(on - 1)).toBeLessThan(0.02);
+  });
+
+  // The scenario "No label stands past the reach".
+  test('stand no label past the reach', async ({ page }) => {
+    await openMap(page, '#c=40,0,-30&d=200&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [40, 0, -30], 200);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      const cursor = map.getView().cursor;
+      return {
+        spacing: map.debug.gridSpacingLy(),
+        labels: map.debug.gridLabelReadings().map((label) => {
+          const parts = label.text
+            .split(' : ')
+            .map((part) => Number(part.replace(/,/g, '')));
+          return {
+            text: label.text,
+            away: Math.hypot(
+              (parts[0] as number) - cursor[0],
+              (parts[2] as number) - cursor[2],
+            ),
+          };
+        }),
+      };
+    });
+    expect(reading).not.toBeNull();
+    const read = reading as NonNullable<typeof reading>;
+    console.log('the labels and their distance from the cursor', read);
+
+    expect(read.spacing).toBe(100);
+    expect(read.labels.length).toBeGreaterThan(0);
+    for (const label of read.labels) {
+      expect(label.away, label.text).toBeLessThan(120);
+    }
+  });
+
+  // The scenario "A label is no wider than the cell it names".
+  test('draw no label wider than the cell it names', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+
+    let widest = 0;
+    for (const distance of [150, 1000]) {
+      await setView(page, [0, 0, 0], distance);
+      const labels = await page.evaluate(() =>
+        (window.galaxyMap?.debug.gridLabelReadings() ?? []).map((label) => {
+          const corners = label.corners;
+          const one = corners[0] as { x: number; y: number };
+          const other = corners[1] as { x: number; y: number };
+          const top = Math.hypot(one.x - other.x, one.y - other.y);
+          const third = corners[3] as { x: number; y: number };
+          const fourth = corners[2] as { x: number; y: number };
+          const bottom = Math.hypot(third.x - fourth.x, third.y - fourth.y);
+          // The mean of the two edges is the quad's width on the screen. The near edge
+          // is a little longer than the far one and the spacing is read at the crossing
+          // between them, so one edge alone would carry the perspective of its own row.
+          return {
+            text: label.text,
+            share: (top + bottom) / 2 / label.spacingCss,
+          };
+        }),
+      );
+      console.log(`the label widths at ${distance} light years`, labels);
+      expect(labels.length).toBeGreaterThan(0);
+      for (const label of labels) {
+        // The placement holds the label's width to 0.6 of a spacing on the plane
+        // exactly. The screen reading carries a residue of 0.07 per cent, because the
+        // quad's width is a pair of chords either side of the crossing and the spacing is
+        // the projection's local rate at the crossing itself.
+        expect(label.share, label.text).toBeLessThanOrEqual(0.6006);
+        widest = Math.max(widest, label.share);
+      }
+    }
+    expect(widest).toBeGreaterThan(0.4);
+  });
+
+  // Task 8.10, which reads the sharpness of the transformed text. No scenario of
+  // `coordinate-grid` states it: the placement's geometry is read by "A label lies on the
+  // plane" and its rasterisation is a look fault the task guards.
+  test('draw the transformed text as sharply as upright text', async ({ page }) => {
+    await openMap(page, '#c=-40000,0,20000&d=1000&p=30&y=0');
+    // A black frame, so the only structure in the reading is the text itself.
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+    await setView(page, [-40000, 0, 20000], 1000, 30);
+    await page.waitForTimeout(300);
+
+    // The label nearest the cursor, and an upright copy of the same text at the same
+    // width on the screen, placed over an empty part of the frame.
+    const boxes = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      const host = document.getElementById('labels');
+      if (map === undefined || host === null) return null;
+      const held = map.debug.gridLabelReadings();
+      if (held.length === 0) return null;
+      const centre = map.debug.project(map.getView().cursor);
+      let best = held[0] as (typeof held)[0];
+      let bestRange = Infinity;
+      for (const label of held) {
+        const range = Math.hypot(label.x - centre.x, label.y - centre.y);
+        if (range < bestRange) {
+          bestRange = range;
+          best = label;
+        }
+      }
+      const elements = [...document.querySelectorAll('.gm-grid-label')];
+      const element = elements[held.indexOf(best)] as HTMLElement | undefined;
+      if (element === undefined) return null;
+      const on = element.getBoundingClientRect();
+
+      // The width of the transformed quad on the screen, as the mean of its two edges.
+      const corners = best.corners;
+      const lengthOf = (first: number, second: number): number => {
+        const one = corners[first] as { x: number; y: number };
+        const other = corners[second] as { x: number; y: number };
+        return Math.hypot(one.x - other.x, one.y - other.y);
+      };
+      const wantWidth = (lengthOf(0, 1) + lengthOf(3, 2)) / 2;
+
+      const copy = document.createElement('div');
+      copy.id = 'upright-copy';
+      copy.textContent = best.text;
+      const style = copy.style;
+      style.position = 'absolute';
+      style.left = '60px';
+      style.top = '820px';
+      style.whiteSpace = 'nowrap';
+      style.letterSpacing = '0';
+      style.color = getComputedStyle(element).color;
+      style.opacity = element.style.opacity;
+      style.textShadow = element.style.textShadow;
+      style.font = `100px/100px ${getComputedStyle(element).fontFamily}`;
+      host.append(copy);
+      const at100 = copy.getBoundingClientRect().width;
+      const size = (wantWidth / at100) * 100;
+      style.font = `${size}px/${size}px ${getComputedStyle(element).fontFamily}`;
+      const upright = copy.getBoundingClientRect();
+      return {
+        text: best.text,
+        size,
+        on: { x: on.left, y: on.top, width: on.width, height: on.height },
+        upright: {
+          x: upright.left,
+          y: upright.top,
+          width: upright.width,
+          height: upright.height,
+        },
+      };
+    });
+    expect(boxes).not.toBeNull();
+    const read = boxes as NonNullable<typeof boxes>;
+
+    const shot = (await page.screenshot({ type: 'png' })).toString('base64');
+
+    const contrasts = await page.evaluate(
+      async (input) => {
+        const image = new Image();
+        await new Promise<void>((resolve, reject) => {
+          image.onload = (): void => {
+            resolve();
+          };
+          image.onerror = (): void => {
+            reject(new Error('the screenshot did not decode'));
+          };
+          image.src = `data:image/png;base64,${input.shot}`;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        if (context === null) throw new Error('the page gave no 2D context');
+        context.drawImage(image, 0, 0);
+
+        /**
+         * The edge contrast of one box: the mean of the largest tenth of the horizontal
+         * luminance steps, over the range of the box. A soft raster spreads the same
+         * step over more columns, so the reading falls.
+         */
+        const contrastOf = (box: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }): number => {
+          const left = Math.max(0, Math.floor(box.x));
+          const top = Math.max(0, Math.floor(box.y));
+          const width = Math.min(Math.ceil(box.width), canvas.width - left);
+          const height = Math.min(Math.ceil(box.height), canvas.height - top);
+          if (width < 4 || height < 2) return 0;
+          const data = context.getImageData(left, top, width, height).data;
+          const lumAt = (column: number, row: number): number => {
+            const at = (row * width + column) * 4;
+            return (
+              0.2126 * (data[at] as number) +
+              0.7152 * (data[at + 1] as number) +
+              0.0722 * (data[at + 2] as number)
+            );
+          };
+          const steps: number[] = [];
+          let low = 255;
+          let high = 0;
+          for (let row = 0; row < height; row += 1) {
+            for (let column = 0; column < width; column += 1) {
+              const value = lumAt(column, row);
+              low = Math.min(low, value);
+              high = Math.max(high, value);
+              if (column > 0) steps.push(Math.abs(value - lumAt(column - 1, row)));
+            }
+          }
+          if (steps.length === 0 || high - low < 1) return 0;
+          steps.sort((one, other) => other - one);
+          const top10 = steps.slice(0, Math.max(1, Math.round(steps.length / 10)));
+          const mean = top10.reduce((sum, one) => sum + one, 0) / top10.length;
+          return mean / (high - low);
+        };
+
+        return {
+          plane: contrastOf(input.on),
+          upright: contrastOf(input.upright),
+        };
+      },
+      { shot, on: read.on, upright: read.upright },
+    );
+    console.log('the edge contrast of the two renders', {
+      contrasts,
+      share: contrasts.plane / contrasts.upright,
+      label: read,
+    });
+
+    await page.evaluate(() => {
+      document.getElementById('upright-copy')?.remove();
+    });
+
+    expect(contrasts.upright).toBeGreaterThan(0);
+    const share = contrasts.plane / contrasts.upright;
+    // The bound is 0.75 and not 0.85. It read 0.922 while a label was a whole spacing
+    // wide; at a width share of 0.6 the same reading is about 0.805, because a smaller
+    // glyph loses proportionally more of its edge to the transform's resampling. The
+    // guard is here to catch a gross blur in the placement, not to bound the physics of
+    // small text: building the element one octave larger moved the reading only from
+    // 0.809 to 0.813, so the loss is not under-sampling of the source.
+    expect(share).toBeGreaterThanOrEqual(0.75);
+    expect(share).toBeLessThanOrEqual(1.15);
+  });
+
+  // The scenario "A label recedes over a bright background".
+  test('recede a label over a bright background', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
+    await setGrid(page, true);
+
+    /** The label nearest the cursor, with its opacity, its colour and its shadow. */
+    const labelAt = async (
+      cursor: readonly [number, number, number],
+    ): Promise<{
+      opacity: number;
+      colour: number[];
+      shadow: string;
+      count: number;
+    }> => {
+      await page.evaluate((where) => {
+        window.galaxyMap?.setView({
+          cursor: where as [number, number, number],
+          distance: 1000,
+          yaw: 0,
+          pitch: 89,
+        });
+      }, cursor);
+      // The reading goes back to the processor without waiting for the card, so the
+      // labels of a frame read the reading of the frame before. A few real frames put
+      // the reading of this view under the labels.
+      await page.waitForTimeout(300);
+      return page.evaluate(() => {
+        const map = window.galaxyMap;
+        const labels = [
+          ...document.querySelectorAll('.gm-grid-label'),
+        ] as HTMLElement[];
+        const centre = map?.debug.project(map.getView().cursor) ?? { x: 960, y: 540 };
+        let best: HTMLElement | null = null;
+        let bestRange = Infinity;
+        for (const label of labels) {
+          const box = label.getBoundingClientRect();
+          const range = Math.hypot(
+            box.left + box.width / 2 - centre.x,
+            box.top + box.height / 2 - centre.y,
+          );
+          if (range < bestRange) {
+            bestRange = range;
+            best = label;
+          }
+        }
+        if (best === null) {
+          return { opacity: -1, colour: [], shadow: '', count: labels.length };
+        }
+        const colour = getComputedStyle(best)
+          .color.replace(/[^\d,.]/g, '')
+          .split(',')
+          .map((part) => Number(part));
+        return {
+          opacity: Number(best.style.opacity),
+          colour,
+          shadow: best.style.textShadow,
+          count: labels.length,
+        };
+      });
+    };
+
+    const core = await labelAt(CORE_VIEW);
+    const dark = await labelAt(DARK_VIEW);
+    console.log('the label in the two views', { core, dark });
+
+    expect(core.count).toBeGreaterThan(0);
+    expect(dark.count).toBeGreaterThan(0);
+    // The label nearest the cursor holds the reach fade at 1 and the line factor at 1
+    // at a pitch of 89 degrees, so the reading is of the background rule alone.
+    expect(core.opacity).toBeGreaterThanOrEqual(0.7 * 0.8);
+    expect(core.opacity).toBeLessThanOrEqual(0.8 * 0.8);
+    expect(dark.opacity).toBeGreaterThan(0.95 * 0.8);
+    const near = (reading: number[], wanted: number[]): number =>
+      Math.max(...wanted.map((one, at) => Math.abs((reading[at] ?? -999) - one)));
+    expect(near(core.colour, [20, 88, 140])).toBeLessThanOrEqual(8);
+    expect(near(dark.colour, [140, 235, 240])).toBeLessThanOrEqual(8);
+    for (const shadow of [core.shadow, dark.shadow]) {
+      expect(shadow).not.toContain('#000');
+      expect(shadow).not.toContain('rgb(0, 0, 0)');
+    }
   });
 });
 
@@ -1273,13 +1689,13 @@ test.describe('the camera distance band', () => {
       vertices: window.galaxyMap?.debug.gridVertexCount() ?? -1,
       spacing: window.galaxyMap?.debug.gridSpacingLy() ?? -1,
       levels: window.galaxyMap?.debug.gridLevels().length ?? -1,
-      labels: document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label').length,
+      labels: document.querySelectorAll('.gm-grid-label').length,
       on: window.galaxyMap?.isGridVisible() ?? false,
     }));
     console.log('the probes inside and beyond the band', { near, wide });
 
     expect(near.vertices).toBe(3);
-    expect(near.spacing).toBe(10000);
+    expect(near.spacing).toBe(1000);
     expect(near.levels).toBe(6);
     // The switch is still on, and the band alone empties the frame.
     expect(wide.on).toBe(true);
@@ -1345,8 +1761,7 @@ test.describe('the camera distance band', () => {
         different,
         bytes: on.length,
         vertices: map.debug.gridVertexCount(),
-        labels: document.querySelectorAll('.gm-grid-label, .gm-grid-plane-label')
-          .length,
+        labels: document.querySelectorAll('.gm-grid-label').length,
       };
     });
     console.log('the start view with the grid on and off', reading);
@@ -1414,7 +1829,7 @@ test.describe('the grid labels and their lines', () => {
     console.log('the labels and the light under them', labels);
 
     expect(labels.length).toBeGreaterThan(0);
-    expect(labels.length).toBeLessThanOrEqual(32);
+    expect(labels.length).toBeLessThanOrEqual(8);
     for (const label of labels) {
       expect(label.light, `the label "${label.text}"`).toBeGreaterThan(0.01);
     }
@@ -1440,10 +1855,10 @@ test.describe('the grid labels and their lines', () => {
     );
     console.log('the labels at 11,500 and at 3,000 light years', { far, near });
 
-    // The pass still draws at 11,500 light years and the label level is still 10,000,
+    // The pass still draws at 11,500 light years and the label level is still 1,000,
     // so the label gate and not the switch is what empties the overlay.
     expect(far.vertices).toBe(3);
-    expect(far.spacing).toBe(10000);
+    expect(far.spacing).toBe(1000);
     expect(far.labels).toBe(0);
     expect(near).toBeGreaterThan(0);
   });
@@ -1464,9 +1879,9 @@ test.describe('the grid labels and their lines', () => {
     console.log('the labels at the bound', reading);
 
     expect(reading.texts.length).toBeGreaterThan(0);
-    expect(reading.texts.some((text) => text.startsWith('50000,'))).toBe(true);
+    expect(reading.texts.some((text) => text.startsWith('50,000 : '))).toBe(true);
     for (const text of reading.texts) {
-      const x = Number(text.split(', ')[0]);
+      const x = Number((text.split(' : ')[0] ?? '').replace(/,/g, ''));
       expect(x).toBeLessThanOrEqual(reading.cursorX);
     }
   });
@@ -1490,6 +1905,8 @@ test.describe('the grid label readings', () => {
             text: element.textContent ?? '',
             left: at.left - box.left,
             top: at.top - box.top,
+            width: at.width,
+            height: at.height,
             opacity: Number((element as HTMLElement).style.opacity),
           };
         },
@@ -1506,8 +1923,12 @@ test.describe('the grid label readings', () => {
       const held = read.readings[index] as (typeof read.readings)[0];
       const element = read.elements[index] as (typeof read.elements)[0];
       expect(held.text).toBe(element.text);
-      expect(held.left).toBeCloseTo(element.left, 1);
-      expect(held.top).toBeCloseTo(element.top, 1);
+      // The reading's anchor is the crossing, which lies inside the element's own screen
+      // box. A label on the plane is not an upright rectangle, so the two are not equal.
+      expect(held.x).toBeGreaterThanOrEqual(element.left - 1);
+      expect(held.x).toBeLessThanOrEqual(element.left + element.width + 1);
+      expect(held.y).toBeGreaterThanOrEqual(element.top - 1);
+      expect(held.y).toBeLessThanOrEqual(element.top + element.height + 1);
       expect(held.opacity).toBeCloseTo(element.opacity, 2);
     }
   });
@@ -1553,14 +1974,15 @@ test.describe('the grid label readings', () => {
           Math.max(0, (texel.luminance - 0.08) / (0.55 - 0.08)),
         );
         const smooth = merge * merge * (3 - 2 * merge);
-        return 1 - (1 - 0.45) * smooth;
+        return 1 - (1 - 0.75) * smooth;
       };
       return held.map((label, index) => {
-        const centre = boxes[index] ?? { x: label.left, y: label.top };
+        const centre = boxes[index] ?? { x: label.x, y: label.y };
         return {
           text: label.text,
-          top: label.top,
+          top: label.y,
           alpha: label.alpha,
+          reach: label.reach,
           opacity: label.opacity,
           weight: weightAt(centre.x, centre.y),
         };
@@ -1572,7 +1994,7 @@ test.describe('the grid label readings', () => {
 
     expect(labels.length).toBeGreaterThan(1);
     for (const label of labels) {
-      const want = ((0.8 * label.alpha) / 0.45) * label.weight;
+      const want = ((0.8 * label.alpha) / 0.45) * label.reach * label.weight;
       expect(Math.abs(label.opacity - want)).toBeLessThanOrEqual(0.01);
       expect(label.opacity).toBeLessThanOrEqual(0.8);
       // No label is placed below the gate, so the line factor never goes under 0.2.

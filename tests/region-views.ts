@@ -18,6 +18,17 @@
 // a band of zoom distance from 5,000 to 30,000 light years, so every view sits at 10,000
 // light years or more.
 //
+// Every window here was first measured against a band of 6 CSS pixels. The band is now
+// 1.6 per cent of the viewport height, clamped to 8 and 24 CSS pixels of half width, so a
+// window that must clear the band takes **the half width plus** the figure it held: the
+// clearances, the reading windows, and the distance from a bend at which a comparison run
+// starts. A window that measures **along** the band keeps its figure: an arc, a run
+// length, the span of a comparison run, and the reach over which a bend turns. The
+// windows are not scaled by the band's growth. The old half width was 3 CSS pixels and the
+// new one is at most 24, so a scale of 8 would ask the traced corner search for arms of
+// 4,105 light years, where the longest straight segment of the traced set measures 4,392
+// and only two reach past 4,105.
+//
 // The search lives here and `region-views.test.ts` checks that the constants in
 // `e2e/region-views.ts` are what it gives. The browser test reads those constants,
 // because Playwright cannot import the camera module: it reaches the PNG of the
@@ -25,6 +36,7 @@
 import { project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
+import { regionBandHalfWidthCss } from '../src/render/region-pass';
 import type { RegionLines } from '../src/scene-data/types';
 import type {
   BothSetsChoice,
@@ -208,7 +220,11 @@ function yawForVertical(
 /** How far the run must reach above and below the reading row, in CSS pixels. */
 const CROSSING_ROW_PIXELS = 100;
 
-/** How far the nearest other part of the boundary must stay, in CSS pixels. */
+/**
+ * How far the nearest other part of the boundary must stay from the edge of the band the
+ * reading reads, in CSS pixels. The search adds the half width to it, so the reading row
+ * holds one band and 60 CSS pixels of clear frame on each side of it.
+ */
 const CROSSING_CLEARANCE_PIXELS = 60;
 
 /**
@@ -256,6 +272,7 @@ export function findVerticalCrossing(
   runs.sort((a, b) => b.length - a.length);
 
   const perPixel = lightYearsPerPixel(distance, viewport);
+  const halfWidth = regionBandHalfWidthCss(viewport.height);
   // The search reports how many runs hold every premise, so the spec states a count that
   // this run measured. The runs are in order of length, so the first holder is the best.
   let held = 0;
@@ -277,7 +294,7 @@ export function findVerticalCrossing(
       cursorPlane,
       (vertex) => vertex >= run.from && vertex <= run.to,
     );
-    if (clearance < CROSSING_CLEARANCE_PIXELS * perPixel) continue;
+    if (clearance < (halfWidth + CROSSING_CLEARANCE_PIXELS) * perPixel) continue;
 
     // The band lightens what it crosses, which it cannot do over the core itself.
     const radius = Math.hypot(
@@ -331,7 +348,12 @@ export function findVerticalCrossing(
   return { ...first, heldCount: held };
 }
 
-/** How far the join reading reaches from the bend, in CSS pixels. */
+/**
+ * How far the join reading reaches along the line from the bend, in CSS pixels. It
+ * measures along the band and not across it, so it keeps its figure. A larger reach reads
+ * a larger turn and changes what counts as a bend: at a reach of 64 CSS pixels the count
+ * of bends runs from 6,713 to 13,380.
+ */
 const JOIN_REACH_PIXELS = 8;
 
 /** How far the line must turn over that reach to count as a bend, in degrees. */
@@ -339,19 +361,31 @@ const BEND_TURN_DEGREES = 30;
 
 /**
  * How much of a chain, as arc length in CSS pixels, counts as the neighbourhood of a
- * bend. A vertex inside it is the line itself and not a fold of it.
+ * bend. A vertex inside it is the line itself and not a fold of it. It measures along the
+ * band, so it keeps its figure.
  */
 const NEIGHBOUR_ARC_PIXELS = 16;
 
-/** How near the chain may come back to the bend from outside that arc, in CSS pixels. */
+/**
+ * How near the chain may come back to the bend from outside that arc, in CSS pixels past
+ * the edge of the band. It is the window the browser reading reads, so the search adds the
+ * half width to it.
+ */
 const FOLD_REACH_PIXELS = 12;
 
-/** How far the nearest other chain must stay from a corner reading, in CSS pixels. */
+/**
+ * How far the nearest other chain must stay from the edge of the band at a corner
+ * reading, in CSS pixels. The search adds the half width to it.
+ */
 const CORNER_CLEARANCE_PIXELS = 20;
 
-/** The window the comparison run of the join sits in, in CSS pixels from the bend. */
+/**
+ * Where the comparison run of the join sits. The near end is a clearance from the band,
+ * in CSS pixels past its edge, so the search adds the half width to it. The span is a
+ * length along the band and keeps its figure.
+ */
 const JOIN_RUN_FROM_PIXELS = 16;
-const JOIN_RUN_TO_PIXELS = 40;
+const JOIN_RUN_SPAN_PIXELS = 24;
 
 /** How long the comparison run must be, in CSS pixels. */
 const JOIN_RUN_LEAST_PIXELS = 8;
@@ -367,8 +401,8 @@ const JOIN_RUN_LEAST_PIXELS = 8;
  *
  * The zoom is a parameter, and every window the search holds is in CSS pixels at that
  * zoom. The comparison needs a straight run of the same chain in the same frame, outside
- * the window the reading excludes, so the search asks for one 16 to 40 CSS pixels from
- * the bend.
+ * the window the reading excludes, so the search asks for one that starts 16 CSS pixels
+ * past the edge of the band and spans 24 more.
  */
 export function findSharpCorner(
   lines: RegionLines,
@@ -376,6 +410,7 @@ export function findSharpCorner(
   distance: number,
 ): CornerChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
+  const halfWidth = regionBandHalfWidthCss(viewport.height);
   const reach = JOIN_REACH_PIXELS * perPixel;
 
   interface Bend {
@@ -431,7 +466,7 @@ export function findSharpCorner(
       bend,
       (other) => other >= first && other <= last,
     );
-    if (clearance < CORNER_CLEARANCE_PIXELS * perPixel) continue;
+    if (clearance < (halfWidth + CORNER_CLEARANCE_PIXELS) * perPixel) continue;
     // A fold is the chain coming back near the bend from far along its own length.
     // The neighbourhood is measured as arc length and not as a count of vertices,
     // because the drawn line carries a vertex about every 5 light years.
@@ -445,7 +480,10 @@ export function findSharpCorner(
         arc += gap(planeAt(lines, other), planeAt(lines, next));
         other = next;
         if (arc < NEIGHBOUR_ARC_PIXELS * perPixel) continue;
-        if (gap(bend, planeAt(lines, other)) < FOLD_REACH_PIXELS * perPixel) {
+        if (
+          gap(bend, planeAt(lines, other)) <
+          (halfWidth + FOLD_REACH_PIXELS) * perPixel
+        ) {
           folds = true;
         }
       }
@@ -453,10 +491,11 @@ export function findSharpCorner(
     if (folds) continue;
 
     // The straight run the reading compares with: the longest run of this chain that
-    // stays within 2 light years of its chord, 16 to 40 CSS pixels from the bend, so it
-    // sits outside the 12 CSS pixels the reading excludes and inside the frame.
-    const runFrom = JOIN_RUN_FROM_PIXELS * perPixel;
-    const runTo = JOIN_RUN_TO_PIXELS * perPixel;
+    // stays within 2 light years of its chord, starting 16 CSS pixels past the edge of the
+    // band and running 24 CSS pixels further, so it sits outside the window the reading
+    // reads and inside the frame.
+    const runFrom = (halfWidth + JOIN_RUN_FROM_PIXELS) * perPixel;
+    const runTo = runFrom + JOIN_RUN_SPAN_PIXELS * perPixel;
     let run: { from: number; to: number; length: number } | null = null;
     for (let start = first; start < last; start += 1) {
       const away = gap(bend, planeAt(lines, start));
@@ -576,7 +615,10 @@ function indexSegments(lines: RegionLines): SegmentIndex {
 /** How near the chosen point must sit to a chain of each set, in light years. */
 const BOTH_SETS_GAP_LY = 0.5;
 
-/** How far the nearest other chain must stay from the chosen point, in CSS pixels. */
+/**
+ * How far the nearest other chain must stay from the edge of the band at the chosen
+ * point, in CSS pixels. The search adds the half width to it.
+ */
 const BOTH_SETS_CLEARANCE_PIXELS = 20;
 
 /** The zooms the fade scenarios open the chosen point at, in light years. */
@@ -598,9 +640,9 @@ const BOTH_SETS_WINDOW_PIXELS = 8;
  * along a straight run of the boundary, and keeps the longest such segment whose
  * midpoint is within half a light year of the smoothed set as well.
  *
- * The clearance is 20 CSS pixels at the viewport and the zoom the fade scenario reads at.
- * A neighbouring band is 6 CSS pixels wide, so its near edge then sits 17 CSS pixels from
- * the centre and outside the 8 CSS pixel window the scenario reads.
+ * The clearance is the half width and 20 CSS pixels at the viewport and the zoom the fade
+ * scenario reads at, so the near edge of a neighbouring band sits 20 CSS pixels from the
+ * centre and outside the 8 CSS pixel window the scenario reads.
  *
  * The fade scenarios open the point at five zooms, from 9,000 to 31,000 light years, and
  * one CSS pixel covers the most light years at the widest of them. Every other chain
@@ -616,12 +658,17 @@ export function findPointNearBothSets(
   const perPixel = lightYearsPerPixel(distance, viewport);
   // The window holds at every zoom the fade scenarios open, so the widest of them, where
   // one CSS pixel covers the most light years, is the one that binds.
+  const halfWidth = regionBandHalfWidthCss(viewport.height);
   const windowLy = Math.max(
     ...BOTH_SETS_ZOOMS.map(
-      (zoom) => BOTH_SETS_WINDOW_PIXELS * lightYearsPerPixel(zoom, viewport),
+      (zoom) =>
+        (BOTH_SETS_WINDOW_PIXELS + halfWidth) * lightYearsPerPixel(zoom, viewport),
     ),
   );
-  const leastClearance = Math.max(BOTH_SETS_CLEARANCE_PIXELS * perPixel, windowLy);
+  const leastClearance = Math.max(
+    (halfWidth + BOTH_SETS_CLEARANCE_PIXELS) * perPixel,
+    windowLy,
+  );
   const smoothedIndex = indexSegments(lines);
   /** The longest traced segment the search has accepted so far. */
   let best: BothSetsChoice | null = null;
@@ -681,19 +728,34 @@ export function findPointNearBothSets(
   return { ...best, heldCount: held };
 }
 
-/** How far the traced corner reading reaches from the node, in CSS pixels. */
+/**
+ * How far the traced corner reading reaches from the node, in CSS pixels past the edge of
+ * the band. It is the window the browser reading reads, so the search adds the half width
+ * to it.
+ */
 const TRACED_REACH_PIXELS = 6;
 
-/** How long each arm of a traced corner must be, in CSS pixels. */
-const TRACED_ARM_PIXELS = 48;
-
-/** Where the straight run of the comparison starts and ends along an arm, in CSS pixels. */
+/**
+ * Where the straight run of the comparison sits along an arm. The near end is a clearance
+ * from the band, in CSS pixels past its edge, so the search adds the half width to it. The
+ * span is a length along the band and keeps its figure.
+ */
 const TRACED_RUN_FROM_PIXELS = 12;
-const TRACED_RUN_TO_PIXELS = 40;
+const TRACED_RUN_SPAN_PIXELS = 28;
+
+/**
+ * How much arm each node must carry past the far end of the comparison run, in CSS
+ * pixels. The arm length follows the run: an arm that ended inside the run would put the
+ * far end of the run past the next node and off the straight line the reading compares
+ * with.
+ */
+const TRACED_ARM_MARGIN_PIXELS = 8;
 
 /**
  * The neighbourhood arc and the fold reach of this search, in CSS pixels. They are its
- * own copies, because the join search reads at another zoom.
+ * own copies, because the join search reads at another zoom. The arc measures along the
+ * band and keeps its figure; the fold reach is a window past the edge of the band, so the
+ * search adds the half width to it.
  */
 const TRACED_NEIGHBOUR_ARC_PIXELS = 16;
 const TRACED_FOLD_REACH_PIXELS = 12;
@@ -703,18 +765,19 @@ const TRACED_FOLD_REACH_PIXELS = 12;
  *
  * Every vertex of the traced set is such a node: the set keeps a node only where the
  * direction of the unit edges changes, and the edges run along the axes of the grid. The
- * search therefore asks for the reading conditions and not for the turn: both arms longer
- * than 48 CSS pixels, a straight run of the same chain for the comparison, and no other
- * chain near.
+ * search therefore asks for the reading conditions and not for the turn: an arm that
+ * reaches past the comparison run, a straight run of the same chain for the comparison,
+ * and no other chain near.
  *
- * The arm is 48 CSS pixels and not 20 because the comparison run reaches 40 CSS pixels
- * from the node. A shorter arm would put the far end of that run past the next node and
- * off the straight line the reading compares with.
+ * The arm follows the run. The run ends the half width and 40 CSS pixels from the node,
+ * which is 64 at a half width of 24, and the arm holds 8 CSS pixels more. A shorter arm
+ * would put the far end of the run past the next node and off the straight line the
+ * reading compares with.
  *
  * The zoom is a parameter, and every window the search holds is in CSS pixels at it. The
- * bend line reaches 6 CSS pixels along each arm, which is the reading radius of this
- * corner, so the reader classifies a pixel against the drawn line and not against a
- * shorter stub of it.
+ * bend line reaches the reading radius of this corner along each arm, which is the half
+ * width and 6 CSS pixels more, so the reader classifies a pixel against the drawn line
+ * and not against a shorter stub of it.
  */
 export function findTracedCorner(
   traced: RegionLines,
@@ -722,6 +785,13 @@ export function findTracedCorner(
   distance: number,
 ): CornerChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
+  const halfWidth = regionBandHalfWidthCss(viewport.height);
+  /** How far the browser reading reaches from the node, in CSS pixels. */
+  const reachPixels = halfWidth + TRACED_REACH_PIXELS;
+  const runFromLy = (halfWidth + TRACED_RUN_FROM_PIXELS) * perPixel;
+  const runToLy = runFromLy + TRACED_RUN_SPAN_PIXELS * perPixel;
+  // The arm has to reach past the far end of the comparison run.
+  const armLy = runToLy + TRACED_ARM_MARGIN_PIXELS * perPixel;
   let held = 0;
   let kept: CornerChoice | null = null;
 
@@ -734,8 +804,7 @@ export function findTracedCorner(
       const forward = planeAt(traced, vertex + 1);
       const armBack = gap(bend, back);
       const armForward = gap(bend, forward);
-      const arm = TRACED_ARM_PIXELS * perPixel;
-      if (armBack < arm || armForward < arm) continue;
+      if (armBack < armLy || armForward < armLy) continue;
 
       const inX = bend[0] - back[0];
       const inZ = bend[1] - back[1];
@@ -759,7 +828,7 @@ export function findTracedCorner(
         bend,
         (other) => other >= first && other <= last,
       );
-      if (clearance < CORNER_CLEARANCE_PIXELS * perPixel) continue;
+      if (clearance < (halfWidth + CORNER_CLEARANCE_PIXELS) * perPixel) continue;
       let folds = false;
       for (const step of [-1, 1]) {
         let arc = 0;
@@ -770,7 +839,8 @@ export function findTracedCorner(
           arc += gap(planeAt(traced, other), planeAt(traced, next));
           other = next;
           if (arc < TRACED_NEIGHBOUR_ARC_PIXELS * perPixel) continue;
-          if (gap(bend, planeAt(traced, other)) < TRACED_FOLD_REACH_PIXELS * perPixel) {
+          const foldReach = (halfWidth + TRACED_FOLD_REACH_PIXELS) * perPixel;
+          if (gap(bend, planeAt(traced, other)) < foldReach) {
             folds = true;
           }
         }
@@ -787,8 +857,8 @@ export function findTracedCorner(
       };
 
       const view: ChosenView = { cursor: game(bend), distance, yaw: 0, pitch: PITCH };
-      const straightFrom = along(forward, TRACED_RUN_FROM_PIXELS * perPixel);
-      const straightTo = along(forward, TRACED_RUN_TO_PIXELS * perPixel);
+      const straightFrom = along(forward, runFromLy);
+      const straightTo = along(forward, runToLy);
       const inFrame = (point: Plane): boolean => {
         const screen = project(view as View, game(point), viewport);
         return (
@@ -809,12 +879,12 @@ export function findTracedCorner(
         chain,
         vertex,
         turnDegrees: turn,
-        reachPixels: TRACED_REACH_PIXELS,
+        reachPixels: reachPixels,
         bend: game(bend),
         bendLine: [
-          game(along(back, TRACED_REACH_PIXELS * perPixel)),
+          game(along(back, reachPixels * perPixel)),
           game(bend),
-          game(along(forward, TRACED_REACH_PIXELS * perPixel)),
+          game(along(forward, reachPixels * perPixel)),
         ],
         straightFrom: game(straightFrom),
         straightTo: game(straightTo),

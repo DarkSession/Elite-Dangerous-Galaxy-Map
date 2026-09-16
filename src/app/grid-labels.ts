@@ -19,25 +19,59 @@ import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import type { Range } from '../galaxy-model/types';
 import {
-  gridBackgroundTint,
+  gridBackgroundColour,
   gridBackgroundWeight,
+  GRID_LABEL_COLOR,
+  GRID_LABEL_COLOR_DEEP,
   GRID_LABEL_MERGE_FLOOR,
-  GRID_LABEL_TINT_MAX,
   GRID_MAX_ALPHA,
   gridLevelAlpha,
   gridVisibility,
 } from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
+import { planePlacement, writeOnPlane } from './plane-overlay';
+import type { PlanePlaced } from './plane-overlay';
 
-/** How many spacings of the label level each side of the cursor carry a candidate. */
-export const GRID_LABEL_SPAN = 8;
+/**
+ * How many spacings of the label level each side of the cursor carry a candidate. The
+ * reach below takes every crossing past 1.2 spacings, so a wider ring would only project
+ * points that carry no label.
+ */
+export const GRID_LABEL_SPAN = 2;
 
-/** How many crossings one frame looks at. */
+/** How many crossings one frame looks at. The work of one frame is therefore fixed. */
 export const GRID_CANDIDATE_COUNT = (2 * GRID_LABEL_SPAN + 1) ** 2;
 
-/** How many crossing labels the overlay places. */
-export const MAX_GRID_LABELS = 32;
+/** How many crossing labels the overlay places. The nearest to the cursor are kept. */
+export const MAX_GRID_LABELS = 8;
+
+/**
+ * How many spacings from the cursor a crossing still carries a label. The opacity falls
+ * linearly to 0 there.
+ *
+ * The reach is 1.2 spacings and not 1 so that a crossing stays named while the cursor
+ * crosses the cell beyond it. A cursor at the middle of a cell sits 0.707 spacings from
+ * all four of that cell's corners, so a reach of one spacing already names all four. What
+ * one spacing does not do is hold a crossing while the cursor moves the next half cell
+ * away from it: the label would reach 0 exactly as the cursor reaches the far edge of the
+ * next cell, and every number would go out at the moment the user is furthest from any
+ * crossing.
+ */
+export const GRID_LABEL_REACH = 1.2;
+
+/** The largest share of a level's spacing a label's cap height takes. */
+export const GRID_LABEL_CAP_SHARE = 0.1;
+
+/**
+ * The largest share of a level's spacing a label's whole width takes.
+ *
+ * This is the bound that sets the size, not `GRID_LABEL_CAP_SHARE`: `x : y : z` runs to
+ * about 14 cap heights, so a share of 0.6 gives a cap height of about a twenty-third of
+ * the spacing, well under the one tenth the other constant allows. The share was 1, which
+ * let a label run the whole width of its own cell and read as too large.
+ */
+export const GRID_LABEL_WIDTH_SHARE = 0.6;
 
 /**
  * The drawn alpha a level must hold at a crossing for that crossing to carry a label.
@@ -54,9 +88,6 @@ export const GRID_LABEL_MIN_ALPHA = 0.09;
  */
 const JACOBIAN_STEP = 1e-3;
 
-/** The colour of a label over a dark background, red, green and blue from 0 to 255. */
-export const GRID_LABEL_COLOR: readonly [number, number, number] = [255, 196, 140];
-
 /**
  * The opacity of a label over a dark background. It is below the 0.86 the label carried
  * before the merge, because the label no longer stands over a hard outline.
@@ -65,10 +96,11 @@ export const GRID_LABEL_OPACITY = 0.8;
 
 /**
  * The shadow of a label: a soft dark glow and not a hard black outline. A pure black
- * shadow draws a second outline that no part of the picture carries.
+ * shadow draws a second outline that no part of the picture carries. The glow is cool,
+ * so it sits under a cyan label rather than beside it.
  */
 export const GRID_LABEL_SHADOW =
-  '0 0 10px rgba(12, 6, 2, 0.75), 0 1px 2px rgba(12, 6, 2, 0.55)';
+  '0 0 10px rgba(2, 12, 20, 0.75), 0 1px 2px rgba(2, 12, 20, 0.55)';
 
 /**
  * Writes one style property only when it differs. The overlay writes every property of
@@ -82,48 +114,96 @@ function setStyle(element: HTMLElement, name: string, value: string): void {
   element.style.setProperty(name, value);
 }
 
-/** How far above the lower edge of the canvas the plane label sits, in CSS pixels. */
-export const PLANE_LABEL_BOTTOM_CSS = 22;
+/** The font family every coordinate label draws in. */
+export const GRID_LABEL_FONT_FAMILY = "'IBM Plex Mono', ui-monospace, monospace";
 
-/** The width of one character of a label, in CSS pixels. */
-const LABEL_CHARACTER_CSS = 7;
+/** The font size the placement measures a text at, in CSS pixels. */
+export const GRID_LABEL_MEASURE_CSS = 100;
 
-/** The padding of a label, left and right together, in CSS pixels. */
-const LABEL_PADDING_CSS = 8;
+/** The smallest font size an element is built at, in CSS pixels. */
+export const GRID_LABEL_FONT_MIN_CSS = 8;
 
-/** The height of a label, in CSS pixels. */
-const LABEL_HEIGHT_CSS = 14;
+/** The largest font size an element is built at, in CSS pixels. */
+export const GRID_LABEL_FONT_MAX_CSS = 512;
 
-/** The text of a crossing label: the `x` and the `z`, in whole light years. */
-export function crossingLabelText(x: number, z: number): string {
-  return `${Math.round(x)}, ${Math.round(z)}`;
+/**
+ * A whole number with a thousands separator, for example `-12,345`. A number of three
+ * digits or fewer carries no separator.
+ */
+export function labelNumber(value: number): string {
+  const whole = Math.round(value);
+  const digits = String(Math.abs(whole));
+  let out = '';
+  for (let at = 0; at < digits.length; at += 1) {
+    const left = digits.length - at;
+    out += digits[at] as string;
+    if (left > 1 && left % 3 === 1) out += ',';
+  }
+  return whole < 0 ? `-${out}` : out;
 }
 
-/** The text of the plane label: the `y` of the plane, in whole light years. */
-export function planeLabelText(y: number): string {
-  return `y = ${Math.round(y)}`;
+/**
+ * The text of a crossing label: all three game coordinates, as `x : y : z`, in whole
+ * light years. The `x` and the `z` are the crossing's own and the `y` is the `y` of the
+ * plane the grid draws on, which is the cursor's.
+ */
+export function crossingLabelText(x: number, y: number, z: number): string {
+  return `${labelNumber(x)} : ${labelNumber(y)} : ${labelNumber(z)}`;
 }
 
-/** The box of a label of a text, centred on a point. */
-export function labelBoxAt(text: string, x: number, y: number): LabelBox {
-  const width = text.length * LABEL_CHARACTER_CSS + LABEL_PADDING_CSS;
-  return {
-    left: x - width / 2,
-    top: y - LABEL_HEIGHT_CSS / 2,
-    width,
-    height: LABEL_HEIGHT_CSS,
-  };
+/**
+ * The font size an element is built at for a wanted cap height on the screen, in CSS
+ * pixels.
+ *
+ * Chromium rasterises a transformed element at the composited scale, and text scaled up
+ * by a `matrix3d` goes soft. The size is therefore the next power of two at or above the
+ * wanted one, so the transform always scales the element **down**, by a factor between
+ * 0.5 and 1. Powers of two and not the wanted size itself, so the element keeps one
+ * raster over a range of zooms instead of rebuilding its text every frame.
+ */
+export function gridLabelFontSize(wantedCss: number): number {
+  if (!(wantedCss > 0)) return GRID_LABEL_FONT_MIN_CSS;
+  const power = 2 ** Math.ceil(Math.log2(wantedCss));
+  return Math.min(GRID_LABEL_FONT_MAX_CSS, Math.max(GRID_LABEL_FONT_MIN_CSS, power));
 }
 
-/** The box of the plane label in a viewport. */
-export function planeLabelBox(text: string, viewport: Viewport): LabelBox {
-  const width = text.length * LABEL_CHARACTER_CSS + LABEL_PADDING_CSS;
-  return {
-    left: viewport.width / 2 - width / 2,
-    top: viewport.height - PLANE_LABEL_BOTTOM_CSS - LABEL_HEIGHT_CSS,
-    width,
-    height: LABEL_HEIGHT_CSS,
-  };
+/**
+ * How much of its own opacity a label keeps at a distance from the cursor. A crossing at
+ * or past 1.2 spacings carries no label at all.
+ *
+ * A user moving the cursor sees the crossing ahead of them come up as the one behind them
+ * goes down, so the numbers follow the cursor rather than filling the frame.
+ */
+export function gridLabelReach(distanceLy: number, spacingLy: number): number {
+  if (!(spacingLy > 0)) return 0;
+  return Math.max(0, 1 - distanceLy / (GRID_LABEL_REACH * spacingLy));
+}
+
+/** What one measurement of a label's text reports, as shares of the font size. */
+export interface GridLabelMeasure {
+  /** The width of the whole text, as a share of the font size. */
+  readonly widthPerEm: number;
+  /** The cap height of a digit, as a share of the font size. */
+  readonly capPerEm: number;
+}
+
+/**
+ * The cap height of a label on the plane, in light years.
+ *
+ * It is the lesser of one tenth of the level's spacing and the height that holds the
+ * label's own measured width to `GRID_LABEL_WIDTH_SHARE` of a spacing. `x : y : z` runs
+ * to about 20 characters, so its width is roughly 14 cap heights: at one tenth of the
+ * spacing the label would be about 1.4 spacings wide, every label would cross its
+ * neighbours, and the overlap rule would drop all but one. The width bound is therefore
+ * the binding one for every text a crossing carries.
+ */
+export function gridLabelCapHeightLy(
+  spacingLy: number,
+  measure: GridLabelMeasure,
+): number {
+  const byWidth =
+    (spacingLy * GRID_LABEL_WIDTH_SHARE * measure.capPerEm) / measure.widthPerEm;
+  return Math.min(spacingLy * GRID_LABEL_CAP_SHARE, byWidth);
 }
 
 /**
@@ -211,42 +291,35 @@ export function gridLabelLineFactor(alpha: number): number {
 
 /**
  * The opacity of a label over a background of this luminance, for a level that draws at
- * `alpha` at the label's crossing. The floor of the label's background weight is above
- * the line's, because text needs more contrast than a line.
- *
- * The plane label names no crossing, so it reads the full alpha of a bold level and its
- * line factor is 1.
+ * `alpha` at the label's crossing and a reach fade of `reach`. The floor of the label's
+ * background weight is above the line's, because text needs more contrast than a line.
  */
-export function gridLabelOpacity(luminance: number, alpha = GRID_MAX_ALPHA): number {
+export function gridLabelOpacity(
+  luminance: number,
+  alpha = GRID_MAX_ALPHA,
+  reach = 1,
+): number {
   return (
     GRID_LABEL_OPACITY *
     gridLabelLineFactor(alpha) *
+    reach *
     gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR)
   );
 }
 
-/** The colour of a label over a background, as a CSS `rgb` value. */
+/**
+ * The colour of a label over a background, as a CSS `rgb` value. The label darkens
+ * toward a deep blue of its own hue and takes nothing of the background's own colour,
+ * by the same rule the lines follow.
+ */
 export function gridLabelColour(background: GridLabelBackground): string {
-  const tint = gridBackgroundTint(background.luminance, GRID_LABEL_TINT_MAX);
-  const mix = (own: number, under: number): number =>
-    Math.round(own + (under - own) * tint);
-  const colour: [number, number, number] = [
-    mix(GRID_LABEL_COLOR[0], background.r),
-    mix(GRID_LABEL_COLOR[1], background.g),
-    mix(GRID_LABEL_COLOR[2], background.b),
-  ];
-  return `rgb(${colour[0]}, ${colour[1]}, ${colour[2]})`;
-}
-
-/** One crossing label the frame places. */
-export interface GridLabelPlacement {
-  readonly text: string;
-  readonly box: LabelBox;
-  /** Where the crossing projects to, in CSS pixels. */
-  readonly x: number;
-  readonly y: number;
-  /** The drawn alpha of the label level at the crossing, which the gate read. */
-  readonly alpha: number;
+  const colour = gridBackgroundColour(
+    background.luminance,
+    GRID_LABEL_COLOR,
+    GRID_LABEL_COLOR_DEEP,
+  );
+  const round = (value: number): number => Math.round(value);
+  return `rgb(${round(colour[0])}, ${round(colour[1])}, ${round(colour[2])})`;
 }
 
 /**
@@ -267,16 +340,42 @@ export function gridLabelAlpha(
   return Math.max(alongX, alongZ) * band;
 }
 
+/** One crossing label the frame places. */
+export interface GridLabelPlacement {
+  readonly text: string;
+  /** Where the crossing projects to, in CSS pixels. It is the middle of the label. */
+  readonly x: number;
+  readonly y: number;
+  /** The drawn alpha of the label level at the crossing, which the gate read. */
+  readonly alpha: number;
+  /** How much of its own opacity the label keeps for its distance from the cursor. */
+  readonly reach: number;
+  /** The font size the element is built at, in CSS pixels. */
+  readonly fontCss: number;
+  /** The element's own box, in CSS pixels. */
+  readonly widthCss: number;
+  readonly heightCss: number;
+  /** The cap height inside the element's own box, in CSS pixels. */
+  readonly capHeightCss: number;
+  /** The cap height on the screen at the crossing, in CSS pixels. */
+  readonly capHeightScreenCss: number;
+  /** The level's spacing on the screen at the crossing, along the game `x` axis. */
+  readonly spacingCss: number;
+  /** Where the label lands on the plane and on the screen. */
+  readonly placed: PlanePlaced;
+}
+
 /**
- * The crossing labels of one frame. The sweep reads the 289 crossings within 8 spacings
- * of the cursor, drops the ones the frame cannot show, drops the ones whose own lines do
- * not draw, keeps the 32 nearest the centre of the canvas, and skips a box that overlaps
- * one already placed.
+ * The crossing labels of one frame. The sweep reads the 25 crossings within 2 spacings
+ * of the cursor, drops the ones past the reach, drops the ones the frame cannot show,
+ * drops the ones whose own lines do not draw, keeps the 8 nearest the cursor, and skips a
+ * label whose screen box overlaps one already placed.
  *
- * Two readings say that a crossing's lines draw. The crossing lies inside the model
- * bounds on both game axes, where `grid.frag` stops the lines. And the level's drawn
- * alpha at the crossing holds `GRID_LABEL_MIN_ALPHA`, which `gridLabelAlpha` reads from
- * the two axis scales the crossing sits at and the camera distance band.
+ * Three readings say that a crossing carries a label. Its distance from the cursor is
+ * inside the reach. It lies inside the model bounds on both game axes, where `grid.frag`
+ * stops the lines. And the level's drawn alpha at the crossing holds
+ * `GRID_LABEL_MIN_ALPHA`, which `gridLabelAlpha` reads from the two axis scales the
+ * crossing sits at and the camera distance band.
  *
  * The two scales come from the projection's own Jacobian at the crossing: the sweep
  * projects the crossing and two points a small step along the game `x` and `z` axes, and
@@ -291,8 +390,15 @@ export function gridLabelAlpha(
  * pixels, while the shader reads 1.4 CSS pixels there and draws nothing at all. A label
  * placed on that gap would stand over an empty frame, which is the fault this gate is
  * for.
+ *
+ * `measure` reports a text's width and cap height as shares of the font size. The overlay
+ * measures each text once and keeps the reading, as the region labels measure each name
+ * once, so the size follows the font the page loaded and not a character count.
  */
-export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[] {
+export function gridLabelPlacements(
+  frame: GridLabelFrame,
+  measure: (text: string) => GridLabelMeasure,
+): GridLabelPlacement[] {
   const { view, viewport, spacingLy, bounds } = frame;
   if (spacingLy <= 0) return [];
 
@@ -329,7 +435,7 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
   };
 
   const candidates: GridLabelPlacement[] = [];
-  const centres: number[] = [];
+  const distances: number[] = [];
   for (let stepX = -GRID_LABEL_SPAN; stepX <= GRID_LABEL_SPAN; stepX += 1) {
     for (let stepZ = -GRID_LABEL_SPAN; stepZ <= GRID_LABEL_SPAN; stepZ += 1) {
       const gameX = baseX + stepX * spacingLy;
@@ -337,6 +443,9 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
       // The lines stop at the model bounds, so a crossing beyond them carries none.
       if (gameX < bounds.x[0] || gameX > bounds.x[1]) continue;
       if (gameZ < bounds.z[0] || gameZ > bounds.z[1]) continue;
+      const away = Math.hypot(gameX - view.cursor[0], gameZ - view.cursor[2]);
+      const reach = gridLabelReach(away, spacingLy);
+      if (reach <= 0) continue;
       const at = project(gameX, gameZ);
       if (at === null) continue;
       const { x, y } = at;
@@ -359,45 +468,94 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
       const perPixelZ = Math.hypot(yOverX / determinant, xOverX / determinant);
       const alpha = gridLabelAlpha(perPixelX, perPixelZ, spacingLy, band);
       if (alpha < GRID_LABEL_MIN_ALPHA) continue;
-      const text = crossingLabelText(gameX, gameZ);
-      candidates.push({ text, box: labelBoxAt(text, x, y), x, y, alpha });
-      const fromX = x - halfWidth;
-      const fromY = y - halfHeight;
-      centres.push(fromX * fromX + fromY * fromY);
+
+      const text = crossingLabelText(gameX, view.cursor[1], gameZ);
+      const reading = measure(text);
+      if (!(reading.widthPerEm > 0) || !(reading.capPerEm > 0)) continue;
+      const capHeightLy = gridLabelCapHeightLy(spacingLy, reading);
+      // The cap height the label draws at on the screen, which chooses the font size the
+      // element is built at. The cap height runs along the game `z` axis.
+      const capHeightScreenCss = capHeightLy / Math.max(perPixelZ, 1e-9);
+      const fontCss = gridLabelFontSize(capHeightScreenCss / reading.capPerEm);
+      const widthCss = reading.widthPerEm * fontCss;
+      const heightCss = fontCss;
+      const capHeightCss = reading.capPerEm * fontCss;
+      // The light years of the plane one CSS pixel of the element's own box covers.
+      const perBoxCss = capHeightLy / capHeightCss;
+      const placedOn = planePlacement({
+        view,
+        viewport,
+        planeY: view.cursor[1],
+        anchor: [gameX, gameZ],
+        widthLy: widthCss * perBoxCss,
+        heightLy: heightCss * perBoxCss,
+        widthCss,
+        heightCss,
+      });
+      if (placedOn === null) continue;
+
+      candidates.push({
+        text,
+        x,
+        y,
+        alpha,
+        reach,
+        fontCss,
+        widthCss,
+        heightCss,
+        capHeightCss,
+        capHeightScreenCss,
+        spacingCss: spacingLy / Math.max(perPixelX, 1e-9),
+        placed: placedOn,
+      });
+      distances.push(away);
     }
   }
 
   const order = candidates.map((_place, index) => index);
   order.sort(
-    (first, second) => (centres[first] as number) - (centres[second] as number),
+    (first, second) => (distances[first] as number) - (distances[second] as number),
   );
 
   const placed: GridLabelPlacement[] = [];
+  const boxes: LabelBox[] = [];
   for (const index of order) {
     if (placed.length === MAX_GRID_LABELS) break;
     const candidate = candidates[index] as GridLabelPlacement;
-    if (placed.some((other) => boxesOverlap(candidate.box, other.box))) continue;
+    // A label on the plane is not an upright rectangle on the screen, so the overlap
+    // test reads the bounding box of its transformed quad.
+    const box = candidate.placed.box;
+    if (boxes.some((other) => boxesOverlap(box, other))) continue;
     placed.push(candidate);
+    boxes.push(box);
   }
   return placed;
 }
 
 /**
- * What one crossing label of the last frame reads. The opacity is a product of two
- * numbers and only one of them reaches a pixel of the frame, so a test cannot read the
- * line factor from the picture alone.
+ * What one crossing label of the last frame reads. The line factor and the reach are
+ * ratios, and neither reaches a pixel of the frame on its own, so a test cannot read them
+ * from the picture alone.
  */
 export interface GridLabelPlaced {
   /** The text the label carries. */
   readonly text: string;
-  /** The left edge of the label box, in CSS pixels from the left of the canvas. */
-  readonly left: number;
-  /** The top edge of the label box, in CSS pixels from the top of the canvas. */
-  readonly top: number;
+  /** The label's anchor, in CSS pixels from the left of the canvas. */
+  readonly x: number;
+  /** The label's anchor, in CSS pixels from the top of the canvas. */
+  readonly y: number;
   /** The drawn alpha of the label level at the label's crossing. */
   readonly alpha: number;
+  /** How much of its own opacity the label keeps for its distance from the cursor. */
+  readonly reach: number;
   /** The opacity the label was given. */
   readonly opacity: number;
+  /** The cap height on the screen at the label's crossing, in CSS pixels. */
+  readonly capHeightCss: number;
+  /** The level's spacing on the screen at the crossing, along the game `x` axis. */
+  readonly spacingCss: number;
+  /** The four screen corners of the label's quad, in CSS pixels. */
+  readonly corners: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** The overlay that holds the grid labels. */
@@ -413,38 +571,68 @@ export interface GridLabelOverlay {
 }
 
 /** Builds one label element. */
-function makeLabel(document: Document, className: string): HTMLElement {
+function makeLabel(document: Document): HTMLElement {
   const element = document.createElement('div');
-  element.className = className;
+  element.className = 'gm-grid-label';
   setStyle(element, 'position', 'absolute');
   setStyle(element, 'pointer-events', 'none');
   setStyle(element, 'white-space', 'nowrap');
   setStyle(element, 'box-sizing', 'border-box');
-  setStyle(element, 'height', `${LABEL_HEIGHT_CSS}px`);
-  setStyle(element, 'padding', '1px 4px');
-  setStyle(
-    element,
-    'font',
-    `10px/${LABEL_HEIGHT_CSS - 2}px 'IBM Plex Mono', ui-monospace, monospace`,
-  );
-  setStyle(element, 'letter-spacing', '1px');
+  // The canvas measures the text without letter spacing, so the element carries none.
+  setStyle(element, 'letter-spacing', '0');
+  setStyle(element, 'text-align', 'center');
   setStyle(element, 'text-shadow', GRID_LABEL_SHADOW);
+  // Chromium rasterises a transformed element at the composited scale. The placement
+  // sizes the element so the transform shrinks it, and this promotes the element so the
+  // raster is taken again when the scale changes.
+  setStyle(element, 'will-change', 'transform');
   return element;
 }
 
-/** Writes the place and the merge of one label, and writes nothing that does not move. */
-function placeLabel(
-  element: HTMLElement,
-  box: LabelBox,
-  background: GridLabelBackground,
-  alpha = GRID_MAX_ALPHA,
-): number {
-  const opacity = gridLabelOpacity(background.luminance, alpha);
-  setStyle(element, 'left', `${box.left}px`);
-  setStyle(element, 'top', `${box.top}px`);
-  setStyle(element, 'opacity', `${opacity}`);
-  setStyle(element, 'color', gridLabelColour(background));
-  return opacity;
+/**
+ * Measures a label's text, as shares of the font size, and keeps each reading.
+ *
+ * The reading comes from a canvas 2D context in the same font family the elements draw
+ * in, so the size follows the font the page loaded and not a character count. A context
+ * the page cannot give falls back to the ratios of a monospace font.
+ */
+export function createGridLabelMeasure(
+  document: Document,
+): (text: string) => GridLabelMeasure {
+  const held = new Map<string, GridLabelMeasure>();
+  let context: CanvasRenderingContext2D | null | undefined;
+  return (text: string): GridLabelMeasure => {
+    const known = held.get(text);
+    if (known !== undefined) return known;
+    if (context === undefined) {
+      // A host that gives the library a document with no canvas reads the fallback
+      // below, which the unit tests take as well.
+      const canvas = document.createElement('canvas') as HTMLCanvasElement;
+      context =
+        typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+      if (context !== null) {
+        context.font = `${GRID_LABEL_MEASURE_CSS}px ${GRID_LABEL_FONT_FAMILY}`;
+      }
+    }
+    // A monospace fallback: about 0.6 em for each character, and a cap height of 0.7 em.
+    let reading: GridLabelMeasure = {
+      widthPerEm: text.length * 0.6,
+      capPerEm: 0.7,
+    };
+    if (context !== null && context !== undefined) {
+      const width = context.measureText(text).width;
+      // A digit stands to the cap height in every font the labels use.
+      const cap = context.measureText('0').actualBoundingBoxAscent;
+      if (width > 0 && cap > 0) {
+        reading = {
+          widthPerEm: width / GRID_LABEL_MEASURE_CSS,
+          capPerEm: cap / GRID_LABEL_MEASURE_CSS,
+        };
+      }
+    }
+    held.set(text, reading);
+    return reading;
+  };
 }
 
 /**
@@ -454,14 +642,14 @@ function placeLabel(
 export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
   const document = host.ownerDocument;
   const labels: HTMLElement[] = [];
-  const plane = makeLabel(document, 'gm-grid-plane-label');
+  const measure = createGridLabelMeasure(document);
   let shown = 0;
   let placed: GridLabelPlaced[] = [];
 
   const labelAt = (index: number): HTMLElement => {
     let element = labels[index];
     if (element === undefined) {
-      element = makeLabel(document, 'gm-grid-label');
+      element = makeLabel(document);
       labels[index] = element;
     }
     return element;
@@ -469,7 +657,6 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
 
   const clear = (): void => {
     for (const element of labels) element.remove();
-    plane.remove();
     shown = 0;
     placed = [];
   };
@@ -481,35 +668,55 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
         return;
       }
 
-      const placements = gridLabelPlacements(frame);
+      const placements = gridLabelPlacements(frame, measure);
       const readings: GridLabelPlaced[] = [];
       for (let index = 0; index < placements.length; index += 1) {
         const placement = placements[index] as GridLabelPlacement;
         const element = labelAt(index);
-        if (element.textContent !== placement.text)
+        if (element.textContent !== placement.text) {
           element.textContent = placement.text;
-        // A label follows the background under the centre of its own box, by the same
-        // rule the lines follow, so a number and the line it sits on never disagree.
-        const centreX = placement.box.left + placement.box.width / 2;
-        const centreY = placement.box.top + placement.box.height / 2;
+        }
+        setStyle(
+          element,
+          'font',
+          `${placement.fontCss}px/${placement.heightCss}px ${GRID_LABEL_FONT_FAMILY}`,
+        );
+        // A label follows the background under its own anchor, by the same rule the lines
+        // follow, so a number and the line it sits on never disagree.
         const background = gridLabelBackground(
           frame.background,
-          centreX,
-          centreY,
+          placement.x,
+          placement.y,
           frame.viewport,
         );
-        const opacity = placeLabel(
-          element,
-          placement.box,
-          background,
+        const opacity = gridLabelOpacity(
+          background.luminance,
           placement.alpha,
+          placement.reach,
         );
+        // The sweep solved the homography already, so the overlay writes it and does
+        // not solve it a second time.
+        writeOnPlane(
+          element,
+          placement.widthCss,
+          placement.heightCss,
+          placement.placed,
+        );
+        setStyle(element, 'opacity', `${opacity}`);
+        setStyle(element, 'color', gridLabelColour(background));
         readings.push({
           text: placement.text,
-          left: placement.box.left,
-          top: placement.box.top,
+          x: placement.x,
+          y: placement.y,
           alpha: placement.alpha,
+          reach: placement.reach,
           opacity,
+          capHeightCss: placement.capHeightScreenCss,
+          spacingCss: placement.spacingCss,
+          corners: placement.placed.corners.map((point) => ({
+            x: point.x,
+            y: point.y,
+          })),
         });
         if (element.parentNode === null) host.append(element);
       }
@@ -518,18 +725,6 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
         labels[index]?.remove();
       }
       shown = placements.length;
-
-      const text = planeLabelText(frame.view.cursor[1]);
-      const box = planeLabelBox(text, frame.viewport);
-      if (plane.textContent !== text) plane.textContent = text;
-      const planeBackground = gridLabelBackground(
-        frame.background,
-        box.left + box.width / 2,
-        box.top + box.height / 2,
-        frame.viewport,
-      );
-      placeLabel(plane, box, planeBackground);
-      if (plane.parentNode === null) host.append(plane);
     },
     readings(): GridLabelPlaced[] {
       return placed;

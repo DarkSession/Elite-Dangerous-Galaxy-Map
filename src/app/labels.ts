@@ -14,12 +14,12 @@ import {
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import {
-  REGION_CLOSE_FULL,
-  REGION_CLOSE_NONE,
-  REGION_FADE_IN_FAR,
-  REGION_FADE_IN_NEAR,
+  REGION_RANGE_FULL,
+  REGION_RANGE_NONE,
+  regionFade,
 } from '../render/region-pass';
 import {
+  coarseRegionFlowStepAt,
   coarseRegionIdAt,
   insideCoarseRegionGrid,
   NO_REGION_ID,
@@ -134,6 +134,12 @@ export interface FrameSamples {
    * reads it to move a label the least it can.
    */
   readonly toPlane: (x: number, y: number) => PlanePoint | null;
+  /**
+   * The unit step the flow field names at a plane point, or null where it names none.
+   * A label whose straight step leaves its own region follows it, so the label walks
+   * around a region that lies in its way rather than standing still.
+   */
+  readonly flowStepAtPlane: (x: number, z: number) => readonly [number, number] | null;
 }
 
 /** A region the frame shows enough of to name. */
@@ -168,14 +174,78 @@ function smoothstep(low: number, high: number, value: number): number {
 }
 
 /**
- * How much of the label overlay draws at a zoom distance, 0 to 1. The labels take the
- * same band the boundary lines take, so a name and the boundary beside it always read at
- * the same strength. The constants come from the region pass, so no copy is made.
+ * How much of the label overlay draws at a zoom distance, 0 to 1. It is the boundary's
+ * own zoom fade and not a second copy of it, so a name and the line under it can never
+ * part company at a zoom.
+ *
+ * The close end of the old band is gone. The range fade below holds that end, read at
+ * each label's own plane anchor, exactly as the composite pass holds it per pixel.
  */
 export function labelFade(distance: number): number {
+  return regionFade(distance);
+}
+
+/**
+ * How much of a label draws at the range from the camera to its own plane anchor, 0 to
+ * 1. It is the same smooth step the composite pass reads per pixel, and it takes the
+ * same two constants, so no copy is made.
+ *
+ * A label is one DOM element with one opacity. It names one place, its anchor is that
+ * place, and the placement already holds that place as a plane point, so the fade is
+ * read there once rather than over the box the text covers.
+ */
+export function labelRangeFade(range: number): number {
+  return smoothstep(REGION_RANGE_NONE, REGION_RANGE_FULL, range);
+}
+
+/**
+ * The greatest range from the camera to a plane point the frame holds, in light years.
+ *
+ * The frame's two **top corners** carry it: the plane runs furthest away at the top of
+ * the frame, and a corner reads further than the top centre. At a pitch of 58.6 degrees
+ * and a camera 1,542 light years up the centre reads 3,223 light years and the corners
+ * about 4,300, so a gate on the centre under-reads by about a third.
+ *
+ * A ray that misses the plane, which is a frame holding the horizon, reads as beyond
+ * every range.
+ */
+export function farthestPlaneRange(view: View, viewport: Viewport): number {
+  const inverse = inverseViewProjection(view, viewport);
+  const origin = cameraPosition(view);
+  const pixel = { x: 0, y: 0 };
+  let farthest = 0;
+  for (const corner of [0, viewport.width]) {
+    pixel.x = corner;
+    const point = planePointFrom(inverse, origin, pixel, viewport, 0);
+    if (point === null) return Number.POSITIVE_INFINITY;
+    const range = Math.hypot(
+      point[0] - origin[0],
+      point[1] - origin[1],
+      point[2] - origin[2],
+    );
+    if (range > farthest) farthest = range;
+  }
+  return farthest;
+}
+
+/**
+ * True where the sampling sweep of a frame could place a label a user can see. The gate
+ * is a conjunction of the two fades the labels take:
+ *
+ * - the zoom fade is above 0, which is a zoom below 30,000 light years. This is what
+ *   keeps the default far view from paying 2 milliseconds a frame;
+ * - the greatest range to the plane the frame holds is above `REGION_RANGE_NONE`, so
+ *   some part of the frame could carry a label at an opacity above 0.
+ *
+ * The second half reads the pitch and the camera's height, which a zoom floor cannot. At
+ * a pitch of 89 degrees and a zoom of 4,000 light years the whole frame lies inside the
+ * range floor and the sweep is skipped; at a pitch of 20 degrees and the same zoom the
+ * frame holds the horizon and the sweep runs.
+ */
+export function labelSweepRuns(view: View, viewport: Viewport): boolean {
   return (
-    smoothstep(REGION_CLOSE_NONE, REGION_CLOSE_FULL, distance) *
-    (1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance))
+    labelFade(view.distance) > 0 &&
+    farthestPlaneRange(view, viewport) > REGION_RANGE_NONE
   );
 }
 
@@ -249,6 +319,7 @@ export function sampleFrame(
   viewport: Viewport,
   grid: CoarseRegionGrid,
   buffers: SampleBuffers | null = null,
+  flow: Uint8Array | null = null,
 ): FrameSamples {
   const started = performance.now();
   const columns = sampleColumns(viewport);
@@ -269,6 +340,14 @@ export function sampleFrame(
 
   const regionAtPlane = (readX: number, readZ: number): number =>
     coarseRegionIdAt(grid, readX, readZ);
+
+  // A sweep with no field names no step anywhere, which is the reading a caller that
+  // holds no field gets. The carried point then stands, as it did before the field.
+  const flowStepAtPlane = (
+    readX: number,
+    readZ: number,
+  ): readonly [number, number] | null =>
+    flow === null ? null : coarseRegionFlowStepAt(grid, flow, readX, readZ);
 
   const toScreen = (readX: number, readZ: number): AnchorPoint | null => {
     const screen = project(view, [readX, 0, readZ], viewport);
@@ -314,6 +393,7 @@ export function sampleFrame(
     regionAtPlane,
     toScreen,
     toPlane,
+    flowStepAtPlane,
   };
 }
 
@@ -475,7 +555,8 @@ export function regionTarget(
       x: clamp(where.x, LABEL_INSET, viewport.width - LABEL_INSET),
       y: clamp(where.y, LABEL_INSET, viewport.height - LABEL_INSET),
     };
-    if (inset.x === where.x && inset.y === where.y) return { point: centre, centre: true };
+    if (inset.x === where.x && inset.y === where.y)
+      return { point: centre, centre: true };
 
     // The centre has no room. Read the held point back to the plane, which is the least
     // move that gives the label room.
@@ -712,8 +793,91 @@ export interface TargetFilter {
   readonly toScreen: (x: number, z: number) => AnchorPoint | null;
   /** True where a plane point sits on the label's own region. */
   readonly onRegion: (x: number, z: number) => boolean;
+  /**
+   * The unit step the flow field names at a plane point, or null where it names none.
+   * The smoothed point takes it where the straight step leaves the region.
+   */
+  readonly flowStep?:
+    ((x: number, z: number) => readonly [number, number] | null) | undefined;
   /** The time this frame covers, in seconds. */
   readonly seconds: number;
+}
+
+/** How many times a step along the flow field is scaled before it takes what it has. */
+const FIELD_PASSES = 8;
+
+/**
+ * A plane point one step from `from` along a unit plane direction, whose projection sits
+ * `want` CSS pixels from the projection of `from`.
+ *
+ * The step is read on the screen and not on the plane, because a plane step of a fixed
+ * size covers a different number of pixels at every zoom, and the projection is not
+ * linear. `guess` is a plane length already known to move about `want` pixels, which is
+ * the straight step the caller asked for, so the loop starts near its answer. Each pass
+ * reads what the length really moved and corrects it, up as well as down.
+ */
+function stepAlongField(
+  from: PlanePoint,
+  fromScreen: AnchorPoint,
+  direction: readonly [number, number],
+  want: number,
+  guess: number,
+  toScreen: (x: number, z: number) => AnchorPoint | null,
+): PlanePoint | null {
+  if (!(want > 0) || !(guess > 0)) return null;
+  let length = guess;
+  let point: PlanePoint | null = null;
+  for (let pass = 0; pass < FIELD_PASSES; pass += 1) {
+    const at: PlanePoint = {
+      x: from.x + direction[0] * length,
+      z: from.z + direction[1] * length,
+    };
+    const screen = toScreen(at.x, at.z);
+    if (screen === null) return point;
+    point = at;
+    const went = Math.hypot(screen.x - fromScreen.x, screen.y - fromScreen.y);
+    if (went === 0) return point;
+    if (Math.abs(went - want) <= STEP_TOLERANCE) return point;
+    length *= want / went;
+  }
+  return point;
+}
+
+/**
+ * A point one step along the flow field from `from` that stays on the region, or null
+ * where no such step is found.
+ *
+ * The field names a step between two **cell centres**, and the point sits anywhere in
+ * its own cell, so a diagonal step can clip the corner of a cell the region does not
+ * hold. Three headings are tried in order: the field's own step, and then its part along
+ * each axis alone, which are the two cells the diagonal passes between. Each heading is
+ * shortened by halving where the whole of it leaves the region, because a short enough
+ * step from a point on the region stays on it.
+ */
+function stepOnRegion(
+  from: PlanePoint,
+  fromScreen: AnchorPoint,
+  step: readonly [number, number],
+  want: number,
+  guess: number,
+  toScreen: (x: number, z: number) => AnchorPoint | null,
+  onRegion: (x: number, z: number) => boolean,
+): PlanePoint | null {
+  const headings: (readonly [number, number])[] = [step];
+  if (step[0] !== 0 && step[1] !== 0) {
+    headings.push([Math.sign(step[0]), 0], [0, Math.sign(step[1])]);
+  }
+  for (const heading of headings) {
+    let along = stepAlongField(from, fromScreen, heading, want, guess, toScreen);
+    for (let pass = 0; pass < REGION_PASSES && along !== null; pass += 1) {
+      if (onRegion(along.x, along.z)) return along;
+      along = {
+        x: from.x + (along.x - from.x) / 2,
+        z: from.z + (along.z - from.z) / 2,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -731,11 +895,19 @@ export interface TargetFilter {
  * fixed size covers a different number of pixels at every zoom and the projection is not
  * linear.
  *
- * Where the smoothed point falls on another region, the carried point is kept. A region
- * can show as two separated patches, and the point between this frame's target and the
- * one before then falls in the gap. Taking this frame's target instead would carry the
- * label to the other patch in one frame, which is the jump the smoothing is there to
- * stop.
+ * Where the smoothed point falls on another region, the point follows the **flow field**
+ * instead. A region is not a convex shape and it can show as two separated patches, so
+ * the straight line on the plane from the carried point to this frame's target can run
+ * over a third region. The field names a step inside the region toward the region's own
+ * centre, so the point walks around whatever lies between the two.
+ *
+ * The step along the field covers the same screen distance the straight step asked for,
+ * so the target moves at the speed it always did and only its heading changes.
+ *
+ * Where the field names no step, which is a cell it marks as the end of a path or a cell
+ * outside the grid, the carried point is kept. Taking this frame's target instead would
+ * carry the label to the other patch in one frame, which is the jump the smoothing is
+ * there to stop.
  */
 export function smoothTarget(filter: TargetFilter): PlanePoint {
   const { carried, target, toScreen, onRegion, seconds } = filter;
@@ -775,9 +947,17 @@ export function smoothTarget(filter: TargetFilter): PlanePoint {
   if (share <= 0) return carried;
 
   const smoothed = pointAt(share);
-  return onRegion(smoothed.x, smoothed.z) ? smoothed : carried;
-}
+  if (onRegion(smoothed.x, smoothed.z)) return smoothed;
 
+  const step = filter.flowStep?.(carried.x, carried.z) ?? null;
+  if (step === null) return carried;
+  const straight = toScreen(smoothed.x, smoothed.z);
+  if (straight === null) return carried;
+  const want = Math.hypot(straight.x - from.x, straight.y - from.y);
+  const guess = Math.hypot(smoothed.x - carried.x, smoothed.z - carried.z);
+  const along = stepOnRegion(carried, from, step, want, guess, toScreen, onRegion);
+  return along ?? carried;
+}
 
 /**
  * The time over which the anchor closes half the gap to its target, in milliseconds.
@@ -861,7 +1041,8 @@ const REGION_PASSES = 6;
  * gap of `gap`.
  */
 export function anchorStep(gap: number, seconds: number): number {
-  const speed = gap * anchorShare(seconds) * Math.min(1, gap / ANCHOR_FULL_SPEED_PIXELS);
+  const speed =
+    gap * anchorShare(seconds) * Math.min(1, gap / ANCHOR_FULL_SPEED_PIXELS);
   return Math.min(
     anchorCap(seconds),
     Math.max(Math.min(gap, anchorFloor(seconds)), speed),
@@ -889,6 +1070,7 @@ export function filterAnchor(
   toScreen: (x: number, z: number) => AnchorPoint | null,
   seconds: number,
   onRegion: (x: number, z: number) => boolean = () => true,
+  flowStep: (x: number, z: number) => readonly [number, number] | null = () => null,
 ): PlanePoint {
   const from = toScreen(carried.x, carried.z);
   const to = toScreen(target.x, target.z);
@@ -925,8 +1107,7 @@ export function filterAnchor(
 
   // A region is not always a convex shape, so the straight line from the carried point
   // to the target can go over a neighbour. A shorter step keeps the anchor on its own
-  // region where one does. Where none does, the step stands as it is: the target is
-  // always on the region, so the anchor comes back to the region as it walks.
+  // region where one does.
   const solved = share;
   for (let pass = 0; pass < REGION_PASSES; pass += 1) {
     const step = {
@@ -936,6 +1117,22 @@ export function filterAnchor(
     if (onRegion(step.x, step.z)) return step;
     share /= 2;
   }
+
+  // Where no shorter step does, the step follows the flow field, scaled to the screen
+  // distance the straight step asked for. The anchor then walks around what lies between
+  // it and its target rather than pressing into the edge that stops it.
+  const step = flowStep(carried.x, carried.z);
+  if (step !== null) {
+    const guess = Math.hypot(
+      (target.x - carried.x) * solved,
+      (target.z - carried.z) * solved,
+    );
+    const along = stepOnRegion(carried, from, step, want, guess, toScreen, onRegion);
+    if (along !== null) return along;
+  }
+
+  // Where the field names no step, the straight step stands: the target is always on the
+  // region, so the anchor comes back to the region as it walks.
   return {
     x: carried.x + (target.x - carried.x) * solved,
     z: carried.z + (target.z - carried.z) * solved,
@@ -1115,6 +1312,7 @@ export function labelCandidates(
       target,
       toScreen: samples.toScreen,
       onRegion: (x, z) => samples.regionAtPlane(x, z) === id,
+      flowStep: samples.flowStepAtPlane,
       seconds: timing.seconds,
     });
 
@@ -1140,6 +1338,7 @@ export function labelCandidates(
           samples.toScreen,
           timing.seconds,
           (x, z) => samples.regionAtPlane(x, z) === id,
+          samples.flowStepAtPlane,
         );
       }
     }
@@ -1250,8 +1449,11 @@ export interface SamplingStats {
 
 /** The overlay that holds the label elements. */
 export interface LabelOverlay {
-  /** Takes the coarse region grid the sweep reads. Nothing is placed before it. */
-  setGrid(grid: CoarseRegionGrid): void;
+  /**
+   * Takes the coarse region grid the sweep reads and the flow field over it. Nothing is
+   * placed before them.
+   */
+  setGrid(grid: CoarseRegionGrid, flow: Uint8Array): void;
   /**
    * Places the labels of a view, or clears them when the switch is off.
    *
@@ -1288,6 +1490,10 @@ export function createLabelOverlay(
   for (const region of regions) {
     const element = host.ownerDocument.createElement('div');
     element.className = 'region-label';
+    // Over every plane element. `src/app/plane-overlay.ts` states the rule. The host
+    // styles `.region-label` and the library writes the place, so the level is written
+    // here beside the place and not left to a rule the host may not carry.
+    element.style.zIndex = '1';
     element.dataset['regionId'] = String(region.id);
     element.textContent = region.name;
     elements.set(region.id, element);
@@ -1320,6 +1526,7 @@ export function createLabelOverlay(
   const measure = (name: string): LabelSize => measureById(byName.get(name) ?? 0, name);
 
   let grid: CoarseRegionGrid | null = null;
+  let flow: Uint8Array | null = null;
   let shown: PlacedLabel[] = [];
   // What the frame before held. The overlay owns this state and the placement reads it
   // as an argument, so the rules of the placement stay testable without a page.
@@ -1331,18 +1538,22 @@ export function createLabelOverlay(
   let worstMs = 0;
 
   return {
-    setGrid(next: CoarseRegionGrid): void {
+    setGrid(next: CoarseRegionGrid, nextFlow: Uint8Array): void {
       grid = next;
+      flow = nextFlow;
     },
     update(view: View, viewport: Viewport, on: boolean, timing: FrameTiming): void {
       let labels: PlacedLabel[] = [];
-      if (on && grid !== null && labelFade(view.distance) > 0) {
+      // The sweep runs only where a label could be read: the zoom fade is above 0 and
+      // some plane point of the frame is beyond the range floor. A frame in which every
+      // label would draw at opacity 0 has no reason to pay the 2 milliseconds.
+      if (on && grid !== null && labelSweepRuns(view, viewport)) {
         // The reading covers the sweep and the placement, which is the whole cost the
         // labels put on the main thread before the elements move. `elapsedMs` covers
         // the sweep alone, so the placement would sit in no measured window.
         pool = fitSampleBuffers(pool, samplePointCount(viewport));
         const started = performance.now();
-        const samples = sampleFrame(view, viewport, grid, pool);
+        const samples = sampleFrame(view, viewport, grid, pool, flow);
         last = samples;
         labels = chooseLabels(samples, viewport, measure, regions, memory, timing);
         const elapsed = performance.now() - started;
@@ -1350,7 +1561,27 @@ export function createLabelOverlay(
         totalMs += elapsed;
         if (elapsed > worstMs) worstMs = elapsed;
       }
-      const wanted = new Set(labels.map((label) => label.id));
+      // A label fades exactly as the boundary at the same place fades: the frame's own
+      // zoom fade times the range fade read at the label's own plane anchor. A label
+      // whose product is 0 is left out of the overlay and not placed transparent, so
+      // every reading of the page counts the labels a user can see.
+      const zoom = labelFade(view.distance);
+      const camera = cameraPosition(view);
+      const opacities = new Map<number, number>();
+      const drawn: PlacedLabel[] = [];
+      for (const label of labels) {
+        const range = Math.hypot(
+          label.plane.x - camera[0],
+          camera[1],
+          label.plane.z - camera[2],
+        );
+        const opacity = zoom * labelRangeFade(range);
+        if (opacity <= 0) continue;
+        opacities.set(label.id, opacity);
+        drawn.push(label);
+      }
+
+      const wanted = new Set(drawn.map((label) => label.id));
       for (const label of shown) {
         if (wanted.has(label.id)) continue;
         elements.get(label.id)?.remove();
@@ -1358,16 +1589,17 @@ export function createLabelOverlay(
       // The fade goes on each region label and not on the host, because the host also
       // holds the selection pin, the hover ring and the marker name labels, and those do
       // not follow the region overlay's fade.
-      const fade = String(labelFade(view.distance));
-      for (const label of labels) {
+      for (const label of drawn) {
         const element = elements.get(label.id);
         if (element === undefined) continue;
         element.style.left = `${label.left}px`;
         element.style.top = `${label.top}px`;
-        element.style.opacity = fade;
+        element.style.opacity = String(opacities.get(label.id) ?? 0);
         if (element.parentNode === null) host.append(element);
       }
-      shown = labels;
+      shown = drawn;
+      // The placement carries every label it chose into the next frame, including the
+      // ones the range fade left out, so a label that comes back does not start again.
       memory = rememberLabels(labels);
     },
     lastCounts(): { id: number; name: string; count: number }[] {

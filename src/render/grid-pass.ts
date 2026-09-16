@@ -51,8 +51,24 @@ export const GRID_FAR_NONE_LY = 12000;
 /** The smallest screen spacing a label level takes, in CSS pixels. */
 export const GRID_LABEL_CSS = 400;
 
-/** The colour of a grid line, red, green and blue from 0 to 255. */
-export const GRID_COLOR: readonly [number, number, number] = [255, 154, 60];
+/**
+ * The colour of a grid line over a dark background, red, green and blue from 0 to 255.
+ * It is a cyan, which no other part of the frame carries: the star field, the nebulae
+ * and the region boundary band are all warm.
+ */
+export const GRID_COLOR: readonly [number, number, number] = [96, 214, 224];
+
+/**
+ * The colour of a grid line over the brightest background. It is the same hue, deep
+ * enough to stand below the tone-mapped core.
+ *
+ * By the Rec.709 weights the map uses everywhere, the light colour has a luminance of
+ * 0.744 and this one has 0.254. The core reads about 0.93 after the tone map and the
+ * dark space between the arms about 0.05, so the light end stands above a dark
+ * background by 0.69 and the deep end stands below a bright one by 0.68. One line reads
+ * at both ends of the picture.
+ */
+export const GRID_COLOR_DEEP: readonly [number, number, number] = [16, 74, 120];
 
 /** The background luminance below which the grid keeps all of itself. */
 export const GRID_BG_LOW = 0.08;
@@ -60,20 +76,29 @@ export const GRID_BG_LOW = 0.08;
 /** The background luminance at which the merge is complete. */
 export const GRID_BG_HIGH = 0.55;
 
-/** How much of a line's alpha is left over the brightest background. */
-export const GRID_LINE_MERGE_FLOOR = 0.3;
+/**
+ * How much of a line's alpha is left over the brightest background. The floor is not
+ * zero and it is well above it: a grid the user cannot find over the core is not a
+ * coordinate grid. 0.55 of the bold level's 0.45 alpha is 0.248, on a line that carries
+ * a luminance contrast of 0.68 as well.
+ */
+export const GRID_LINE_MERGE_FLOOR = 0.55;
+
+/**
+ * The colour of a coordinate label over a dark background, red, green and blue from 0 to
+ * 255. It is lighter than the line's, because text needs more contrast than a line.
+ */
+export const GRID_LABEL_COLOR: readonly [number, number, number] = [140, 235, 240];
+
+/** The colour of a coordinate label over the brightest background. */
+export const GRID_LABEL_COLOR_DEEP: readonly [number, number, number] = [20, 88, 140];
 
 /**
  * How much of a label's opacity is left over the brightest background. It is above the
- * line's floor because text needs more contrast than a line to stay readable.
+ * line's floor because text needs more contrast than a line to stay readable. A label
+ * and the line it sits on therefore recede together, and the label keeps more of itself.
  */
-export const GRID_LABEL_MERGE_FLOOR = 0.45;
-
-/** How far a line's colour moves toward the background over the brightest background. */
-export const GRID_LINE_TINT_MAX = 0.6;
-
-/** How far a label's colour moves toward the background, which is less than a line's. */
-export const GRID_LABEL_TINT_MAX = 0.35;
+export const GRID_LABEL_MERGE_FLOOR = 0.75;
 
 /** The smooth step of `smoothstep(low, high, value)`. */
 export function smoothStep(low: number, high: number, value: number): number {
@@ -97,12 +122,27 @@ export function gridBackgroundWeight(luminance: number, floor: number): number {
 }
 
 /**
- * How far the grid's colour moves toward the background's own colour, from 0 to
- * `maximum`. Over the bright core a line takes most of the background's hue, so it
- * reads as a change of brightness in the picture and not as a foreign orange stripe.
+ * The colour the grid draws with over a background of this luminance, between a light
+ * colour and a deep one of the same hue. The mix runs over the same band as the weight
+ * above, so one background reading moves both.
+ *
+ * The colour SHALL NOT move toward the background's own colour. The rule this replaces
+ * mixed the line 60 per cent toward it, so over the cream core an orange line became a
+ * warm dim stripe that carried neither hue contrast nor luminance contrast. The grid was
+ * then least readable where a user needs it most.
  */
-export function gridBackgroundTint(luminance: number, maximum: number): number {
-  return maximum * smoothStep(GRID_BG_LOW, GRID_BG_HIGH, luminance);
+export function gridBackgroundColour(
+  luminance: number,
+  light: readonly [number, number, number],
+  deep: readonly [number, number, number],
+): [number, number, number] {
+  const merge = smoothStep(GRID_BG_LOW, GRID_BG_HIGH, luminance);
+  const mix = (from: number, to: number): number => from + (to - from) * merge;
+  return [
+    mix(light[0] as number, deep[0] as number),
+    mix(light[1] as number, deep[1] as number),
+    mix(light[2] as number, deep[2] as number),
+  ];
 }
 
 /**
@@ -164,15 +204,28 @@ export function gridDistanceFade(distance: number, spacing: number): number {
 }
 
 /**
- * The level the coordinate labels sit on: the smallest level whose spacing on the screen
- * at the cursor is at least 400 CSS pixels. At 1,080 CSS rows that is 1,000 light years
- * over the zoom band from 234 to 2,337 light years.
+ * The two levels a coordinate label sits on, in light years, in rising order. The six
+ * decade levels draw lines and only these two carry numbers: a coordinate label is a tool
+ * for reading a neighbourhood, and above 1,000 light years a whole multiple carries no
+ * reading a user acts on.
+ */
+export const GRID_LABEL_LEVELS: readonly number[] = [100, 1000];
+
+/**
+ * The level the coordinate labels sit on: 100 light years while the 100 light year
+ * level's spacing on the screen at the cursor is at least 400 CSS pixels, and 1,000 light
+ * years otherwise. At 1,080 CSS rows and a 60 degree vertical field of view that gives
+ * 100 light years at a zoom of 233.8 light years and nearer, and 1,000 above it.
+ *
+ * No other level ever carries a number. From a zoom of about 300 to about 900 light years
+ * the level is 1,000 light years, whose crossings sit further apart than the frame is
+ * wide, so a cursor away from a crossing sees no coordinate label. The reach rule of
+ * `src/app/grid-labels.ts` would take those labels anyway.
  */
 export function gridLabelLevel(focalCss: number, distance: number): number {
-  for (const level of GRID_LEVELS) {
-    if (gridScreenSpacing(focalCss, distance, level) >= GRID_LABEL_CSS) return level;
-  }
-  return GRID_LEVELS[GRID_LEVELS.length - 1] as number;
+  const fine = GRID_LABEL_LEVELS[0] as number;
+  const coarse = GRID_LABEL_LEVELS[1] as number;
+  return gridScreenSpacing(focalCss, distance, fine) >= GRID_LABEL_CSS ? fine : coarse;
 }
 
 /**
@@ -259,7 +312,8 @@ export function createGridProgram(gl: WebGL2RenderingContext): Program {
     'uBoundsX',
     'uBoundsZ',
     'uPixelRatio',
-    'uColor',
+    'uColorLight',
+    'uColorDeep',
     'uWidthRange',
     'uAlphaRange',
     'uBoldRange',
@@ -269,7 +323,6 @@ export function createGridProgram(gl: WebGL2RenderingContext): Program {
     'uBackground',
     'uMergeRange',
     'uMergeFloor',
-    'uTintMax',
     'uSpacing[0]',
     'uPhase[0]',
   ]);
@@ -323,7 +376,7 @@ export function createGridPass(
       );
       gl.uniform1f(program.uniforms['uPixelRatio'] ?? null, frame.pixelRatio);
       gl.uniform3f(
-        program.uniforms['uColor'] ?? null,
+        program.uniforms['uColorLight'] ?? null,
         GRID_COLOR[0] / 255,
         GRID_COLOR[1] / 255,
         GRID_COLOR[2] / 255,
@@ -356,8 +409,13 @@ export function createGridPass(
       gl.bindTexture(gl.TEXTURE_2D, frame.background);
       gl.uniform1i(program.uniforms['uBackground'] ?? null, 0);
       gl.uniform2f(program.uniforms['uMergeRange'] ?? null, GRID_BG_LOW, GRID_BG_HIGH);
+      gl.uniform3f(
+        program.uniforms['uColorDeep'] ?? null,
+        GRID_COLOR_DEEP[0] / 255,
+        GRID_COLOR_DEEP[1] / 255,
+        GRID_COLOR_DEEP[2] / 255,
+      );
       gl.uniform1f(program.uniforms['uMergeFloor'] ?? null, GRID_LINE_MERGE_FLOOR);
-      gl.uniform1f(program.uniforms['uTintMax'] ?? null, GRID_LINE_TINT_MAX);
       gl.uniform1fv(program.uniforms['uSpacing[0]'] ?? null, spacings);
       gl.uniform2fv(program.uniforms['uPhase[0]'] ?? null, phases);
 

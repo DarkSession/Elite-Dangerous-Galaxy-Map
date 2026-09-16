@@ -3,23 +3,16 @@ import type { RegionLines } from '../scene-data/types';
 import {
   createRegionPass,
   createRegionPrograms,
-  REGION_BLUR_MAX_RADIUS_CSS,
-  REGION_BLUR_MIN_SIGMA_CSS,
-  REGION_CELL_LY,
-  REGION_CLOSE_FULL,
-  REGION_CLOSE_NONE,
+  REGION_BAND_HALF_WIDTH_MAX_CSS,
+  REGION_BAND_HALF_WIDTH_MIN_CSS,
+  REGION_BAND_HALF_WIDTH_SHARE,
   REGION_FADE_IN_FAR,
   REGION_FADE_IN_NEAR,
   REGION_LINE_OPACITY,
-  REGION_LINE_WIDTH_CSS,
   REGION_RANGE_FULL,
   REGION_RANGE_NONE,
   REGION_TONE,
-  regionBlurKernel,
-  regionBlurPeak,
-  regionBlurRadiusCss,
-  regionBlurSigma,
-  regionBlurTaps,
+  regionBandHalfWidthCss,
   regionFade,
 } from './region-pass';
 import type { RegionPassFrame, RegionPrograms } from './region-pass';
@@ -119,12 +112,10 @@ function fakePrograms(): RegionPrograms {
       'uTargetSize',
       'uHalfWidth',
     ]),
-    blur: fakeProgram(['uCoverage', 'uStep', 'uTaps', 'uWeights']),
     composite: fakeProgram([
       'uCoverage',
       'uTone',
       'uOpacity',
-      'uPeak',
       'uInverseViewProjection',
       'uPlaneY',
       'uRangeNone',
@@ -148,8 +139,6 @@ const FRAME: RegionPassFrame = {
   chunkOffset: [0, 0, 0] as const,
   fade: 1,
   pixelRatio: 1,
-  focalCss: 935.3074361,
-  distance: 12000,
   traced: false,
 };
 
@@ -178,14 +167,14 @@ describe('the region overlay zoom fade', () => {
 
   test('draws in full at 20,000 light years and below', () => {
     expect(regionFade(REGION_FADE_IN_NEAR)).toBe(1);
-    expect(regionFade(REGION_CLOSE_FULL)).toBe(1);
+    expect(regionFade(10000)).toBe(1);
     expect(regionFade(15000)).toBe(1);
   });
 
-  test('holds the close zoom band no longer', () => {
+  test('holds no close zoom band', () => {
     // The range fade in the composite shader holds the close end, per pixel, so a
     // close zoom keeps the lines near the horizon and the zoom rule takes none away.
-    expect(regionFade(REGION_CLOSE_NONE)).toBe(1);
+    expect(regionFade(5000)).toBe(1);
     expect(regionFade(4000)).toBe(1);
     expect(regionFade(500)).toBe(1);
     expect(regionFade(7500)).toBe(1);
@@ -201,12 +190,12 @@ describe('the region overlay zoom fade', () => {
 });
 
 describe('the region overlay range fade', () => {
-  test('takes its own two constants and not the label band', () => {
+  test('holds the two figures the owner kept', () => {
+    // The two do not move in this change. They hold the overlay off a camera that is
+    // inside the boundary rather than looking at it, and the band's width rests on
+    // them: the largest cell that can draw is the cell at 10,000 light years.
     expect(REGION_RANGE_NONE).toBe(10000);
     expect(REGION_RANGE_FULL).toBe(20000);
-    // The label band is the zoom band the region labels hold, and it is not this one.
-    expect(REGION_RANGE_NONE).not.toBe(REGION_CLOSE_NONE);
-    expect(REGION_RANGE_FULL).not.toBe(REGION_CLOSE_FULL);
   });
 
   test('the composite shader reads the range of the plane point', () => {
@@ -311,7 +300,6 @@ describe('the boundary band', () => {
   test('gives the ribbon quad the same half width the ramp divides by', () => {
     // The quad reaches the half width on each side of the segment and the ramp divides
     // the gap by the same uniform, so the quad covers the whole ramp and cuts none of it.
-    expect(REGION_LINE_WIDTH_CSS).toBe(6);
     expect(ribbonVertexSource).toContain('sideways * aCorner.y * uHalfWidth');
     expect(ribbonFragmentSource).toContain('1.0 - gap / uHalfWidth');
 
@@ -324,11 +312,48 @@ describe('the boundary band', () => {
     );
     pass.draw({ ...FRAME, pixelRatio: 1 });
     pass.draw({ ...FRAME, pixelRatio: 2 });
-    // The uniform is in device pixels, so it follows the display.
-    expect(uniformValues(context, 'uniform1f', 'uHalfWidth')).toEqual([
-      REGION_LINE_WIDTH_CSS / 2,
-      (REGION_LINE_WIDTH_CSS / 2) * 2,
-    ]);
+    // The half width follows the viewport in CSS pixels and the uniform is in device
+    // pixels. At a ratio of 1 the buffer is 720 CSS rows, which gives 11.52. At a ratio
+    // of 2 it is 360 CSS rows, where the floor of 8 acts, and 8 CSS pixels are 16
+    // device pixels.
+    expect(uniformValues(context, 'uniform1f', 'uHalfWidth')).toEqual([11.52, 16]);
+  });
+});
+
+describe('the band half width', () => {
+  test('is 1.6 per cent of the viewport height, held between 8 and 24', () => {
+    expect(REGION_BAND_HALF_WIDTH_SHARE).toBe(0.016);
+    expect(REGION_BAND_HALF_WIDTH_MIN_CSS).toBe(8);
+    expect(REGION_BAND_HALF_WIDTH_MAX_CSS).toBe(24);
+    expect(regionBandHalfWidthCss(1080)).toBeCloseTo(17.28, 12);
+    expect(regionBandHalfWidthCss(720)).toBeCloseTo(11.52, 12);
+    // The floor acts at 500 CSS rows and below, and the ceiling at 1,500 and above.
+    expect(regionBandHalfWidthCss(360)).toBe(8);
+    expect(regionBandHalfWidthCss(500)).toBe(8);
+    expect(regionBandHalfWidthCss(2160)).toBe(24);
+    expect(regionBandHalfWidthCss(1500)).toBe(24);
+  });
+
+  test('gives the whole band the stated widths', () => {
+    // The whole band is twice the half width: 34.56 CSS pixels at 1,080 rows, 23.04 at
+    // 720 and 16 at 360.
+    expect(2 * regionBandHalfWidthCss(1080)).toBeCloseTo(34.56, 12);
+    expect(2 * regionBandHalfWidthCss(720)).toBeCloseTo(23.04, 12);
+    expect(2 * regionBandHalfWidthCss(360)).toBe(16);
+  });
+
+  test('takes the floor at a viewport of no height', () => {
+    expect(regionBandHalfWidthCss(0)).toBe(8);
+    expect(regionBandHalfWidthCss(Number.NaN)).toBe(8);
+  });
+
+  test('never falls as the viewport grows', () => {
+    let before = 0;
+    for (let rows = 100; rows <= 3000; rows += 50) {
+      const reading = regionBandHalfWidthCss(rows);
+      expect(reading).toBeGreaterThanOrEqual(before);
+      before = reading;
+    }
   });
 });
 
@@ -347,24 +372,20 @@ describe('the coverage buffer', () => {
     expect(pass.coverageSize()).toBeNull();
     expect(context.of('texImage2D')).toHaveLength(0);
 
-    // `simplified` never blurs, so one target takes storage and the ping-pong pair the
-    // blur reads and writes takes none.
+    // The pass holds one full-resolution target in both modes, where it held three.
     pass.draw(FRAME);
     expect(pass.coverageSize()).toEqual([1280, 720]);
     expect(context.of('texImage2D')).toHaveLength(1);
 
-    // The traced set at this zoom blurs, so the pair takes its storage here.
     pass.draw({ ...FRAME, traced: true });
     const first = context.of('texImage2D');
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(1);
     for (const call of first) {
       expect([call.args[3], call.args[4]]).toEqual([1280, 720]);
       // One channel: the coverage alone, now that the near fade is gone.
       expect(call.args[2]).toBe(context.gl.R8);
       expect(call.args[6]).toBe(context.gl.RED);
     }
-    // The blur steps one CSS pixel, which is not a whole texel above a ratio of 1, so
-    // every target filters linearly.
     const filters = context
       .of('texParameteri')
       .filter(
@@ -372,24 +393,24 @@ describe('the coverage buffer', () => {
           call.args[1] === context.gl.TEXTURE_MIN_FILTER ||
           call.args[1] === context.gl.TEXTURE_MAG_FILTER,
       );
-    expect(filters).toHaveLength(6);
+    expect(filters).toHaveLength(2);
     for (const call of filters) expect(call.args[2]).toBe(context.gl.LINEAR);
 
     context.setDrawingBuffer(1920, 1080);
     pass.draw({ ...FRAME, traced: true });
     expect(pass.coverageSize()).toEqual([1920, 1080]);
     const second = context.of('texImage2D');
-    expect(second).toHaveLength(6);
-    for (const call of second.slice(3)) {
-      expect([call.args[3], call.args[4]]).toEqual([1920, 1080]);
-    }
+    expect(second).toHaveLength(2);
+    expect([(second[1] as Call).args[3], (second[1] as Call).args[4]]).toEqual([
+      1920, 1080,
+    ]);
 
     // A draw at an unchanged size takes no new storage.
     pass.draw({ ...FRAME, traced: true });
-    expect(context.of('texImage2D')).toHaveLength(6);
+    expect(context.of('texImage2D')).toHaveLength(2);
   });
 
-  test('gives the blur pair no storage in the mode that never blurs', () => {
+  test('holds one target in every mode and at every zoom', () => {
     const context = fakeContext(1280, 720);
     const pass = createRegionPass(
       context.gl,
@@ -397,11 +418,8 @@ describe('the coverage buffer', () => {
       twoChains(),
       {} as WebGLVertexArrayObject,
     );
-
-    // `simplified` is the mode the map starts in, and it blurs at no zoom. A run of
-    // draws in it therefore holds one full-resolution target and not three.
-    for (const distance of [20000, 12000, 8000, 6000]) {
-      pass.draw({ ...FRAME, distance });
+    for (const traced of [false, true]) {
+      pass.draw({ ...FRAME, traced });
     }
     expect(context.of('texImage2D')).toHaveLength(1);
   });
@@ -426,116 +444,38 @@ describe('the coverage buffer', () => {
   });
 });
 
-/** The focal length of a frame, in CSS pixels, at a height in CSS rows. */
-function focalOf(rows: number): number {
-  return rows / 2 / Math.tan(Math.PI / 6);
-}
-
-/** A frame at a height and a zoom distance. */
-function frameAt(rows: number, distance: number, traced = true): RegionPassFrame {
-  return { ...FRAME, focalCss: focalOf(rows), distance, traced };
-}
-
-/** The blur radius the pass reads from a frame. */
-function radiusOf(frame: RegionPassFrame): number {
-  return regionBlurRadiusCss(frame.focalCss, frame.distance, frame.traced);
-}
-
-describe('the blur radius', () => {
-  test('is the region grid cell on the screen, capped at 8 CSS pixels', () => {
-    expect(focalOf(1080)).toBeCloseTo(935.31, 2);
-    expect(radiusOf(frameAt(1080, 12000))).toBeCloseTo(3.85, 2);
-    expect(radiusOf(frameAt(1080, 20000))).toBeCloseTo(2.31, 2);
-    expect(radiusOf(frameAt(1080, 30000))).toBeCloseTo(1.54, 2);
-    // The cell at 10,000 light years is 9.23 CSS pixels at 2,160 rows, so the cap acts
-    // there and at no smaller height.
-    expect(radiusOf(frameAt(2160, 10000))).toBe(REGION_BLUR_MAX_RADIUS_CSS);
-    expect(radiusOf(frameAt(2160, 4000))).toBe(REGION_BLUR_MAX_RADIUS_CSS);
-  });
-
-  test('reads the cursor with a floor at 10,000 light years', () => {
-    // The range fade draws no line nearer than 10,000 light years, so the largest
-    // staircase a close frame can hold is the cell at that range.
-    const floored = radiusOf(frameAt(1080, REGION_RANGE_NONE));
-    expect(floored).toBeCloseTo(4.62, 2);
-    for (const distance of [9000, 8000, 5000, 4000, 1000, 10]) {
-      expect(radiusOf(frameAt(1080, distance))).toBe(floored);
-    }
-    // Above the floor the radius follows the cursor.
-    expect(radiusOf(frameAt(1080, 12000))).toBeLessThan(floored);
-  });
-
-  test('is smaller at 720 rows, where the buffer is shorter', () => {
-    expect(focalOf(720)).toBeCloseTo(623.54, 2);
-    expect(radiusOf(frameAt(720, REGION_RANGE_NONE))).toBeCloseTo(3.08, 2);
-    expect(radiusOf(frameAt(720, 4000))).toBeCloseTo(3.08, 2);
-    expect(radiusOf(frameAt(720, 12000))).toBeCloseTo(2.56, 2);
-    // The cap never acts at this height: the floored radius is its largest and it is
-    // well under 8 CSS pixels.
-    expect(radiusOf(frameAt(720, REGION_RANGE_NONE))).toBeLessThan(
-      REGION_BLUR_MAX_RADIUS_CSS,
-    );
-  });
-
-  test('blurs in accurate at every zoom the overlay draws at', () => {
-    for (const rows of [2160, 1080, 720]) {
-      for (const distance of [4000, 7500, 10000, 15000, 20000, 29000]) {
-        expect(radiusOf(frameAt(rows, distance))).toBeGreaterThan(0);
-      }
+describe('the pass no longer blurs', () => {
+  test('no source of the overlay names a blur or a normalisation', () => {
+    for (const source of [ribbonVertexSource, ribbonFragmentSource, compositeSource]) {
+      expect(source).not.toContain('uPeak');
+      expect(source).not.toContain('blur');
     }
   });
 
-  test('never blurs in the simplified mode', () => {
-    for (const distance of [5000, 8000, 10000, 20000]) {
-      expect(radiusOf(frameAt(1080, distance, false))).toBe(0);
-      expect(regionBlurPeak(radiusOf(frameAt(1080, distance, false)), 3)).toBe(1);
-    }
-  });
-});
-
-describe('the kernel standard deviation', () => {
-  test('is a third of the radius, with a floor of one CSS pixel', () => {
-    expect(REGION_BLUR_MIN_SIGMA_CSS).toBe(1);
-    expect(regionBlurSigma(REGION_BLUR_MAX_RADIUS_CSS)).toBeCloseTo(2.667, 3);
-    expect(regionBlurSigma(4.62)).toBeCloseTo(1.54, 3);
-    expect(regionBlurSigma(3)).toBe(1);
-    expect(regionBlurSigma(2.99)).toBe(1);
-    expect(regionBlurSigma(0.5)).toBe(1);
-  });
-
-  test('gives 7 taps at the floor and 17 at the cap', () => {
-    expect(regionBlurTaps(REGION_BLUR_MAX_RADIUS_CSS)).toBe(17);
-    expect(regionBlurTaps(3)).toBe(7);
-    expect(regionBlurTaps(2.99)).toBe(7);
-    expect(regionBlurTaps(0.5)).toBe(7);
-    for (const radius of [0.5, 1.5, 2.99, 3, 3.85, 4.62, 5.77, 8]) {
-      expect(regionBlurTaps(radius)).toBeLessThanOrEqual(17);
-    }
+  test('the composite program declares no peak uniform', () => {
+    const names: string[] = [];
+    const gl = {
+      createShader: () => ({}),
+      shaderSource: () => undefined,
+      compileShader: () => undefined,
+      createProgram: () => ({}),
+      attachShader: () => undefined,
+      linkProgram: () => undefined,
+      getProgramParameter: () => true,
+      getShaderParameter: () => true,
+      deleteShader: () => undefined,
+      getUniformLocation: (_program: unknown, name: string) => {
+        names.push(name);
+        return {};
+      },
+    } as unknown as WebGL2RenderingContext;
+    createRegionPrograms(gl);
+    expect(names).not.toContain('uPeak');
+    expect(names).not.toContain('uWeights');
+    expect(names).not.toContain('uTaps');
   });
 
-  test('gives one kernel for every radius the floor acts at', () => {
-    const atThree = regionBlurKernel(3);
-    for (const radius of [0.5, 1.5, 2.99]) {
-      expect(regionBlurKernel(radius)).toEqual(atThree);
-    }
-  });
-});
-
-describe('the blur kernel', () => {
-  /** A frame whose region grid cell on the screen is one radius. */
-  function frameOfRadius(radiusCss: number, pixelRatio: number): RegionPassFrame {
-    return {
-      ...FRAME,
-      traced: true,
-      pixelRatio,
-      // The radius reads the range with a floor of 10,000 light years, so the frame
-      // sits at the floor and the focal length is what gives the radius.
-      distance: REGION_RANGE_NONE,
-      focalCss: (radiusCss * REGION_RANGE_NONE) / REGION_CELL_LY,
-    };
-  }
-
-  function drewWith(frame: RegionPassFrame): FakeContext {
+  test('draws the full-screen quad once, which is the composite alone', () => {
     const context = fakeContext(1280, 720);
     const pass = createRegionPass(
       context.gl,
@@ -543,486 +483,17 @@ describe('the blur kernel', () => {
       twoChains(),
       {} as WebGLVertexArrayObject,
     );
-    pass.draw(frame);
-    return context;
-  }
-
-  test('holds two taps per CSS pixel of the radius and one in the middle', () => {
-    const counts: readonly (readonly [number, number])[] = [
-      [3, 7],
-      [3.85, 9],
-      [4.62, 11],
-      [5.77, 13],
-      [8, 17],
-    ];
-    for (const [radiusCss, taps] of counts) {
-      expect(regionBlurTaps(radiusCss)).toBe(taps);
-      // The step is one CSS pixel, so the display does not change the count.
-      for (const pixelRatio of [1, 2]) {
-        const context = drewWith(frameOfRadius(radiusCss, pixelRatio));
-        const kernels = uniformValues(context, 'uniform1fv', 'uWeights') as number[][];
-        // One pass on each axis, so the pass gives the kernel twice.
-        expect(kernels).toHaveLength(2);
-        for (const kernel of kernels) expect(kernel).toHaveLength(taps);
-        expect(uniformValues(context, 'uniform1i', 'uTaps')).toEqual([taps, taps]);
-      }
-    }
-    expect(regionBlurTaps(REGION_BLUR_MAX_RADIUS_CSS)).toBe(17);
-  });
-
-  test('sums to 1', () => {
-    for (const radiusCss of [3, 3.85, 4.62, 5.77, 8]) {
-      const total = regionBlurKernel(radiusCss).reduce(
-        (sum, weight) => sum + weight,
-        0,
-      );
-      expect(Math.abs(total - 1)).toBeLessThan(1e-6);
-    }
-  });
-
-  test('steps one CSS pixel on one axis at a time', () => {
-    for (const pixelRatio of [1, 2]) {
-      const context = drewWith(frameOfRadius(8, pixelRatio));
-      const steps = context.of('uniform2f').filter((call) => call.args[0] === 'uStep');
-      expect(steps).toHaveLength(2);
-      expect((steps[0] as Call).args.slice(1)).toEqual([pixelRatio / 1280, 0]);
-      expect((steps[1] as Call).args.slice(1)).toEqual([0, pixelRatio / 720]);
-    }
-  });
-});
-
-describe('the blur normalisation', () => {
-  /** Half the width of the whole band, which is the ramp's own denominator. */
-  const HALF_WIDTH_CSS = REGION_LINE_WIDTH_CSS / 2;
-
-  test('is the kernel own response at the ridge', () => {
-    const readings: readonly (readonly [number, number])[] = [
-      [3.0, 0.758],
-      [3.85, 0.679],
-      [4.62, 0.613],
-      [5.77, 0.53],
-      [8.0, 0.411],
-    ];
-    for (const [radiusCss, wanted] of readings) {
-      const peak = regionBlurPeak(radiusCss, HALF_WIDTH_CSS);
-      expect(Math.abs(peak - wanted)).toBeLessThan(0.005);
-    }
-  });
-
-  test('is 1 in the simplified mode, which never blurs', () => {
-    expect(regionBlurPeak(0, HALF_WIDTH_CSS)).toBe(1);
-    // Every radius above 0 blurs, and the floor holds the ones under 3 CSS pixels at
-    // the kernel the radius of 3 gives.
-    expect(regionBlurPeak(2.9, HALF_WIDTH_CSS)).toBeCloseTo(
-      regionBlurPeak(3, HALF_WIDTH_CSS),
-      12,
-    );
-  });
-
-  test('reaches the composite as uPeak', () => {
-    const context = fakeContext(1280, 720);
-    const pass = createRegionPass(
-      context.gl,
-      fakePrograms(),
-      twoChains(),
-      {} as WebGLVertexArrayObject,
-    );
-    pass.draw(frameAt(1080, 10000));
-    pass.draw(frameAt(1080, 20000));
-    // The simplified mode draws no blur, so its normalisation is 1.
-    pass.draw(frameAt(1080, 20000, false));
-    const given = uniformValues(context, 'uniform1f', 'uPeak') as number[];
-    expect(given).toHaveLength(3);
-    for (const index of [0, 1]) {
-      const distance = index === 0 ? 10000 : 20000;
-      expect(given[index] as number).toBeCloseTo(
-        regionBlurPeak(radiusOf(frameAt(1080, distance)), HALF_WIDTH_CSS),
-        12,
-      );
-      expect(given[index] as number).toBeLessThan(1);
-    }
-    expect(given[2]).toBe(1);
-  });
-});
-
-// The readings of the blurred band, on a sampled coverage field.
-//
-// The field is the pass's own ramp, point-sampled on a grid of device pixels at a ratio
-// of 1, and the blur is the pass's own kernel run on each axis. The tests below read the
-// same field the shaders read, so the table they hold to is a reading of the rule and not
-// of a second copy of it.
-
-/** Half the side of the sampled field, in device pixels. */
-const FIELD_REACH = 34;
-
-/** How many samples one side of the field holds. */
-const FIELD_SIDE = FIELD_REACH * 2 + 1;
-
-/** How far each arm of a sampled line runs from the origin, in CSS pixels. */
-const ARM_CSS = 28;
-
-/** One straight part of a sampled line, as its two ends. */
-type Segment = readonly [number, number, number, number];
-
-/** A straight line through the origin. */
-const STRAIGHT_LINE: readonly Segment[] = [[0, -ARM_CSS, 0, ARM_CSS]];
-
-/** A line that turns by 90 degrees at the origin. */
-const CORNER_LINE: readonly Segment[] = [
-  [0, -ARM_CSS, 0, 0],
-  [0, 0, ARM_CSS, 0],
-];
-
-/** How far a point sits from a segment, in CSS pixels. */
-function gapToSegment(x: number, y: number, segment: Segment): number {
-  const alongX = segment[2] - segment[0];
-  const alongY = segment[3] - segment[1];
-  const span = alongX * alongX + alongY * alongY;
-  let part =
-    span === 0 ? 0 : ((x - segment[0]) * alongX + (y - segment[1]) * alongY) / span;
-  part = Math.min(1, Math.max(0, part));
-  return Math.hypot(x - (segment[0] + part * alongX), y - (segment[1] + part * alongY));
-}
-
-/** The coverage the ribbon step writes at one point. */
-function coverageAt(x: number, y: number, line: readonly Segment[]): number {
-  let nearest = Number.POSITIVE_INFINITY;
-  for (const segment of line) nearest = Math.min(nearest, gapToSegment(x, y, segment));
-  return Math.max(0, 1 - nearest / (REGION_LINE_WIDTH_CSS / 2));
-}
-
-/**
- * The coverage of a line, point-sampled on the device pixel grid. The phase moves the
- * line between two samples, from 0, where a sample sits on the line, up to 1.
- */
-function coverageField(line: readonly Segment[], phase: number): Float64Array {
-  const field = new Float64Array(FIELD_SIDE * FIELD_SIDE);
-  for (let row = 0; row < FIELD_SIDE; row += 1) {
-    for (let column = 0; column < FIELD_SIDE; column += 1) {
-      field[row * FIELD_SIDE + column] = coverageAt(
-        column - FIELD_REACH + phase,
-        row - FIELD_REACH + phase,
-        line,
-      );
-    }
-  }
-  return field;
-}
-
-/** Blurs a field along each axis, with the pass's own kernel. */
-function blurField(field: Float64Array, radiusCss: number): Float64Array {
-  if (!(radiusCss > 0)) return field.slice();
-  const weights = regionBlurKernel(radiusCss);
-  const middle = (weights.length - 1) / 2;
-  const held = (at: number): number => Math.min(FIELD_SIDE - 1, Math.max(0, at));
-  const first = new Float64Array(field.length);
-  for (let row = 0; row < FIELD_SIDE; row += 1) {
-    for (let column = 0; column < FIELD_SIDE; column += 1) {
-      let sum = 0;
-      for (let tap = 0; tap < weights.length; tap += 1) {
-        sum +=
-          (weights[tap] as number) *
-          (field[row * FIELD_SIDE + held(column + tap - middle)] as number);
-      }
-      first[row * FIELD_SIDE + column] = sum;
-    }
-  }
-  const second = new Float64Array(field.length);
-  for (let row = 0; row < FIELD_SIDE; row += 1) {
-    for (let column = 0; column < FIELD_SIDE; column += 1) {
-      let sum = 0;
-      for (let tap = 0; tap < weights.length; tap += 1) {
-        sum +=
-          (weights[tap] as number) *
-          (first[held(row + tap - middle) * FIELD_SIDE + column] as number);
-      }
-      second[row * FIELD_SIDE + column] = sum;
-    }
-  }
-  return second;
-}
-
-/** Reads a field at a point of the screen, the way a linear filter reads it. */
-function readField(field: Float64Array, phase: number, x: number, y: number): number {
-  const atX = x + FIELD_REACH - phase;
-  const atY = y + FIELD_REACH - phase;
-  const column = Math.floor(atX);
-  const row = Math.floor(atY);
-  const partX = atX - column;
-  const partY = atY - row;
-  const value = (oneColumn: number, oneRow: number): number => {
-    const heldColumn = Math.min(FIELD_SIDE - 1, Math.max(0, oneColumn));
-    const heldRow = Math.min(FIELD_SIDE - 1, Math.max(0, oneRow));
-    return field[heldRow * FIELD_SIDE + heldColumn] as number;
-  };
-  return (
-    value(column, row) * (1 - partX) * (1 - partY) +
-    value(column + 1, row) * partX * (1 - partY) +
-    value(column, row + 1) * (1 - partX) * partY +
-    value(column + 1, row + 1) * partX * partY
-  );
-}
-
-/**
- * How far along a ray the field falls to a level, in CSS pixels. This is one point of the
- * contour of that level.
- */
-function contourAlong(
-  field: Float64Array,
-  phase: number,
-  from: readonly [number, number],
-  toward: readonly [number, number],
-  level: number,
-): number {
-  const step = 0.02;
-  let before = readField(field, phase, from[0], from[1]);
-  for (let at = step; at <= 16; at += step) {
-    const value = readField(
-      field,
-      phase,
-      from[0] + toward[0] * at,
-      from[1] + toward[1] * at,
-    );
-    if (before >= level && value < level) {
-      return at - step + (step * (before - level)) / (before - value);
-    }
-    before = value;
-  }
-  return Number.NaN;
-}
-
-/** The peak and the half maximum width of the row of samples across a straight run. */
-function rowReading(field: Float64Array): { peak: number; widthCss: number } {
-  const row: number[] = [];
-  for (let column = 0; column < FIELD_SIDE; column += 1) {
-    row.push(field[FIELD_REACH * FIELD_SIDE + column] as number);
-  }
-  const peak = Math.max(...row);
-  const at = row.indexOf(peak);
-  const edge = (step: number): number => {
-    let inside = at;
-    while ((row[inside + step] as number) >= peak / 2) inside += step;
-    const outside = inside + step;
-    return (
-      inside +
-      (step * ((row[inside] as number) - peak / 2)) /
-        ((row[inside] as number) - (row[outside] as number))
-    );
-  };
-  return { peak, widthCss: edge(1) - edge(-1) };
-}
-
-/** What one radius gives over the phases, as the least and the largest of each reading. */
-interface BlurReadings {
-  readonly peak: readonly [number, number];
-  readonly widthCss: readonly [number, number];
-  readonly normalisedPeak: readonly [number, number];
-  readonly cornerDeparture: readonly [number, number];
-  readonly straightDeparture: readonly [number, number];
-}
-
-/** How many phases of the line the readings run over. */
-const PHASE_COUNT = 12;
-
-function readBlur(radiusCss: number): BlurReadings {
-  const peaks: number[] = [];
-  const widths: number[] = [];
-  const normalised: number[] = [];
-  const corners: number[] = [];
-  const straights: number[] = [];
-  const normalisation = regionBlurPeak(radiusCss, REGION_LINE_WIDTH_CSS / 2);
-  const slant = 1 / Math.SQRT2;
-  for (let phase = 0; phase < PHASE_COUNT; phase += 1) {
-    const at = phase / PHASE_COUNT;
-    const straight = blurField(coverageField(STRAIGHT_LINE, at), radiusCss);
-    const reading = rowReading(straight);
-    peaks.push(reading.peak);
-    widths.push(reading.widthCss);
-    normalised.push(reading.peak / normalisation);
-    if (!(radiusCss > 0)) continue;
-
-    // The contour of half the straight run's own peak. Where the line does not turn, it
-    // sits at a fixed distance from the line, which is the half maximum half width.
-    const level = reading.peak / 2;
-    const halfWidth = contourAlong(straight, at, [0, 0], [1, 0], level);
-    const corner = blurField(coverageField(CORNER_LINE, at), radiusCss);
-    // A sharp corner holds the same contour on both sides of the turn: the outside at
-    // the half width from the bend and the inside at the half width from each arm, which
-    // meet at the root of two times it. The blur moves both.
-    const inside = contourAlong(corner, at, [0, 0], [slant, -slant], level);
-    const outside = contourAlong(corner, at, [0, 0], [-slant, slant], level);
-    corners.push(
-      Math.max(
-        Math.abs(inside - Math.SQRT2 * halfWidth),
-        Math.abs(halfWidth - outside),
-      ),
-    );
-    // The same reading along each arm, away from the turn, where the blur must leave the
-    // contour where a straight run puts it.
-    let moved = 0;
-    for (const along of [8, 11, 14, 17]) {
-      for (const side of [1, -1]) {
-        moved = Math.max(
-          moved,
-          Math.abs(contourAlong(corner, at, [0, -along], [side, 0], level) - halfWidth),
-          Math.abs(contourAlong(corner, at, [along, 0], [0, side], level) - halfWidth),
-        );
-      }
-    }
-    straights.push(moved);
-  }
-  const range = (values: number[]): [number, number] => [
-    Math.min(...values),
-    Math.max(...values),
-  ];
-  return {
-    peak: range(peaks),
-    widthCss: range(widths),
-    normalisedPeak: range(normalised),
-    cornerDeparture: radiusCss > 0 ? range(corners) : [0, 0],
-    straightDeparture: radiusCss > 0 ? range(straights) : [0, 0],
-  };
-}
-
-describe('the blur keeps a straight run and rounds a corner', () => {
-  /** The table the requirement states, one row for each radius it names. */
-  const TABLE: readonly {
-    radiusCss: number;
-    normalisation: number;
-    peak: readonly [number, number];
-    widthCss: readonly [number, number];
-  }[] = [
-    { radiusCss: 0, normalisation: 1, peak: [0.83, 1.0], widthCss: [3.0, 3.5] },
-    // The floor on the standard deviation holds every radius under 3 CSS pixels at the
-    // kernel the radius of 3 gives, so these three rows are copies of the 3.00 row.
-    { radiusCss: 0.5, normalisation: 0.758, peak: [0.69, 0.76], widthCss: [3.8, 4.13] },
-    { radiusCss: 1.5, normalisation: 0.758, peak: [0.69, 0.76], widthCss: [3.8, 4.13] },
-    { radiusCss: 2.99, normalisation: 0.758, peak: [0.69, 0.76], widthCss: [3.8, 4.13] },
-    { radiusCss: 3.0, normalisation: 0.758, peak: [0.69, 0.76], widthCss: [3.8, 4.13] },
-    {
-      radiusCss: 3.85,
-      normalisation: 0.679,
-      peak: [0.63, 0.68],
-      widthCss: [4.24, 4.49],
-    },
-    {
-      radiusCss: 4.62,
-      normalisation: 0.613,
-      peak: [0.58, 0.61],
-      widthCss: [4.68, 4.88],
-    },
-    { radiusCss: 5.77, normalisation: 0.53, peak: [0.51, 0.53], widthCss: [5.37, 5.6] },
-    { radiusCss: 8.0, normalisation: 0.411, peak: [0.4, 0.41], widthCss: [6.9, 7.05] },
-  ];
-
-  /** How far a reading of the peak column may sit outside its range. */
-  const PEAK_TOLERANCE = 0.01;
-
-  /** How far a reading of the width column may sit outside its range, in CSS pixels. */
-  const WIDTH_TOLERANCE = 0.05;
-
-  const readings = new Map(
-    TABLE.map((row) => [row.radiusCss, readBlur(row.radiusCss)]),
-  );
-
-  test('reads the peak and the width the table states, over twelve phases', () => {
-    for (const row of TABLE) {
-      const reading = readings.get(row.radiusCss) as BlurReadings;
-      expect(regionBlurPeak(row.radiusCss, REGION_LINE_WIDTH_CSS / 2)).toBeCloseTo(
-        row.normalisation,
-        2,
-      );
-      expect(reading.peak[0]).toBeGreaterThan(row.peak[0] - PEAK_TOLERANCE);
-      expect(reading.peak[1]).toBeLessThan(row.peak[1] + PEAK_TOLERANCE);
-      expect(reading.widthCss[0]).toBeGreaterThan(row.widthCss[0] - WIDTH_TOLERANCE);
-      expect(reading.widthCss[1]).toBeLessThan(row.widthCss[1] + WIDTH_TOLERANCE);
-    }
-  });
-
-  test('holds the normalised peak between 0.91 and 1 at every radius and phase', () => {
-    for (const row of TABLE) {
-      if (row.radiusCss === 0) continue;
-      const reading = readings.get(row.radiusCss) as BlurReadings;
-      expect(reading.normalisedPeak[0]).toBeGreaterThanOrEqual(0.91);
-      // A sample sits on the line at the first phase, and the reading is then the
-      // normalisation itself. The two sums leave a float remainder of about 1e-16.
-      expect(reading.normalisedPeak[1]).toBeLessThanOrEqual(1 + 1e-9);
-    }
-  });
-
-  test('gives the 3.00 row at every radius the floor acts at', () => {
-    const three = readings.get(3) as BlurReadings;
-    for (const radius of [0.5, 1.5, 2.99]) {
-      const reading = readings.get(radius) as BlurReadings;
-      expect(reading.peak[0]).toBeCloseTo(three.peak[0], 3);
-      expect(reading.peak[1]).toBeCloseTo(three.peak[1], 3);
-      expect(reading.widthCss[0]).toBeCloseTo(three.widthCss[0], 3);
-      expect(reading.widthCss[1]).toBeCloseTo(three.widthCss[1], 3);
-      expect(regionBlurPeak(radius, REGION_LINE_WIDTH_CSS / 2)).toBeCloseTo(
-        regionBlurPeak(3, REGION_LINE_WIDTH_CSS / 2),
-        3,
-      );
-    }
-  });
-
-  test('widens the band as the radius grows', () => {
-    // The rows under 3 CSS pixels all draw the 3.00 row, so the sweep starts there.
-    const rows = TABLE.filter((row) => row.radiusCss === 0 || row.radiusCss >= 3);
-    let before = (readings.get(0) as BlurReadings).widthCss[0];
-    for (const row of rows.slice(1)) {
-      const widest = (readings.get(row.radiusCss) as BlurReadings).widthCss[0];
-      expect(widest).toBeGreaterThan(before);
-      before = widest;
-    }
-  });
-
-  test('moves the contour at the corner and leaves the straight run alone', () => {
-    for (const row of TABLE) {
-      if (row.radiusCss === 0) continue;
-      const reading = readings.get(row.radiusCss) as BlurReadings;
-      // The kernel follows the standard deviation, and the floor holds it at 1 CSS
-      // pixel below a radius of 3. The reach the bounds read is therefore the radius
-      // the kernel really draws with, which is 3 for every row under it.
-      const reach = Math.max(row.radiusCss, 3);
-      expect(reading.cornerDeparture[0]).toBeGreaterThanOrEqual(0.2 * reach);
-      expect(reading.cornerDeparture[1]).toBeLessThanOrEqual(1 * reach);
-      expect(reading.straightDeparture[1]).toBeLessThan(0.1 * reach);
-    }
+    pass.draw({ ...FRAME, traced: true });
+    // A blurring pass drew the full-screen triangle three times: one on each axis and
+    // the composite. It now draws it once.
+    expect(context.of('drawArrays')).toHaveLength(1);
   });
 });
 
 describe('the flat top of the band', () => {
-  test('clamps the smoothstep at 1, which a corner reaches past', () => {
-    expect(compositeSource).toContain('texture(uCoverage, vTexture).r / uPeak');
+  test('clamps the smoothstep at 1', () => {
+    expect(compositeSource).toContain('texture(uCoverage, vTexture).r;');
     expect(compositeSource).toContain('smoothstep(0.0, 1.0, coverage)');
-  });
-
-  test('lifts a 90 degree corner above a straight run, by the radius', () => {
-    // The reading is about one CSS pixel inside the turn and not at the apex, which
-    // sits a little under a straight run. The line sits on the sample grid here, which
-    // is the phase the table's own readings take.
-    const ratios: readonly (readonly [number, number])[] = [
-      [3.0, 1.04],
-      [3.85, 1.07],
-      [4.62, 1.1],
-      [5.77, 1.13],
-      [8.0, 1.15],
-    ];
-    for (const [radiusCss, wanted] of ratios) {
-      const straight = blurField(coverageField(STRAIGHT_LINE, 0), radiusCss);
-      const corner = blurField(coverageField(CORNER_LINE, 0), radiusCss);
-      const run = rowReading(straight).peak;
-      let largest = 0;
-      for (let row = 0; row < FIELD_SIDE; row += 1) {
-        for (let column = 0; column < FIELD_SIDE; column += 1) {
-          const x = column - FIELD_REACH;
-          const y = row - FIELD_REACH;
-          if (Math.hypot(x, y) > 8) continue;
-          largest = Math.max(largest, corner[row * FIELD_SIDE + column] as number);
-        }
-      }
-      expect(Math.abs(largest / run - wanted)).toBeLessThan(0.01);
-    }
   });
 });
 

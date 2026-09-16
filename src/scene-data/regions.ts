@@ -87,3 +87,53 @@ export function coarseRegionIdAt(grid: CoarseRegionGrid, x: number, z: number): 
   const iz = coarseCell(grid, z, 1);
   return grid.ids[iz * grid.size + ix] as number;
 }
+
+/**
+ * The byte a cell of the flow field takes when it is the end of a path. A cell that
+ * holds no region takes it, the root cell of each region takes it, and so does a cell
+ * of a region the build's walk never reached.
+ */
+export const REGION_FLOW_END = 8;
+
+/**
+ * The eight steps a byte of the flow field names, clockwise from the `+x` axis with
+ * `x` to the right and `z` upward. Each holds the cell step on the coarse grid, as `x`
+ * then `z`. The step opposite index `k` is index `(k + 4) & 7`, which is what the
+ * build writes when it reaches a cell.
+ */
+export const REGION_FLOW_STEPS: readonly (readonly [number, number])[] = [
+  [1, 0],
+  [1, -1],
+  [0, -1],
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+];
+
+/**
+ * The step the flow field names at a plane point, as a unit vector on the plane, or
+ * null where the field names none. A null is a cell outside the grid, a cell that holds
+ * no region, the root cell of a region, or a cell in a patch the build never reached.
+ *
+ * The caller takes the heading alone. The length of the step is the caller's own, so a
+ * 197.4 light year cell does not decide how far a label moves.
+ */
+export function coarseRegionFlowStepAt(
+  grid: CoarseRegionGrid,
+  flow: Uint8Array,
+  x: number,
+  z: number,
+): readonly [number, number] | null {
+  if (!insideCoarseRegionGrid(grid, x, z)) return null;
+  const ix = coarseCell(grid, x, 0);
+  const iz = coarseCell(grid, z, 1);
+  const byte = flow[iz * grid.size + ix] as number;
+  const step = REGION_FLOW_STEPS[byte];
+  if (step === undefined) return null;
+  // The two axes carry the same cell size, so the cell step and the plane step point
+  // the same way and one normalisation serves both.
+  const length = Math.hypot(step[0], step[1]);
+  return [step[0] / length, step[1] / length] as const;
+}

@@ -609,8 +609,6 @@ export function createRenderer(
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio,
-        focalCss,
-        distance: view.distance,
         traced: regionTraced,
       });
     }
