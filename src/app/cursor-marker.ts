@@ -28,14 +28,58 @@ export const CURSOR_MARKER_RING_STROKE = 4;
 export const CURSOR_MARKER_COLOR = '#3EF8FB';
 
 /**
- * The side of the marker's box on the screen, in CSS pixels. The ring is therefore about
- * 58 CSS pixels across and the arrow tips about 90 apart.
+ * The side of the marker's box on the screen at the near end of the size band, in CSS
+ * pixels. The ring is therefore about 58 CSS pixels across there and the arrow tips
+ * about 90 apart.
  *
  * The size is read on the screen and not in light years because the marker is a control
  * and not a place: a size fixed in light years would fill the frame at a close zoom and
  * vanish at a wide one. The figure was 160 and read as too large at every zoom.
  */
 export const CURSOR_MARKER_SIZE_CSS = 96;
+
+/**
+ * The side of the marker's box at the far end of the size band, in CSS pixels. It holds
+ * the ring at 24 CSS pixels across, which is still a mark a user can find and tap.
+ */
+export const CURSOR_MARKER_SIZE_MIN_CSS = 40;
+
+/**
+ * The camera distance to the cursor at and below which the marker holds its full size,
+ * in light years. It is the distance at which the coordinate grid goes out, so the
+ * marker holds its full size through every view the grid draws in.
+ */
+export const CURSOR_MARKER_NEAR_LY = 12000;
+
+/**
+ * The camera distance at and above which the marker holds its floor, in light years. It
+ * is the start view, where the galaxy disc measures about 1,000 CSS pixels across a
+ * 1,080 row frame: a marker of 96 CSS pixels covered about a tenth of it and read as a
+ * thing of the map rather than as the cursor.
+ */
+export const CURSOR_MARKER_FAR_LY = 60000;
+
+/** The smooth step of `smoothstep(low, high, value)`. */
+function smoothStep(low: number, high: number, value: number): number {
+  const part = Math.min(1, Math.max(0, (value - low) / (high - low)));
+  return part * part * (3 - 2 * part);
+}
+
+/**
+ * The side of the marker's box on the screen, in CSS pixels, at a camera distance to the
+ * cursor. It is 96 at 12,000 light years and nearer, and falls on a smooth step to 40 at
+ * 60,000 and further.
+ *
+ * Both the plane rectangle and the element's own box read the size here, so the two
+ * cannot disagree.
+ */
+export function cursorMarkerSizeCss(distance: number): number {
+  const fall = CURSOR_MARKER_SIZE_CSS - CURSOR_MARKER_SIZE_MIN_CSS;
+  return (
+    CURSOR_MARKER_SIZE_CSS -
+    fall * smoothStep(CURSOR_MARKER_NEAR_LY, CURSOR_MARKER_FAR_LY, distance)
+  );
+}
 
 /**
  * The outline of one arrow, in view box units, closed back to the tip. The tip sits 75
@@ -142,10 +186,9 @@ export interface CursorMarkerOverlay {
  * The side of the marker's box on the plane, in light years, or null where the cursor
  * does not project.
  *
- * The box is square on the plane and its side is the light years that 96 CSS pixels
- * cover along the screen's horizontal at the cursor. The size is read on the screen and
- * not fixed in light years because the marker is a control and not a place: a fixed size
- * in light years would fill the frame at a close zoom and vanish at a wide one.
+ * The box is square on the plane and its side is the light years that the box size on
+ * the screen covers along the screen's horizontal at the cursor. That size follows the
+ * camera's distance to the cursor, which `cursorMarkerSizeCss` states.
  */
 export function cursorMarkerSideLy(view: View, viewport: Viewport): number | null {
   return planeSpanForScreenX(
@@ -153,7 +196,7 @@ export function cursorMarkerSideLy(view: View, viewport: Viewport): number | nul
     viewport,
     view.cursor[1],
     [view.cursor[0], view.cursor[2]],
-    CURSOR_MARKER_SIZE_CSS,
+    cursorMarkerSizeCss(view.distance),
   );
 }
 
@@ -183,6 +226,8 @@ export function createCursorMarkerOverlay(host: HTMLElement): CursorMarkerOverla
         take();
         return null;
       }
+      // One size for the plane rectangle and the element's own box, read in one place.
+      const sizeCss = cursorMarkerSizeCss(frame.view.distance);
       const placed = placeOnPlane(element, {
         view: frame.view,
         viewport: frame.viewport,
@@ -190,8 +235,8 @@ export function createCursorMarkerOverlay(host: HTMLElement): CursorMarkerOverla
         anchor: [frame.view.cursor[0], frame.view.cursor[2]],
         widthLy: side,
         heightLy: side,
-        widthCss: CURSOR_MARKER_SIZE_CSS,
-        heightCss: CURSOR_MARKER_SIZE_CSS,
+        widthCss: sizeCss,
+        heightCss: sizeCss,
       });
       if (placed === null) {
         take();

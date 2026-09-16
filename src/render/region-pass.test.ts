@@ -6,16 +6,22 @@ import {
   REGION_BAND_HALF_WIDTH_MAX_CSS,
   REGION_BAND_HALF_WIDTH_MIN_CSS,
   REGION_BAND_HALF_WIDTH_SHARE,
+  REGION_CORE_EDGE_CSS,
+  REGION_CORE_SHARE,
+  REGION_EDGE_CSS,
+  REGION_EDGE_MAX_SHARE,
   REGION_FADE_IN_FAR,
   REGION_FADE_IN_NEAR,
   REGION_LINE_OPACITY,
   REGION_RANGE_FULL,
   REGION_RANGE_NONE,
   REGION_TONE,
+  REGION_TONE_CORE,
   regionBandHalfWidthCss,
+  regionBandShares,
   regionFade,
 } from './region-pass';
-import type { RegionPassFrame, RegionPrograms } from './region-pass';
+import type { RegionBandShares, RegionPassFrame, RegionPrograms } from './region-pass';
 import type { Program } from './program';
 import ribbonVertexSource from './shaders/regions.vert?raw';
 import ribbonFragmentSource from './shaders/regions.frag?raw';
@@ -115,7 +121,10 @@ function fakePrograms(): RegionPrograms {
     composite: fakeProgram([
       'uCoverage',
       'uTone',
+      'uToneCore',
       'uOpacity',
+      'uEdgeShare',
+      'uCoreEdge',
       'uInverseViewProjection',
       'uPlaneY',
       'uRangeNone',
@@ -290,11 +299,70 @@ describe('the near fade is gone', () => {
 });
 
 describe('the boundary band', () => {
-  test('is one warm tone above every part of the frame but the core', () => {
-    // The band lightens what it crosses, so it needs no darker edge to be seen.
-    expect(luminance(REGION_TONE)).toBeCloseTo(0.755, 3);
-    expect(REGION_TONE).toEqual([0.86, 0.74, 0.6]);
-    expect(REGION_LINE_OPACITY).toBe(0.55);
+  test('carries a deeper outer tone and a lighter core', () => {
+    expect(REGION_TONE).toEqual([0.74, 0.55, 0.43]);
+    expect(REGION_TONE_CORE).toEqual([0.9, 0.79, 0.52]);
+    // The delta states 0.581 and 0.794, which are these two readings cut to three
+    // decimals.
+    expect(luminance(REGION_TONE)).toBeCloseTo(0.5817, 4);
+    expect(luminance(REGION_TONE_CORE)).toBeCloseTo(0.7939, 4);
+    expect(REGION_LINE_OPACITY).toBe(0.62);
+  });
+
+  test('stands the core 0.132 of luminance above the outer part in the frame', () => {
+    // Both tones lie over one background at one opacity, so the difference does not
+    // follow the picture under the band.
+    const apart = luminance(REGION_TONE_CORE) - luminance(REGION_TONE);
+    expect(apart).toBeCloseTo(0.2122, 4);
+    expect(apart * REGION_LINE_OPACITY).toBeCloseTo(0.132, 3);
+  });
+
+  test('holds the edge and the core at the stated widths', () => {
+    expect(REGION_EDGE_CSS).toBe(4);
+    expect(REGION_EDGE_MAX_SHARE).toBe(0.25);
+    expect(REGION_CORE_SHARE).toBe(0.25);
+    expect(REGION_CORE_EDGE_CSS).toBe(1.5);
+  });
+
+  test('the composite program declares the core tone and the two shares', () => {
+    const names: string[] = [];
+    const gl = {
+      createShader: () => ({}),
+      shaderSource: () => undefined,
+      compileShader: () => undefined,
+      createProgram: () => ({}),
+      attachShader: () => undefined,
+      linkProgram: () => undefined,
+      getProgramParameter: () => true,
+      getShaderParameter: () => true,
+      deleteShader: () => undefined,
+      getUniformLocation: (_program: unknown, name: string) => {
+        names.push(name);
+        return {};
+      },
+    } as unknown as WebGL2RenderingContext;
+    createRegionPrograms(gl);
+    for (const name of ['uToneCore', 'uEdgeShare', 'uCoreEdge']) {
+      expect(names).toContain(name);
+    }
+  });
+
+  test('sends the core tone and the two shares to the composite', () => {
+    const context = fakeContext(1920, 1080);
+    const pass = createRegionPass(
+      context.gl,
+      fakePrograms(),
+      twoChains(),
+      {} as WebGLVertexArrayObject,
+    );
+    pass.draw(FRAME);
+    const core = context
+      .of('uniform3f')
+      .find((call) => call.args[0] === 'uToneCore')?.args;
+    expect(core?.slice(1)).toEqual([0.9, 0.79, 0.52]);
+    // At 1,080 CSS rows the half width is 17.28, so the edge share is 4 / 17.28.
+    expect(uniformValues(context, 'uniform1f', 'uEdgeShare')[0]).toBeCloseTo(0.2315, 4);
+    expect(uniformValues(context, 'uniform1f', 'uCoreEdge')[0]).toBeCloseTo(0.0868, 4);
   });
 
   test('gives the ribbon quad the same half width the ramp divides by', () => {
@@ -491,9 +559,41 @@ describe('the pass no longer blurs', () => {
 });
 
 describe('the flat top of the band', () => {
-  test('clamps the smoothstep at 1', () => {
+  test('reads the alpha and the two tones from the one coverage channel', () => {
     expect(compositeSource).toContain('texture(uCoverage, vTexture).r;');
-    expect(compositeSource).toContain('smoothstep(0.0, 1.0, coverage)');
+    expect(compositeSource).toContain('smoothstep(0.0, uEdgeShare, coverage)');
+    expect(compositeSource).toContain(
+      'smoothstep(0.75 - uCoreEdge, 0.75 + uCoreEdge, coverage)',
+    );
+    expect(compositeSource).toContain('mix(uTone, uToneCore, core)');
+  });
+});
+
+describe('the two shares of the coverage channel', () => {
+  test('gives the edge share and the core transition at each half width', () => {
+    // The edge is 4 CSS pixels, or a quarter of the half width where that is less. The
+    // quarter binds at a half width under 16 CSS pixels, which is 1,000 CSS rows.
+    const readings = [8, 11.52, 17.28, 24].map((half) => regionBandShares(half));
+    expect((readings[0] as RegionBandShares).edgeShare).toBeCloseTo(0.25, 4);
+    expect((readings[1] as RegionBandShares).edgeShare).toBeCloseTo(0.25, 4);
+    expect((readings[2] as RegionBandShares).edgeShare).toBeCloseTo(0.2315, 4);
+    expect((readings[3] as RegionBandShares).edgeShare).toBeCloseTo(0.1667, 4);
+    // The core transition is 1.5 CSS pixels at every half width.
+    for (const [index, half] of [8, 11.52, 17.28, 24].entries()) {
+      const shares = readings[index] as RegionBandShares;
+      expect(shares.coreEdge * half).toBeCloseTo(REGION_CORE_EDGE_CSS, 9);
+    }
+  });
+
+  test('leaves the outer part a flat top at the half width floor', () => {
+    // The edge is 2 CSS pixels at a half width of 8, and the mix reaches the outer tone
+    // at a gap of 3.5 CSS pixels, so 2.5 CSS pixels of flat top are left between them.
+    // A fixed 4 CSS pixel edge would leave 0.5.
+    const shares = regionBandShares(8);
+    expect(shares.edgeShare * 8).toBeCloseTo(2, 9);
+    const coreEnds = 8 * (1 - (0.75 - shares.coreEdge));
+    expect(coreEnds).toBeCloseTo(3.5, 9);
+    expect(8 - shares.edgeShare * 8 - coreEnds).toBeCloseTo(2.5, 9);
   });
 });
 

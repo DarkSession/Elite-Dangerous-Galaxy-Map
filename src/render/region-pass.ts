@@ -2,11 +2,12 @@
 // runs after the tone map, over the finished frame, so it is an overlay and not a
 // scene pass: no look constant of the far view changes it, and it changes none of them.
 //
-// The line is one soft warm band and it draws in two steps. The first step expands each
-// segment into a screen-space quad and writes its coverage into a single-channel buffer
-// with the MAX blend equation, so a join keeps the smallest distance rather than
-// blending twice. The second step reads that buffer once and writes the tone over the
-// frame.
+// The line is a band of two tones, a deeper outer part with a lighter core down its
+// middle, and it draws in two steps. The first step expands each segment into a
+// screen-space quad and writes its coverage into a single-channel buffer with the MAX
+// blend equation, so a join keeps the smallest distance rather than blending twice. The
+// second step reads that buffer once and writes both tones over the frame: the coverage
+// carries the alpha and the tone, so one channel holds the whole band.
 //
 // The pass does not smooth the coverage. The band is 1.6 per cent of the viewport height
 // each side, which is 17.28 CSS pixels at 1,080 rows, and the coverage is an exact
@@ -25,14 +26,52 @@ import fullScreenSource from './shaders/fullscreen.vert?raw';
 import compositeSource from './shaders/region-composite.frag?raw';
 
 /**
- * The colour of the boundary band. It is one warm cream and not a core inside an
- * outline: its luminance is 0.755, above every part of the frame but the core of the
- * galaxy itself, so the band lightens what it crosses.
+ * The tone of the outer part of the boundary band, a deep amber. Its luminance is 0.581,
+ * which is below the tone-mapped galactic core and above the dark space between the
+ * arms, so the band lightens most of the picture and darkens the brightest part of it.
  */
-export const REGION_TONE: readonly [number, number, number] = [0.86, 0.74, 0.6];
+export const REGION_TONE: readonly [number, number, number] = [0.74, 0.55, 0.43];
 
-/** How opaque a boundary line is where the overlay draws in full. */
-export const REGION_LINE_OPACITY = 0.55;
+/**
+ * The tone of the core of the band, a light amber of the same hue family. Its luminance
+ * is 0.794, which stands 0.213 above the outer tone. At the opacity below that is 0.132
+ * of luminance in the frame, whatever the picture under the band, so a boundary reads as
+ * a line and not as a wash of colour.
+ */
+export const REGION_TONE_CORE: readonly [number, number, number] = [0.9, 0.79, 0.52];
+
+/** How opaque a boundary line is where the overlay draws in full, for both tones. */
+export const REGION_LINE_OPACITY = 0.62;
+
+/**
+ * The width of the band's edge, in CSS pixels. The top of the band is flat over the rest
+ * of its width. The edge is fixed in CSS pixels and not a share of the half width
+ * because it is a crispness and not a size: a share would read as sharp on a small
+ * window and soft on a large one.
+ */
+export const REGION_EDGE_CSS = 4;
+
+/**
+ * The largest share of the half width the edge takes. At the half width floor of 8 CSS
+ * pixels a fixed 4 CSS pixel edge would take half of the half width, and the band would
+ * read as a core with a ramp around it and no outer part. The quarter leaves the outer
+ * part 2.5 CSS pixels of flat top there.
+ */
+export const REGION_EDGE_MAX_SHARE = 0.25;
+
+/**
+ * The share of the band's whole width the core takes. The core is a part of the band, so
+ * it is a share and grows with it: 8.6 CSS pixels across at 1,080 rows against the
+ * band's 34.6.
+ */
+export const REGION_CORE_SHARE = 0.25;
+
+/**
+ * The width of the transition from the outer tone to the core tone, in CSS pixels. It is
+ * fixed, as the edge is, so the two tones meet over the same short ramp at every
+ * viewport.
+ */
+export const REGION_CORE_EDGE_CSS = 1.5;
 
 /** The side of one cell of the region grid the traced set runs along, in light years. */
 export const REGION_CELL_LY = 49.3494;
@@ -105,6 +144,37 @@ export function regionBandHalfWidthCss(viewportHeightCss: number): number {
   return Math.min(share, REGION_BAND_HALF_WIDTH_MAX_CSS);
 }
 
+/** The two shares of the coverage channel the composite reads the band's profile with. */
+export interface RegionBandShares {
+  /**
+   * The share of the coverage the edge takes, which is `min(0.25, 4 / halfWidth)`. The
+   * alpha is `smoothstep(0, edgeShare, coverage)`, so the band has a flat top and an
+   * edge of 4 CSS pixels, or a quarter of the half width where that is less.
+   */
+  readonly edgeShare: number;
+  /**
+   * Half the width of the transition to the core tone, as a share of the coverage. The
+   * tone runs from the outer one to the core one over `0.75 -/+ coreEdge`, which is 1.5
+   * CSS pixels each side of the core's own edge.
+   */
+  readonly coreEdge: number;
+}
+
+/**
+ * The two shares of the coverage channel for a half width in CSS pixels. The coverage is
+ * `1 - gap / halfWidth`, so a width in CSS pixels becomes a share by one divide.
+ *
+ * The pass works the half width out for the ribbon quads already, so both shares cost
+ * one divide on the processor and no new state.
+ */
+export function regionBandShares(halfWidthCss: number): RegionBandShares {
+  const half = Math.max(halfWidthCss, 1e-6);
+  return {
+    edgeShare: Math.min(REGION_EDGE_MAX_SHARE, REGION_EDGE_CSS / half),
+    coreEdge: REGION_CORE_EDGE_CSS / half,
+  };
+}
+
 /** What one region pass draw needs. */
 export interface RegionPassFrame {
   /** The combined projection and view matrix, with no translation. */
@@ -161,7 +231,10 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       [
         'uCoverage',
         'uTone',
+        'uToneCore',
         'uOpacity',
+        'uEdgeShare',
+        'uCoreEdge',
         'uInverseViewProjection',
         'uPlaneY',
         'uRangeNone',
@@ -403,10 +476,21 @@ export function createRegionPass(
         REGION_TONE[1],
         REGION_TONE[2],
       );
+      gl.uniform3f(
+        composite.uniforms['uToneCore'] ?? null,
+        REGION_TONE_CORE[0],
+        REGION_TONE_CORE[1],
+        REGION_TONE_CORE[2],
+      );
       gl.uniform1f(
         composite.uniforms['uOpacity'] ?? null,
         REGION_LINE_OPACITY * frame.fade,
       );
+      // The two shares of the coverage channel the profile reads. Both follow the half
+      // width in CSS pixels, which the ribbon step worked out above.
+      const shares = regionBandShares(halfWidthCss);
+      gl.uniform1f(composite.uniforms['uEdgeShare'] ?? null, shares.edgeShare);
+      gl.uniform1f(composite.uniforms['uCoreEdge'] ?? null, shares.coreEdge);
       gl.uniformMatrix4fv(
         composite.uniforms['uInverseViewProjection'] ?? null,
         false,

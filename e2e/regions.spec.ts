@@ -660,27 +660,50 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
   expect(lower, 'the rows below 30 per cent').toBe(0);
 });
 
-/** The luminance of the band's own tone, which the composite writes over the frame. */
-const TONE_LUMINANCE = 0.2126 * 0.86 + 0.7152 * 0.74 + 0.0722 * 0.6;
+/**
+ * The luminance of the band's outer tone, which the composite writes over the frame
+ * outside the core. `src/render/region-pass.ts` holds the tone itself.
+ */
+const TONE_LUMINANCE = 0.2126 * 0.74 + 0.7152 * 0.55 + 0.0722 * 0.43;
 
-/** The opacity the band draws at, which `src/render/region-pass.ts` holds. */
-const BAND_OPACITY = 0.55;
+/** The luminance of the core tone, which the middle quarter of the band carries. */
+const CORE_TONE_LUMINANCE = 0.2126 * 0.9 + 0.7152 * 0.79 + 0.0722 * 0.52;
+
+/** The opacity the band draws at, for both tones. */
+const BAND_OPACITY = 0.62;
+
+/** One step of an 8-bit channel, which is the frame's own quantisation. */
+const EIGHT_BIT_STEP = 1 / 255;
 
 /** What one row of pixels across the band gives. */
 interface BandReading {
   /** How wide the run of changed pixels is, in CSS pixels. */
   readonly runCss: number;
-  /** How wide the change is at half its own peak, in CSS pixels. */
+  /** How wide the change is at half the outer plateau, in CSS pixels. */
   readonly widthCss: number;
-  /** The largest alpha the overlay drew in the row. */
+  /** The alpha of the outer plateau, which is the reference the width is read against. */
+  readonly plateauAlpha: number;
+  /** The largest alpha the overlay drew in the row, which is the core's own reading. */
   readonly peakAlpha: number;
-  /** True where the middle of the run is lighter than both of its ends. */
-  readonly middleIsLighter: boolean;
-  /** How many pixels of the run the overlay made darker. */
-  readonly darkened: number;
+  /** The luminance at the middle of the run, with the overlay on. */
+  readonly middleLuminance: number;
+  /** The luminance of the outer plateau, with the overlay on. */
+  readonly plateauLuminance: number;
   /** The luminance of every pixel of the row, with the overlay and without it. */
   readonly withOverlay: number[];
   readonly withoutOverlay: number[];
+  /** Where the middle of the run sits in those two arrays. */
+  readonly middleIndex: number;
+  /** How many device pixels one CSS pixel holds in those two arrays. */
+  readonly ratio: number;
+}
+
+/**
+ * The width of the band's edge at a half width, in CSS pixels. It is 4 CSS pixels, or a
+ * quarter of the half width where that is less, which `src/render/region-pass.ts` owns.
+ */
+function bandEdgeCssAt(halfWidthCss: number): number {
+  return Math.min(4, 0.25 * halfWidthCss);
 }
 
 /**
@@ -690,12 +713,20 @@ interface BandReading {
  * The row gives the band's own alpha and not its luminance. The composite blends one
  * tone over the frame, so a pixel reads `alpha * tone + (1 - alpha) * frame` on every
  * channel and therefore on the luminance as well. The alpha is what the width and the
- * peak are properties of, and the frame under the band is not the same at two views.
+ * plateau are properties of, and the frame under the band is not the same at two views.
+ *
+ * The profile is read through the **outer** tone. The largest reading of a row sits at
+ * the middle of the line, where the tone is the core one, so half of it is not half of
+ * the profile the outer tone draws. The reference is therefore the reading at a gap of
+ * `halfWidth - edge - 1` CSS pixels from the middle of the run, which is inside the flat
+ * top and one CSS pixel clear of the edge, where the profile alpha is 1 and the tone is
+ * the outer one.
  */
 async function readBandRow(
   page: Page,
   choice: CrossingChoice,
   reachCss = 20,
+  halfWidthCss = 17.28,
 ): Promise<BandReading> {
   await lookFrom(page, choice.view);
   const ratio = await devicePixelRatio(page);
@@ -728,42 +759,66 @@ async function readBandRow(
   expect(runs, 'one run of changed pixels').toHaveLength(1);
   const run = runs[0] as { start: number; end: number };
 
-  // The alpha of each pixel, from the two readings and the band's own tone.
+  // The alpha of each pixel, from the two readings and the band's **outer** tone.
   const alpha = withOverlay.map((value, index) => {
     const under = withoutOverlay[index] as number;
     const room = TONE_LUMINANCE - under;
     return Math.abs(room) < 0.05 ? 0 : (value - under) / room;
   });
   const peakAlpha = Math.max(...alpha);
-  const at = alpha.indexOf(peakAlpha);
-  const edge = (step: number): number => {
-    let inside = at;
-    while ((alpha[inside + step] as number) >= peakAlpha / 2) inside += step;
-    const outside = inside + step;
-    return (
-      inside +
-      (step * ((alpha[inside] as number) - peakAlpha / 2)) /
-        ((alpha[inside] as number) - (alpha[outside] as number))
+  const middleIndex = Math.round((run.start + run.end) / 2);
+  // The outer plateau, one CSS pixel inside the edge, read on both sides of the middle.
+  const plateauGap = Math.round(
+    (halfWidthCss - bandEdgeCssAt(halfWidthCss) - 1) * ratio,
+  );
+  const plateauAt = (step: number): number => middleIndex + step * plateauGap;
+  // The window holds the whole band with room to spare, so both plateau points lie in
+  // it. The reading fails here rather than later where a view puts the band on the edge
+  // of the row: an index past the end gives `undefined`, and every comparison that reads
+  // it then fails for a reason the message does not name.
+  for (const step of [-1, 1]) {
+    expect(
+      plateauAt(step),
+      'the plateau point lies inside the row',
+    ).toBeGreaterThanOrEqual(0);
+    expect(plateauAt(step), 'the plateau point lies inside the row').toBeLessThan(
+      alpha.length,
     );
+  }
+  const plateauAlpha =
+    ((alpha[plateauAt(-1)] as number) + (alpha[plateauAt(1)] as number)) / 2;
+  const plateauLuminance =
+    ((withOverlay[plateauAt(-1)] as number) + (withOverlay[plateauAt(1)] as number)) /
+    2;
+
+  // The half-maximum point on each side, walking out from the middle of the run and not
+  // from the peak: the peak carries the core tone and the profile carries the outer one.
+  const edge = (step: number): number => {
+    let inside = middleIndex;
+    while (
+      inside + step >= 0 &&
+      inside + step < alpha.length &&
+      (alpha[inside + step] as number) >= plateauAlpha / 2
+    ) {
+      inside += step;
+    }
+    const outside = inside + step;
+    const one = alpha[inside] as number;
+    const two = (alpha[outside] as number) ?? 0;
+    return inside + (step * (one - plateauAlpha / 2)) / (one - two);
   };
 
-  let darkened = 0;
-  for (let index = run.start; index <= run.end; index += 1) {
-    if ((withOverlay[index] as number) < (withoutOverlay[index] as number) - 0.001) {
-      darkened += 1;
-    }
-  }
-  const middle = Math.round((run.start + run.end) / 2);
   return {
     runCss: (run.end - run.start + 1) / ratio,
     widthCss: (edge(1) - edge(-1)) / ratio,
+    plateauAlpha,
     peakAlpha,
-    middleIsLighter:
-      (withOverlay[middle] as number) > (withOverlay[run.start] as number) &&
-      (withOverlay[middle] as number) > (withOverlay[run.end] as number),
-    darkened,
+    middleLuminance: withOverlay[middleIndex] as number,
+    plateauLuminance,
     withOverlay,
     withoutOverlay,
+    middleIndex,
+    ratio,
   };
 }
 
@@ -780,19 +835,24 @@ function halfWidthCssAt(height: number): number {
 /**
  * The scenario "The band is the stated share of the viewport", at one viewport.
  *
- * The reading is the width at half the peak, which is the half width itself: the alpha is
- * `smoothstep(0, 1, 1 - gap / halfWidth)`, which reads 0.5 at a coverage of 0.5, that is
- * at a gap of `halfWidth / 2`, so the width at half maximum is `2 * halfWidth / 2`.
+ * The reading is the width at half the outer plateau. The alpha is
+ * `smoothstep(0, edgeShare, coverage)` and the coverage is `1 - gap / halfWidth`, so the
+ * alpha falls to half at a gap of `halfWidth - edge / 2` and the width at half maximum
+ * is `2 * halfWidth - edge`.
  */
-function bandShareTests(height: number, wholeBandCss: number): void {
+function bandShareTests(
+  height: number,
+  wholeBandCss: number,
+  halfMaxCss: number,
+): void {
   const wanted = halfWidthCssAt(height);
   test('reads the stated share of the viewport height', async ({ page }) => {
     await openMap(page);
 
     await setRegionMode(page, 'simplified');
-    const simplified = await readBandRow(page, SMOOTHED_CROSSING, wholeBandCss);
+    const simplified = await readBandRow(page, SMOOTHED_CROSSING, wholeBandCss, wanted);
     await setRegionMode(page, 'accurate');
-    const accurate = await readBandRow(page, TRACED_CROSSING, wholeBandCss);
+    const accurate = await readBandRow(page, TRACED_CROSSING, wholeBandCss, wanted);
 
     for (const [mode, reading] of [
       ['simplified', simplified],
@@ -803,18 +863,31 @@ function bandShareTests(height: number, wholeBandCss: number): void {
         mode,
         runCss: reading.runCss,
         widthCss: reading.widthCss,
+        plateauAlpha: reading.plateauAlpha,
         peakAlpha: reading.peakAlpha,
-        darkened: reading.darkened,
       });
-      // The band is one tone of luminance 0.755, so it lightens every pixel it crosses.
-      expect(reading.darkened, `${mode} darkened pixels`).toBe(0);
-      expect(reading.middleIsLighter, `${mode} middle`).toBe(true);
-      // The half-maximum width is the half width, and the whole band, where the
-      // contribution reaches 0, is twice it.
-      expect(reading.widthCss, `${mode} half-maximum width`).toBeGreaterThan(
-        wanted - 1,
+      // The core tone is lighter than the outer one, so the middle of the run stands
+      // above the outer plateau.
+      expect(reading.middleLuminance, `${mode} middle`).toBeGreaterThan(
+        reading.plateauLuminance,
       );
-      expect(reading.widthCss, `${mode} half-maximum width`).toBeLessThan(wanted + 1);
+      // The reading is the composite alpha, that is the profile alpha times the
+      // opacity. The plateau sits on the flat top, where the profile alpha is 1, so it
+      // reads the band's own opacity.
+      expect(reading.plateauAlpha, `${mode} plateau alpha`).toBeGreaterThan(
+        BAND_OPACITY - 0.02,
+      );
+      expect(reading.plateauAlpha, `${mode} plateau alpha`).toBeLessThan(
+        BAND_OPACITY + 0.02,
+      );
+      // The half-maximum width is `2 * halfWidth - edge`, and the whole band, where the
+      // contribution reaches 0, is twice the half width.
+      expect(reading.widthCss, `${mode} half-maximum width`).toBeGreaterThan(
+        halfMaxCss - 1,
+      );
+      expect(reading.widthCss, `${mode} half-maximum width`).toBeLessThan(
+        halfMaxCss + 1,
+      );
       expect(reading.runCss, `${mode} whole band`).toBeGreaterThan(wholeBandCss - 3);
       expect(reading.runCss, `${mode} whole band`).toBeLessThan(wholeBandCss + 3);
     }
@@ -828,24 +901,75 @@ function bandShareTests(height: number, wholeBandCss: number): void {
 test.describe('the band across a chain at 1920x1080', () => {
   test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   // 1.6 per cent of 1,080 rows is 17.28, inside the clamp, so the whole band is 34.6.
-  bandShareTests(1080, 34.6);
+  // The width at half maximum is `2 * 17.28 - 4`, that is 30.6 CSS pixels.
+  bandShareTests(1080, 34.6, 30.6);
 });
 
 test.describe('the band across a chain at 1280x720', () => {
   test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   // 1.6 per cent of 720 rows is 11.52, inside the clamp, so the whole band is 23.0.
-  bandShareTests(720, 23.0);
+  // The edge is a quarter of 11.52, that is 2.88, so the half maximum is 20.2.
+  bandShareTests(720, 23.0, 20.2);
 });
 
 test.describe('the band across a chain at 640x360', () => {
   test.use({ viewport: { width: 640, height: 360 }, deviceScaleFactor: 1 });
   // The clamp acts here: 1.6 per cent of 360 rows is 5.76, below the floor of 8, so the
   // half width is 8 and the whole band is 16.0.
-  bandShareTests(360, 16.0);
+  // The edge is a quarter of 8, that is 2, so the half maximum is 14.0.
+  bandShareTests(360, 16.0, 14.0);
 
   test('takes its half width from the floor and not from the share', () => {
     expect(0.016 * 360).toBeCloseTo(5.76, 6);
     expect(halfWidthCssAt(360)).toBe(8);
+  });
+});
+
+test.describe('the two tones of the band at 3840x2160', () => {
+  test.use({ viewport: { width: 3840, height: 2160 }, deviceScaleFactor: 1 });
+
+  /** The mean of the two readings that sit the same gap each side of the middle. */
+  function atGap(reading: BandReading, gapCss: number, overlay = true): number {
+    const values = overlay ? reading.withOverlay : reading.withoutOverlay;
+    const step = Math.round(gapCss * reading.ratio);
+    const low = values[reading.middleIndex - step] as number;
+    const high = values[reading.middleIndex + step] as number;
+    return (low + high) / 2;
+  }
+
+  test('carries a lighter core inside a deeper outer part', async ({ page }) => {
+    await openMap(page);
+
+    await setRegionMode(page, 'simplified');
+    const simplified = await readBandRow(page, SMOOTHED_CROSSING, 40, 24);
+    await setRegionMode(page, 'accurate');
+    const accurate = await readBandRow(page, TRACED_CROSSING, 40, 24);
+
+    for (const [mode, reading] of [
+      ['simplified', simplified],
+      ['accurate', accurate],
+    ] as const) {
+      const middle = reading.withOverlay[reading.middleIndex] as number;
+      const inner = atGap(reading, 12);
+      const outer = atGap(reading, 16);
+      const beyond = atGap(reading, 30);
+      const off = atGap(reading, 30, false);
+      console.log('the two tones', { mode, middle, inner, outer, beyond, off });
+
+      // The two tones lie over one background at one opacity, so the step between them
+      // is `0.62 * (0.794 - 0.581)`, that is 0.132 of luminance.
+      const step = BAND_OPACITY * (CORE_TONE_LUMINANCE - TONE_LUMINANCE);
+      expect(middle - inner, `${mode} core over outer`).toBeGreaterThan(step - 0.02);
+      expect(middle - inner, `${mode} core over outer`).toBeLessThan(step + 0.02);
+      // The outer part is a plateau, so 12 and 16 CSS pixels read the same.
+      expect(Math.abs(inner - outer), `${mode} plateau`).toBeLessThanOrEqual(
+        EIGHT_BIT_STEP,
+      );
+      // 30 CSS pixels is outside the 24 CSS pixel half width.
+      expect(Math.abs(beyond - off), `${mode} outside the band`).toBeLessThanOrEqual(
+        EIGHT_BIT_STEP,
+      );
+    }
   });
 });
 
@@ -1056,20 +1180,28 @@ async function readCornerRadius(
     );
   };
 
-  // The alpha is `peak * smoothstep(0, 1, 1 - gap / halfWidth)`. The ray is read where it
-  // falls to **half the peak**, not where it reaches a floor near 0.
+  // The alpha is `smoothstep(0, e, 1 - gap / halfWidth)` with `e = min(0.25, 4 / halfWidth)`,
+  // which is `4 / 24` here. The ray is read where it falls to **half the outer plateau**
+  // on that same ray, and not where it reaches a floor near 0.
   //
-  // `smoothstep` is 0.5 exactly at `gap = halfWidth / 2`, so the half-alpha radius is half
-  // the radius wanted and the reading doubles it. That point is where the ramp is
-  // steepest, so a small error in alpha is a small error in radius. The old reading took
-  // a floor of 0.005 instead, on the flattest part of the ramp, where the frame's own 8
-  // bits are a third of the figure being read: the floor sits under one 8-bit step of the
-  // band over a bright background, so the radius it returned followed how bright the
-  // galaxy was under the corner and not how wide the band is. It under-read this corner
-  // by 2.4 CSS pixels, against an offset curve that is 24.00 at every ray of the sweep.
+  // **The reference is the outer plateau and not the peak.** The band carries two tones.
+  // The peak at the middle of the line is the core tone, while the edge the sweep reads
+  // carries the outer one, so a ratio of the two would mix the tones with the alpha. The
+  // reference is therefore the reading on the same ray at a gap of `halfWidth - edge - 1`
+  // CSS pixels, which is 19.0 at a half width of 24: it is inside the outer plateau and
+  // one CSS pixel clear of the edge, where the profile alpha is 1 and the tone is the
+  // outer one. Both readings then carry one tone, and the range fade, the zoom fade and
+  // the tone divide out as they did.
   //
-  // The peak is read along the ray itself and not assumed, so the range fade, the zoom
-  // fade and the tone all divide out.
+  // Half the plateau sits at `gap = halfWidth - edge / 2`, that is 2.0 CSS pixels inside
+  // the band's own edge, so the sweep **adds 2.0** rather than doubling its reading. That
+  // point sits in the middle of the 4 CSS pixel edge, where the ramp is steepest, so a
+  // small error in alpha is a small error in radius. The old reading took a floor of 0.005
+  // instead, on the flattest part of the ramp, where the frame's own 8 bits are a third of
+  // the figure being read, and it under-read this corner by 2.4 CSS pixels.
+  const halfWidth = halfWidthCssAt(choice.viewport.height);
+  const plateauRadius = halfWidth - bandEdgeCssAt(halfWidth) - 1;
+  const halfAlphaGain = bandEdgeCssAt(halfWidth) / 2;
   const radii: number[] = [];
   const rays = 25;
   for (let step = 0; step <= rays; step += 1) {
@@ -1080,34 +1212,32 @@ async function readCornerRadius(
     const along = (radius: number): number =>
       alphaAt(node.x + Math.cos(angle) * radius, node.y + Math.sin(angle) * radius);
 
-    let peak = 0;
-    for (let radius = 0; radius <= reach; radius += 0.25) {
-      peak = Math.max(peak, along(radius));
-    }
-    if (peak <= 0) continue;
+    const plateau = along(plateauRadius);
+    if (plateau <= 0) continue;
 
-    // The first crossing of half the peak, walking out. The two samples that bracket it
-    // are interpolated, so the reading is not quantised to the step.
+    // The first crossing of half the plateau, walking out from the plateau point. The two
+    // samples that bracket it are interpolated, so the reading is not quantised to the
+    // step.
     let edge = 0;
-    let last = peak;
-    for (let radius = 0.25; radius <= reach; radius += 0.25) {
+    let last = plateau;
+    for (let radius = plateauRadius + 0.25; radius <= reach; radius += 0.25) {
       const alpha = along(radius);
-      if (alpha < peak / 2) {
+      if (alpha < plateau / 2) {
         const gap = last - alpha;
-        const part2 = gap > 0 ? (last - peak / 2) / gap : 0;
+        const part2 = gap > 0 ? (last - plateau / 2) / gap : 0;
         edge = radius - 0.25 + 0.25 * part2;
         break;
       }
       last = alpha;
     }
-    if (edge > 0) radii.push(edge * 2);
+    if (edge > 0) radii.push(edge + halfAlphaGain);
   }
   if (radii.length === 0) throw new Error('the corner sweep read no ray');
   // The **median** and not the mean. `alphaAt` returns 0 where the background is already
   // as bright as the band's own tone, because there is no room left to read a contribution
-  // in. A ray that crosses such a patch falls under half the peak early and reads short,
-  // and one ray of the sweep does. That is a hole in the reading and not a narrow corner,
-  // so the sweep takes the middle reading, which one dropout cannot move.
+  // in. A ray that crosses such a patch falls under half the plateau early and reads
+  // short, and one ray of the sweep does. That is a hole in the reading and not a narrow
+  // corner, so the sweep takes the middle reading, which one dropout cannot move.
   const sorted = [...radii].sort((one, two) => one - two);
   const middle = sorted.length >> 1;
   const median =
@@ -1145,18 +1275,13 @@ test.describe('the corner readings', () => {
     expect(reading.unchangedInside).toBe(0);
     expect(reading.straightAlpha).toBeGreaterThan(0.05);
 
-    // The bound carries the half pixel sampling loss, which is a term of the reading and
-    // not of the pass. The band has a flat top, so the largest reading of a run is the
-    // reading of the pixel nearest the middle of the line, and how near that is follows
-    // where the pixel grid falls across the line. This chain of the smoothed set runs at
-    // an angle, so its best pixel centre sits up to half a pixel off the middle. The loss
-    // there is `opacity * (3u^2 - 2u^3)` at `u = 0.5 / halfWidth`, which is 0.00071 at a
-    // half width of 24. The bound follows the viewport, because the half width does.
-    const offset = 0.5 / halfWidthCssAt(SHARP_CORNER.viewport.height);
-    const samplingLoss =
-      BAND_OPACITY * (3 * offset * offset - 2 * offset * offset * offset);
-    console.log('the half pixel sampling loss', samplingLoss);
-    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha + samplingLoss);
+    // The bound is one 8-bit step. The top of the band is flat and the core's flat part is
+    // `0.5 * halfWidth - 3` CSS pixels wide, that is 9.0 at a half width of 24, so a pixel
+    // within half a pixel of the middle of the line still reads the plateau. Two peaks
+    // therefore read one value, and only the frame's own 8-bit quantisation is left.
+    expect(reading.bendAlpha).toBeLessThanOrEqual(
+      reading.straightAlpha + EIGHT_BIT_STEP,
+    );
   });
 
   test('the corner of the traced set is round to the band half width', async ({
@@ -1204,16 +1329,13 @@ test.describe('the corner readings', () => {
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
     expect(reading.straightAlpha).toBeGreaterThan(0.05);
-    // The corner is no longer a lattice node, so neither arm runs along a screen axis and
-    // the reading carries the same half pixel sampling allowance the join reading carries.
-    // The band has a flat top, so the largest reading of a run is the reading of the pixel
-    // nearest the middle of the line, and how near that is follows where the pixel grid
-    // falls across the line. The `MAX` blend holds the corner at the coverage of one arm.
-    const offset = 0.5 / halfWidthCssAt(TRACED_CORNER.viewport.height);
-    const samplingLoss =
-      BAND_OPACITY * (3 * offset * offset - 2 * offset * offset * offset);
-    console.log('the half pixel sampling loss', samplingLoss);
-    expect(reading.bendAlpha).toBeLessThanOrEqual(reading.straightAlpha + samplingLoss);
+    // The corner is no longer a lattice node, so neither arm runs along a screen axis. The
+    // bound is one 8-bit step, the same the join reading takes: the flat top holds the
+    // plateau under every offset of the pixel grid, and the `MAX` blend holds the corner
+    // at the coverage of one arm.
+    expect(reading.bendAlpha).toBeLessThanOrEqual(
+      reading.straightAlpha + EIGHT_BIT_STEP,
+    );
   });
 });
 
@@ -1562,6 +1684,8 @@ interface StrengthReading {
   readonly y: number;
   /** How many pixels of the frame lie inside the range window. */
   readonly pixels: number;
+  /** How many of those the reading kept, that is those over a dark enough background. */
+  readonly darkPixels: number;
 }
 
 /**
@@ -1569,20 +1693,26 @@ interface StrengthReading {
  *
  * The pixels at a range make a thin ribbon across the frame, and the ribbon crosses
  * several boundary bands. The reading takes the greatest alpha of the ribbon, which is
- * the pixel nearest the centre of the band it crosses. The scenario states why the
- * greatest alpha of a cross-section is the right reading and what it costs: at 1,080 CSS
- * rows the half width is 17.28 device pixels, so the nearest pixel departs from the
- * exact centre by at most 0.0025.
+ * the pixel nearest the centre of the band it crosses. The top of the band is flat and
+ * the core's own flat part is `0.5 * halfWidth - 3` CSS pixels wide, that is 5.6 at 1,080
+ * CSS rows, so that pixel carries the full core tone and the profile alpha there is 1.
  *
  * The alpha comes from two frames, one with the region pass and one without it. A pixel
  * reads `alpha * tone + (1 - alpha) * frame`, so the two frames and the band's own tone
- * give the alpha back.
+ * give the alpha back. The tone the caller gives is the **core** one, because the
+ * greatest reading sits at the middle of a line.
+ *
+ * The reading keeps only the pixels whose background reads under `backgroundBound` of
+ * luminance. Over a background brighter than both tones the two rooms are negative, and a
+ * pixel of the outer part then reads above a pixel of the core, so the greatest reading
+ * would carry the wrong tone.
  */
 async function readStrengthAtRange(
   page: Page,
   rangeLy: number,
   windowLy: number,
   tone: number,
+  backgroundBound: number,
 ): Promise<StrengthReading> {
   return page.evaluate(
     (job) => {
@@ -1593,7 +1723,7 @@ async function readStrengthAtRange(
         probe.planePointAt === undefined ||
         !(canvas instanceof HTMLCanvasElement)
       ) {
-        return { peakAlpha: -1, x: -1, y: -1, pixels: 0 };
+        return { peakAlpha: -1, x: -1, y: -1, pixels: 0, darkPixels: 0 };
       }
       const wideCss = canvas.clientWidth;
       const tallCss = canvas.clientHeight;
@@ -1613,7 +1743,7 @@ async function readStrengthAtRange(
       const view = window.galaxyMap?.getView();
       const planePointAt = probe.planePointAt;
       if (view === undefined || planePointAt === undefined) {
-        return { peakAlpha: -1, x: -1, y: -1, pixels: 0 };
+        return { peakAlpha: -1, x: -1, y: -1, pixels: 0, darkPixels: 0 };
       }
       const toRadians = Math.PI / 180;
       const pitch = view.pitch * toRadians;
@@ -1658,13 +1788,17 @@ async function readStrengthAtRange(
       let peakX = -1;
       let peakY = -1;
       let pixels = 0;
+      let darkPixels = 0;
       for (let x = 0; x < wide; x += 1) {
         const top = firstRowUnder(x, job.rangeLy + job.windowLy);
         const under = firstRowUnder(x, job.rangeLy - job.windowLy);
         for (let y = top; y < under && y < tall; y += 1) {
           const index = (y * wide + x) * 4;
-          const room = job.tone - luminance(withoutPass, index);
+          const background = luminance(withoutPass, index);
+          const room = job.tone - background;
           pixels += 1;
+          if (background >= job.backgroundBound) continue;
+          darkPixels += 1;
           if (Math.abs(room) < 0.05) continue;
           const alpha =
             (luminance(withPass, index) - luminance(withoutPass, index)) / room;
@@ -1675,9 +1809,9 @@ async function readStrengthAtRange(
           }
         }
       }
-      return { peakAlpha, x: peakX, y: peakY, pixels };
+      return { peakAlpha, x: peakX, y: peakY, pixels, darkPixels };
     },
-    { rangeLy, windowLy, tone },
+    { rangeLy, windowLy, tone, backgroundBound },
   );
 }
 
@@ -1705,11 +1839,16 @@ test.describe('the label and the line at the same range', () => {
     expect(inFade.length, 'a label inside the fade').toBeGreaterThan(0);
     const chosen = inFade[0] as RegionLabelRange;
 
+    // The greatest reading sits at the middle of a line, where the tone is the core one,
+    // so the reading turns a pixel into an alpha through the core tone. The two tone
+    // luminances are 0.581 and 0.794, so a background bound of 0.5 keeps every pixel that
+    // is read below both tones.
     const reading = await readStrengthAtRange(
       page,
       chosen.rangeLy,
       100,
-      TONE_LUMINANCE,
+      CORE_TONE_LUMINANCE,
+      0.5,
     );
     const bandStrength = reading.peakAlpha / BAND_OPACITY;
     console.log('the label and the band', {
@@ -1720,9 +1859,13 @@ test.describe('the label and the line at the same range', () => {
       bandStrength,
       at: [reading.x, reading.y],
       pixels: reading.pixels,
+      darkPixels: reading.darkPixels,
     });
 
     expect(reading.pixels, 'pixels inside the range window').toBeGreaterThan(0);
+    expect(reading.darkPixels, 'pixels over a dark enough background').toBeGreaterThan(
+      0,
+    );
     // The band alpha divided by the band's own opacity is the fade the line takes, and
     // the label's opacity is the fade the name takes. The two agree within 0.05, which
     // the scenario's table accounts for.

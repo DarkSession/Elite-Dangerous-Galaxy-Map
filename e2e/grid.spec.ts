@@ -739,9 +739,10 @@ test.describe('the grid look', () => {
     expect('error' in read ? read.error : '').toBe('');
     if ('error' in read) return;
     // The boundary draws after the grid, so it keeps only a part of what the grid put
-    // down under it. If the grid drew last the ratio would be 1.
-    expect(read.ratio).toBeGreaterThanOrEqual(0.3);
-    expect(read.ratio).toBeLessThanOrEqual(0.75);
+    // down under it. If the grid drew last the ratio would be 1. The rule gives
+    // `1 - 0.62`, that is 0.38, where the profile alpha is 1.
+    expect(read.ratio).toBeGreaterThanOrEqual(0.25);
+    expect(read.ratio).toBeLessThanOrEqual(0.7);
   });
 });
 
@@ -1334,8 +1335,9 @@ test.describe('the grid labels', () => {
     });
 
     expect(spacing).toBe(100);
-    expect(away).toBeGreaterThan(0.23);
-    expect(away).toBeLessThan(0.27);
+    // The reach is 2 spacings, so 90 light years is 0.45 of it and the fade reads 0.55.
+    expect(away).toBeGreaterThan(0.53);
+    expect(away).toBeLessThan(0.57);
     expect(Math.abs(on - 1)).toBeLessThan(0.02);
   });
 
@@ -1372,7 +1374,8 @@ test.describe('the grid labels', () => {
     expect(read.spacing).toBe(100);
     expect(read.labels.length).toBeGreaterThan(0);
     for (const label of read.labels) {
-      expect(label.away, label.text).toBeLessThan(120);
+      // The reach is 2 spacings of the 100 light year level.
+      expect(label.away, label.text).toBeLessThan(200);
     }
   });
 
@@ -1585,6 +1588,107 @@ test.describe('the grid labels', () => {
     expect(share).toBeLessThanOrEqual(1.15);
   });
 
+  // The scenario "A number stands clear of the lines it names".
+  test('stand every number clear of the lines it names', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 1000);
+
+    const labels = await page.evaluate(() =>
+      (window.galaxyMap?.debug.gridLabelReadings() ?? []).map((label) => ({
+        text: label.text,
+        crossing: { x: label.x, y: label.y },
+        corners: label.corners.map((corner) => ({ x: corner.x, y: corner.y })),
+        spacingCss: label.spacingCss,
+      })),
+    );
+    console.log('the labels and their own crossings', labels);
+    expect(labels.length).toBeGreaterThan(0);
+
+    for (const label of labels) {
+      const corners = label.corners;
+      expect(corners, label.text).toHaveLength(4);
+      // The crossing is inside the quad when it stays on the same side of all four
+      // edges. The quad is convex, so the sign of the cross product answers it.
+      let sides = 0;
+      for (let index = 0; index < 4; index += 1) {
+        const one = corners[index] as { x: number; y: number };
+        const two = corners[(index + 1) % 4] as { x: number; y: number };
+        const cross =
+          (two.x - one.x) * (label.crossing.y - one.y) -
+          (two.y - one.y) * (label.crossing.x - one.x);
+        sides += cross >= 0 ? 1 : -1;
+      }
+      expect(Math.abs(sides), `${label.text} inside its own quad`).toBeLessThan(4);
+
+      const gaps = corners.map((corner) =>
+        Math.hypot(corner.x - label.crossing.x, corner.y - label.crossing.y),
+      );
+      const nearest = Math.min(...gaps);
+      // The gap of 0.04 of a spacing on each axis puts the corner `0.04 * sqrt(2)` of a
+      // spacing from the crossing, that is 0.057, and the bound is 0.12.
+      expect(nearest / label.spacingCss, `${label.text} nearest corner`).toBeLessThan(
+        0.12,
+      );
+      // The nearest corner is the label's own bottom right, which is the third of the
+      // four corners `plane-overlay` reports. A wrong sign on either axis reads the same
+      // distance and names another corner.
+      expect(gaps.indexOf(nearest), `${label.text} which corner`).toBe(2);
+    }
+  });
+
+  // The scenario "Every corner of the cursor's own cell carries a number".
+  test('carry a number on every corner of the cursor own cell', async ({ page }) => {
+    await openMap(page, '#c=5,0,5&d=200&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [5, 0, 5], 200);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return null;
+      return {
+        spacing: map.debug.gridSpacingLy(),
+        labels: map.debug.gridLabelReadings().map((label) => {
+          const parts = label.text
+            .split(' : ')
+            .map((part) => Number(part.replace(/,/g, '')));
+          return {
+            text: label.text,
+            x: parts[0] as number,
+            z: parts[2] as number,
+            reach: label.reach,
+          };
+        }),
+      };
+    });
+    expect(reading).not.toBeNull();
+    const read = reading as NonNullable<typeof reading>;
+    console.log('the labels around the cursor', read);
+
+    // The 100 light year level carries the numbers at a zoom of 200 light years, and the
+    // cursor sits 5 light years from the crossing at the origin on each axis.
+    expect(read.spacing).toBe(100);
+    const wanted = [
+      [0, 0],
+      [0, 100],
+      [100, 0],
+      [100, 100],
+    ] as const;
+    for (const [x, z] of wanted) {
+      const found = read.labels.find((label) => label.x === x && label.z === z);
+      expect(found, `the corner ${x} : ${z}`).toBeDefined();
+    }
+    // The four corners sit at 7.1, 95.1, 95.1 and 134.4 light years from the cursor. The
+    // old reach of 1.2 spacings left the quadrant beyond the cursor with no number.
+    const furthest = read.labels.find((label) => label.x === 100 && label.z === 100);
+    expect(furthest).toBeDefined();
+    const away = Math.hypot(95, 95);
+    expect(away).toBeCloseTo(134.4, 1);
+    // The reach of 2 spacings draws that corner at 0.33 of its own opacity.
+    expect((furthest as { reach: number }).reach).toBeGreaterThan(0.31);
+    expect((furthest as { reach: number }).reach).toBeLessThan(0.35);
+  });
+
   // The scenario "A label recedes over a bright background".
   test('recede a label over a bright background', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
@@ -1786,14 +1890,15 @@ test.describe('the grid labels and their lines', () => {
       const map = window.galaxyMap;
       const canvas = document.querySelector('canvas');
       if (map === undefined || !(canvas instanceof HTMLCanvasElement)) return null;
-      const box = canvas.getBoundingClientRect();
+      // The reading is taken at the label's **anchor**, which is the crossing itself.
+      // The label's own box stands clear of the crossing by design, so the middle of the
+      // box lies inside the cell, where no line draws.
       const spots: { text: string; x: number; y: number }[] = [];
-      for (const element of document.querySelectorAll('.gm-grid-label')) {
-        const at = element.getBoundingClientRect();
+      for (const held of map.debug.gridLabelReadings()) {
         spots.push({
-          text: element.textContent ?? '',
-          x: Math.round(at.left + at.width / 2 - box.left),
-          y: Math.round(at.top + at.height / 2 - box.top),
+          text: held.text,
+          x: Math.round(held.x),
+          y: Math.round(held.y),
         });
       }
       const readAll = (): number[] =>
@@ -1923,12 +2028,15 @@ test.describe('the grid label readings', () => {
       const held = read.readings[index] as (typeof read.readings)[0];
       const element = read.elements[index] as (typeof read.elements)[0];
       expect(held.text).toBe(element.text);
-      // The reading's anchor is the crossing, which lies inside the element's own screen
-      // box. A label on the plane is not an upright rectangle, so the two are not equal.
-      expect(held.x).toBeGreaterThanOrEqual(element.left - 1);
-      expect(held.x).toBeLessThanOrEqual(element.left + element.width + 1);
-      expect(held.y).toBeGreaterThanOrEqual(element.top - 1);
-      expect(held.y).toBeLessThanOrEqual(element.top + element.height + 1);
+      // The element's screen box is the upright box around the label's own quad, so every
+      // corner the reading holds lies inside it. The anchor is the crossing, which the
+      // label now stands clear of, so the anchor is outside that box.
+      for (const corner of held.corners) {
+        expect(corner.x).toBeGreaterThanOrEqual(element.left - 1);
+        expect(corner.x).toBeLessThanOrEqual(element.left + element.width + 1);
+        expect(corner.y).toBeGreaterThanOrEqual(element.top - 1);
+        expect(corner.y).toBeLessThanOrEqual(element.top + element.height + 1);
+      }
       expect(held.opacity).toBeCloseTo(element.opacity, 2);
     }
   });
@@ -2012,14 +2120,11 @@ test.describe('the grid label readings', () => {
 });
 
 test.describe('the lattice reach', () => {
-  /** The level whose lattice the reach cuts, in light years. */
+  /** The level whose lattice the zoom bound cut, in light years. */
   const FINE_LY = 100;
 
   /** The level the numbers sit on at every zoom these two readings take. */
   const NUMBERED_LY = 1000;
-
-  /** The zoom reach in light years at a camera distance, which is `0.4 * d`. */
-  const REACH_LY = 1600;
 
   /**
    * The largest radius about the cursor, in CSS pixels, at which the 100 light year
@@ -2027,13 +2132,12 @@ test.describe('the lattice reach', () => {
    *
    * The reading is the largest radius anywhere in the frame and not the radius along the
    * row through the cursor: the row reading is quantised by the level's own line
-   * spacing, which runs from 187 CSS pixels at a camera distance of 500 light years down
-   * to 47 at 2,000.
+   * spacing, which is 23.4 CSS pixels at a camera distance of 4,000 light years.
    *
    * A pixel counts only where the 100 light year level lit it: near a line of that level
-   * on one axis, and clear of every line of the numbered level, which is exempt from the
-   * zoom reach and draws over the whole frame. The finer levels light pixels too, and
-   * they sit on no line of the 100 light year level.
+   * on one axis, and clear of every line of the numbered level, which draws over the
+   * whole frame. The finer levels light no pixel at this camera distance, because the 10
+   * light year level is 2.3 CSS pixels apart and a level under 8 draws nothing.
    */
   async function fineLevelRadius(page: Page): Promise<number> {
     return page.evaluate(
@@ -2092,26 +2196,25 @@ test.describe('the lattice reach', () => {
   }
 
   /**
-   * The grid lines the row through the middle of the frame crosses, in two bands: from
-   * the cursor to the zoom reach, and from the reach to twice it. The reading walks the
-   * row, takes each run of lit pixels as one line, and reads the plane point under the
-   * middle of the run.
+   * What the bottom row of the frame holds, read for the 100 light year level.
    *
-   * `outside` counts the lines of the second band that sit on no line of the numbered
-   * level. It is the count that says whether the reach cut what it had to cut.
+   * `lines` counts the runs of lit pixels of that level, clear of the numbered level.
+   * `middleAway` is the distance on the plane from the cursor to the point under the
+   * middle column, in light years, and `spacingCss` is the level's spacing on the screen
+   * at that point.
    */
-  async function rowBands(
+  async function bottomRowLines(
     page: Page,
     cursor: readonly [number, number, number],
-  ): Promise<{ inside: number; beyond: number; outside: number }> {
+  ): Promise<{ lines: number; middleAway: number; spacingCss: number }> {
     return page.evaluate(
       (input) => {
         const map = window.galaxyMap;
-        const empty = { inside: 0, beyond: 0, outside: 0 };
+        const empty = { lines: 0, middleAway: -1, spacingCss: -1 };
         if (map === undefined) return empty;
         const size = map.debug.viewport();
         const wide = Math.floor(size.width);
-        const row = Math.round(size.height / 2);
+        const row = Math.floor(size.height) - 1;
 
         const on = map.isGridVisible();
         map.setGridVisible(false);
@@ -2132,9 +2235,7 @@ test.describe('the lattice reach', () => {
         const offset = (value: number, spacing: number): number =>
           Math.abs(value - Math.round(value / spacing) * spacing);
 
-        let inside = 0;
-        let beyond = 0;
-        let outside = 0;
+        let lines = 0;
         let column = 0;
         while (column < wide) {
           if (!lit(column)) {
@@ -2147,107 +2248,89 @@ test.describe('the lattice reach', () => {
           const point = points[middle] ?? null;
           const next = points[Math.min(middle + 1, wide - 1)] ?? null;
           if (point !== null && next !== null) {
-            const distance = Math.hypot(
-              point[0] - input.cursor[0],
-              point[2] - input.cursor[2],
+            // The light years one CSS pixel covers here, read beside the line.
+            const step = Math.max(
+              Math.hypot(next[0] - point[0], next[2] - point[2]),
+              1e-6,
             );
-            // The light years one CSS pixel covers here. The row runs away from the
-            // camera at a low pitch, so the step is read beside the line and not at the
-            // cursor.
-            const step = Math.hypot(next[0] - point[0], next[2] - point[2]);
-            if (distance < input.reach) inside += 1;
-            else if (distance < 2 * input.reach) {
-              beyond += 1;
-              const numbered = Math.min(
-                offset(point[0], input.numbered),
-                offset(point[2], input.numbered),
-              );
-              if (numbered > 3 * Math.max(step, 1e-6)) outside += 1;
-            }
+            const fine = Math.min(
+              offset(point[0], input.fine),
+              offset(point[2], input.fine),
+            );
+            const numbered = Math.min(
+              offset(point[0], input.numbered),
+              offset(point[2], input.numbered),
+            );
+            if (fine <= 3 * step && numbered > 8 * step) lines += 1;
           }
           column = end + 1;
         }
-        return { inside, beyond, outside };
+
+        const middleColumn = Math.floor(wide / 2);
+        const middlePoint = points[middleColumn] ?? null;
+        const nextPoint = points[Math.min(middleColumn + 1, wide - 1)] ?? null;
+        if (middlePoint === null || nextPoint === null) return { ...empty, lines };
+        const middleAway = Math.hypot(
+          middlePoint[0] - input.cursor[0],
+          middlePoint[2] - input.cursor[2],
+        );
+        const perPixel = Math.max(
+          Math.hypot(nextPoint[0] - middlePoint[0], nextPoint[2] - middlePoint[2]),
+          1e-6,
+        );
+        return { lines, middleAway, spacingCss: input.fine / perPixel };
       },
-      { cursor, numbered: NUMBERED_LY, reach: REACH_LY },
+      { fine: FINE_LY, numbered: NUMBERED_LY, cursor },
     );
   }
 
-  // The scenario "The lattice marks the same part of the frame at every zoom". The pitch
-  // of 89 degrees is what makes the reach disc project as a near-circle.
-  test('marks the same part of the frame at every zoom', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+  // The scenario "The lattice runs to the edge of the frame". The pitch of 89 degrees
+  // reads the far side of the frame, where the level's own reach of 10,000 light years
+  // ends outside it.
+  test('runs the lattice to the edge of the frame', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=89&y=0');
     await setPasses(page, SCENE_OFF);
     await setGrid(page, true);
+    await setView(page, [0, 0, 0], 4000, 89, 0);
 
-    const readings: { distance: number; numbered: number; radius: number }[] = [];
-    for (const distance of [500, 1000, 2000]) {
-      await setView(page, [0, 0, 0], distance, 89, 0);
-      const numbered = await spacingOf(page);
-      const radius = await fineLevelRadius(page);
-      readings.push({ distance, numbered, radius });
-    }
-    console.log('the largest radius of the 100 light year level', readings);
+    const numbered = await spacingOf(page);
+    const radius = await fineLevelRadius(page);
+    console.log('the largest radius of the 100 light year level', {
+      numbered,
+      radius,
+    });
 
-    const radii = readings.map((reading) => reading.radius);
-    for (const reading of readings) {
-      // The numbered level is 1,000 light years at all three zooms, so the 100 light
-      // year level is cut at all three.
-      expect(reading.numbered).toBe(NUMBERED_LY);
-      expect(reading.radius).toBeGreaterThan(0);
-      // The ramp reaches 0 at 374 CSS pixels, which is `0.4 * focalCss` on 1,080 rows.
-      // The last pixel a frame shows sits short of it.
-      expect(reading.radius).toBeLessThan(374);
-    }
-    expect(Math.max(...radii) - Math.min(...radii)).toBeLessThanOrEqual(20);
+    expect(numbered).toBe(NUMBERED_LY);
+    // The zoom bound ended the level at 374 CSS pixels. The frame's own corner sits
+    // 1,101 CSS pixels from the middle of a 1920x1080 frame.
+    expect(radius).toBeGreaterThan(900);
   });
 
-  // The scenario "The lattice stops at its reach and the numbered level goes on". The
-  // row and not the column, and 45 degrees and not 5: at a pitch of 5 the 100 light year
-  // level's spacing along the depth axis is 2.1 CSS pixels, under the 8 at which a level
-  // draws nothing, so a column would count lines that are not there.
-  test('stops the lattice at its reach and carries the numbered level on', async ({
+  // The scenario "The lattice draws past the old zoom bound at a shallow pitch". The
+  // pitch of 45 degrees reads the near side of the frame, where the zoom bound of
+  // `0.4 * d` reached 1,600 light years and the plane point is 2,070 away.
+  test('draws the lattice past the old zoom bound at a shallow pitch', async ({
     page,
   }) => {
     // The cursor sits 50 light years off a crossing of the 100 light year level on both
-    // axes, so the row through the middle of the frame does not lie on a line. The yaw
-    // of 30 degrees makes that row cross both families of lines.
+    // axes, so the bottom row does not lie on a line. The yaw of 30 degrees makes that
+    // row cross both families of lines.
     const cursor: [number, number, number] = [50, 0, 50];
     await openMap(page, '#c=50,0,50&d=4000&p=45&y=30');
     await setPasses(page, SCENE_OFF);
     await setGrid(page, true);
+    await setView(page, cursor, 4000, 45, 30);
 
-    const readings: {
-      pitch: number;
-      numbered: number;
-      inside: number;
-      beyond: number;
-      outside: number;
-      insideRate: number;
-      beyondRate: number;
-    }[] = [];
-    for (const pitch of [45, 60, 89]) {
-      await setView(page, cursor, 4000, pitch, 30);
-      const numbered = await spacingOf(page);
-      const bands = await rowBands(page, cursor);
-      // Each band covers 1,600 light years on each side of the cursor, so each rate is
-      // a count for each 1,000 light years of the same 3,200.
-      readings.push({
-        pitch,
-        numbered,
-        ...bands,
-        insideRate: bands.inside / 3.2,
-        beyondRate: bands.beyond / 3.2,
-      });
-    }
-    console.log('the lines the middle row crosses in the two bands', readings);
+    const numbered = await spacingOf(page);
+    const reading = await bottomRowLines(page, cursor);
+    console.log('the bottom row at a pitch of 45 degrees', { numbered, ...reading });
 
-    for (const reading of readings) {
-      expect(reading.numbered).toBe(NUMBERED_LY);
-      // The second band carries the numbered level and nothing else.
-      expect(reading.beyond).toBeGreaterThan(0);
-      expect(reading.outside).toBe(0);
-      expect(reading.insideRate).toBeGreaterThanOrEqual(5 * reading.beyondRate);
-    }
+    expect(numbered).toBe(NUMBERED_LY);
+    // The camera sits 2,828 light years above the plane and 2,828 behind the cursor,
+    // and the bottom row looks 75 degrees below the horizontal.
+    expect(reading.middleAway).toBeGreaterThan(1900);
+    expect(reading.middleAway).toBeLessThan(2250);
+    expect(reading.spacingCss).toBeGreaterThan(25);
+    expect(reading.lines).toBeGreaterThan(0);
   });
 });

@@ -35,8 +35,8 @@ import type { PlanePlaced } from './plane-overlay';
 
 /**
  * How many spacings of the label level each side of the cursor carry a candidate. The
- * reach below takes every crossing past 1.2 spacings, so a wider ring would only project
- * points that carry no label.
+ * reach below takes every crossing past 2 spacings, and a crossing three steps out is at
+ * least 2 spacings away, so a wider ring would only project points that carry no label.
  */
 export const GRID_LABEL_SPAN = 2;
 
@@ -50,15 +50,30 @@ export const MAX_GRID_LABELS = 8;
  * How many spacings from the cursor a crossing still carries a label. The opacity falls
  * linearly to 0 there.
  *
- * The reach is 1.2 spacings and not 1 so that a crossing stays named while the cursor
- * crosses the cell beyond it. A cursor at the middle of a cell sits 0.707 spacings from
- * all four of that cell's corners, so a reach of one spacing already names all four. What
- * one spacing does not do is hold a crossing while the cursor moves the next half cell
- * away from it: the label would reach 0 exactly as the cursor reaches the far edge of the
- * next cell, and every number would go out at the moment the user is furthest from any
- * crossing.
+ * The reach is 2 spacings, so every corner of the cell the cursor sits in carries a
+ * number. The furthest corner of that cell is 1.41 spacings away, at the moment the
+ * cursor sits on the opposite corner. The reach was 1.2 spacings, which took that corner
+ * and left the cell named on one side only: a user beside a crossing read numbers behind
+ * them and none ahead. Two spacings names all four corners wherever the cursor sits in
+ * the cell, at an opacity of at least 0.29.
+ *
+ * The reach is 2 and not more because 2 is what the candidate ring holds.
  */
-export const GRID_LABEL_REACH = 1.2;
+export const GRID_LABEL_REACH = 2;
+
+/**
+ * How far a number sits off its crossing, as a share of a level spacing, on each of the
+ * game `x` and `z` axes. The crossing becomes the label's bottom right corner, so the
+ * number lies in the cell above and left of it and neither line runs under a digit.
+ *
+ * A label was centred on its crossing, so both lines crossed the text through its
+ * middle. A line through the middle of a row of digits is the one place a reader cannot
+ * tell one digit from another.
+ *
+ * The gap is about one cap height: the cap height is about a twenty-third of the
+ * spacing. At the 1,000 light year level the gap is 40 light years.
+ */
+export const GRID_LABEL_GAP_SHARE = 0.04;
 
 /** The largest share of a level's spacing a label's cap height takes. */
 export const GRID_LABEL_CAP_SHARE = 0.1;
@@ -169,7 +184,7 @@ export function gridLabelFontSize(wantedCss: number): number {
 
 /**
  * How much of its own opacity a label keeps at a distance from the cursor. A crossing at
- * or past 1.2 spacings carries no label at all.
+ * or past 2 spacings carries no label at all.
  *
  * A user moving the cursor sees the crossing ahead of them come up as the one behind them
  * goes down, so the numbers follow the cursor rather than filling the frame.
@@ -343,7 +358,10 @@ export function gridLabelAlpha(
 /** One crossing label the frame places. */
 export interface GridLabelPlacement {
   readonly text: string;
-  /** Where the crossing projects to, in CSS pixels. It is the middle of the label. */
+  /**
+   * Where the crossing projects to, in CSS pixels. It is the label's reported anchor,
+   * and the label's own box sits above and left of it.
+   */
   readonly x: number;
   readonly y: number;
   /** The drawn alpha of the label level at the crossing, which the gate read. */
@@ -482,13 +500,25 @@ export function gridLabelPlacements(
       const capHeightCss = reading.capPerEm * fontCss;
       // The light years of the plane one CSS pixel of the element's own box covers.
       const perBoxCss = capHeightLy / capHeightCss;
+      const widthLy = widthCss * perBoxCss;
+      const heightLy = heightCss * perBoxCss;
+      // The crossing is the label's bottom right corner, less the gap on each axis.
+      // `planePlacement` takes an anchor at the middle of the element, so the sweep
+      // gives it the crossing less half the size and the gap.
+      //
+      // The two signs are not the same. `planeCorners` in `src/app/plane-overlay.ts`
+      // runs the element's local `y` downward along the game `-z` axis, so the
+      // rectangle's bottom right corner sits at
+      // `(anchor.x + widthLy / 2, anchor.z - heightLy / 2)`. Putting that corner at the
+      // crossing less the gap therefore gives minus on `x` and plus on `z`.
+      const gapLy = GRID_LABEL_GAP_SHARE * spacingLy;
       const placedOn = planePlacement({
         view,
         viewport,
         planeY: view.cursor[1],
-        anchor: [gameX, gameZ],
-        widthLy: widthCss * perBoxCss,
-        heightLy: heightCss * perBoxCss,
+        anchor: [gameX - widthLy / 2 - gapLy, gameZ + heightLy / 2 + gapLy],
+        widthLy,
+        heightLy,
         widthCss,
         heightCss,
       });
@@ -681,12 +711,15 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
           'font',
           `${placement.fontCss}px/${placement.heightCss}px ${GRID_LABEL_FONT_FAMILY}`,
         );
-        // A label follows the background under its own anchor, by the same rule the lines
-        // follow, so a number and the line it sits on never disagree.
+        // A label follows the background under its own box, by the same rule the lines
+        // follow, so a number and the line it sits on never disagree. The reading is
+        // taken at the centre of the placement's screen bounding box and not at the
+        // crossing, because the box is the picture the text draws over.
+        const box = placement.placed.box;
         const background = gridLabelBackground(
           frame.background,
-          placement.x,
-          placement.y,
+          box.left + box.width / 2,
+          box.top + box.height / 2,
           frame.viewport,
         );
         const opacity = gridLabelOpacity(

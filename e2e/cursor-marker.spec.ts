@@ -163,6 +163,26 @@ test.describe('the cursor marker', () => {
     }
   });
 
+  // The scenario "The marker shrinks as the camera pulls back".
+  test('the marker shrinks as the camera pulls back', async ({ page }) => {
+    await openMap(page);
+    const widths: number[] = [];
+    for (const distance of [12000, 30000, 60000, 120000]) {
+      await setView(page, [0, 0, 0], distance, 89);
+      const box = await ringBox(page);
+      expect(box).not.toBeNull();
+      widths.push(box?.width ?? 0);
+    }
+    console.log('the ring widths across the size band', widths);
+    // The box is 96, 78.3, 40 and 40 CSS pixels, and the ring measures 0.6 of it.
+    const wanted = [58, 47, 24, 24];
+    for (let index = 0; index < wanted.length; index += 1) {
+      expect(
+        Math.abs((widths[index] as number) - (wanted[index] as number)),
+      ).toBeLessThan(3);
+    }
+  });
+
   test('the marker follows the cursor off the plane', async ({ page }) => {
     await openMap(page, OFF_PLANE_VIEW);
     await page.evaluate(() => {

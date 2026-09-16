@@ -1,14 +1,13 @@
 #version 300 es
 // Reads the coverage buffer once and writes the boundary band over the frame.
 //
-// The band is one warm tone with a soft edge, which is the line the game draws. The
-// two-tone ribbon of a light core inside a dark outline is gone: the tone's luminance is
-// 0.755, above every part of the frame but the core of the galaxy itself, so the band
-// lightens what it crosses and needs no darker edge to be seen.
+// The band carries two tones: a deeper outer part and a lighter core down its middle.
+// Both come from the one coverage channel, which is `1 - gap / halfWidth`. The alpha
+// gives the band a flat top with a short edge, and a threshold on the same channel picks
+// the core, so the pass needs no second buffer and no second draw.
 //
-// The `smoothstep` clamps at 1, which gives the band a flat top. The ribbon pass blends
-// the coverage with MAX, so a join keeps the smallest distance and a corner reads exactly
-// what its own arm reads.
+// The ribbon pass blends the coverage with MAX, so a join keeps the smallest distance
+// and a corner reads exactly what its own arm reads.
 //
 // The band then fades by the range of the plane point the pixel sees. The camera sits at
 // the origin of the world frame, so the range is the length of the ray to the plane. A
@@ -17,7 +16,13 @@ precision highp float;
 
 uniform sampler2D uCoverage;
 uniform vec3 uTone;
+// The tone of the core, which the middle quarter of the band carries.
+uniform vec3 uToneCore;
 uniform float uOpacity;
+// The share of the coverage the edge takes, which is min(0.25, 4 / halfWidth).
+uniform float uEdgeShare;
+// Half the width of the transition to the core tone, as a share of the coverage.
+uniform float uCoreEdge;
 // The inverse of the frame's view projection, which unprojects a pixel to a world ray.
 uniform mat4 uInverseViewProjection;
 // The galactic plane in the camera-relative world frame, which is minus the camera's own
@@ -39,7 +44,7 @@ vec3 unproject(vec2 ndc, float depth) {
 
 void main() {
   float coverage = texture(uCoverage, vTexture).r;
-  float alpha = smoothstep(0.0, 1.0, coverage);
+  float alpha = smoothstep(0.0, uEdgeShare, coverage);
   if (alpha <= 0.0) discard;
 
   vec2 ndc = vTexture * 2.0 - 1.0;
@@ -55,5 +60,10 @@ void main() {
   alpha *= smoothstep(uRangeNone, uRangeFull, range);
   if (alpha <= 0.0) discard;
 
-  fragColour = vec4(uTone, alpha * uOpacity);
+  // The core is the middle quarter of the band, so it runs where the gap is under a
+  // quarter of the half width and the coverage is above 0.75.
+  float core = smoothstep(0.75 - uCoreEdge, 0.75 + uCoreEdge, coverage);
+  vec3 tone = mix(uTone, uToneCore, core);
+
+  fragColour = vec4(tone, alpha * uOpacity);
 }

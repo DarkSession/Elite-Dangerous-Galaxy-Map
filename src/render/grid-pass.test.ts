@@ -8,9 +8,7 @@ import {
   gridDistanceFade,
   gridLabelLevel,
   gridReachPerLevel,
-  gridZoomReach,
   GRID_FADE_LINES,
-  GRID_REACH_ZOOM,
   gridLevelAlpha,
   gridLevelBoldness,
   gridLevelReadings,
@@ -278,83 +276,54 @@ describe('the distance fade', () => {
  * `grid.frag` holds, and the reach is the one `gridReachPerLevel` gives the renderer, so
  * a reading here is a reading of what the shader draws.
  */
-function reachFade(
-  focal: number,
-  distance: number,
-  spacing: number,
-  radius: number,
-): number {
-  const reach = gridReachPerLevel(focal, distance)[
-    GRID_LEVELS.indexOf(spacing)
-  ] as number;
+function reachFade(spacing: number, radius: number): number {
+  const reach = gridReachPerLevel()[GRID_LEVELS.indexOf(spacing)] as number;
   return Math.min(1, Math.max(0, 1 - radius / reach));
 }
 
-describe('the zoom reach', () => {
-  test('is the share of the camera distance the constant names', () => {
-    expect(GRID_REACH_ZOOM).toBe(0.4);
-    expect(gridZoomReach(4000)).toBeCloseTo(1600, 9);
-    expect(gridZoomReach(1000)).toBeCloseTo(400, 9);
-  });
-
-  // The disc is a fixed size on the screen: `0.4 * focalCss` CSS pixels at the cursor's
-  // own range, which is 0.346 of the viewport height at every zoom.
-  test('projects to 374 CSS pixels on 1,080 rows', () => {
-    const radius = GRID_REACH_ZOOM * focalCss(1080);
-    expect(radius).toBeCloseTo(374.1, 1);
-    expect(radius / 1080).toBeCloseTo(0.346, 3);
-  });
-
-  // The scenario "A level fades out at the zoom reach". The 10,000 light year level is
-  // named because the zoom bound binds it: its own reach is 1,000,000 light years, far
-  // above the 1,600 the zoom gives, and it carries no number.
-  test('takes the 10,000 light year level to nothing at 1,600 light years', () => {
-    const focal = focalCss(1080);
-
-    expect(gridLabelLevel(focal, 4000)).toBe(1000);
-    expect(reachFade(focal, 4000, 10000, 0)).toBeCloseTo(1, 9);
-    expect(reachFade(focal, 4000, 10000, 800)).toBeCloseTo(0.5, 9);
-    expect(reachFade(focal, 4000, 10000, 1600)).toBeCloseTo(0, 9);
-  });
-
-  // The scenario "The reach is the lesser of the two". The reading is the fade of the
-  // lesser reach and not the product of the two fades, which is 0.338.
-  test('reads the lesser of the two reaches and not their product', () => {
-    const focal = focalCss(1080);
-
-    expect(reachFade(focal, 4000, 100, 1000)).toBeCloseTo(0.375, 9);
-    const product = gridDistanceFade(1000, 100) * (1 - 1000 / gridZoomReach(4000));
-    expect(product).toBeCloseTo(0.3375, 9);
-  });
-
-  // The scenario "The level's own reach still binds where it is the smaller". The 10
-  // light year level reaches 1,000 light years of its own, under the zoom's 1,600.
-  test('leaves the 10 light year level on its own reach of 1,000', () => {
-    const focal = focalCss(1080);
-
-    expect(reachFade(focal, 4000, 10, 500)).toBeCloseTo(0.5, 9);
-  });
-
-  // The scenario "The numbered level keeps its own reach". A coordinate label has to sit
-  // on a lit line, so the level that carries the numbers is exempt.
-  test('holds the numbered level on its own reach of 100 lines', () => {
-    const focal = focalCss(1080);
-
-    expect(gridLabelLevel(focal, 200)).toBe(100);
-    expect(gridLabelLevel(focal, 4000)).toBe(1000);
-    expect(reachFade(focal, 4000, 1000, 1000)).toBeCloseTo(0.99, 9);
-    expect(reachFade(focal, 200, 100, 1000)).toBeCloseTo(0.9, 9);
-  });
-
+describe('the reach of a level', () => {
   test('gives one reach for each level, in the order of the levels', () => {
-    const focal = focalCss(1080);
-    const reaches = gridReachPerLevel(focal, 4000);
+    const reaches = gridReachPerLevel();
 
     expect(reaches).toHaveLength(GRID_LEVELS.length);
-    expect(reaches).toEqual([100, 1000, 1600, 100000, 1600, 1600]);
+    expect(reaches).toEqual([100, 1000, 10000, 100000, 1000000, 10000000]);
     for (let level = 0; level < GRID_LEVELS.length; level += 1) {
       const spacing = GRID_LEVELS[level] as number;
-      expect(reaches[level] as number).toBeLessThanOrEqual(GRID_FADE_LINES * spacing);
+      expect(reaches[level] as number).toBe(GRID_FADE_LINES * spacing);
+    }
+  });
+
+  test('fills the array it is given and allocates none', () => {
+    const out = new Array<number>(GRID_LEVELS.length).fill(0);
+    expect(gridReachPerLevel(out)).toBe(out);
+    expect(out).toEqual([100, 1000, 10000, 100000, 1000000, 10000000]);
+  });
+
+  test('takes no reading of the camera', () => {
+    // The reach follows the level alone, so a level that carries no number is no
+    // longer cut to a disc about the cursor. The zoom bound took the 10,000 light year
+    // level to nothing at 1,600 light years at a camera distance of 4,000, and it took
+    // the 100 light year level to 0.375 at 1,000.
+    expect(reachFade(10000, 1600)).toBeCloseTo(0.9984, 9);
+    expect(reachFade(100, 1000)).toBeCloseTo(0.9, 9);
+  });
+
+  test('holds every level on 100 of its own lines', () => {
+    // The level that carries the numbers took this reach alone before the change, and
+    // every other level now takes it too.
+    expect(reachFade(10, 500)).toBeCloseTo(0.5, 9);
+    expect(reachFade(1000, 1000)).toBeCloseTo(0.99, 9);
+    expect(reachFade(100, 10000)).toBe(0);
+  });
+
+  test('agrees with the fade the distance rule states', () => {
+    for (const spacing of GRID_LEVELS) {
+      for (const radius of [0, 500, 1000, 5000]) {
+        expect(reachFade(spacing, radius)).toBeCloseTo(
+          gridDistanceFade(radius, spacing),
+          9,
+        );
+      }
     }
   });
 });
@@ -455,7 +424,7 @@ const FRAME = {
   pixelRatio: 1,
   bounds: MODEL_BOUNDS,
   band: 1,
-  reach: gridReachPerLevel(focalCss(1080), 4000),
+  reach: gridReachPerLevel(),
   background: {} as WebGLTexture,
 };
 
