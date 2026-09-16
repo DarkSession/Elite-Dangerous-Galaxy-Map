@@ -142,25 +142,39 @@ The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCoun
 `setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
 carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
-`isGridVisible`, `onGridChange` and `regionNameAt`. For the dataset catalog it carries
+`isGridVisible`, `onGridChange`, `setCursorMarkerVisible`, `getCursorMarkerVisible`,
+`regionNameAt` and `regionNameAtExact`. For the dataset catalog it carries
 `getDatasets`, `getLoadedDataset`, `loadDataset` and `onDatasetChange`. The `hud`
 member is the HUD handle, or null when the options do not ask for the HUD. The region
-mode is `off`, `simplified` or `accurate`, and it is `simplified` unless the options
-name another. `simplified` draws
-the smoothed region boundary, `accurate` draws the traced boundary, which is the
-49.3494 light year staircase the region data holds, and `off` draws no boundary and
-places no label. A mode change takes effect in the next frame and does not rebuild the
-scene data. The library owns the render context, the scene data, the view, the controls and
+mode is `off`, `simplified` or `accurate`, and it is `accurate` unless the options
+name another. `accurate` draws the traced boundary, which is the 49.3494 light year
+staircase the region data holds, `simplified` draws the smoothed boundary, and `off`
+draws no boundary and places no label. A mode change takes effect in the next frame and
+does not rebuild the scene data.
+
+`regionNameAt(point)` reads the coarse region grid, whose cells are 197.3976 light years,
+and answers in the same tick. `regionNameAtExact(point)` reads the game's own 49.3494
+light year grid and gives a promise: the region cell table is about 199 KiB and loads on
+the first call, so a host that never asks never fetches it. Both read the `x` and the `z`
+of the point and ignore its `y`. Use the first for a reading that follows the cursor every
+frame, and the second where one place is named as a fact. The library owns the render context, the scene data, the view, the controls and
 the frame loop. It does not read or write the URL: [src/app/main.ts](src/app/main.ts) is
 the demo page, and it owns the fragment, the message box and the test hooks.
 
-The boundary is one warm cream band with a soft edge, and it draws inside a band of zoom
-distance: nothing at 5,000 light years and below, rising to full at 10,000, full from
-10,000 to 20,000, and nothing again at 30,000 and above. The region labels take the same
-band, so a name never outlives its boundary. Below 5,000 light years the HUD's top bar
-still names the region under the cursor, and `regionNameAt` answers for any point on the
-plane. In `accurate` the map blurs the boundary by the staircase's own cell measured on
-the screen, so a 90 degree corner draws as a round turn.
+The boundary is one warm cream band with a soft edge. Its half width is 1.6 per cent of
+the viewport height in CSS pixels, held between 8 and 24, so the whole band measures 34.6
+CSS pixels at 1,080 rows. The width is what hides the staircase, and the map runs no blur:
+a 90 degree corner of the traced set draws as a round turn of the band's own half width.
+
+Two fades multiply. The **range fade** is read for each pixel, from the camera to the
+plane point under it: nothing at 10,000 light years and below, rising to full at 20,000.
+The **zoom fade** is read once for the frame, from the camera to the cursor: full at
+20,000 light years and below, falling to nothing at 30,000. A region label takes the same
+two fades, the range one read at the label's own plane anchor, so a name and the line
+under it read at the same strength and neither outlives the other. A close zoom therefore
+keeps the lines near the horizon and takes away the ones near the cursor, where the
+staircase would show. There the HUD's top bar still names the region under the cursor, and
+`regionNameAt` answers for any point on the plane.
 
 A marker draws for every system at every zoom distance, from 10 to 120,000 light years,
 while the camera is inside the draw range of the system's category.
@@ -184,11 +198,12 @@ distance already inside 500 light years does not change, so a close view stays c
 `getHover` gives the system under the pointer. The map draws a mark around the hovered
 system and a second mark around the selected one.
 
-Three options build what the host does not have to drive itself:
+Four options build what the host does not have to drive itself:
 
 ```ts
 const map = createGalaxyMap(canvas, {
   grid: true,
+  cursorMarker: true,
   loadingImage: '/loader.svg',
   hud: {
     title: 'GALACTIC CARTOGRAPHICS',
@@ -199,18 +214,30 @@ const map = createGalaxyMap(canvas, {
 
 `grid` draws the coordinate grid on the galactic plane. It is off unless the options ask
 for it, `setGridVisible` turns it on and off later, and `onGridChange` reports every
-move of the switch, which the HUD drives as well. The demo site asks for the grid and
+move of the switch, which the HUD drives as well. `cursorMarker` draws the marker at the
+cursor: a cyan ring with four arrows around it, lying on the cursor's own plane. It is on
+unless the options set it to false, and `setCursorMarkerVisible` and
+`getCursorMarkerVisible` drive it later. The demo site asks for the grid and
 the library default stays off, because a host that embeds the map in its own page did
 not ask for a coordinate grid. The grid fades in by the camera's distance to the cursor:
 it draws nothing at 12,000 light years and further, and it draws in full at 4,000 and
 nearer.
 
+The grid draws in cyan, `rgb(96, 214, 224)`, which is the only cool line the map draws:
+the galactic core and the region boundary band are both warm, so the grid is told from
+both by hue at any brightness.
+
 The grid also follows the picture under it. The map reads the local brightness of the
 galaxy it drew, and each line and each coordinate number takes its strength and its
 colour from that reading. A line over the dark space between the arms keeps its full
-strength. The same line over the bright core keeps a part of it and takes the
-background's hue, so the grid reads as part of the picture and not as a layer on top of
-it.
+strength and its light cyan. The same line over the bright core keeps a part of its
+strength and moves to a deep blue, `rgb(16, 74, 120)`, so it removes light there rather
+than adding it and the grid reads as part of the picture and not as a layer on top of it.
+
+The grid's numbers lie on the plane with the lines. Each one names the three game
+coordinates of a crossing, as `x : y : z`, and it is drawn in the plane's own perspective,
+so it grows and shrinks with the cell it sits in. Two levels carry numbers, 100 and 1,000
+light years, and a frame holds at most eight of them.
 
 `loadingImage` is a URL. The library puts the picture in the canvas's parent, centred on
 the canvas, and it removes the picture when `ready` settles, whether it settles or
@@ -237,7 +264,11 @@ before the call. `hud.refresh()` rebuilds them at once.
 The HUD is plain DOM in one `div.gm-hud`, and every one of its rules sits under that
 class. It shows the region name and the zoom distance in the top bar, a category browser
 with a search box, the map option switches, and an information panel for the selected
-system with its fields, description, thumbnails and a lightbox. It reads the map through
+system with its fields, description, thumbnails and a lightbox. The panel's fields start
+with `POSITION`, `DISTANCE FROM SOL`, `RANGE` and `REGION`. `REGION` names the codex
+region of the system, resolved on the game's own 49.3494 light year grid through
+`regionNameAtExact`. It is empty until the promise settles, so the grid does not reflow,
+and it reads `Unknown` for a position the region map does not cover. It reads the map through
 the public handle alone. An ESLint rule stops `src/hud/` importing `src/render/`,
 `src/scene-data/` or `src/camera/`.
 

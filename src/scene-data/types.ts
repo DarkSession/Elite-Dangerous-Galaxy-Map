@@ -109,4 +109,10 @@ export interface SceneData {
   /** The traced boundary set, which the `accurate` region mode draws. */
   readonly regionLinesTraced: RegionLines;
   readonly regionGrid: CoarseRegionGrid;
+  /**
+   * The flow field over the coarse region grid, one byte per cell. A label whose
+   * straight step leaves its own region follows it instead. `regions.ts` states the
+   * encoding and reads it.
+   */
+  readonly regionFlow: Uint8Array;
 }

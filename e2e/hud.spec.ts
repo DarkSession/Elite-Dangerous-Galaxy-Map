@@ -1260,6 +1260,7 @@ test.describe('the information panel', () => {
       'POSITION',
       'DISTANCE FROM SOL',
       'RANGE',
+      'REGION',
       'ALLEGIANCE',
       'POPULATION',
     ]);
@@ -1343,22 +1344,25 @@ test.describe('the information panel', () => {
   }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
-    // The record carries no field of its own, so the grid holds three: the position,
-    // the distance from Sol and the range.
+    // The record carries no field of its own, so the grid holds the four every record
+    // shows: the position, the distance from Sol, the range and the region.
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await select(page, 'Sol');
 
     const labels = await fieldLabels(page);
-    expect(labels).toEqual(['POSITION', 'DISTANCE FROM SOL', 'RANGE']);
+    expect(labels).toEqual(['POSITION', 'DISTANCE FROM SOL', 'RANGE', 'REGION']);
 
     const boxes = await fieldBoxes(page);
-    console.log('the field grid of the three fields', boxes);
+    console.log('the field grid of the four fields', boxes);
 
-    const [position, fromSol, range] = boxes.fields as {
+    const [position, fromSol, range, region] = boxes.fields as {
       width: number;
       top: number;
     }[];
-    expect(boxes.fields).toHaveLength(3);
+    expect(boxes.fields).toHaveLength(4);
+    expect(
+      Math.abs((region as { width: number }).width - boxes.grid),
+    ).toBeLessThanOrEqual(1);
     expect(
       Math.abs((position as { width: number }).width - boxes.grid),
     ).toBeLessThanOrEqual(1);
@@ -1413,48 +1417,153 @@ test.describe('the information panel', () => {
   test('an odd count of fields leaves no empty cell', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
-    // The position takes two cells, so a grid of n fields fills n + 1 cells. Four fields
-    // leave the last one alone on its row, and five fill the grid.
+    // The position and the region take two cells each, so the four fields every record
+    // shows fill six cells and leave the grid full. A grid of n fields fills n + 2
+    // cells. Five fields leave the last one alone on its row, and six fill the grid.
     await addSystems(page, [
-      record('Four', [0, 0, 100], 'Alpha', { primaryStar: 'G' }),
-      record('Five', [0, 0, 200], 'Alpha', { primaryStar: 'G', allegiance: 'Empire' }),
+      record('Five', [0, 0, 100], 'Alpha', { primaryStar: 'G' }),
+      record('Six', [0, 0, 200], 'Alpha', { primaryStar: 'G', allegiance: 'Empire' }),
     ]);
-
-    await select(page, 'Four');
-    expect(await fieldLabels(page)).toEqual([
-      'POSITION',
-      'DISTANCE FROM SOL',
-      'RANGE',
-      'PRIMARY STAR',
-    ]);
-    const four = await fieldBoxes(page);
-    console.log('the field grid of four fields', four);
-    expect(four.fields).toHaveLength(4);
-    expect(
-      Math.abs((four.fields[3] as { width: number }).width - four.grid),
-    ).toBeLessThanOrEqual(1);
 
     await select(page, 'Five');
     expect(await fieldLabels(page)).toEqual([
       'POSITION',
       'DISTANCE FROM SOL',
       'RANGE',
+      'REGION',
       'PRIMARY STAR',
-      'ALLEGIANCE',
     ]);
     const five = await fieldBoxes(page);
     console.log('the field grid of five fields', five);
     expect(five.fields).toHaveLength(5);
-    const last = (five.fields[4] as { width: number }).width;
-    expect(last * 2).toBeLessThan(five.grid + 12);
-    expect(last * 2).toBeGreaterThan(five.grid - 12);
+    expect(
+      Math.abs((five.fields[4] as { width: number }).width - five.grid),
+    ).toBeLessThanOrEqual(1);
+
+    await select(page, 'Six');
+    expect(await fieldLabels(page)).toEqual([
+      'POSITION',
+      'DISTANCE FROM SOL',
+      'RANGE',
+      'REGION',
+      'PRIMARY STAR',
+      'ALLEGIANCE',
+    ]);
+    const six = await fieldBoxes(page);
+    console.log('the field grid of six fields', six);
+    expect(six.fields).toHaveLength(6);
+    const last = (six.fields[5] as { width: number }).width;
+    expect(last * 2).toBeLessThan(six.grid + 12);
+    expect(last * 2).toBeGreaterThan(six.grid - 12);
     // The grid holds no empty cell: the last field sits on the row of the one before it.
     expect(
       Math.abs(
-        (five.fields[4] as { top: number }).top -
-          (five.fields[3] as { top: number }).top,
+        (six.fields[5] as { top: number }).top - (six.fields[4] as { top: number }).top,
       ),
     ).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * Holds back every script the page asks for from now on, for a span of milliseconds.
+   * The region cell table loads on the first `regionNameAtExact`, and nothing else is
+   * fetched after the map is ready, so this holds that one load back and gives the test
+   * a window in which the region field is still empty.
+   */
+  async function holdBackTheLookup(page: Page, delayMs: number): Promise<void> {
+    await page.route('**/*.js', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await route.continue();
+    });
+  }
+
+  test("the panel names the system's region", async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Sol', [0, 0, 0], 'Alpha'),
+      record('Core', [15, -35, 25895], 'Alpha'),
+    ]);
+
+    await select(page, 'Sol');
+    await expect(fieldValue(page, 'REGION')).toHaveText('Inner Orion Spur');
+
+    await select(page, 'Core');
+    await expect(fieldValue(page, 'REGION')).toHaveText('Galactic Centre');
+  });
+
+  test('the region field is exact', async ({ page }) => {
+    // The unit scenario of `src/scene-data/region-lines.test.ts` found this point. Its
+    // own 49.3494 light year cell holds `Sanguineous Rim` and its 197.3976 light year
+    // coarse cell holds `Inner Orion Spur`.
+    const point: [number, number, number] = [-857.675, 0, -1379.602];
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Edge', point, 'Alpha')]);
+    await select(page, 'Edge');
+
+    await expect(fieldValue(page, 'REGION')).toHaveText('Sanguineous Rim');
+    const coarse = await page.evaluate(
+      (where) => window.__hudMap?.regionNameAt(where as [number, number, number]),
+      point,
+    );
+    console.log('the coarse reading at the same point', coarse);
+    expect(coarse).toBe('Inner Orion Spur');
+  });
+
+  test('a position off the region map reads Unknown', async ({ page }) => {
+    // The point lies inside the model bounds and outside the codex region map, at the
+    // far corner of the model. The record reader refuses a position outside the model
+    // bounds, so a record cannot be selected there and the panel cannot read one.
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    const added = await addSystems(page, [
+      record('Outside', [-49900, 0, 75800], 'Alpha'),
+    ]);
+    expect(added).toBe(1);
+    await select(page, 'Outside');
+
+    await expect(fieldValue(page, 'REGION')).toHaveText('Unknown');
+  });
+
+  test('a stale lookup does not write', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Sol', [0, 0, 0], 'Alpha'),
+      record('Core', [15, -35, 25895], 'Alpha'),
+    ]);
+    // The first lookup fetches the table, so it is held back long enough for the second
+    // selection to come first.
+    await holdBackTheLookup(page, 1500);
+
+    await select(page, 'Sol');
+    await select(page, 'Core');
+    await expect(fieldValue(page, 'REGION')).toHaveText('Galactic Centre', {
+      timeout: 10000,
+    });
+    // The first lookup resolves after the second, so a panel that took every answer
+    // would write `Inner Orion Spur` over it.
+    await page.waitForTimeout(1000);
+    await expect(fieldValue(page, 'REGION')).toHaveText('Galactic Centre');
+  });
+
+  test('the grid does not reflow when the region arrives', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await holdBackTheLookup(page, 2000);
+
+    await select(page, 'Sol');
+    const empty = await fieldValue(page, 'REGION').textContent();
+    const before = await fieldBoxes(page);
+    await expect(fieldValue(page, 'REGION')).toHaveText('Inner Orion Spur', {
+      timeout: 10000,
+    });
+    const after = await fieldBoxes(page);
+    console.log('the field boxes before and after the region', { before, after });
+
+    expect(empty).toBe('');
+    expect(after).toEqual(before);
   });
 
   test('a record with no description hides that section', async ({ page }) => {

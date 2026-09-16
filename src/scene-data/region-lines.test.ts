@@ -1,9 +1,11 @@
 import { beforeAll, describe, expect, test } from 'vitest';
+import { findCodexRegionAt } from '@elite-dangerous-almanac/core/astro/codex-region-lookup';
 import { galaxyModel } from '../galaxy-model/model';
-import { regionLinesTransferables } from './messages';
 import {
   buildCoarseRegionGrid,
   buildRegionData,
+  buildRegionFlow,
+  regionFlowRoots,
   buildRegionLines,
   chainPoints,
   collapseChain,
@@ -27,8 +29,17 @@ import {
   traceRegionLines,
 } from './region-lines';
 import type { RegionGrid, RegionTrace, TracedChain } from './region-lines';
-import { coarseRegionIdAt, regionOfId } from './regions';
-import type { RegionLines } from './types';
+import {
+  coarseRegionFlowStepAt,
+  coarseRegionIdAt,
+  NO_REGION_ID,
+  REGION_COUNT,
+  REGION_FLOW_END,
+  REGION_FLOW_STEPS,
+  regionOfId,
+} from './regions';
+import { regionLinesTransferables, regionResponseTransferables } from './messages';
+import type { CoarseRegionGrid, RegionLines } from './types';
 
 /** The departure bound the spec states, in light years. It is one cell. */
 const DEPARTURE_LIMIT = REGION_DEPARTURE_LY;
@@ -37,12 +48,18 @@ let grid: RegionGrid;
 let trace: RegionTrace;
 let lines: RegionLines;
 let traced: RegionLines;
+let coarse: CoarseRegionGrid;
+let flow: Uint8Array;
+let roots: Int32Array;
 
 beforeAll(() => {
   grid = fillRegionGrid();
   trace = traceRegionChains(grid);
   lines = packRegionLines(grid, trace);
   traced = packTracedLines(grid, trace);
+  coarse = buildCoarseRegionGrid(grid);
+  flow = buildRegionFlow(coarse);
+  roots = regionFlowRoots(coarse);
 }, 120000);
 
 /** A small grid with the ids written out, for the rules that need no real data. */
@@ -695,6 +712,61 @@ describe('the coarse region grid', () => {
     );
   });
 
+  test('the exact call is right where the coarse one is not', () => {
+    // The coarse grid reads the middle cell of each 4 by 4 block of the fine grid, so a
+    // point near a boundary can sit in one region and take its coarse neighbour's name.
+    // The search takes the point nearest Sol where the two readings differ and both
+    // name a region. The browser tests of the panel select a system at this point,
+    // so a change in the region data fails here first.
+    let bestX = 0;
+    let bestZ = 0;
+    let bestAway = Number.POSITIVE_INFINITY;
+    let fineName = '';
+    let coarseName = '';
+    for (let iz = 0; iz < grid.size; iz += 1) {
+      const z = (grid.origin[1] as number) + (iz + 0.5) * grid.cell;
+      const row = iz * grid.size;
+      for (let ix = 0; ix < grid.size; ix += 1) {
+        const fine = regionOfId(grid.ids[row + ix] as number)?.name;
+        if (fine === undefined) continue;
+        const x = (grid.origin[0] as number) + (ix + 0.5) * grid.cell;
+        const away = Math.hypot(x, z);
+        if (away >= bestAway) continue;
+        const wide = regionOfId(coarseRegionIdAt(coarse, x, z))?.name;
+        if (wide === undefined || wide === fine) continue;
+        bestAway = away;
+        bestX = x;
+        bestZ = z;
+        fineName = fine;
+        coarseName = wide;
+      }
+    }
+    console.log('the point where the two grids disagree', {
+      x: bestX,
+      z: bestZ,
+      away: bestAway,
+      fine: fineName,
+      coarse: coarseName,
+    });
+
+    expect(bestAway).toBeLessThan(Number.POSITIVE_INFINITY);
+    // The fine grid holds the reading `findCodexRegionAt` gives, which is what
+    // `regionNameAtExact` reads.
+    expect(findCodexRegionAt({ x: bestX, z: bestZ })?.name).toBe(fineName);
+    expect(coarseName).not.toBe(fineName);
+
+    // `e2e/hud.spec.ts` and `e2e/regions.spec.ts` read the point to three decimal
+    // places, which is well inside one 49.3494 light year cell. The three readings
+    // below pin the figure and the two names those tests carry.
+    const rounded = { x: -857.675, z: -1379.602 };
+    expect(Math.abs(rounded.x - bestX)).toBeLessThan(0.001);
+    expect(Math.abs(rounded.z - bestZ)).toBeLessThan(0.001);
+    expect(findCodexRegionAt(rounded)?.name).toBe('Sanguineous Rim');
+    expect(regionOfId(coarseRegionIdAt(coarse, rounded.x, rounded.z))?.name).toBe(
+      'Inner Orion Spur',
+    );
+  });
+
   test('reads a cell of the trace grid, so it costs no further lookups', () => {
     const source = gridOf([
       [1, 2, 3],
@@ -815,4 +887,239 @@ describe('the traced set', () => {
       new Uint8Array(traced.last.buffer),
     );
   }, 240000);
+});
+
+describe('the region flow field', () => {
+  /** The cell index of a plane point on the coarse grid, as `ix` then `iz`. */
+  function cellOf(
+    onGrid: CoarseRegionGrid,
+    x: number,
+    z: number,
+  ): readonly [number, number] {
+    return [
+      Math.floor((x - (onGrid.origin[0] as number)) / onGrid.cell),
+      Math.floor((z - (onGrid.origin[1] as number)) / onGrid.cell),
+    ] as const;
+  }
+
+  test('every step stays on its own region', () => {
+    const size = coarse.size;
+    let steps = 0;
+    for (let iz = 0; iz < size; iz += 1) {
+      for (let ix = 0; ix < size; ix += 1) {
+        const at = iz * size + ix;
+        const id = coarse.ids[at] as number;
+        if (id === NO_REGION_ID) continue;
+        const byte = flow[at] as number;
+        if (byte === REGION_FLOW_END) continue;
+        const move = REGION_FLOW_STEPS[byte] as readonly [number, number];
+        const nextX = ix + move[0];
+        const nextZ = iz + move[1];
+        expect(nextX).toBeGreaterThanOrEqual(0);
+        expect(nextZ).toBeGreaterThanOrEqual(0);
+        expect(nextX).toBeLessThan(size);
+        expect(nextZ).toBeLessThan(size);
+        expect(coarse.ids[nextZ * size + nextX]).toBe(id);
+        steps += 1;
+      }
+    }
+    console.log('the flow field holds', steps, 'steps of', flow.length, 'cells');
+    expect(steps).toBeGreaterThan(0);
+  });
+
+  test('a cell that holds no region names no step', () => {
+    for (let at = 0; at < flow.length; at += 1) {
+      if ((coarse.ids[at] as number) !== NO_REGION_ID) continue;
+      expect(flow[at]).toBe(REGION_FLOW_END);
+    }
+  });
+
+  test('following the field reaches the centre', () => {
+    const size = coarse.size;
+    // The end of the walk from each cell, held so each cell is walked once. -2 means the
+    // cell has not been read yet.
+    const ends = new Int32Array(flow.length).fill(-2);
+    const stamp = new Int32Array(flow.length).fill(-1);
+    const path: number[] = [];
+    let looped = 0;
+    let offRoot = 0;
+    let atOnce = 0;
+    let walked = 0;
+
+    for (let start = 0; start < flow.length; start += 1) {
+      if ((coarse.ids[start] as number) === NO_REGION_ID) continue;
+      if ((ends[start] as number) !== -2) continue;
+      path.length = 0;
+      let at = start;
+      while ((ends[at] as number) === -2 && (flow[at] as number) !== REGION_FLOW_END) {
+        if ((stamp[at] as number) === start) {
+          looped += 1;
+          break;
+        }
+        stamp[at] = start;
+        path.push(at);
+        const move = REGION_FLOW_STEPS[flow[at] as number] as readonly [number, number];
+        const ix = at % size;
+        const iz = (at - ix) / size;
+        at = (iz + move[1]) * size + (ix + move[0]);
+      }
+      const end = (ends[at] as number) === -2 ? at : (ends[at] as number);
+      ends[at] = end;
+      for (const cell of path) ends[cell] = end;
+    }
+
+    for (let start = 0; start < flow.length; start += 1) {
+      const id = coarse.ids[start] as number;
+      if (id === NO_REGION_ID) continue;
+      const end = ends[start] as number;
+      walked += 1;
+      if (end === start) {
+        // A cell the build never reached, or the root itself, ends at once on itself.
+        atOnce += 1;
+        if ((flow[start] as number) !== REGION_FLOW_END) offRoot += 1;
+        continue;
+      }
+      if (end !== (roots[id] as number)) offRoot += 1;
+    }
+
+    console.log('the field walks', walked, 'cells and ends at once on', atOnce);
+    // No walk visits a cell twice, and every walk that moves ends at its region's root.
+    expect(looped).toBe(0);
+    expect(offRoot).toBe(0);
+    expect(walked).toBeGreaterThan(0);
+  }, 120000);
+
+  test('the shipped data has no region the field cannot cross', () => {
+    const size = coarse.size;
+    const stranded = new Int32Array(REGION_COUNT + 1);
+    for (let at = 0; at < flow.length; at += 1) {
+      const id = coarse.ids[at] as number;
+      if (id === NO_REGION_ID) continue;
+      if ((flow[at] as number) !== REGION_FLOW_END) continue;
+      if (at === (roots[id] as number)) continue;
+      stranded[id] = (stranded[id] as number) + 1;
+    }
+    const counts = Array.from(stranded.slice(1));
+    console.log('the cells no walk reached, by region id', counts);
+    expect(size).toBe(507);
+    for (let id = 1; id <= REGION_COUNT; id += 1) {
+      expect(stranded[id]).toBe(0);
+    }
+  });
+
+  test('the field crosses a region that lies in the way', () => {
+    // The region of id 1 is two lobes joined by a neck at `ix` 0, and the region of id 2
+    // fills the gap between them. A straight line from the far lobe to the near one
+    // crosses the second region, so only a walk through the neck stays on its own.
+    const rows = [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 2, 2, 2, 2, 2],
+      [1, 2, 2, 2, 2, 2, 2],
+      [1, 2, 2, 2, 2, 2, 2],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ];
+    const size = 9;
+    const cell = 200;
+    const centroid = regionOfId(1)?.centroid as readonly [number, number];
+    // The grid is placed so that the centroid of the region of id 1 sits at the middle
+    // of the cell (3, 1), which is in the near lobe, so that cell is the root.
+    const toy: CoarseRegionGrid = {
+      size,
+      origin: [centroid[0] - 3.5 * cell, centroid[1] - 1.5 * cell] as const,
+      cell,
+      ids: new Uint8Array(size * size),
+    };
+    for (let iz = 0; iz < size; iz += 1) {
+      for (let ix = 0; ix < size; ix += 1) {
+        toy.ids[iz * size + ix] = ix < 7 ? ((rows[iz] as number[])[ix] as number) : 0;
+      }
+    }
+
+    const toyRoots = regionFlowRoots(toy);
+    expect(toyRoots[1]).toBe(1 * size + 3);
+    const toyFlow = buildRegionFlow(toy);
+
+    let at = 7 * size + 3;
+    const visited: number[] = [at];
+    while ((toyFlow[at] as number) !== REGION_FLOW_END) {
+      const move = REGION_FLOW_STEPS[toyFlow[at] as number] as readonly [
+        number,
+        number,
+      ];
+      const ix = at % size;
+      const iz = (at - ix) / size;
+      at = (iz + move[1]) * size + (ix + move[0]);
+      visited.push(at);
+      expect(visited.length).toBeLessThanOrEqual(size * size);
+    }
+    expect(at).toBe(toyRoots[1]);
+    for (const step of visited) expect(toy.ids[step]).toBe(1);
+    // The walk goes through the neck, which is the column `ix` 0 at the rows 3, 4 and 5.
+    for (const row of [3, 4, 5]) {
+      expect(visited).toContain(row * size + 0);
+    }
+  });
+
+  test('the reader turns a byte into a unit step on the plane', () => {
+    const cell = 200;
+    const toy: CoarseRegionGrid = {
+      size: 3,
+      origin: [0, 0] as const,
+      cell,
+      ids: Uint8Array.from([1, 1, 1, 1, 1, 1, 1, 1, 1]),
+    };
+    const field = Uint8Array.from([0, 1, 2, 3, REGION_FLOW_END, 5, 6, 7, 4]);
+    const at = (ix: number, iz: number): readonly [number, number] =>
+      [(ix + 0.5) * cell, (iz + 0.5) * cell] as const;
+    const read = (ix: number, iz: number): readonly [number, number] | null => {
+      const point = at(ix, iz);
+      return coarseRegionFlowStepAt(toy, field, point[0], point[1]);
+    };
+    expect(read(0, 0)).toEqual([1, 0]);
+    expect(read(2, 0)?.[0]).toBeCloseTo(0, 12);
+    expect(read(2, 0)?.[1]).toBeCloseTo(-1, 12);
+    expect(read(1, 1)).toBeNull();
+    const slanted = read(1, 0) as readonly [number, number];
+    expect(Math.hypot(slanted[0], slanted[1])).toBeCloseTo(1, 12);
+    // A point outside the grid names no step and does not throw.
+    expect(coarseRegionFlowStepAt(toy, field, -10, 0)).toBeNull();
+  });
+
+  test('the field is sent with the boundary sets', () => {
+    const data = buildRegionData();
+    expect(data.flow).toBeInstanceOf(Uint8Array);
+    expect(data.flow.length).toBe(data.grid.size * data.grid.size);
+    expect(data.grid.size).toBe(507);
+    const transfers = regionResponseTransferables({
+      lines: data.lines,
+      traced: data.traced,
+      grid: data.grid,
+      flow: data.flow,
+    });
+    expect(transfers).toContain(data.flow.buffer);
+    expect(transfers).toContain(data.grid.ids.buffer);
+  }, 240000);
+
+  test('the field costs the build nothing measurable', () => {
+    const started = performance.now();
+    const field = buildRegionFlow(coarse);
+    const spent = performance.now() - started;
+    console.log('the flow field build took', spent.toFixed(1), 'milliseconds');
+    expect(field.length).toBe(flow.length);
+    expect(spent).toBeLessThan(2000);
+  });
+
+  test('a cell reads its own region on the reader', () => {
+    // The reader and the id lookup take one point the same way, so a label reads the
+    // step of the region it is standing on.
+    const point = cellOf(coarse, 0, 0);
+    expect(point[0]).toBeGreaterThanOrEqual(0);
+    expect(coarseRegionIdAt(coarse, 0, 0)).toBe(
+      coarse.ids[point[1] * coarse.size + point[0]],
+    );
+  });
 });

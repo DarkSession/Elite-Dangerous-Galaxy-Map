@@ -505,3 +505,64 @@ export async function ringColour5(
     });
   }, points);
 }
+
+/** One region label of the page, with the range from the camera to its own anchor. */
+export interface RegionLabelRange {
+  readonly name: string;
+  /** The opacity the overlay gave the label. */
+  readonly opacity: number;
+  /** The range from the camera to the label's plane anchor, in light years. */
+  readonly rangeLy: number;
+}
+
+/**
+ * Reads every region label the page holds, with the range from the camera to the plane
+ * point its own anchor sits on.
+ *
+ * The anchor is the plane point the label names, and the label's box is centred on its
+ * projection, so `planePointAt` under the middle of the box gives the anchor back. The
+ * camera position comes from the view by the same rule `src/camera/projection.ts` holds:
+ * the cursor plus the camera direction times the distance.
+ */
+export async function readRegionLabelRanges(page: Page): Promise<RegionLabelRange[]> {
+  return page.evaluate(() => {
+    const map = window.galaxyMap;
+    const probe = window.__galaxyMap;
+    const canvas = document.querySelector('canvas');
+    if (map === undefined || probe?.planePointAt === undefined || canvas === null) {
+      return [];
+    }
+    const view = map.getView();
+    const toRadians = Math.PI / 180;
+    const pitch = view.pitch * toRadians;
+    const yaw = view.yaw * toRadians;
+    const horizontal = Math.cos(pitch);
+    const camera: [number, number, number] = [
+      view.cursor[0] - horizontal * Math.sin(yaw) * view.distance,
+      view.cursor[1] + Math.sin(pitch) * view.distance,
+      view.cursor[2] - horizontal * Math.cos(yaw) * view.distance,
+    ];
+    const box = canvas.getBoundingClientRect();
+    const out: { name: string; opacity: number; rangeLy: number }[] = [];
+    for (const element of document.querySelectorAll('.region-label')) {
+      const at = element.getBoundingClientRect();
+      const point = probe.planePointAt(
+        at.left + at.width / 2 - box.left,
+        at.top + at.height / 2 - box.top,
+      );
+      out.push({
+        name: element.textContent ?? '',
+        opacity: Number(getComputedStyle(element).opacity),
+        rangeLy:
+          point === null
+            ? Number.POSITIVE_INFINITY
+            : Math.hypot(
+                point[0] - camera[0],
+                point[1] - camera[1],
+                point[2] - camera[2],
+              ),
+      });
+    }
+    return out;
+  });
+}

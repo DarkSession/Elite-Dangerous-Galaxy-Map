@@ -9,7 +9,13 @@ import {
 } from '@elite-dangerous-almanac/core/astro/codex-region-lookup';
 import { galaxyModel } from '../galaxy-model/model';
 import type { Range } from '../galaxy-model/types';
-import { NO_REGION_ID } from './regions';
+import {
+  NO_REGION_ID,
+  REGION_COUNT,
+  REGION_FLOW_END,
+  REGION_FLOW_STEPS,
+  regionOfId,
+} from './regions';
 import type { CoarseRegionGrid, RegionLines } from './types';
 
 /** The edge of one cell of the region grid, in light years. It is 4,096 / 83. */
@@ -555,6 +561,96 @@ export function buildCoarseRegionGrid(grid: RegionGrid): CoarseRegionGrid {
   };
 }
 
+/**
+ * The cell of each region the flow field walks out from, as an index into the coarse
+ * grid, or -1 for a region the grid holds no cell of. Index `id` holds the root of the
+ * region of that id, so index 0 is never a root.
+ *
+ * The root is the cell of the region nearest that region's own centroid. Where the
+ * centroid's own cell is on the region that is the centroid's cell itself, because no
+ * cell sits nearer to a point than the cell that holds it.
+ */
+export function regionFlowRoots(coarse: CoarseRegionGrid): Int32Array {
+  const size = coarse.size;
+  const roots = new Int32Array(REGION_COUNT + 1).fill(-1);
+  const gaps = new Float64Array(REGION_COUNT + 1).fill(Number.POSITIVE_INFINITY);
+  for (let iz = 0; iz < size; iz += 1) {
+    const z = (coarse.origin[1] as number) + (iz + 0.5) * coarse.cell;
+    for (let ix = 0; ix < size; ix += 1) {
+      const id = coarse.ids[iz * size + ix] as number;
+      if (id === NO_REGION_ID) continue;
+      const region = regionOfId(id);
+      if (region === undefined) continue;
+      const x = (coarse.origin[0] as number) + (ix + 0.5) * coarse.cell;
+      const gapX = x - (region.centroid[0] as number);
+      const gapZ = z - (region.centroid[1] as number);
+      const gap = gapX * gapX + gapZ * gapZ;
+      if (gap < (gaps[id] as number)) {
+        gaps[id] = gap;
+        roots[id] = iz * size + ix;
+      }
+    }
+  }
+  return roots;
+}
+
+/**
+ * Builds the flow field over the coarse region grid: one byte for each cell, naming the
+ * step to take to come nearer that cell's own region centre while staying on the region.
+ *
+ * The walk is breadth-first over the eight-neighbourhood, one region at a time, from
+ * that region's root cell. A cell the walk reaches writes the step **back** along the
+ * edge the walk reached it by, so following the bytes from any reached cell walks the
+ * tree to the root. The root writes the end-of-path byte, and so does every cell the
+ * walk never reached, which is a patch of the region with no path to the centre.
+ *
+ * One field covers all 42 regions, because a cell holds exactly one region id and the
+ * step it carries is a step inside that region. One array of 507 by 507 bytes is 251
+ * KiB, against 42 of the same, which is 10.3 MB.
+ *
+ * The walk runs once over the 257,049 cells of the coarse grid. Its cost does not
+ * follow the star systems the map holds.
+ */
+export function buildRegionFlow(coarse: CoarseRegionGrid): Uint8Array {
+  const size = coarse.size;
+  const ids = coarse.ids;
+  const flow = new Uint8Array(size * size).fill(REGION_FLOW_END);
+  const reached = new Uint8Array(size * size);
+  const queue = new Int32Array(size * size);
+  const roots = regionFlowRoots(coarse);
+
+  for (let id = 1; id <= REGION_COUNT; id += 1) {
+    const root = roots[id] as number;
+    if (root < 0) continue;
+    reached[root] = 1;
+    queue[0] = root;
+    let head = 0;
+    let tail = 1;
+    while (head < tail) {
+      const at = queue[head] as number;
+      head += 1;
+      const ix = at % size;
+      const iz = (at - ix) / size;
+      for (let step = 0; step < REGION_FLOW_STEPS.length; step += 1) {
+        const move = REGION_FLOW_STEPS[step] as readonly [number, number];
+        const nextX = ix + move[0];
+        const nextZ = iz + move[1];
+        if (nextX < 0 || nextZ < 0 || nextX >= size || nextZ >= size) continue;
+        const next = nextZ * size + nextX;
+        if (reached[next] === 1) continue;
+        if ((ids[next] as number) !== id) continue;
+        reached[next] = 1;
+        // The step back to the cell the walk came from is the opposite of the step it
+        // came by, and the eight steps run around the circle in order.
+        flow[next] = (step + 4) & 7;
+        queue[tail] = next;
+        tail += 1;
+      }
+    }
+  }
+  return flow;
+}
+
 /** What one region worker run gives the main thread. */
 export interface RegionData {
   /** The smoothed boundary set, which the `simplified` mode draws. */
@@ -563,6 +659,8 @@ export interface RegionData {
   readonly traced: RegionLines;
   /** The coarse region grid the label placement samples. */
   readonly grid: CoarseRegionGrid;
+  /** The flow field over that grid, which a blocked label follows. */
+  readonly flow: Uint8Array;
 }
 
 /**
@@ -575,10 +673,12 @@ export function buildRegionData(
 ): RegionData {
   const grid = fillRegionGrid(bounds, size);
   const trace = traceRegionChains(grid);
+  const coarse = buildCoarseRegionGrid(grid);
   return {
     lines: packRegionLines(grid, trace),
     traced: packTracedLines(grid, trace),
-    grid: buildCoarseRegionGrid(grid),
+    grid: coarse,
+    flow: buildRegionFlow(coarse),
   };
 }
 

@@ -52,6 +52,8 @@ import { createGridLabelOverlay } from './grid-labels';
 import type { GridLabelOverlay, GridLabelPlaced } from './grid-labels';
 import { createLabelOverlay, STILL_FRAME } from './labels';
 import type { FrameTiming, LabelOverlay, SamplingStats } from './labels';
+import { createCursorMarkerOverlay } from './cursor-marker';
+import type { CursorMarkerOverlay } from './cursor-marker';
 import { createMarkerOverlay } from './markers';
 import type { MarkerOverlay } from './markers';
 
@@ -82,8 +84,42 @@ export const SELECTION_DISTANCE_LY = 500;
  */
 export type RegionMode = 'off' | 'simplified' | 'accurate';
 
-/** The mode the map takes when the host names none. */
-export const DEFAULT_REGION_MODE: RegionMode = 'simplified';
+/**
+ * The mode the map takes when the host names none. It is the traced set, which departs
+ * from the region data by 0. The band is now wide enough to hide the raster's staircase
+ * without moving the line, so the map draws the set the data holds and `simplified`
+ * stays as the option for a host that wants the curve.
+ */
+export const DEFAULT_REGION_MODE: RegionMode = 'accurate';
+
+/** What `regionNameAtExact` reads from the region cell lookup. */
+type RegionLookup =
+  typeof import('@elite-dangerous-almanac/core/astro/codex-region-lookup');
+
+/**
+ * The region cell lookup, loaded on the first exact query and kept after it.
+ *
+ * The table is about 199 KiB and only the region worker read it before. A dynamic import
+ * puts it in a chunk of its own, so the entry chunk is the size it was and a map that
+ * never asks never fetches it. The promise is held at module level, so a second call
+ * while a first load runs waits on the same load and starts no second one.
+ *
+ * A **failed** load is dropped rather than kept. One network fault while the user opens
+ * the first information panel would otherwise hold a rejected promise for the life of the
+ * page, and the region field would read `Unknown` for every system after it, even once the
+ * network comes back. The next call starts a fresh load instead.
+ */
+let regionLookup: Promise<RegionLookup> | null = null;
+
+function loadRegionLookup(): Promise<RegionLookup> {
+  regionLookup ??= import(
+    '@elite-dangerous-almanac/core/astro/codex-region-lookup'
+  ).catch((reason: unknown) => {
+    regionLookup = null;
+    throw reason;
+  });
+  return regionLookup;
+}
 
 /** Options for `createGalaxyMap`. */
 export interface GalaxyMapOptions {
@@ -92,10 +128,16 @@ export interface GalaxyMapOptions {
    * canvas's parent, so a host that gives a canvas alone gets a working map.
    */
   readonly labelHost?: HTMLElement;
-  /** What the region overlay draws. The default is `simplified`. */
+  /** What the region overlay draws. The default is `accurate`. */
   readonly regionMode?: RegionMode;
   /** True draws the coordinate grid. The grid is off unless the options ask for it. */
   readonly grid?: boolean;
+  /**
+   * False takes the cursor marker off. The marker is on unless the options turn it off,
+   * because nothing else on the screen says where the cursor is. A host that draws its
+   * own cursor turns this one off here or with `setCursorMarkerVisible`.
+   */
+  readonly cursorMarker?: boolean;
   /**
    * Builds the heads-up display. `true` builds it with its defaults, and an object
    * names the title, the host and the footer actions. The HUD is off when the options
@@ -302,6 +344,10 @@ export interface GalaxyMap {
   setSystemNamesVisible(on: boolean): void;
   /** True while the marker name labels draw. */
   areSystemNamesVisible(): boolean;
+  /** Turns the cursor marker on or off. */
+  setCursorMarkerVisible(on: boolean): void;
+  /** True while the cursor marker draws. */
+  getCursorMarkerVisible(): boolean;
   /** Turns the coordinate grid on or off. */
   setGridVisible(on: boolean): void;
   /** True while the coordinate grid draws. */
@@ -320,6 +366,23 @@ export interface GalaxyMap {
    * null before the scene data loads.
    */
   regionNameAt(point: readonly [number, number, number]): string | null;
+  /**
+   * The name of the codex region that holds a point, resolved on the game's own region
+   * grid of 49.3494 light years, or null. It reads the `x` and the `z` of the point and
+   * ignores its `y`, as `regionNameAt` does.
+   *
+   * `regionNameAt` reads the coarse grid, whose cells are 197.3976 light years, and it
+   * answers in the same tick. It is the reading for something that follows the cursor
+   * every frame, such as the HUD's top bar. This call is the reading for something that
+   * names one place once, such as the information panel of a selected system, where a
+   * wrong region is stated as a fact.
+   *
+   * The call gives a promise because the region cell table is about 199 KiB and loads on
+   * the first call. The table then stays, so every call after the first answers from it.
+   * A second call while a first load runs waits on the same load. A failed load rejects
+   * the promise rather than throwing out of the call.
+   */
+  regionNameAtExact(point: readonly [number, number, number]): Promise<string | null>;
   /** The dataset catalog the options named, without the `load` functions. */
   getDatasets(): DatasetInfo[];
   /** The dataset now on the map, or null. */
@@ -466,8 +529,12 @@ export function createGalaxyMap(
   let labels: LabelOverlay | null = null;
   let markers: MarkerOverlay | null = null;
   let gridLabels: GridLabelOverlay | null = null;
+  let cursorMarker: CursorMarkerOverlay | null = null;
   let namesOn = false;
   let gridOn = options.grid === true;
+  // On unless the options turn it off. The grid reads `=== true` because it is off by
+  // default; the marker reads `!== false` because it is on by default.
+  let cursorMarkerOn = options.cursorMarker !== false;
   const selectionWork: FrameAccumulator = createFrameAccumulator();
   const frameIntervals: FrameAccumulator = createFrameAccumulator();
   let ownedHost: HTMLElement | null = null;
@@ -696,6 +763,10 @@ export function createGalaxyMap(
     // The hover pick and the overlay marks are one reading, because the two run together
     // around the draw call and the budget covers them together.
     const started = performance.now();
+    // Before the markers and the labels, so the marker joins the overlay first. The
+    // stacking is by `z-index` and not by tree order, which `src/app/plane-overlay.ts`
+    // states.
+    cursorMarker?.update({ view, viewport: size, on: cursorMarkerOn });
     // The hover pick runs once per frame and not once per pointer event, and it runs
     // again here after a camera move, because the marker under a still pointer moves
     // when the camera does.
@@ -758,6 +829,7 @@ export function createGalaxyMap(
     labels = host === null ? null : createLabelOverlay(host);
     markers = host === null ? null : createMarkerOverlay(host);
     gridLabels = host === null ? null : createGridLabelOverlay(host);
+    cursorMarker = host === null ? null : createCursorMarkerOverlay(host);
     renderer.setGridDraw(gridOn);
 
     // The browser gives every touch to the map, and scrolls, pans and zooms nothing of
@@ -815,7 +887,7 @@ export function createGalaxyMap(
     if (disposed) return;
     renderer.setRegionLines(scene.regionLines, scene.regionLinesTraced);
     renderer.setRegionDraw(regionMode !== 'off', regionMode === 'accurate');
-    labels?.setGrid(scene.regionGrid);
+    labels?.setGrid(scene.regionGrid, scene.regionFlow);
     regionGrid = scene.regionGrid;
     regionLines = scene.regionLines;
 
@@ -1078,6 +1150,8 @@ export function createGalaxyMap(
       labels = null;
       markers?.clear();
       markers = null;
+      cursorMarker?.clear();
+      cursorMarker = null;
       gridLabels?.clear();
       gridLabels = null;
       ownedHost?.remove();
@@ -1172,6 +1246,16 @@ export function createGalaxyMap(
     areSystemNamesVisible(): boolean {
       return namesOn;
     },
+    setCursorMarkerVisible(on: boolean): void {
+      cursorMarkerOn = on !== false;
+      // The next frame places the marker again. Turning it off takes the element out of
+      // the overlay at once, so a host that reads the overlay after the call sees the
+      // change without a frame, as `setGridVisible` clears the grid labels.
+      if (!cursorMarkerOn) cursorMarker?.clear();
+    },
+    getCursorMarkerVisible(): boolean {
+      return cursorMarkerOn;
+    },
     setGridVisible(on: boolean): void {
       const next = on === true;
       // A set to the value the switch already holds raises no listener, so a host that
@@ -1194,6 +1278,14 @@ export function createGalaxyMap(
     regionNameAt(point: readonly [number, number, number]): string | null {
       if (regionGrid === null) return null;
       return regionOfId(coarseRegionIdAt(regionGrid, point[0], point[2]))?.name ?? null;
+    },
+    regionNameAtExact(
+      point: readonly [number, number, number],
+    ): Promise<string | null> {
+      return loadRegionLookup().then(
+        (lookup) =>
+          lookup.findCodexRegionAt({ x: point[0], z: point[2] })?.name ?? null,
+      );
     },
     // The four dataset members are the state machine's own calls. Each one is a closure
     // of `createDatasetState` and reads no `this`, so the handle carries it as it is.

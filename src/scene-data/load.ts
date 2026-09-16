@@ -124,5 +124,6 @@ export async function loadSceneData(
     regionLines: region.lines,
     regionLinesTraced: region.traced,
     regionGrid: region.grid,
+    regionFlow: region.flow,
   };
 }

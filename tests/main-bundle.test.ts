@@ -5,11 +5,12 @@
 //
 // 1. The output holds the entry chunk, the three worker chunks, the HUD chunk and the
 //    three font files, and it holds no page, no demo data and no file of `public/`.
-// 2. The region cell lookup stays in the region worker. `astro/codex-region-lookup` is
-//    about 199 KiB of run-length region cells. The label sweep reads regions on the main
+// 2. The region cell lookup stays out of the load-time chunks. `astro/codex-region-lookup`
+//    is about 199 KiB of run-length region cells. The label sweep reads regions on the main
 //    thread, so the reader of the coarse grid lives in `src/scene-data/regions.ts` and
-//    imports nothing from that lookup. If it ever imports the trace instead, the whole
-//    table joins the entry chunk and this test fails.
+//    imports nothing from that lookup. `regionNameAtExact` reads the lookup, and it loads
+//    the lookup on its first call. If either one ever imports the table at load, the table
+//    joins the entry chunk or a chunk beside it, and this test fails.
 // 3. Every worker chunk bundles what it imports. A worker starts with no import map, so
 //    a bare specifier in a worker chunk does not resolve in the browser.
 // 4. `package.json` names paths the build emits, and the declaration names the public
@@ -37,7 +38,10 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * The page chunk measured 108,194 bytes when this test was written, 124,530 bytes after
  * the phase 3 change, 131,090 after the deep zoom change and 152,848 after the flight,
  * markers and grid change. The library entry chunk measured **162,593 bytes** on the
- * first library build. It is larger than the page chunk although it carries no page and
+ * first library build and **198,764 bytes** with the cursor marker, the plane overlay and
+ * the exact region lookup in, which leaves about 1.2 kB under the bound. The next change
+ * that touches the entry chunk must read the bound again. It is larger than the page chunk
+ * although it carries no page and
  * externalises `gl-matrix` and `@elite-dangerous-almanac/core`, because Vite compresses
  * and mangles a library build but keeps its whitespace: a host's own bundler minifies it.
  */
@@ -100,7 +104,7 @@ function nameOf(path: string): string {
   return path.split('/').pop() ?? path;
 }
 
-/** Every module specifier an emitted chunk imports. */
+/** Every module specifier an emitted chunk imports, static and dynamic. */
 function importsOf(text: string): string[] {
   const found: string[] = [];
   const pattern = /(?:\bfrom|\bimport)\s*\(?\s*["']([^"']+)["']/g;
@@ -110,6 +114,43 @@ function importsOf(text: string): string[] {
     match = pattern.exec(text);
   }
   return found;
+}
+
+/**
+ * Every module specifier a chunk imports **at load**. A dynamic import reads as
+ * `import("...")` with the bracket, and the browser fetches it only when the call runs, so
+ * the bracket tells a load-time import from a lazy one.
+ */
+function staticImportsOf(text: string): string[] {
+  const found: string[] = [];
+  const pattern = /(?:\bfrom|\bimport)\s*(\(\s*)?["']([^"']+)["']/g;
+  let match = pattern.exec(text);
+  while (match !== null) {
+    if (match[1] === undefined) found.push(match[2] as string);
+    match = pattern.exec(text);
+  }
+  return found;
+}
+
+/**
+ * Every chunk the browser fetches to run one chunk: the chunk itself, the chunks it
+ * imports at load, and so on down. A relative specifier of an emitted chunk names a file
+ * beside it, so the walk reads the name alone.
+ */
+function chunksAtLoad(start: string): string[] {
+  const byName = new Map(scripts.map((path) => [nameOf(path), path]));
+  const reached: string[] = [];
+  const queue = [start];
+  while (queue.length > 0) {
+    const path = queue.pop() as string;
+    if (reached.includes(path)) continue;
+    reached.push(path);
+    for (const specifier of staticImportsOf(readFileSync(path, 'utf8'))) {
+      const next = byName.get(nameOf(specifier));
+      if (next !== undefined) queue.push(next);
+    }
+  }
+  return reached;
 }
 
 let outDir = '';
@@ -192,7 +233,7 @@ describe('the library build', () => {
     }
   });
 
-  test('carries the region cell lookup in the region worker only', () => {
+  test('keeps the region cell lookup out of the chunks that load with the map', () => {
     const carriers: string[] = [];
     for (const path of scripts) {
       const text = readFileSync(path, 'utf8');
@@ -200,8 +241,23 @@ describe('the library build', () => {
         carriers.push(nameOf(path));
     }
     console.log('the chunks that carry the region cell lookup', carriers);
-    expect(carriers).toHaveLength(1);
-    expect(carriers[0]?.startsWith('region-lines.worker-')).toBe(true);
+
+    // The entry chunk is `index.js`, the file `package.json` names. A worker chunk is an
+    // entry of its own, but the browser starts a worker by its URL and not by an import,
+    // so a table in a worker chunk costs a host that never starts that worker nothing.
+    const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
+    const atLoad = chunksAtLoad(entry).map(nameOf);
+    console.log('the chunks the entry chunk loads with', atLoad);
+
+    // How many chunks carry the table follows the build, so this test asserts no count.
+    // `vite.config.lib.ts` keeps `@elite-dangerous-almanac/core` external, so the library
+    // build leaves the specifier bare and the worker chunk is the only carrier. A build
+    // that bundles the package instead carries it in the worker chunk and in one lazily
+    // loaded chunk. Both shapes hold the two rules below, which are what the bound is for.
+    for (const name of carriers) {
+      expect(name, `${name} is the entry chunk`).not.toBe('index.js');
+      expect(atLoad, `${name} loads with the entry chunk`).not.toContain(name);
+    }
   });
 
   test('keeps the entry chunk and the HUD chunk small', () => {

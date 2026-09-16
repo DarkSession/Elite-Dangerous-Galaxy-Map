@@ -70,6 +70,13 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
     },
     { label: 'DISTANCE FROM SOL', value: formatLightYears(distanceFromSol(position)) },
     { label: 'RANGE', value: formatLightYears(range) },
+    // The region is looked up on a promise, so the field is placed at once with an
+    // empty value and the name is written in when the answer arrives. The grid then
+    // does not reflow under the reader.
+    //
+    // It takes both columns because a region name runs to 26 characters, as
+    // `Outer Scutum-Centaurus Arm` does, and one column of two is too narrow for it.
+    { label: 'REGION', value: '', wide: true },
   ];
   const add = (label: string, value: string | undefined): void => {
     // A field the record does not carry is left out, and not shown empty.
@@ -268,7 +275,12 @@ export function createInfoPanel(
   element.append(header, body, footer);
 
   let rangeValue: HTMLElement | null = null;
+  let regionValue: HTMLElement | null = null;
   let shown: RealSystem | null = null;
+  // Which lookup the panel is waiting on. A lookup whose selection has changed before it
+  // resolves is dropped, so a slow first load cannot write the region of a system the
+  // user has left.
+  let regionRequest = 0;
 
   /** The colour of each category, read once per build of the panel. */
   function colorsByName(): Map<string, readonly [number, number, number]> {
@@ -285,6 +297,8 @@ export function createInfoPanel(
     const system = map.getSelection();
     shown = system;
     rangeValue = null;
+    regionValue = null;
+    regionRequest += 1;
     // The position's button is made again with the grid, so the tick it may hold goes
     // with it.
     clearTick();
@@ -307,6 +321,7 @@ export function createInfoPanel(
       const value = make(doc, 'div', 'gm-hud__field-value');
       value.textContent = field.value;
       if (field.label === 'RANGE') rangeValue = value;
+      if (field.label === 'REGION') regionValue = value;
       if (field.copy === undefined) {
         box.append(label, value);
       } else {
@@ -321,6 +336,22 @@ export function createInfoPanel(
       grid.appendChild(box);
     }
     parts.push(grid);
+
+    // `Unknown` reads for a position the region map does not cover and for a failed
+    // load, because the panel states one fact and an empty field states none.
+    const request = regionRequest;
+    const writeRegion = (name: string): void => {
+      if (request !== regionRequest || regionValue === null) return;
+      setText(regionValue, name);
+    };
+    map.regionNameAtExact(system.position).then(
+      (name) => {
+        writeRegion(name ?? 'Unknown');
+      },
+      () => {
+        writeRegion('Unknown');
+      },
+    );
 
     const colors = colorsByName();
     const categoryNames = [system.primaryCategory, ...system.secondaryCategories];

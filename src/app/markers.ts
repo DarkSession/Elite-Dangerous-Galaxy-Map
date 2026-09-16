@@ -180,6 +180,8 @@ function makeLabel(document: Document): HTMLElement {
   element.className = 'gm-system-label';
   const style = element.style;
   style.position = 'absolute';
+  // Over every plane element. `src/app/plane-overlay.ts` states the rule.
+  style.zIndex = '1';
   style.pointerEvents = 'none';
   style.whiteSpace = 'nowrap';
   style.boxSizing = 'border-box';
@@ -199,6 +201,8 @@ function makeRing(document: Document): HTMLElement {
   element.className = 'gm-system-ring';
   const style = element.style;
   style.position = 'absolute';
+  // Over every plane element. `src/app/plane-overlay.ts` states the rule.
+  style.zIndex = '1';
   style.pointerEvents = 'none';
   style.boxSizing = 'border-box';
   style.borderRadius = '50%';
@@ -220,6 +224,8 @@ function makePin(document: Document): SVGSVGElement {
   svg.style.position = 'absolute';
   svg.style.pointerEvents = 'none';
   svg.style.overflow = 'visible';
+  // Over every plane element. `src/app/plane-overlay.ts` states the rule.
+  svg.style.zIndex = '1';
 
   const path = document.createElementNS(namespace, 'path');
   path.setAttribute('d', PIN_PATH);

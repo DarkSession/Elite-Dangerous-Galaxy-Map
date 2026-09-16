@@ -2,14 +2,18 @@
 // runs after the tone map, over the finished frame, so it is an overlay and not a
 // scene pass: no look constant of the far view changes it, and it changes none of them.
 //
-// The line is one soft warm band and it draws in three steps. The first step expands
-// each segment into a screen-space quad and writes its coverage into a single-channel
-// buffer with the MAX blend equation, so a join keeps the smallest distance rather than
-// blending twice. The second step blurs that buffer along each axis, which rounds the 90
-// degree corners of the traced set; it runs in `accurate` alone and only where the
-// region grid cell reaches 3 CSS pixels on the screen. The third step reads the blurred
-// buffer once, divides it by the kernel's own response at the ridge, and writes the tone
-// over the frame.
+// The line is one soft warm band and it draws in two steps. The first step expands each
+// segment into a screen-space quad and writes its coverage into a single-channel buffer
+// with the MAX blend equation, so a join keeps the smallest distance rather than
+// blending twice. The second step reads that buffer once and writes the tone over the
+// frame.
+//
+// The pass does not smooth the coverage. The band is 1.6 per cent of the viewport height
+// each side, which is 17.28 CSS pixels at 1,080 rows, and the coverage is an exact
+// distance to the segment blended with MAX, so a 90 degree corner of the traced set is
+// already a round turn of that half width. The range fade draws no line nearer than
+// 10,000 light years, where one region cell measures 4.62 CSS pixels, which is 0.133 of
+// the band, so the raster's staircase sits far inside the band's own ramp.
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -17,7 +21,6 @@ import type { RegionLines } from '../scene-data/types';
 import vertexSource from './shaders/regions.vert?raw';
 import fragmentSource from './shaders/regions.frag?raw';
 import fullScreenSource from './shaders/fullscreen.vert?raw';
-import blurSource from './shaders/region-blur.frag?raw';
 import compositeSource from './shaders/region-composite.frag?raw';
 
 /**
@@ -30,25 +33,17 @@ export const REGION_TONE: readonly [number, number, number] = [0.86, 0.74, 0.6];
 /** How opaque a boundary line is where the overlay draws in full. */
 export const REGION_LINE_OPACITY = 0.55;
 
-/** The width of the whole line, in CSS pixels. Half of it is the ramp's own reach. */
-export const REGION_LINE_WIDTH_CSS = 6;
-
 /** The side of one cell of the region grid the traced set runs along, in light years. */
 export const REGION_CELL_LY = 49.3494;
 
-/**
- * The largest blur radius, in CSS pixels. The kernel holds `2 * ceil(radius) + 1` taps,
- * so the cap holds the count at 17.
- */
-export const REGION_BLUR_MAX_RADIUS_CSS = 8;
+/** The share of the viewport height the band's half width takes. */
+export const REGION_BAND_HALF_WIDTH_SHARE = 0.016;
 
-/**
- * The smallest standard deviation the kernel takes, in CSS pixels. Below it a step of
- * one CSS pixel is a poor sample of the kernel, and the band would go back to the
- * staircase it is there to soften. The floor holds every radius under 3 CSS pixels at
- * the kernel the radius of 3 gives.
- */
-export const REGION_BLUR_MIN_SIGMA_CSS = 1;
+/** The smallest half width the band takes, in CSS pixels. */
+export const REGION_BAND_HALF_WIDTH_MIN_CSS = 8;
+
+/** The largest half width the band takes, in CSS pixels. */
+export const REGION_BAND_HALF_WIDTH_MAX_CSS = 24;
 
 /** The zoom distance above which the overlay draws nothing, in light years. */
 export const REGION_FADE_IN_FAR = 30000;
@@ -57,24 +52,13 @@ export const REGION_FADE_IN_FAR = 30000;
 export const REGION_FADE_IN_NEAR = 20000;
 
 /**
- * The zoom distance at and below which the overlay draws nothing, in light years. The
- * traced staircase steps about 9 CSS pixels at this zoom and grows from there, and the
- * HUD's top bar names the region under the cursor at every zoom, so a line below this
- * distance carries no reading a user needs.
- */
-export const REGION_CLOSE_NONE = 5000;
-
-/** The zoom distance at and above which the close end draws the overlay in full. */
-export const REGION_CLOSE_FULL = 10000;
-
-/**
  * The range at and below which a line draws nothing, in light years. The range is read
  * per pixel, from the camera to the plane point the pixel sees, and not from the zoom.
  *
- * These two are not `REGION_CLOSE_NONE` and `REGION_CLOSE_FULL`, which are the zoom band
- * the region labels hold. A close zoom keeps the lines near the horizon, where the plane
- * is far, and takes away the lines near the cursor, where the staircase is wider than the
- * reading it carries.
+ * A close zoom therefore keeps the lines near the horizon, where the plane is far, and
+ * takes away the lines near the cursor, where the staircase is wider than the reading it
+ * carries. The region labels read the same two figures at their own plane anchor, so a
+ * name and the line under it read at the same strength.
  */
 export const REGION_RANGE_NONE = 10000;
 
@@ -105,82 +89,19 @@ export function regionFade(distance: number): number {
 }
 
 /**
- * The blur radius for a frame, in CSS pixels. It is the region grid's own cell measured
- * on the screen at the cursor, capped at 8, and 0 in `simplified`, which never blurs
- * because the smoothed set has no staircase.
+ * The band's half width for a viewport, in CSS pixels. It is 1.6 per cent of the
+ * viewport height, held between 8 and 24, so the whole band runs from 16 to 48 CSS
+ * pixels and measures 34.6 at 1,080 rows.
  *
- * The radius is the whole cell and not a part of it. The corner the blur has to round is
- * one whole cell tall and one whole cell wide, and a smaller share would stop the blur
- * above the zoom at which a user on a 720 row buffer first reads the overlay.
+ * The width is a share of the viewport and not a fixed number because the band is wide.
+ * A fixed 34.6 CSS pixels would cover a tenth of a 360 row window and a sixtieth of a
+ * 2,160 row one, and the boundary would read as a different thing on each. The clamp
+ * acts at 500 CSS rows and below, and at 1,500 and above.
  */
-export function regionBlurRadiusCss(
-  focalCss: number,
-  distance: number,
-  traced: boolean,
-): number {
-  if (!traced || !(distance > 0)) return 0;
-  // The radius reads the cursor with a floor at the nearest range that draws a line.
-  // The range fade draws none nearer than 10,000 light years, so the largest staircase
-  // a close frame can hold is the cell at that range.
-  const range = Math.max(distance, REGION_RANGE_NONE);
-  return Math.min((focalCss * REGION_CELL_LY) / range, REGION_BLUR_MAX_RADIUS_CSS);
-}
-
-/** The kernel's standard deviation for a radius, in CSS pixels, with its floor. */
-export function regionBlurSigma(radiusCss: number): number {
-  return Math.max(radiusCss / 3, REGION_BLUR_MIN_SIGMA_CSS);
-}
-
-/**
- * How many taps a kernel of a radius holds. The floor on the standard deviation gives 7
- * at every radius under 3 CSS pixels, and the cap of 8 gives 17 and no more.
- */
-export function regionBlurTaps(radiusCss: number): number {
-  return 2 * Math.ceil(3 * regionBlurSigma(radiusCss)) + 1;
-}
-
-/**
- * The kernel the blur shader reads, in tap order, summing to 1. It is a Gaussian of
- * standard deviation `max(radius / 3, 1)` CSS pixels sampled one CSS pixel apart.
- */
-export function regionBlurKernel(radiusCss: number): number[] {
-  const taps = regionBlurTaps(radiusCss);
-  const middle = (taps - 1) / 2;
-  const sigma = regionBlurSigma(radiusCss);
-  const weights: number[] = [];
-  let total = 0;
-  for (let tap = 0; tap < taps; tap += 1) {
-    const offset = tap - middle;
-    const weight = Math.exp(-(offset * offset) / (2 * sigma * sigma));
-    weights.push(weight);
-    total += weight;
-  }
-  for (let tap = 0; tap < taps; tap += 1) {
-    weights[tap] = (weights[tap] as number) / total;
-  }
-  return weights;
-}
-
-/**
- * The kernel's own response at the ridge, which normalises the blurred coverage.
- *
- * The coverage across a straight line is a triangular ridge, `max(0, 1 - gap /
- * halfWidth)`, and a blur lowers its peak. The pass divides by this reading, so the
- * band's peak alpha is the stated opacity at every radius. The sum runs the same
- * discrete kernel the shader runs, against the continuous ramp, so the number and the
- * kernel cannot drift apart. It takes no device pixel ratio: the normalisation is a
- * reading of the continuous ramp and not of the sampled one.
- */
-export function regionBlurPeak(radiusCss: number, halfWidthCss: number): number {
-  if (!(radiusCss > 0)) return 1;
-  const weights = regionBlurKernel(radiusCss);
-  const middle = (weights.length - 1) / 2;
-  let peak = 0;
-  for (let tap = 0; tap < weights.length; tap += 1) {
-    const offset = Math.abs(tap - middle);
-    peak += (weights[tap] as number) * Math.max(0, 1 - offset / halfWidthCss);
-  }
-  return peak;
+export function regionBandHalfWidthCss(viewportHeightCss: number): number {
+  const share = REGION_BAND_HALF_WIDTH_SHARE * viewportHeightCss;
+  if (!(share > REGION_BAND_HALF_WIDTH_MIN_CSS)) return REGION_BAND_HALF_WIDTH_MIN_CSS;
+  return Math.min(share, REGION_BAND_HALF_WIDTH_MAX_CSS);
 }
 
 /** What one region pass draw needs. */
@@ -197,10 +118,6 @@ export interface RegionPassFrame {
   readonly fade: number;
   /** How many device pixels one CSS pixel holds. */
   readonly pixelRatio: number;
-  /** The focal length of the frame in CSS pixels, which the blur radius reads. */
-  readonly focalCss: number;
-  /** The camera's distance to the cursor, in light years. The blur radius reads it. */
-  readonly distance: number;
   /**
    * True draws the traced boundary set and false the smoothed one. The pass holds both,
    * so a change is a bind of another vertex array and not an upload.
@@ -218,17 +135,15 @@ export interface RegionPass {
   dispose(): void;
 }
 
-/** The three programs the overlay needs. */
+/** The two programs the overlay needs. */
 export interface RegionPrograms {
   /** Writes segment coverage into the single-channel buffer. */
   readonly ribbon: Program;
-  /** Blurs that buffer along one axis. */
-  readonly blur: Program;
-  /** Reads the blurred buffer and writes the band over the frame. */
+  /** Reads the coverage buffer and writes the band over the frame. */
   readonly composite: Program;
 }
 
-/** Compiles the ribbon program, the blur program and the composite program. */
+/** Compiles the ribbon program and the composite program. */
 export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms {
   return {
     ribbon: createProgram(gl, 'regions', vertexSource, fragmentSource, [
@@ -236,12 +151,6 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       'uChunkOffset',
       'uTargetSize',
       'uHalfWidth',
-    ]),
-    blur: createProgram(gl, 'region-blur', fullScreenSource, blurSource, [
-      'uCoverage',
-      'uStep',
-      'uTaps',
-      'uWeights',
     ]),
     composite: createProgram(
       gl,
@@ -252,7 +161,6 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
         'uCoverage',
         'uTone',
         'uOpacity',
-        'uPeak',
         'uInverseViewProjection',
         'uPlaneY',
         'uRangeNone',
@@ -262,7 +170,7 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
   };
 }
 
-/** The single-channel target the ribbon step writes and the blur step reads. */
+/** The single-channel target the ribbon step writes and the composite step reads. */
 interface CoverageTarget {
   readonly framebuffer: WebGLFramebuffer;
   readonly texture: WebGLTexture;
@@ -274,19 +182,17 @@ interface CoverageTarget {
 }
 
 /**
- * Creates one coverage target. `R8` holds the coverage alone: the second channel carried
- * the near fade this change removes. Eight bits are enough, because the coverage is a
- * distance against the half width and one part in 255 is a sixtieth of a device pixel at
- * the widths this pass draws.
+ * Creates the coverage target. `R8` holds the coverage alone: the second channel carried
+ * a near fade an earlier change removed. Eight bits are enough, because the coverage is a
+ * distance against the half width and one part in 255 is a two hundredth of a device
+ * pixel at the widths this pass draws.
  *
  * The target stays at the full drawing buffer size. At half resolution the sampled peak
- * of a straight run moves from 0.67 to 1.00 with the line's own phase, and one
- * normalisation cannot hold a peak that moves by a third.
+ * of a straight run moves with the line's own phase, and the composite reads the peak.
  *
- * The filter is linear, which `R8` is filterable for. The blur steps one CSS pixel at a
- * time, which is not a whole texel at a device pixel ratio above 1.
+ * The filter is linear, which `R8` is filterable for.
  *
- * Every target takes its storage on the first draw, so the overlay costs no memory at
+ * The target takes its storage on the first draw, so the overlay costs no memory at
  * 30,000 light years and above.
  */
 function createCoverageTarget(gl: WebGL2RenderingContext): CoverageTarget {
@@ -401,38 +307,11 @@ export function createRegionPass(
   const tracedUpload = traced === lines ? smoothedUpload : upload(traced);
 
   const coverage = createCoverageTarget(gl);
-  // The blur is separable, so it needs one target for each axis. The pair is the same
-  // size and the same format as the coverage itself.
-  const blurFirst = createCoverageTarget(gl);
-  const blurSecond = createCoverageTarget(gl);
 
   const drawFullScreen = (): void => {
     gl.bindVertexArray(fullScreenVertexArray);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
-  };
-
-  /** One axis of the blur, from a texture into a target. */
-  const blurAxis = (
-    program: Program,
-    source: WebGLTexture,
-    target: CoverageTarget,
-    width: number,
-    height: number,
-    stepX: number,
-    stepY: number,
-    weights: number[],
-  ): void => {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-    gl.viewport(0, 0, width, height);
-    gl.useProgram(program.program);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, source);
-    gl.uniform1i(program.uniforms['uCoverage'] ?? null, 0);
-    gl.uniform2f(program.uniforms['uStep'] ?? null, stepX, stepY);
-    gl.uniform1i(program.uniforms['uTaps'] ?? null, weights.length);
-    gl.uniform1fv(program.uniforms['uWeights'] ?? null, weights);
-    drawFullScreen();
   };
 
   return {
@@ -443,24 +322,12 @@ export function createRegionPass(
     draw(frame: RegionPassFrame): void {
       const width = gl.drawingBufferWidth;
       const height = gl.drawingBufferHeight;
-      const halfWidthCss = REGION_LINE_WIDTH_CSS / 2;
+      // The half width follows the viewport and not the drawing buffer, so the band
+      // covers the same part of the screen at every device pixel ratio.
+      const halfWidthCss = regionBandHalfWidthCss(height / frame.pixelRatio);
       const halfWidth = halfWidthCss * frame.pixelRatio;
       const drawn = frame.traced ? tracedUpload : smoothedUpload;
-      const radiusCss = regionBlurRadiusCss(
-        frame.focalCss,
-        frame.distance,
-        frame.traced,
-      );
-      // The blur runs in `accurate` at every zoom the overlay draws at. A radius of 0
-      // is `simplified`, which never blurs, because the smoothed set has no staircase.
-      const blurs = radiusCss > 0;
       coverage.resize(width, height);
-      // The pair takes its storage only in a frame that blurs. `simplified` never blurs,
-      // so the mode the map starts in holds one target and not three.
-      if (blurs) {
-        blurFirst.resize(width, height);
-        blurSecond.resize(width, height);
-      }
 
       // Step one: the coverage of every segment, largest value wins. The MAX equation
       // keeps the smallest distance where two quads of one join overlap.
@@ -518,41 +385,7 @@ export function createRegionPass(
       gl.blendEquation(gl.FUNC_ADD);
       gl.disable(gl.BLEND);
 
-      // Step two: the blur, one pass on each axis. It runs in the traced mode alone and
-      // only where the region grid cell reaches 3 CSS pixels on the screen. The radius
-      // and the decision are read at the head of the draw, because they say whether the
-      // ping-pong pair takes storage at all.
-      let read = coverage.texture;
-      if (blurs) {
-        const weights = regionBlurKernel(radiusCss);
-        // The step is one CSS pixel, so the tap count follows the zoom and not the
-        // display.
-        const stepX = frame.pixelRatio / width;
-        const stepY = frame.pixelRatio / height;
-        blurAxis(
-          programs.blur,
-          coverage.texture,
-          blurFirst,
-          width,
-          height,
-          stepX,
-          0,
-          weights,
-        );
-        blurAxis(
-          programs.blur,
-          blurFirst.texture,
-          blurSecond,
-          width,
-          height,
-          0,
-          stepY,
-          weights,
-        );
-        read = blurSecond.texture;
-      }
-
-      // Step three: the band, over the finished frame.
+      // Step two: the band, over the finished frame.
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, width, height);
       gl.enable(gl.BLEND);
@@ -561,7 +394,7 @@ export function createRegionPass(
       const composite = programs.composite;
       gl.useProgram(composite.program);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, read);
+      gl.bindTexture(gl.TEXTURE_2D, coverage.texture);
       gl.uniform1i(composite.uniforms['uCoverage'] ?? null, 0);
       gl.uniform3f(
         composite.uniforms['uTone'] ?? null,
@@ -572,10 +405,6 @@ export function createRegionPass(
       gl.uniform1f(
         composite.uniforms['uOpacity'] ?? null,
         REGION_LINE_OPACITY * frame.fade,
-      );
-      gl.uniform1f(
-        composite.uniforms['uPeak'] ?? null,
-        blurs ? regionBlurPeak(radiusCss, halfWidthCss) : 1,
       );
       gl.uniformMatrix4fv(
         composite.uniforms['uInverseViewProjection'] ?? null,
@@ -592,8 +421,6 @@ export function createRegionPass(
     },
     dispose(): void {
       coverage.dispose();
-      blurFirst.dispose();
-      blurSecond.dispose();
       gl.deleteBuffer(cornerBuffer);
       for (const held of new Set([smoothedUpload, tracedUpload])) {
         gl.deleteBuffer(held.positionBuffer);
