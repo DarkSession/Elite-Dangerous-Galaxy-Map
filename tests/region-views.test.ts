@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import { project } from '../src/camera/projection';
+import type { Viewport } from '../src/camera/projection';
+import { regionBlurRadiusCss } from '../src/render/region-pass';
 import type { View } from '../src/camera/view';
 import { buildRegionData } from '../src/scene-data/region-lines';
 import type { RegionLines } from '../src/scene-data/types';
@@ -32,6 +34,25 @@ const GALACTIC_CENTRE: readonly [number, number, number] = [15, -35, 25895];
 
 /** How far a reading must sit from the galactic centre, in light years. */
 const CENTRE_FLOOR_LY = 5000;
+
+/** The viewport of the both-sets point, which is exempt from the two premises. */
+const BOTH_SETS_VIEWPORT: Viewport = { width: 1280, height: 720 };
+
+/** The zoom of the both-sets point, in light years. */
+const BOTH_SETS_ZOOM = 12000;
+
+/** The zooms the fade scenarios open the both-sets point at, in light years. */
+const BOTH_SETS_ZOOMS = [9000, 15000, 20000, 25000, 31000] as const;
+
+/** How many light years one CSS pixel covers at the cursor. */
+function lightYearsPerPixel(distance: number, viewport: Viewport): number {
+  return (2 * distance * Math.tan(Math.PI / 6)) / viewport.height;
+}
+
+/** The focal length of the projection in CSS pixels, at a viewport. */
+function focalCssOf(viewport: Viewport): number {
+  return viewport.height / 2 / Math.tan(Math.PI / 6);
+}
 
 /** The shortest distance from a plane point to any segment of a boundary set. */
 function gapToSet(set: RegionLines, point: readonly [number, number, number]): number {
@@ -135,6 +156,29 @@ function crossingTests(
       // The band lightens what it crosses, which it cannot do over the core itself.
       expect(radiusOf(choice.point)).toBeGreaterThan(CENTRE_FLOOR_LY);
     });
+
+    test('reads at 20,000 light years, where one CSS pixel covers 10.69', () => {
+      // Premise one puts the reading point at a range of at least 20,000 light years,
+      // and the search puts the cursor on it. Premise two holds the zoom at 20,000,
+      // where the zoom fade is full. The rows follow the zoom, so one CSS pixel covers
+      // the light years it covered at 1,080 rows and 10,000.
+      expect(choice.view.distance).toBe(20000);
+      expect(choice.viewport).toEqual({ width: 3840, height: 2160 });
+      expect(choice.lightYearsPerPixel).toBeCloseTo(10.69, 2);
+      expect(lightYearsPerPixel(choice.view.distance, choice.viewport)).toBeCloseTo(
+        choice.lightYearsPerPixel,
+        10,
+      );
+    });
+
+    test('reads at a blur radius of 4.62 CSS pixels', () => {
+      const radius = regionBlurRadiusCss(
+        focalCssOf(choice.viewport),
+        choice.view.distance,
+        true,
+      );
+      expect(radius).toBeCloseTo(4.62, 2);
+    });
   });
 }
 
@@ -220,12 +264,30 @@ describe('the view at a bend of a chain', () => {
       20,
     );
   });
+
+  test('reads at 20,000 light years, where one CSS pixel covers 12.83', () => {
+    expect(SHARP_CORNER.view.distance).toBe(20000);
+    expect(SHARP_CORNER.viewport).toEqual({ width: 3200, height: 1800 });
+    expect(SHARP_CORNER.lightYearsPerPixel).toBeCloseTo(12.83, 2);
+    expect(
+      lightYearsPerPixel(SHARP_CORNER.view.distance, SHARP_CORNER.viewport),
+    ).toBeCloseTo(SHARP_CORNER.lightYearsPerPixel, 10);
+  });
+
+  test('reads at a blur radius of 3.85 CSS pixels', () => {
+    const radius = regionBlurRadiusCss(
+      focalCssOf(SHARP_CORNER.viewport),
+      SHARP_CORNER.view.distance,
+      true,
+    );
+    expect(radius).toBeCloseTo(3.85, 2);
+  });
 });
 
 describe('the point on a chain of both sets', () => {
   test('is what the search of the two boundary sets gives', () => {
     expect(
-      findPointNearBothSets(lines, traced, { width: 1280, height: 720 }, 12000),
+      findPointNearBothSets(lines, traced, BOTH_SETS_VIEWPORT, BOTH_SETS_ZOOM),
     ).toEqual(NEAR_BOTH_SETS);
   });
 
@@ -235,12 +297,24 @@ describe('the point on a chain of both sets', () => {
   });
 
   test('holds a line across the frame over the close end of the band', () => {
-    // The fade scenario reads the point at 12,000 light years and below, where one CSS
-    // pixel covers 19.2 light years at 1280x720. The point sits in the middle of a
-    // traced segment far longer than the frame, so the line leaves it on both sides, and
-    // the nearest other chain stays 20 CSS pixels away.
+    // The point sits in the middle of a traced segment far longer than the frame, so the
+    // line leaves it on both sides.
     expect(NEAR_BOTH_SETS.segmentLengthLy).toBeGreaterThan(100);
-    expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(385);
+    // One CSS pixel covers 19.2 light years at 1280x720 and 12,000, so a clearance of
+    // 20 CSS pixels is 385.
+    expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(
+      20 * lightYearsPerPixel(BOTH_SETS_ZOOM, BOTH_SETS_VIEWPORT),
+    );
+  });
+
+  test('holds one chain and no other in the reading window at every fade zoom', () => {
+    // The fade scenarios read an 8 CSS pixel window around the point at each of the five
+    // zooms. One CSS pixel covers the most light years at the widest of them, so the
+    // rule binds there and holds at the other four.
+    for (const zoom of BOTH_SETS_ZOOMS) {
+      const window = 8 * lightYearsPerPixel(zoom, BOTH_SETS_VIEWPORT);
+      expect(NEAR_BOTH_SETS.clearanceLy).toBeGreaterThan(window);
+    }
   });
 
   test('sits away from the galactic core', () => {
@@ -308,5 +382,44 @@ describe('the view at a 90 degree corner of the traced set', () => {
 
   test('sits away from the galactic core', () => {
     expect(radiusOf(TRACED_CORNER.bend)).toBeGreaterThan(CENTRE_FLOOR_LY);
+  });
+
+  test('reads at 20,000 light years, where one CSS pixel covers 10.69', () => {
+    expect(TRACED_CORNER.view.distance).toBe(20000);
+    expect(TRACED_CORNER.viewport).toEqual({ width: 3840, height: 2160 });
+    expect(TRACED_CORNER.lightYearsPerPixel).toBeCloseTo(10.69, 2);
+    expect(
+      lightYearsPerPixel(TRACED_CORNER.view.distance, TRACED_CORNER.viewport),
+    ).toBeCloseTo(TRACED_CORNER.lightYearsPerPixel, 10);
+  });
+
+  test('reads at a blur radius of 4.62 CSS pixels', () => {
+    const radius = regionBlurRadiusCss(
+      focalCssOf(TRACED_CORNER.viewport),
+      TRACED_CORNER.view.distance,
+      true,
+    );
+    expect(radius).toBeCloseTo(4.62, 2);
+  });
+});
+
+describe('the counts the four searches hold', () => {
+  // Each count is a reading of the search under the view the spec states. The search
+  // itself reports it, so a count that moves fails the equality test above as well.
+  test('the width search holds 23 runs of the smoothed set and 2 of the traced', () => {
+    expect(SMOOTHED_CROSSING.heldCount).toBe(23);
+    expect(TRACED_CROSSING.heldCount).toBe(2);
+  });
+
+  test('the join search holds 6,713 bends', () => {
+    expect(SHARP_CORNER.heldCount).toBe(6713);
+  });
+
+  test('the traced corner search holds 10 nodes', () => {
+    expect(TRACED_CORNER.heldCount).toBe(10);
+  });
+
+  test('the both-sets search holds 4,605 points', () => {
+    expect(NEAR_BOTH_SETS.heldCount).toBe(4605);
   });
 });

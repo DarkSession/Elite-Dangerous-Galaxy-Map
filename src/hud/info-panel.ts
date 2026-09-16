@@ -25,6 +25,8 @@ interface Field {
   readonly value: string;
   /** The text the field's copy button writes, when the field carries one. */
   readonly copy?: string;
+  /** True where the field takes both columns of the grid. */
+  readonly wide?: boolean;
 }
 
 /** The information panel of the HUD. */
@@ -64,6 +66,7 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
       label: 'POSITION',
       value: positionText(position, true),
       copy: copyPosition(position),
+      wide: true,
     },
     { label: 'DISTANCE FROM SOL', value: formatLightYears(distanceFromSol(position)) },
     { label: 'RANGE', value: formatLightYears(range) },
@@ -298,6 +301,7 @@ export function createInfoPanel(
     const range = rangeFromCamera(map.getView(), system.position);
     for (const field of fieldsOf(system, range)) {
       const box = make(doc, 'div', 'gm-hud__field');
+      if (field.wide === true) box.classList.add('gm-hud__field--wide');
       const label = make(doc, 'div', 'gm-hud__field-label');
       label.textContent = field.label;
       const value = make(doc, 'div', 'gm-hud__field-value');

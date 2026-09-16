@@ -38,6 +38,17 @@ export const CLICK_MOVE_CSS = 4;
 /** How long a left press may last and still be a click, in milliseconds. */
 export const CLICK_HOLD_MS = 400;
 
+/**
+ * How far a touch may move from its first pixel and still be a tap, in CSS pixels.
+ *
+ * The limit is wider than `CLICK_MOVE_CSS`. A finger covers a contact patch several
+ * millimetres wide and the browser reports its middle, which moves by more than 4 CSS
+ * pixels in a tap the user means to hold still. A mouse does not move unless the hand
+ * moves it. The hold limit is the same `CLICK_HOLD_MS`, because a slow tap is slow for
+ * the same reason on both.
+ */
+export const TAP_MOVE_CSS = 10;
+
 /** One of the keys that move the cursor. */
 export type MovementKey = (typeof MOVEMENT_KEYS)[number];
 
@@ -248,6 +259,287 @@ export function movementKeyOf(code: string): MovementKey | null {
     : null;
 }
 
+/** A point on the canvas, in CSS pixels. */
+export interface Pixel {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The distance in CSS pixels between two pointers. */
+export function pinchGap(first: Pixel, second: Pixel): number {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+/** The point half way between two pointers, in CSS pixels. */
+export function pinchMiddle(first: Pixel, second: Pixel): Pixel {
+  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
+/**
+ * The distance a pinch asks for, in light years, clamped to the zoom limits.
+ *
+ * The reading is taken from the gap the gesture started with and not from the gap of the
+ * event before, so a pinch out and back leaves the distance where it began. Fingers that
+ * move apart make the gap larger and the distance smaller, which zooms in.
+ */
+export function pinchDistance(
+  startDistance: number,
+  startGap: number,
+  gap: number,
+): number {
+  if (!(gap > 0) || !(startGap > 0)) return clampDistance(startDistance);
+  return clampDistance((startDistance * startGap) / gap);
+}
+
+/**
+ * What one reading of a touch pointer reports.
+ *
+ * `cancel` is a pointer the browser or the operating system took away: a notification
+ * shade that opened, a change of orientation, or one touch point more than the device
+ * holds. It ends the pointer as `up` does, but it is not a come-up, so it never selects.
+ */
+export type TouchPhase = 'down' | 'move' | 'up' | 'cancel';
+
+/**
+ * One reading of a pointer, which is all the gesture rule takes beside its own state.
+ * `attachControls` makes it from a `PointerEvent`, and a unit test writes it by hand.
+ */
+export interface TouchReading {
+  /** Whether the pointer went down, moved, came up or was cancelled. */
+  readonly phase: TouchPhase;
+  /** The pointer's own id. */
+  readonly pointerId: number;
+  /** The pointer's type, which the rule reads to take touch alone. */
+  readonly pointerType: string;
+  /** The pointer's position on the canvas, in CSS pixels. */
+  readonly x: number;
+  readonly y: number;
+  /** The time of the reading, in milliseconds. */
+  readonly timeMs: number;
+}
+
+/** One touch pointer that is down. */
+export interface TouchPointer {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** What the tap test remembers about the one pointer that may still be a tap. */
+export interface TouchPress {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly startMs: number;
+  /** The largest distance from the first pixel, in CSS pixels. */
+  readonly moved: number;
+}
+
+/** The state the gesture rule carries between two readings. */
+export interface TouchState {
+  /** The touch pointers that are down, the earliest first. */
+  readonly pointers: readonly TouchPointer[];
+  /**
+   * The distance the view holds, in light years. The caller writes it before every
+   * reading: the rule is pure and cannot read the view, and a pinch takes the distance
+   * at the moment its gesture starts.
+   */
+  readonly distance: number;
+  /** The gap of the two pointers at the moment the two-finger gesture started. */
+  readonly startGap: number;
+  /** The view distance at that same moment, in light years. */
+  readonly startDistance: number;
+  /** The middle of the two pointers at the reading before, or null. */
+  readonly middle: Pixel | null;
+  /** The press the tap test reads, or null when no pointer can still be a tap. */
+  readonly press: TouchPress | null;
+}
+
+/** What the gesture rule asks the caller to do with the view. */
+export interface TouchAction {
+  /** Read the plane point under this pixel and hold it as the drag start. */
+  readonly beginPlane?: Pixel;
+  /** Move the cursor so the held plane point sits under this pixel. */
+  readonly dragTo?: Pixel;
+  /** Turn the camera by this movement of the middle, in CSS pixels. */
+  readonly orbit?: { readonly deltaX: number; readonly deltaY: number };
+  /** Write this distance, in light years. */
+  readonly distance?: number;
+  /** Select at this pixel. */
+  readonly select?: Pixel;
+  /** End a running wheel glide, as a write of the distance does. */
+  readonly endGlide?: boolean;
+  /**
+   * True where the gesture acts on the view. The caller raises the input hook, which
+   * ends a running selection flight before the gesture reads the view.
+   */
+  readonly input?: boolean;
+}
+
+/** What one reading gives back. */
+export interface TouchResult {
+  readonly state: TouchState;
+  readonly action: TouchAction;
+}
+
+/** The state of a gesture with no pointer down. */
+export const NO_TOUCH: TouchState = {
+  pointers: [],
+  distance: 0,
+  startGap: 0,
+  startDistance: 0,
+  middle: null,
+  press: null,
+};
+
+/** The two pointers the gesture reads, which are the two that went down first. */
+function activePointers(pointers: readonly TouchPointer[]): readonly TouchPointer[] {
+  return pointers.slice(0, 2);
+}
+
+/**
+ * Starts the two-finger gesture again from the pointers that are down. It reads the gap
+ * and the middle now, so a finger that lands or lifts moves the view by nothing.
+ */
+function restartTwoFingers(state: TouchState): TouchState {
+  const active = activePointers(state.pointers);
+  const first = active[0] as TouchPointer;
+  const second = active[1] as TouchPointer;
+  return {
+    ...state,
+    startGap: pinchGap(first, second),
+    startDistance: state.distance,
+    middle: pinchMiddle(first, second),
+  };
+}
+
+/** True when a press that has come up is a tap and not a drag. */
+function isTap(press: TouchPress, nowMs: number): boolean {
+  if (press.moved > TAP_MOVE_CSS) return false;
+  return nowMs - press.startMs <= CLICK_HOLD_MS;
+}
+
+/**
+ * The gesture rule for a touch screen. It is a pure function of its own state and one
+ * reading, so a unit test drives it with no DOM: `vitest.config.ts` runs in the node
+ * environment.
+ *
+ * One finger moves the cursor in the galactic plane. Two fingers pinch to zoom and drag
+ * to orbit. A tap selects. While three or more pointers are down the rule reads the two
+ * that went down first, so a palm or a resting finger does not stop the map.
+ *
+ * Every change in the count of pointers restarts the gesture from the pointers that are
+ * down. Without that a second finger landing, or one of two lifting, would move the view
+ * by the whole difference between the old reading and the new one in one event.
+ */
+export function touchGesture(state: TouchState, reading: TouchReading): TouchResult {
+  if (reading.pointerType !== 'touch') return { state, action: {} };
+  const held = state.pointers;
+
+  if (reading.phase === 'down') {
+    if (held.some((pointer) => pointer.id === reading.pointerId)) {
+      return { state, action: {} };
+    }
+    const pointers = [...held, { id: reading.pointerId, x: reading.x, y: reading.y }];
+    // A tap is one finger alone. A press that becomes a second finger never selects.
+    const press =
+      pointers.length === 1
+        ? {
+            id: reading.pointerId,
+            x: reading.x,
+            y: reading.y,
+            startMs: reading.timeMs,
+            moved: 0,
+          }
+        : null;
+    const next = { ...state, pointers, press };
+    if (pointers.length === 1) {
+      return {
+        state: next,
+        action: { beginPlane: { x: reading.x, y: reading.y }, input: true },
+      };
+    }
+    // A pinch is the user's own hand on the distance, so it ends the wheel glide, as
+    // `setView` does. A filter between the hand and the camera would lag it.
+    return { state: restartTwoFingers(next), action: { endGlide: true, input: true } };
+  }
+
+  if (reading.phase === 'up' || reading.phase === 'cancel') {
+    const press = state.press;
+    const lifted =
+      press === null || press.id !== reading.pointerId
+        ? null
+        : { ...press, moved: Math.max(press.moved, movedBy(press, reading)) };
+    // A tap is one pointer that goes down and comes up. A cancelled pointer ends the
+    // gesture the same way, but the user never lifted a finger, so it selects nothing.
+    const action: TouchAction =
+      reading.phase === 'up' && lifted !== null && isTap(lifted, reading.timeMs)
+        ? { select: { x: reading.x, y: reading.y } }
+        : {};
+    const pointers = held.filter((pointer) => pointer.id !== reading.pointerId);
+    const next = { ...state, pointers, press: null, middle: null };
+    if (pointers.length === 0) {
+      return { state: { ...NO_TOUCH, distance: state.distance }, action };
+    }
+    if (pointers.length === 1) {
+      const only = pointers[0] as TouchPointer;
+      return {
+        state: next,
+        action: { ...action, beginPlane: { x: only.x, y: only.y } },
+      };
+    }
+    return { state: restartTwoFingers(next), action };
+  }
+
+  const index = held.findIndex((pointer) => pointer.id === reading.pointerId);
+  if (index < 0) return { state, action: {} };
+  const pointers = held.map((pointer) =>
+    pointer.id === reading.pointerId
+      ? { id: pointer.id, x: reading.x, y: reading.y }
+      : pointer,
+  );
+  const press =
+    state.press !== null && state.press.id === reading.pointerId
+      ? {
+          ...state.press,
+          moved: Math.max(state.press.moved, movedBy(state.press, reading)),
+        }
+      : state.press;
+  const next = { ...state, pointers, press };
+  // A pointer the gesture does not read moved, so the view does not move.
+  if (index > 1) return { state: next, action: {} };
+
+  const active = activePointers(pointers);
+  if (active.length === 1) {
+    return {
+      state: next,
+      action: { dragTo: { x: reading.x, y: reading.y }, input: true },
+    };
+  }
+
+  const first = active[0] as TouchPointer;
+  const second = active[1] as TouchPointer;
+  const middle = pinchMiddle(first, second);
+  const before = state.middle ?? middle;
+  return {
+    state: { ...next, middle },
+    action: {
+      orbit: { deltaX: middle.x - before.x, deltaY: middle.y - before.y },
+      distance: pinchDistance(
+        state.startDistance,
+        state.startGap,
+        pinchGap(first, second),
+      ),
+      input: true,
+    },
+  };
+}
+
+/** How far a reading sits from the pixel a press started on, in CSS pixels. */
+function movedBy(press: TouchPress, reading: TouchReading): number {
+  return Math.hypot(reading.x - press.x, reading.y - press.y);
+}
+
 /** What `attachControls` gives back. */
 export interface Controls {
   /**
@@ -318,6 +610,9 @@ export function attachControls(
   let press: PressRecord | null = null;
   let lastOrbitX = 0;
   let lastOrbitY = 0;
+  // The touch gesture's own state. `touchGesture` holds every rule; the handlers below
+  // make a reading, call it and apply what it gives back.
+  let touch: TouchState = NO_TOUCH;
   // The distance the zoom glide moves toward, and null when no glide runs. The name is
   // `target` and not `zoomTarget`, which is the module function the wheel calls.
   let target: number | null = null;
@@ -334,7 +629,62 @@ export function attachControls(
     return { x: event.clientX - box.left, y: event.clientY - box.top };
   };
 
+  /**
+   * Turns one touch event into a reading, calls the gesture rule and applies what it
+   * asks for. The input hook runs first, so a running selection flight ends before the
+   * gesture reads the view.
+   */
+  const applyTouch = (event: PointerEvent, phase: TouchPhase): void => {
+    const pixel = pixelOf(event);
+    // The rule is pure, so the caller states the distance the view holds. A pinch reads
+    // it at the moment its gesture starts.
+    const result = touchGesture(
+      { ...touch, distance: view.distance },
+      {
+        phase,
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        x: pixel.x,
+        y: pixel.y,
+        timeMs: performance.now(),
+      },
+    );
+    touch = result.state;
+    const action = result.action;
+    if (action.input === true) options.onInput?.();
+    if (action.endGlide === true) target = null;
+    if (action.beginPlane !== undefined) {
+      drag = beginDrag(view, action.beginPlane, viewportOf());
+    } else if (touch.pointers.length !== 1) {
+      // No one-finger drag runs, so the map holds no plane point for one.
+      drag = null;
+    }
+    let moved = false;
+    if (action.dragTo !== undefined && drag !== null) {
+      dragCursor(view, drag, action.dragTo, viewportOf());
+      moved = true;
+    }
+    if (action.orbit !== undefined) {
+      orbit(view, action.orbit.deltaX, action.orbit.deltaY);
+      moved = true;
+    }
+    if (action.distance !== undefined) {
+      view.distance = action.distance;
+      moved = true;
+    }
+    if (moved) changed();
+    if (action.select !== undefined) options.onClick?.(action.select);
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') {
+      event.preventDefault();
+      // The capture is on the element and not on the pointer set, so the first touch
+      // pointer is the only one that needs it.
+      if (touch.pointers.length === 0) canvas.setPointerCapture(event.pointerId);
+      applyTouch(event, 'down');
+      return;
+    }
     if (event.button === 0 || event.button === 2) options.onInput?.();
     if (event.button === 2) {
       event.preventDefault();
@@ -354,6 +704,11 @@ export function attachControls(
   const onPointerMove = (event: PointerEvent): void => {
     const pixel = pixelOf(event);
     options.onPointer?.(pixel);
+    if (event.pointerType === 'touch') {
+      event.preventDefault();
+      applyTouch(event, 'move');
+      return;
+    }
     if (press !== null && event.pointerId === orbitPointer) trackPress(press, pixel);
     if (drag !== null && event.pointerId === dragPointer) {
       event.preventDefault();
@@ -373,6 +728,15 @@ export function attachControls(
   const onPointerLeave = (): void => options.onPointer?.(null);
 
   const onPointerUp = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') {
+      // `pointercancel` ends the pointer as `pointerup` does, but the user never lifted
+      // a finger, so the gesture rule must not read it as a tap.
+      applyTouch(event, event.type === 'pointercancel' ? 'cancel' : 'up');
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      return;
+    }
     if (event.pointerId === dragPointer) {
       drag = null;
       dragPointer = null;
@@ -468,7 +832,7 @@ export function attachControls(
       return moving();
     },
     isInteracting(): boolean {
-      return drag !== null || orbitPointer !== null;
+      return drag !== null || orbitPointer !== null || touch.pointers.length > 0;
     },
     zoomTargetLy(): number | null {
       return target;

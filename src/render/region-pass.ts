@@ -43,11 +43,12 @@ export const REGION_CELL_LY = 49.3494;
 export const REGION_BLUR_MAX_RADIUS_CSS = 8;
 
 /**
- * The smallest blur radius the pass runs at, in CSS pixels. Below it the kernel's
- * standard deviation is under one CSS pixel and the blur would soften by less than the
- * grid aliases. A cell under 3 CSS pixels is also under half the band's own width.
+ * The smallest standard deviation the kernel takes, in CSS pixels. Below it a step of
+ * one CSS pixel is a poor sample of the kernel, and the band would go back to the
+ * staircase it is there to soften. The floor holds every radius under 3 CSS pixels at
+ * the kernel the radius of 3 gives.
  */
-export const REGION_BLUR_MIN_RADIUS_CSS = 3;
+export const REGION_BLUR_MIN_SIGMA_CSS = 1;
 
 /** The zoom distance above which the overlay draws nothing, in light years. */
 export const REGION_FADE_IN_FAR = 30000;
@@ -66,6 +67,20 @@ export const REGION_CLOSE_NONE = 5000;
 /** The zoom distance at and above which the close end draws the overlay in full. */
 export const REGION_CLOSE_FULL = 10000;
 
+/**
+ * The range at and below which a line draws nothing, in light years. The range is read
+ * per pixel, from the camera to the plane point the pixel sees, and not from the zoom.
+ *
+ * These two are not `REGION_CLOSE_NONE` and `REGION_CLOSE_FULL`, which are the zoom band
+ * the region labels hold. A close zoom keeps the lines near the horizon, where the plane
+ * is far, and takes away the lines near the cursor, where the staircase is wider than the
+ * reading it carries.
+ */
+export const REGION_RANGE_NONE = 10000;
+
+/** The range at and above which a line draws in full, in light years. */
+export const REGION_RANGE_FULL = 20000;
+
 /** The four corners of the ribbon quad, as a triangle strip. */
 const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
 
@@ -78,16 +93,15 @@ function smoothstep(low: number, high: number, value: number): number {
 }
 
 /**
- * How much of the overlay draws at a zoom distance, 0 to 1. It rises from nothing at
- * 5,000 light years to full at 10,000, holds to 20,000, and falls to nothing again at
- * 30,000. The two ends are the two zooms at which a boundary stops carrying a reading:
- * the traced staircase below the near one, and the whole galaxy above the far one.
+ * How much of the overlay draws at a zoom distance, 0 to 1. It is full at 20,000 light
+ * years and below and falls to nothing at 30,000, which is the zoom at which the whole
+ * galaxy is in the frame and a boundary stops carrying a reading.
+ *
+ * The close end of the band is gone from this rule. The range fade in the composite
+ * shader holds it per pixel, so a close zoom keeps the lines near the horizon.
  */
 export function regionFade(distance: number): number {
-  return (
-    smoothstep(REGION_CLOSE_NONE, REGION_CLOSE_FULL, distance) *
-    (1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance))
-  );
+  return 1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance);
 }
 
 /**
@@ -105,27 +119,34 @@ export function regionBlurRadiusCss(
   traced: boolean,
 ): number {
   if (!traced || !(distance > 0)) return 0;
-  return Math.min((focalCss * REGION_CELL_LY) / distance, REGION_BLUR_MAX_RADIUS_CSS);
+  // The radius reads the cursor with a floor at the nearest range that draws a line.
+  // The range fade draws none nearer than 10,000 light years, so the largest staircase
+  // a close frame can hold is the cell at that range.
+  const range = Math.max(distance, REGION_RANGE_NONE);
+  return Math.min((focalCss * REGION_CELL_LY) / range, REGION_BLUR_MAX_RADIUS_CSS);
 }
 
-/** True where the pass blurs. Below the least radius the kernel buys nothing. */
-export function regionBlurRuns(radiusCss: number): boolean {
-  return radiusCss >= REGION_BLUR_MIN_RADIUS_CSS;
+/** The kernel's standard deviation for a radius, in CSS pixels, with its floor. */
+export function regionBlurSigma(radiusCss: number): number {
+  return Math.max(radiusCss / 3, REGION_BLUR_MIN_SIGMA_CSS);
 }
 
-/** How many taps a kernel of a radius holds. It reaches 17 at the cap and no more. */
+/**
+ * How many taps a kernel of a radius holds. The floor on the standard deviation gives 7
+ * at every radius under 3 CSS pixels, and the cap of 8 gives 17 and no more.
+ */
 export function regionBlurTaps(radiusCss: number): number {
-  return 2 * Math.ceil(radiusCss) + 1;
+  return 2 * Math.ceil(3 * regionBlurSigma(radiusCss)) + 1;
 }
 
 /**
  * The kernel the blur shader reads, in tap order, summing to 1. It is a Gaussian of
- * standard deviation `radius / 3` CSS pixels sampled one CSS pixel apart.
+ * standard deviation `max(radius / 3, 1)` CSS pixels sampled one CSS pixel apart.
  */
 export function regionBlurKernel(radiusCss: number): number[] {
   const taps = regionBlurTaps(radiusCss);
   const middle = (taps - 1) / 2;
-  const sigma = radiusCss / 3;
+  const sigma = regionBlurSigma(radiusCss);
   const weights: number[] = [];
   let total = 0;
   for (let tap = 0; tap < taps; tap += 1) {
@@ -151,7 +172,7 @@ export function regionBlurKernel(radiusCss: number): number[] {
  * reading of the continuous ramp and not of the sampled one.
  */
 export function regionBlurPeak(radiusCss: number, halfWidthCss: number): number {
-  if (!regionBlurRuns(radiusCss)) return 1;
+  if (!(radiusCss > 0)) return 1;
   const weights = regionBlurKernel(radiusCss);
   const middle = (weights.length - 1) / 2;
   let peak = 0;
@@ -166,6 +187,10 @@ export function regionBlurPeak(radiusCss: number, halfWidthCss: number): number 
 export interface RegionPassFrame {
   /** The combined projection and view matrix, with no translation. */
   readonly viewProjection: Float32Array;
+  /** The inverse of `viewProjection`, which the composite unprojects a pixel with. */
+  readonly inverseViewProjection: Float32Array;
+  /** The galactic plane in the camera-relative world frame, which is `-camera.y`. */
+  readonly planeY: number;
   /** The chunk origin minus the camera position, in the world frame. */
   readonly chunkOffset: readonly [number, number, number];
   /** How much of the overlay draws, 0 to 1. */
@@ -223,7 +248,16 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       'region-composite',
       fullScreenSource,
       compositeSource,
-      ['uCoverage', 'uTone', 'uOpacity', 'uPeak'],
+      [
+        'uCoverage',
+        'uTone',
+        'uOpacity',
+        'uPeak',
+        'uInverseViewProjection',
+        'uPlaneY',
+        'uRangeNone',
+        'uRangeFull',
+      ],
     ),
   };
 }
@@ -417,7 +451,9 @@ export function createRegionPass(
         frame.distance,
         frame.traced,
       );
-      const blurs = regionBlurRuns(radiusCss);
+      // The blur runs in `accurate` at every zoom the overlay draws at. A radius of 0
+      // is `simplified`, which never blurs, because the smoothed set has no staircase.
+      const blurs = radiusCss > 0;
       coverage.resize(width, height);
       // The pair takes its storage only in a frame that blurs. `simplified` never blurs,
       // so the mode the map starts in holds one target and not three.
@@ -541,6 +577,14 @@ export function createRegionPass(
         composite.uniforms['uPeak'] ?? null,
         blurs ? regionBlurPeak(radiusCss, halfWidthCss) : 1,
       );
+      gl.uniformMatrix4fv(
+        composite.uniforms['uInverseViewProjection'] ?? null,
+        false,
+        frame.inverseViewProjection,
+      );
+      gl.uniform1f(composite.uniforms['uPlaneY'] ?? null, frame.planeY);
+      gl.uniform1f(composite.uniforms['uRangeNone'] ?? null, REGION_RANGE_NONE);
+      gl.uniform1f(composite.uniforms['uRangeFull'] ?? null, REGION_RANGE_FULL);
 
       drawFullScreen();
       gl.bindTexture(gl.TEXTURE_2D, null);

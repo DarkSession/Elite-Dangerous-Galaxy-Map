@@ -1,209 +1,4 @@
-## Purpose
-
-Names the part of the galaxy the view sits in. The 42 galactic codex regions draw
-their boundaries on the galactic plane and carry a text label each, so the user can
-tell the Inner Orion Spur from the Galactic Centre without leaving the map.
-
-## Requirements
-
-### Requirement: The region data comes from the almanac
-
-The map SHALL read the 42 galactic codex regions from
-`@elite-dangerous-almanac/core`, pinned to an exact version. Each region SHALL carry an
-id from 1 to 42, a name, a footprint area, axis-aligned bounds on the galactic plane
-and a centroid on the galactic plane. A plane position SHALL resolve to one region or
-to none, on the grid of 4,096/83 light years the game uses.
-
-The map SHALL depend on two constants of the package: the galaxy origin
-(-49,985, -40,985, -24,105) and the sector edge of 1,280 light years. A unit test SHALL
-assert both, so a release of the package that changes them fails the suite rather than
-the map.
-
-#### Scenario: The region list
-
-- **WHEN** a unit test reads the region list
-- **THEN** it holds 42 regions, their ids run from 1 to 42 without a gap, and every
-  name is a non-empty string
-
-#### Scenario: Known positions resolve
-
-- **WHEN** a unit test resolves the regions at (0, 0, 0) and at (15, -35, 25,895)
-- **THEN** the first is `Inner Orion Spur` and the second is `Galactic Centre`
-
-#### Scenario: The package constants hold
-
-- **WHEN** a unit test reads the galaxy origin and the sector edge from the package
-- **THEN** the origin is (-49,985, -40,985, -24,105) and the edge is 1,280 light years
-
-
-### Requirement: The boundary set is traced from the region grid
-
-The map SHALL build the region boundary sets off the main thread. The build SHALL
-resolve the region at the centre of every cell of the 49.3494 light year grid over the
-model bounds in `x` and `z`, which is 2,027 by 2,027 cells, and SHALL emit a line
-segment on the edge between two neighbouring cells that hold different region ids. A
-cell that resolves to no region SHALL count as an id of its own, so the rim of the
-mapped grid draws.
-
-The unit edges SHALL then be linked into **chains**. A chain SHALL follow the boundary
-through every lattice node that carries exactly two edges, and SHALL end at a node that
-carries any other number, which is a node where three or more regions meet. Each chain
-SHALL therefore separate exactly one pair of region ids, and no edge SHALL belong to two
-chains.
-
-The build SHALL emit **two** sets from that one trace, and SHALL emit them in one message:
-the **smoothed set** the `simplified` mode draws and the **traced set** the `accurate`
-mode draws. One trace serves both, so the second set costs the region lookups nothing.
-
-**The traced set.** Each chain SHALL be packed as it was traced, with no average, no
-vertex reduction to a tolerance and no corner rounding. A run of unit edges that continue
-in the same direction SHALL be packed as one segment, because the middle nodes of such a
-run lie exactly on the line between its ends. The packed line SHALL therefore pass through
-every lattice node where the traced boundary turns, and its departure from the traced
-boundary SHALL be **0** to the resolution of a `float32` coordinate.
-
-The traced set is the staircase the region data is. Its turn measures 1,062.75 degrees for
-each 1,000 light years of drawn length over the whole set, and its vertices turn by 90
-degrees. Both bounds the smoothed set holds are therefore broken on purpose, and no bound
-on turn applies to this set.
-
-Collapsing the straight runs SHALL take the set to **between 15,000 and 40,000 vertices**,
-which is at most 469 KiB, so it uploads once as the smoothed set does. On the pinned
-version of `@elite-dangerous-almanac/core` the trace holds 38,686 nodes and the set holds
-22,718 vertices, which is 266.23 KiB, so the traced set is the smaller of the two. The
-bound is a range and the two figures are a reading, as they are for the smoothed set: the
-region cells come from the pinned package, so a release that redraws a region moves both
-readings without any defect in this map. The scenario "The package constants hold", of the
-requirement "The region data comes from the almanac", is where a package release is meant
-to fail the suite.
-
-**The smoothed set.** Each chain SHALL be smoothed, and the smoothing SHALL meet three
-bounds at once.
-
-The drawn chain SHALL stay within **one grid cell, 49.3494 light years**, of the traced
-boundary, measured both ways: every point of the drawn chain is within that distance of
-the traced boundary, and every point of the traced boundary is within that distance of
-the drawn chain. One cell is the resolution of the source raster, so the line claims no
-accuracy the data does not have.
-
-The drawn set SHALL also read as a line and not as a staircase. The measure is the sum
-of the absolute turn angle at the vertices, for each 1,000 light years of drawn length,
-and it SHALL meet two bounds:
-
-- Over the whole set, taking the total turn over the total length, **at most 60 degrees
-  for each 1,000 light years**.
-- For **each chain on its own**, taking that chain's turn over that chain's length, at
-  most **100 degrees for each 1,000 light years**.
-
-The second bound is needed because the first is length-weighted, so the few longest
-chains set it and a short chain could wander freely inside it. The user looks at one
-boundary at a time, so the property has to hold for one boundary at a time.
-
-The traced staircase measures 1,062.75 degrees per 1,000 light years over the whole set.
-A rule that only rounds the corners of the staircase does not meet either bound: it
-leaves the direction changes in place. The bounds are what separate a smoothed line from
-a rounded staircase, and they are the reason the departure bound is one cell rather than
-half of one. At a zoom of 500 light years one CSS pixel is 0.53 light years, so half a
-cell is already 47 pixels; tightening the departure below the resolution of the data buys
-nothing there and costs the straightness the user sees. The `accurate` mode is what serves
-a user who wants the departure at 0 and will take the steps for it.
-
-The drawn line SHALL also carry no visible corner. **No vertex of a drawn chain SHALL
-turn by more than 20 degrees.** The two bounds above measure how far the line wanders
-over a distance; this one measures the line at a single point, and it is a separate
-property. A line can hold both of the bounds above and still read as a polygon: measured
-on a build that met them, the segments had a median length of 284 light years and 377
-vertices turned by more than 20 degrees, the worst by 98.4. At the closest zoom a 284
-light year segment crosses more than a frame, so such a vertex reads as a hard corner
-rather than as a curve.
-
-Both sets SHALL be typed arrays only and transferable without copying. Each SHALL hold
-the vertices of every chain in one array of three `float32` per vertex, with the first and
-last index of each chain, so a vertex shared by two segments is stored once. Both SHALL
-hold the same chain count, so a chain of one set is the same boundary as the chain of the
-same index in the other.
-
-#### Scenario: The boundary is a small number of chains
-
-- **WHEN** a unit test builds the two boundary sets
-- **THEN** each holds between 100 and 200 chains, the two counts are equal, and every
-  chain of each has at least two vertices
-
-#### Scenario: A chain separates one pair of regions
-
-- **WHEN** a unit test walks every chain of the untouched trace and reads the pair of
-  region ids on the two sides of each of its edges
-- **THEN** every edge of a chain carries the same pair, and no two chains share an edge
-
-#### Scenario: The drawn line stays near the boundary
-
-- **WHEN** a unit test measures, for every chain of the smoothed set, the largest distance
-  from a point of the drawn chain to the traced boundary and the largest distance from a
-  point of the traced boundary to the drawn chain
-- **THEN** both are at most 49.3494 light years
-
-#### Scenario: The traced set departs by nothing
-
-- **WHEN** a unit test measures the same two distances for every chain of the traced set
-- **THEN** both are 0 within 0.01 light years. The packed set holds `float32` coordinates,
-  and one step of a `float32` near 50,000 is 0.0078 light years, so a node lands up to half
-  a step from where the trace put it and the departure of an exact packer is a fraction of
-  one step rather than 0. On the pinned package the reading is 0.0040
-
-#### Scenario: The traced set keeps every turn
-
-- **WHEN** a unit test adds the absolute turn angle at every vertex of the traced set and
-  divides by its drawn length
-- **THEN** the ratio equals the ratio of the untouched trace within 1e-6 of it, so
-  collapsing the straight runs removed no turn, and it is above 1,000 degrees for each
-  1,000 light years. The bound is relative because the two readings part only by the
-  `float32` rounding of the packed coordinates. On the pinned package the reading is
-  1,062.75
-
-#### Scenario: The traced set drops the straight runs
-
-- **WHEN** a unit test reads the vertex count of the traced set and the node count of the
-  untouched trace
-- **THEN** the set holds between 15,000 and 40,000 vertices, it holds fewer than the trace
-  has nodes, and it is smaller than the smoothed set. On the pinned package the readings
-  are 38,686 nodes and 22,718 vertices, which is 266.23 KiB
-
-#### Scenario: The drawn line reads as a line
-
-- **WHEN** a unit test adds the absolute turn angle at every vertex of every chain of the
-  smoothed set and divides by the drawn length of the whole set, and then measures the same
-  ratio for each chain on its own
-- **THEN** the whole set is at most 60 degrees for each 1,000 light years, no single
-  chain is above 100, and the same whole-set measure over the traced staircase is more
-  than 1,000
-
-#### Scenario: The drawn line carries no visible corner
-
-- **WHEN** a unit test measures the turn angle at every vertex of every chain of the
-  smoothed set
-- **THEN** no vertex turns by more than 20 degrees
-
-#### Scenario: The set is small enough to upload once
-
-- **WHEN** a unit test reads the vertex count of the smoothed set
-- **THEN** it is between 20,000 and 120,000 vertices, which is at most 1.4 MiB of vertex
-  data. Holding the corner bound costs vertices, because a corner is only removed by
-  putting points around it. A set that meets the bounds above needs far fewer vertices than
-  a rounded staircase does, because it has far fewer direction changes to carry. The floor
-  guards against a set so reduced that it holds the departure bound only by cutting chains
-  to a few long chords; the departure bound alone does not catch that, because a chord
-  across a gentle curve can stay inside one cell
-
-#### Scenario: The set is deterministic
-
-- **WHEN** a unit test builds both boundary sets twice
-- **THEN** the arrays of each build are byte-identical to the arrays of the other
-
-#### Scenario: The set is transferable
-
-- **WHEN** a test posts both boundary sets through a `MessageChannel` with their buffers in
-  the transfer list
-- **THEN** the receiver gets equal contents for both and every sender buffer has length 0
+## MODIFIED Requirements
 
 ### Requirement: The boundaries draw as one soft band inside a zoom band
 
@@ -393,8 +188,10 @@ cursor:
 - full at **20,000** light years and below,
 - falling on a smooth step to nothing at **30,000** and above.
 
-The zoom band has no close end. The range fade above holds that end per pixel instead,
-because a zoom band could not tell a line that shows its staircase from one that does not, because
+**MODIFIED in this requirement**: the close end of the zoom band, which was nothing at 5,000
+light years and below, rising to full at 10,000. It is replaced by the range fade above.
+
+The close end could not tell a line that shows its staircase from one that does not, because
 a zoom is one number for the whole frame. At a zoom of 8,000 light years the boundary a few
 hundred light years from the cursor steps about 6 CSS pixels a cell, and the boundary near
 the horizon is 40,000 light years off and steps under 1.2. The close end took both away, so
@@ -412,9 +209,11 @@ point and the reading is exact. Where the ray through the pixel does not meet th
 front of the camera, which is a pixel above the horizon, the fade SHALL be full. Nothing of
 the boundary set is drawn there, and the blur can only carry coverage a few pixels into it.
 
-The range fade above is the only fade the line takes over its own distance, and it needs
-no second channel in the coverage buffer: the composite pass reads the plane point under
-each pixel from the frame's own projection, so the coverage buffer SHALL stay one channel.
+**REMOVED from this requirement**: the per-pixel fade over the camera's distance to the
+line, from 200 to 1,500 light years, and the second channel of the coverage buffer that
+carried it. The range fade above replaces it at a distance forty times larger, and it needs
+no second channel: the composite pass reads the plane point under each pixel from the frame's
+own projection, so the coverage buffer stays one channel.
 
 **What the close zoom shows instead.** Below 10,000 light years of range the map draws no
 boundary, and below a zoom of 5,000 light years it places no region name. The user reads the
@@ -427,8 +226,8 @@ label" states it: none at 30,000 light years and above, full from 20,000 down to
 falling to none at 5,000 and below. A label names the region the view sits in, and the view
 sits at one distance, so a reading per frame is the right reading for a name. A label is
 also a box of text 100 CSS pixels wide, which a range fade would take away on one side and
-keep on the other. The lines and the labels therefore do not read at the same strength at
-every zoom.
+keep on the other. The lines and the labels therefore no longer read at the same strength at
+every zoom, which they did before this change.
 
 Where two segments of a chain meet, the line SHALL NOT be brighter than a straight run of
 the same chain, and SHALL show no gap. A join is where a naive draw of one quad per
@@ -576,9 +375,9 @@ off, read with `measureFrames`. The overlay SHALL stay inside the frame budget
 with a full set.
 
 **The pass now runs at every zoom under 30,000 light years**, where the close end of the
-zoom band stops it only above 30,000. A close zoom therefore pays for the ribbon draw, the
-two blur passes and the composite. The cost reading above is taken at a close zoom for that
-reason.
+zoom band used to stop it below 5,000. A close zoom therefore pays for the ribbon draw, the
+two blur passes and the composite where it paid for none. The cost reading above is taken at
+a close zoom for that reason, and not at 5,200 light years as it was before.
 
 The ribbon draw is the whole boundary set whatever the zoom, and the two blur passes and the
 composite are full-screen passes whose cost follows the drawing buffer and the tap count.
@@ -624,8 +423,9 @@ not three.
   in both modes; at 4,000 the two frames are identical within that window and the page holds
   no region label.
 
-  The band this scenario reads is the range band and not the zoom band, so the reading at
-  4,000 light years is a window and not the whole frame.
+  **MODIFIED in this scenario**: the band is now the range band and not the zoom band, so the
+  close end moved from 10,000 light years to 20,000, and the reading at 4,000 is a window and
+  not the whole frame.
 
   20,000 light years is the closest range at which a line draws in full: the range fade
   reaches 1 at 20,000 and the zoom fade leaves 20,000 at 1, so both readings are 1 at the
@@ -860,8 +660,9 @@ not three.
   4,000 light years is the costliest frame the pass can draw. The radius rule reads the cell
   at `max(cursorDistance, 10000)`, so every zoom of 10,000 light years and below gives the
   same widest radius of 4.62 CSS pixels, which is 11 taps on each of the two blur passes. The
-  pass runs at every zoom under 30,000 light years, so the cost is read where the kernel is
-  widest
+  reading was 5,200 light years before this change, because the zoom band took the whole
+  overlay away below 5,000. The band goes, so the pass now runs at every zoom under 30,000
+  and the cost must be read where the kernel is widest
 
 ### Requirement: A region in view carries a label
 
@@ -1038,9 +839,10 @@ move does not crawl" read, and their figures are figures of the anchor. The call
 knows which writes of the view are jumps, so the page does not have to guess it from how far
 the frame moved: a fast drag and a jump can move the same number of pixels.
 
-**The share SHALL NOT grow with the gap**, and no gap SHALL take the frame's own target
-whole. A reading at which the whole target is taken is a gate, and this requirement already
-states what a gate does: it puts the label somewhere else in one frame, which is
+**REMOVED from this requirement**: the share that grew with the gap by
+`0.15 + 0.85 * min(1, gap / 120) ** 3`, and with it the reading of **120 CSS pixels** at
+which the frame's own target was taken whole. That reading was a gate, and this requirement
+already states what a gate does: it puts the label somewhere else in one frame, which is
 the jump the filter is there to stop. The three rules that moved a target a long way in a
 few frames all crossed it. The target rule hands over from the region's centre to the
 frame's own samples, and the two can sit most of a frame apart. The search that moves a
@@ -1116,13 +918,17 @@ A label pushed to the frame edge by a camera that then jumps back measures 128 C
 from the middle of its region in the unit test. It is within 8 CSS pixels of that middle at
 frame 13, which is 217 milliseconds, and within 2 at frame 26.
 
-**The browser reading of this push** is **162.3 milliseconds** to 8 CSS pixels, 45.6 to 20
-and 378.9 to 2, against the 400 the browser suite allows. The worst frame moved the label by
-20.03 CSS pixels, against the cap of 20.0 that a frame of 16.667 milliseconds gives. The push
-is a `setView`, which the rule above marks as a view jump, so the target is taken whole and
-the anchor runs alone.
+**The browser reading of this push was taken again.** It read **382 milliseconds** to 8 CSS
+pixels from 70 CSS pixels out before this change, against the 400 the browser suite allows,
+and it was slow because the camera jump moved the target as well as the anchor and the two
+filters ran in series. The push is a `setView`, which the rule above marks as a view jump,
+so the target is now taken whole and the anchor runs alone. The new reading is **162.3
+milliseconds** to 8 CSS pixels, 45.6 to 20 and 378.9 to 2, and the worst frame moved the
+label by 20.03 CSS pixels against the cap of 20.0 that a frame of 16.667 milliseconds gives.
+The 382 milliseconds are retired.
 
-The push starts **47.5 CSS pixels** from the middle of the region. The browser reads the label in the frame after the jump, and the anchor has already run
+The push starts **47.5 CSS pixels** from the middle of the region and not the 70 it started
+at. The browser reads the label in the frame after the jump, and the anchor has already run
 one step of its cap by then: the old rule crept the target as well, so the first reading sat
 further out. The bound of 400 milliseconds stands, and the label goes where it belongs and
 does not crawl.
@@ -1384,10 +1190,10 @@ user sees at those zooms.
 - **THEN** the label comes within 8 CSS pixels of the middle inside **400 milliseconds**,
   and no frame moves it more than `1200 * seconds` CSS pixels.
 
-  The browser reads the label in the frame after the jump. A jump takes the target whole,
-  so the anchor has already run one step of its cap by the first reading, and the label
-  starts about 47.5 CSS pixels out rather than the 70 the push asks for. The measured
-  reading is 162.3 milliseconds to 8 CSS pixels
+  **MODIFIED in this scenario**: the premise. The browser reads the label in the frame
+  after the jump, and the jump now takes the target whole, so the anchor has already run
+  one step of its cap by the first reading. The premise read about 70 CSS pixels while the
+  target crept as well. The measured reading is 162.3 milliseconds to 8 CSS pixels
 
 #### Scenario: The rates give the old figures at 60 frames a second
 
@@ -1402,8 +1208,10 @@ user sees at those zooms.
   16.667 milliseconds, at gaps of 4, 30, 90 and 120 CSS pixels
 - **THEN** every reading is 0.150 to three places.
 
-  The share does not grow with the gap. It reads one figure at every gap, and the drift cap
-  of `carry + 120 * seconds` CSS pixels holds a large gap instead.
+  **MODIFIED in this scenario**: the share grew with the cube of the gap before this change,
+  from 0.150 at a gap of 4 CSS pixels to 1 at a gap of 120, which took the whole gap in one
+  frame. It reads one figure now, and the drift cap of `carry + 120 * seconds` CSS pixels
+  holds a large gap instead. The heading is the heading of the scenario this one replaces.
 
 #### Scenario: A label moves the same distance at every frame rate
 
@@ -1519,198 +1327,3 @@ user sees at those zooms.
 - **THEN** the page holds no region label, `frames` is 0 and both `meanMs` and `worstMs` are
   0, so the sweep ran in no frame of the sixty
 
-### Requirement: The region overlay has a switch
-
-The renderer SHALL expose a `regions` switch beside the switches for the volume, the
-clouds, the points, the glow and the stars. The switch SHALL remove both the boundary
-lines and the labels.
-
-#### Scenario: The switch removes both parts
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, takes a screenshot,
-  switches the regions off and takes a second screenshot
-- **THEN** the page holds no region label after the switch, and the second screenshot
-  differs from the first, because the first draws boundary lines
-
-#### Scenario: The switch is inert where nothing draws
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=60000&p=35&y=0`, which is above the
-  fade in distance, and takes a screenshot with the regions on and one with them off
-- **THEN** the two image files are byte-identical
-
-
-### Requirement: The region data carries its attribution
-
-The repository SHALL hold a `THIRD_PARTY_NOTICES.md` file that names the source of the
-region data and its terms: klightspeed's EliteDangerousRegionMap under MIT for the
-region tables, and Frontier Developments' media-usage rules, which are non-commercial,
-for the game data behind them. If **either build** carries the package's procedural
-naming tables, the file SHALL also hold the BSD 3-Clause text those tables require.
-
-The repository now emits two builds, the library and the demo site, so the search reads
-both. The demo site is the one the public loads, and the library is the one another project
-installs, so a table that reaches either one reaches a user.
-
-The file SHALL also name the sources the demo site adds: the two further Canonn Research
-Group data sets, which `dataset-catalog` lists, and the loading image the demo site serves
-from `public/`.
-
-#### Scenario: The notice names every source
-
-- **WHEN** a unit test reads `THIRD_PARTY_NOTICES.md`
-- **THEN** it names `EliteDangerousRegionMap`, `MIT`, `Frontier`,
-  `@elite-dangerous-almanac/core`, `EDLoader1.svg`, `Guardian Structures` and
-  `Notable Systems`
-
-#### Scenario: The bundle carries no unlicensed table
-
-- **WHEN** a test runs `pnpm build` and `pnpm build:demo-site` and searches both outputs
-  for the package's procedural naming tables
-- **THEN** either the tables are absent from both, or `THIRD_PARTY_NOTICES.md` holds the
-  BSD 3-Clause text in full
-
-### Requirement: The region overlay has three modes
-
-The map SHALL expose a region mode with exactly three values: `off`, `simplified` and
-`accurate`. `simplified` SHALL be the default.
-
-- `off` SHALL draw no boundary line and place no label.
-- `simplified` SHALL draw the smoothed boundary set, which is the set the map draws today.
-- `accurate` SHALL draw the traced boundary set, which the requirement below defines. It
-  SHALL place the same labels `simplified` places, and its line SHALL take the wider blur
-  radius the requirement "The boundaries draw as one soft band inside a zoom band"
-  states.
-
-`GalaxyMapOptions` SHALL carry an optional `regionMode`. The handle SHALL carry
-`getRegionMode()` and `setRegionMode(mode)`. `setRegionMode` SHALL take effect in the next
-frame and SHALL NOT rebuild the scene data, because the worker builds both sets in one
-pass and the renderer holds both.
-
-A value that is not one of the three SHALL leave the mode unchanged, and `setRegionMode`
-SHALL report nothing: the reader of a whole data set reports its rejects, while a mode is
-one value the host controls directly.
-
-The `regions` pass switch SHALL stay as it is, a renderer probe the browser tests read. A
-switch of `off` and a mode of `off` SHALL draw the same frame, so the two never disagree.
-
-**Where the two sets differ, now that the overlay stops at 5,000 light years.** The two
-sets differ in where the line sits, not in what the data says. The smoothed line may sit up
-to 49.3494 light years from the boundary the region data holds. **At 1,080 CSS rows** and a
-60 degree vertical field of view, one CSS row covers `1.1547 * distance / 1080` light
-years, so the departure in CSS pixels is about `46,157 / distance`: 9.2 pixels at a zoom of
-5,000 light years, 4.6 at 10,000, 2.3 at 20,000 and 1.5 at 30,000.
-
-The overlay draws between 5,000 and 30,000 light years, so the departure runs from about
-9.2 CSS pixels at the near end of that band down to about 1.5 at the far end. `accurate` is
-therefore worth choosing at the **near end**, from 5,000 to about 12,000 light years, where
-the departure is 9.2 down to 3.8 CSS pixels at 1,080 rows, and 6.2 down to 2.6 at 720 rows,
-and the user sees which line they are given.
-Above about 25,000 the two sets draw within 2 CSS pixels of each other and the mode changes
-almost nothing on the screen.
-
-**What the blur costs the mode.** The blur radius in `accurate` is the cell on the screen,
-capped at 8 CSS pixels, which at 1,080 CSS rows is 8 at a zoom of 5,770 and below and 4.62 at
-10,000, and the pass skips the blur above about 15,390 where the radius falls under 3. That is of
-the same order as the departure itself, so the blur rounds the staircase into a smooth line
-without moving it: a symmetric kernel leaves the middle of a straight run where it was, and
-the departure figures above still hold. What the mode buys at the near end is the line's
-**position**, and the blur takes only its corners.
-
-This paragraph said before that the close zoom is what makes the difference matter, because
-the departure reaches about 4,600 CSS pixels at a zoom of 10 and 1,080 rows. The overlay no
-longer draws there at all. What the mode now answers is which side of a boundary a
-**region** lies on at the zoom a user reads the galaxy at, and not which side one system
-lies on at the zoom a user reads one system at. The requirement "The boundaries draw as one soft
-band inside a zoom band" records that trade and why it was taken.
-
-#### Scenario: The default mode is simplified
-
-- **WHEN** the browser test creates a map with no `regionMode` in the options and reads
-  `getRegionMode()`
-- **THEN** it is `simplified`
-
-#### Scenario: The options choose the mode
-
-- **WHEN** the browser test builds a map through the library entry point with
-  `regionMode` of `accurate`, of `off`, of the string `precise`, with an empty options
-  object and with no options at all, and reads `getRegionMode()` on each
-- **THEN** the readings are `accurate`, `off`, `simplified`, `simplified` and
-  `simplified`, so a value the map does not know takes the default as a bad value on
-  `setRegionMode` leaves the mode
-
-#### Scenario: Each mode draws its own frame
-
-- **WHEN** the browser test opens a view a unit test has chosen at a 90 degree corner of
-  the traced set, at **1280x720** at a zoom of **12,000 light years**, and takes a digest of
-  the canvas in each of the three modes
-- **THEN** the three digests differ from one another.
-
-  The view has to sit at a corner. The two sets carry the same line along a straight run of
-  the boundary, so a view chosen anywhere else can draw the same frame in `simplified` and in
-  `accurate`, and the reading would then say nothing about the mode. 12,000 light years is
-  inside the band where the overlay draws in full. The scenario states the viewport because
-  the departure of the two sets follows it: at 1280x720 the two lines sit about **2.56** CSS
-  pixels apart there against a band 6 CSS pixels wide, which is under half a band and still
-  moves enough pixels to change a digest
-
-#### Scenario: The off mode removes both parts
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0`, sets the mode to `off`
-  and reads the page and the frame
-- **THEN** the page holds no region label, and the frame is byte-identical to the frame
-  the same view draws with the `regions` pass switch off
-
-#### Scenario: The mode changes without a rebuild
-
-- **WHEN** the browser test opens a view, sets the mode to `accurate`, draws one frame,
-  sets it back to `simplified` and draws one more, and reads how many times the scene data
-  loaded
-- **THEN** the frames differ, the scene data loaded once, and neither change waited for a
-  load
-
-#### Scenario: The labels do not follow the mode
-
-- **WHEN** the browser test opens `#c=15,0,25895&d=20000&p=35&y=0` in `simplified` and in
-  `accurate`, and reads the text of every label
-- **THEN** the two label sets hold the same names in the same order
-
-#### Scenario: A bad mode changes nothing
-
-- **WHEN** the browser test sets the mode to `accurate`, then calls `setRegionMode` with
-  the string `precise` and with `undefined`, and reads the mode
-- **THEN** it is still `accurate`
-### Requirement: The handle reports the region at a plane point
-
-The handle SHALL carry `regionNameAt(point)`, which takes a position in game coordinates
-and returns the name of the codex region that holds it, or null.
-
-The lookup SHALL read the `x` and `z` of the point and SHALL ignore its `y`, because the
-region grid is a map of the galactic plane and a region has no upper or lower bound. A
-point outside the grid SHALL give null, and so SHALL a point inside it that the grid marks
-as no region.
-
-The call SHALL give null before the scene data has loaded, rather than throw, because the
-handle answers in the same tick the map is created and the grid arrives later.
-
-The HUD names the region under the cursor in its top bar, which `map-hud` states. Before
-this requirement the only way to ask was `debug.regionNameAtScreen`, and `debug` is not
-part of the supported surface.
-
-#### Scenario: The call names the region at a point
-
-- **WHEN** a browser test waits for `ready` and calls `regionNameAt` with Sol
-  (0, 0, 0), with the galactic centre (15, -35, 25895), and with a point far outside the
-  grid at (400000, 0, 0)
-- **THEN** the first gives `Inner Orion Spur`, the second gives `Galactic Centre`, and the
-  third gives null
-
-#### Scenario: The height of the point does not change the answer
-
-- **WHEN** a browser test calls `regionNameAt` with (0, 0, 0) and with (0, 20000, 0)
-- **THEN** the two readings are equal
-
-#### Scenario: The call answers before the data loads
-
-- **WHEN** a browser test builds a second map through `window.galaxyMapFactory` and calls
-  `regionNameAt` with Sol before `ready` settles
-- **THEN** the call returns null and does not throw

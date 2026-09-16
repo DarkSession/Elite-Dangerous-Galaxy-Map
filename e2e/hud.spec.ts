@@ -323,6 +323,58 @@ function systemRows(page: Page): Locator {
   return hud(page).locator('.gm-hud__system-row');
 }
 
+/** The system rows of one category's list. */
+function rowsOf(page: Page, name: string): Locator {
+  return hud(page).locator(
+    `.gm-hud__category-group[data-name="${name}"] .gm-hud__system-row`,
+  );
+}
+
+/** The names on the rows of one category's list, in the order the list holds them. */
+async function rowNames(page: Page, name: string): Promise<string[]> {
+  return rowsOf(page, name).evaluateAll((rows) =>
+    rows.map((row) => (row as HTMLElement).dataset['name'] ?? ''),
+  );
+}
+
+/** The names of the categories whose lists are open, in the panel's own order. */
+async function openCategories(page: Page): Promise<string[]> {
+  return hud(page)
+    .locator('.gm-hud__category-expand[aria-expanded="true"]')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLElement).dataset['name'] ?? ''),
+    );
+}
+
+/** Adds `count` categories, each with `systems` systems whose names all hold `a`. */
+async function addGrid(page: Page, count: number, systems: number): Promise<number> {
+  return page.evaluate(
+    (value) => {
+      const map = window.__hudMap;
+      if (map === undefined) return -1;
+      const names: string[] = [];
+      for (let index = 0; index < value.count; index += 1) {
+        names.push(`Cat a ${String(index).padStart(3, '0')}`);
+      }
+      map.addCategories(
+        names.map((name) => ({ name, color: value.color, maxDrawRange: 200000 })),
+      );
+      const records: SystemRecordInput[] = [];
+      for (let group = 0; group < value.count; group += 1) {
+        for (let index = 0; index < value.systems; index += 1) {
+          records.push({
+            name: `Star a ${String(group).padStart(3, '0')} ${String(index).padStart(4, '0')}`,
+            coords: { x: group * 7, y: 0, z: index * 3 },
+            primaryCategory: names[group] as string,
+          });
+        }
+      }
+      return map.addSystems(records).added;
+    },
+    { count, systems, color: CORE },
+  );
+}
+
 /** What the page holds the keyboard focus on. */
 interface ActiveElement {
   readonly connected: boolean;
@@ -826,6 +878,106 @@ test.describe('the search box', () => {
     expect(after.cursor).toEqual(before.cursor);
     expect(after.distance).toBe(before.distance);
   });
+
+  /** Adds the categories `A`, `B` and `C` and the four systems the scenarios read. */
+  async function addSearchSet(page: Page): Promise<void> {
+    await addCategories(page, ['A', 'B', 'C']);
+    await addSystems(page, [
+      record('Alpha', [0, 0, 100], 'A'),
+      record('Beta', [0, 0, 200], 'A'),
+      record('Alpha Two', [0, 0, 300], 'B'),
+      record('Gamma', [0, 0, 400], 'C'),
+    ]);
+    await expect(categoryRow(page, 'C')).toBeVisible();
+  }
+
+  test('a search opens every category that holds a match', async ({ page }) => {
+    await openHud(page);
+    await addSearchSet(page);
+    // Every row is folded, because the panel opens none and the test expanded none.
+    expect(await openCategories(page)).toEqual([]);
+
+    await hud(page).locator('.gm-hud__search').fill('alpha');
+    await page.waitForTimeout(300);
+    const open = await openCategories(page);
+    console.log('the open categories for the text alpha', open);
+
+    expect(open).toEqual(['A', 'B']);
+    expect(await rowNames(page, 'A')).toEqual(['Alpha']);
+    expect(await rowNames(page, 'B')).toEqual(['Alpha Two']);
+    expect(await rowNames(page, 'C')).toEqual([]);
+  });
+
+  test('a search opens a category that is switched off', async ({ page }) => {
+    await openHud(page);
+    await addSearchSet(page);
+    await categoryRow(page, 'B').click();
+    expect(
+      await page.evaluate(() => window.__hudMap?.isCategoryVisible('B') ?? true),
+    ).toBe(false);
+
+    await hud(page).locator('.gm-hud__search').fill('alpha');
+    await page.waitForTimeout(300);
+    const open = await openCategories(page);
+    console.log('the open categories with B switched off', open);
+
+    expect(open).toContain('B');
+    expect(await rowNames(page, 'B')).toEqual(['Alpha Two']);
+  });
+
+  test('a list folded during a search stays folded', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha', 'Beta', 'Gamma']);
+    await addSystems(page, [
+      record('Anvil Alpha', [0, 0, 100], 'Alpha'),
+      record('Anvil Beta', [0, 0, 200], 'Beta'),
+      record('Anvil Gamma', [0, 0, 300], 'Gamma'),
+    ]);
+    await expect(categoryRow(page, 'Gamma')).toBeVisible();
+
+    await hud(page).locator('.gm-hud__search').fill('a');
+    await page.waitForTimeout(300);
+    expect(await openCategories(page)).toEqual(['Alpha', 'Beta', 'Gamma']);
+
+    await expandButton(page, 'Beta').click();
+    expect(await openCategories(page)).toEqual(['Alpha', 'Gamma']);
+
+    // The camera move runs the panel's poll, and the refresh is the rebuild itself. The
+    // open set is state, so neither writes it.
+    await setView(page, { cursor: [0, 0, 0], distance: 12000, yaw: 20, pitch: 35 });
+    await page.waitForTimeout(300);
+    expect(await openCategories(page)).toEqual(['Alpha', 'Gamma']);
+    await page.evaluate(() => {
+      window.__hudMap?.hud?.refresh();
+    });
+    const afterRebuild = await openCategories(page);
+    console.log('the open categories after the rebuild', afterRebuild);
+    expect(afterRebuild).toEqual(['Alpha', 'Gamma']);
+
+    // One more letter that keeps all three categories writes the set again.
+    await hud(page).locator('.gm-hud__search').fill('an');
+    await page.waitForTimeout(300);
+    expect(await openCategories(page)).toEqual(['Alpha', 'Beta', 'Gamma']);
+  });
+
+  test('clearing the box leaves one open list', async ({ page }) => {
+    await openHud(page);
+    await addSearchSet(page);
+    await expandButton(page, 'C').click();
+    expect(await openCategories(page)).toEqual(['C']);
+
+    await hud(page).locator('.gm-hud__search').fill('alpha');
+    await page.waitForTimeout(300);
+    const during = await openCategories(page);
+
+    await hud(page).locator('.gm-hud__search').fill('');
+    await page.waitForTimeout(300);
+    const after = await openCategories(page);
+    console.log('the open categories during and after the search', { during, after });
+
+    expect(during).toEqual(['A', 'B']);
+    expect(after).toEqual(['C']);
+  });
 });
 
 // A row click selects, and the block reads the view right after it. The reduced-motion
@@ -918,6 +1070,79 @@ test.describe('the expanded system list', () => {
     await expandButton(page, 'B').click();
     await expect(systemRows(page)).toHaveCount(1);
     await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Both');
+  });
+
+  test('a row holds the name alone', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    await expandButton(page, 'Alpha').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    const row = await systemRows(page)
+      .first()
+      .evaluate((node: HTMLElement) => ({
+        text: node.textContent ?? '',
+        distance: node.getAttribute('data-distance'),
+        after: getComputedStyle(node, '::after').content,
+      }));
+    console.log('the reading of one system row', row);
+
+    expect(row.text).toBe('Sol');
+    expect(row.distance).toBeNull();
+    // The row's own box holds no second reading, so its `::after` draws nothing.
+    expect(['none', 'normal', '']).toContain(row.after);
+  });
+
+  test('the rows are shared over the open lists', async ({ page }) => {
+    await openHud(page);
+    expect(await addGrid(page, 4, 300)).toBe(1200);
+    await expect(categoryRow(page, 'Cat a 003')).toBeVisible();
+
+    await hud(page).locator('.gm-hud__search').fill('a');
+    await page.waitForTimeout(300);
+    const open = await openCategories(page);
+    const counts: number[] = [];
+    for (const name of open) counts.push(await rowsOf(page, name).count());
+    const cuts = await hud(page)
+      .locator('.gm-hud__system-cut')
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+    const total = await systemRows(page).count();
+    console.log('the rows of four open lists', { open, counts, cuts, total });
+
+    expect(open).toHaveLength(4);
+    expect(counts).toEqual([50, 50, 50, 50]);
+    expect(cuts).toEqual(['50 of 300', '50 of 300', '50 of 300', '50 of 300']);
+    expect(total).toBe(200);
+  });
+
+  test('more open lists than rows', async ({ page }) => {
+    await openHud(page);
+    expect(await addGrid(page, 256, 3)).toBe(768);
+    await expect(categoryRow(page, 'Cat a 255')).toBeVisible();
+
+    await hud(page).locator('.gm-hud__search').fill('a');
+    await page.waitForTimeout(300);
+    const open = await openCategories(page);
+    const total = await systemRows(page).count();
+    const cuts = await hud(page)
+      .locator('.gm-hud__system-cut')
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+    const empty = cuts.filter((text) => text === '0 of 3').length;
+    console.log('the rows of 256 open lists', {
+      open: open.length,
+      total,
+      cuts: cuts.length,
+      empty,
+    });
+
+    expect(open).toHaveLength(256);
+    expect(total).toBe(200);
+    // The first 200 lists hold one row each and say 1 of 3. The other 56 hold none and
+    // still state the count they hold, so the user narrows the filter to read them.
+    expect(empty).toBe(56);
+    expect(cuts.filter((text) => text === '1 of 3')).toHaveLength(200);
   });
 
   test('a row turns its category on again', async ({ page }) => {
@@ -1095,7 +1320,27 @@ test.describe('the information panel', () => {
     expect(range).toMatch(/^\d+ LY$/);
   });
 
-  test('an odd count of fields leaves no empty cell', async ({ page }) => {
+  /** The box of the grid and of each field, in CSS pixels. */
+  async function fieldBoxes(page: Page): Promise<{
+    grid: number;
+    fields: { width: number; top: number }[];
+  }> {
+    return hud(page).evaluate((root: HTMLElement) => {
+      const grid = root.querySelector('.gm-hud__field-grid') as HTMLElement;
+      const fields = [...grid.querySelectorAll('.gm-hud__field')] as HTMLElement[];
+      return {
+        grid: grid.getBoundingClientRect().width,
+        fields: fields.map((field) => {
+          const box = field.getBoundingClientRect();
+          return { width: box.width, top: box.top };
+        }),
+      };
+    });
+  }
+
+  test('the position takes both columns and the two distances share a row', async ({
+    page,
+  }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
     // The record carries no field of its own, so the grid holds three: the position,
@@ -1106,21 +1351,110 @@ test.describe('the information panel', () => {
     const labels = await fieldLabels(page);
     expect(labels).toEqual(['POSITION', 'DISTANCE FROM SOL', 'RANGE']);
 
-    const boxes = await hud(page).evaluate((root: HTMLElement) => {
-      const grid = root.querySelector('.gm-hud__field-grid') as HTMLElement;
-      const fields = [...grid.querySelectorAll('.gm-hud__field')] as HTMLElement[];
+    const boxes = await fieldBoxes(page);
+    console.log('the field grid of the three fields', boxes);
+
+    const [position, fromSol, range] = boxes.fields as {
+      width: number;
+      top: number;
+    }[];
+    expect(boxes.fields).toHaveLength(3);
+    expect(
+      Math.abs((position as { width: number }).width - boxes.grid),
+    ).toBeLessThanOrEqual(1);
+    // Each of the two distances is about half the grid, less half the 10 pixel gap.
+    for (const field of [fromSol, range] as { width: number }[]) {
+      expect(field.width * 2).toBeLessThan(boxes.grid + 12);
+      expect(field.width * 2).toBeGreaterThan(boxes.grid - 12);
+    }
+    expect(
+      Math.abs((fromSol as { top: number }).top - (range as { top: number }).top),
+    ).toBeLessThanOrEqual(1);
+    expect((fromSol as { top: number }).top).toBeGreaterThan(
+      (position as { top: number }).top,
+    );
+  });
+
+  test('the position value does not wrap', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Fractional', [-9530.9375, -910.28125, 19808.125], 'Alpha'),
+    ]);
+    await select(page, 'Fractional');
+
+    // The reading finds the element and measures it in one call. The panel rebuilds its
+    // fields while the selection flight runs, so an element a locator resolved in an
+    // earlier call can be off the document by the time the measure runs, and a detached
+    // element reads a height of 0 and no line height at all.
+    const value = await hud(page).evaluate((root: HTMLElement) => {
+      const fields = [...root.querySelectorAll('.gm-hud__field')] as HTMLElement[];
+      const field = fields.find(
+        (box) => box.querySelector('.gm-hud__field-label')?.textContent === 'POSITION',
+      );
+      const node = field?.querySelector('.gm-hud__field-value') as HTMLElement | null;
+      if (node === null || node === undefined) return null;
       return {
-        grid: grid.getBoundingClientRect().width,
-        fields: fields.map((field) => field.getBoundingClientRect().width),
+        text: node.textContent ?? '',
+        height: node.getBoundingClientRect().height,
+        lineHeight: parseFloat(getComputedStyle(node).lineHeight),
       };
     });
-    console.log('the field grid', boxes);
+    console.log('the box of the longest position value', value);
 
-    // The last field takes both columns, and the first two take one each.
-    expect(boxes.fields).toHaveLength(3);
-    expect(Math.abs((boxes.fields[2] as number) - boxes.grid)).toBeLessThanOrEqual(1);
-    expect((boxes.fields[0] as number) * 2).toBeLessThan(boxes.grid + 12);
-    expect((boxes.fields[0] as number) * 2).toBeGreaterThan(boxes.grid - 12);
+    expect(value).not.toBeNull();
+    const read = value as NonNullable<typeof value>;
+    expect(read.text).toBe('-9,530.938 / -910.281 / 19,808.125');
+    // The value's box is one line high, by the line height its own style gives.
+    expect(read.height).toBeGreaterThan(0);
+    expect(read.height).toBeLessThan(read.lineHeight * 1.5);
+  });
+
+  test('an odd count of fields leaves no empty cell', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    // The position takes two cells, so a grid of n fields fills n + 1 cells. Four fields
+    // leave the last one alone on its row, and five fill the grid.
+    await addSystems(page, [
+      record('Four', [0, 0, 100], 'Alpha', { primaryStar: 'G' }),
+      record('Five', [0, 0, 200], 'Alpha', { primaryStar: 'G', allegiance: 'Empire' }),
+    ]);
+
+    await select(page, 'Four');
+    expect(await fieldLabels(page)).toEqual([
+      'POSITION',
+      'DISTANCE FROM SOL',
+      'RANGE',
+      'PRIMARY STAR',
+    ]);
+    const four = await fieldBoxes(page);
+    console.log('the field grid of four fields', four);
+    expect(four.fields).toHaveLength(4);
+    expect(
+      Math.abs((four.fields[3] as { width: number }).width - four.grid),
+    ).toBeLessThanOrEqual(1);
+
+    await select(page, 'Five');
+    expect(await fieldLabels(page)).toEqual([
+      'POSITION',
+      'DISTANCE FROM SOL',
+      'RANGE',
+      'PRIMARY STAR',
+      'ALLEGIANCE',
+    ]);
+    const five = await fieldBoxes(page);
+    console.log('the field grid of five fields', five);
+    expect(five.fields).toHaveLength(5);
+    const last = (five.fields[4] as { width: number }).width;
+    expect(last * 2).toBeLessThan(five.grid + 12);
+    expect(last * 2).toBeGreaterThan(five.grid - 12);
+    // The grid holds no empty cell: the last field sits on the row of the one before it.
+    expect(
+      Math.abs(
+        (five.fields[4] as { top: number }).top -
+          (five.fields[3] as { top: number }).top,
+      ),
+    ).toBeLessThanOrEqual(1);
   });
 
   test('a record with no description hides that section', async ({ page }) => {
@@ -1878,5 +2212,38 @@ test.describe('the HUD budget', () => {
     console.log('the HUD element count with 10,000 systems', nodes);
 
     expect(nodes).toBeLessThan(600);
+  });
+
+  test('the node count does not follow the count of open lists', async ({ page }) => {
+    await openHud(page);
+    // 40 categories of 250 systems each, every name holding `a`.
+    expect(await addGrid(page, 40, 250)).toBe(10000);
+    await expect(categoryRow(page, 'Cat a 039')).toBeVisible();
+
+    // The count with every list closed, at the same 40 categories. The growth from this
+    // count to the open one is what the shared row budget bounds. A category row costs
+    // about 13 elements, so 40 closed categories already cost 539, and an absolute bound
+    // would read the count of categories and not the count of open lists.
+    const closedNodes = await page.evaluate(
+      () => document.querySelectorAll('#hud-wrap .gm-hud *').length,
+    );
+
+    await hud(page).locator('.gm-hud__search').fill('a');
+    await page.waitForTimeout(300);
+    const open = await openCategories(page);
+    const rows = await systemRows(page).count();
+    const nodes = await page.evaluate(
+      () => document.querySelectorAll('#hud-wrap .gm-hud *').length,
+    );
+    console.log('the HUD element count with 40 open lists', {
+      open: open.length,
+      rows,
+      nodes,
+      closedNodes,
+    });
+
+    expect(open.length).toBeGreaterThanOrEqual(2);
+    expect(rows).toBe(200);
+    expect(nodes - closedNodes).toBeLessThan(600);
   });
 });

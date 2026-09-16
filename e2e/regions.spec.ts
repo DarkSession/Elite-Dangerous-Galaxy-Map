@@ -20,17 +20,28 @@ test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 const MEDIUM_DISTANCE = 15000;
 
 /**
- * The close end of the zoom band, in light years. The overlay draws in full at 10,000
- * and draws nothing at 4,000, which is below the band.
+ * The close end of the range band, in light years. The band is now the range band and
+ * not the zoom band: the centre of the frame sits at the cursor, so its range is the
+ * zoom. A line draws in full at 20,000 and draws nothing at 4,000.
+ *
+ * At 4,000 light years the reading is a window around the centre and not the whole
+ * frame. A line near the horizon is over 10,000 light years off and does draw there,
+ * which is what the range fade is for.
  */
-const CLOSE_END_FULL = 10000;
+const CLOSE_END_FULL = 20000;
 const CLOSE_END_NONE = 4000;
 
 /**
- * The three zooms the close end reading takes, in light years. The fade is 1 at 12,000,
- * 0.5 at 7,500 and 0 at 5,000.
+ * The three zooms the close end reading takes, in light years. The range fade is 1 at
+ * 20,000, 0.5 at 15,000 and 0 at 9,000, which is below the 10,000 it reaches 0 at.
  */
-const FADE_DISTANCES = [12000, 7500, 5000];
+const FADE_DISTANCES = [20000, 15000, 9000];
+
+/**
+ * The three zooms the far end reading takes, in light years. The zoom fade is 1 at
+ * 20,000, 0.5 at 25,000 and 0 at 31,000, which is above the 30,000 it reaches 0 at.
+ */
+const FAR_FADE_DISTANCES = [20000, 25000, 31000];
 
 /** The two modes that draw a line. */
 const DRAWING_MODES: RegionMode[] = ['simplified', 'accurate'];
@@ -474,7 +485,8 @@ test('the boundary draws in full at the close end of the band', async ({ page })
   for (const mode of DRAWING_MODES) {
     await setRegionMode(page, mode);
 
-    // 10,000 light years is the closest zoom at which the line draws in full.
+    // 20,000 light years is the closest range at which the line draws in full: the
+    // range fade reaches 1 there and the zoom fade leaves 20,000 at 1.
     await look(page, NEAR_BOTH_SETS.point, CLOSE_END_FULL);
     await setPasses(page, { regions: true });
     const drawn = await canvasDigest(page);
@@ -482,14 +494,12 @@ test('the boundary draws in full at the close end of the band', async ({ page })
     const bare = await canvasDigest(page);
     expect(drawn, `${mode} at ${CLOSE_END_FULL} light years`).not.toBe(bare);
 
-    // 4,000 light years is below the band, so the overlay adds nothing and no name
-    // reaches the page.
+    // At 4,000 light years the centre sits at the cursor, where the range fade is 0,
+    // so the window around it is the frame it was without the overlay. The rest of the
+    // frame is not read: a line near the horizon is over 10,000 light years off.
     await look(page, NEAR_BOTH_SETS.point, CLOSE_END_NONE);
-    await setPasses(page, { regions: true });
-    const closeDrawn = await canvasDigest(page);
-    await setPasses(page, { regions: false });
-    const closeBare = await canvasDigest(page);
-    expect(closeDrawn, `${mode} at ${CLOSE_END_NONE} light years`).toBe(closeBare);
+    const closeChange = await contributionNear(page, NEAR_BOTH_SETS.point);
+    expect(closeChange, `${mode} at ${CLOSE_END_NONE} light years`).toBe(0);
     expect(await page.locator('.region-label').count()).toBe(0);
   }
 });
@@ -540,13 +550,100 @@ test('the overlay fades out across the close end of the band', async ({ page }) 
     console.log('the close end reading', { mode, FADE_DISTANCES, readings });
 
     const [full, half, none] = readings as [number, number, number];
-    // The fade is 1 at 12,000 light years, 0.5 at 7,500 and 0 at 5,000. The bounds are
-    // wide because the reading is a pixel of the frame and not the fade itself.
-    expect(full, `${mode} at 12,000 light years`).toBeGreaterThan(0.05);
-    expect(half, `${mode} at 7,500 light years`).toBeGreaterThan(full / 5);
-    expect(half, `${mode} at 7,500 light years`).toBeLessThan((full * 4) / 5);
-    expect(none, `${mode} at 5,000 light years`).toBe(0);
+    // The centre sits at the cursor, so its range is the zoom. The range fade is 1 at
+    // 20,000 light years, 0.5 at 15,000 and 0 at 9,000. The bounds are wide because
+    // the reading is a pixel of the frame and not the fade itself.
+    expect(full, `${mode} at 20,000 light years`).toBeGreaterThan(0.05);
+    expect(half, `${mode} at 15,000 light years`).toBeGreaterThan(full / 5);
+    expect(half, `${mode} at 15,000 light years`).toBeLessThan((full * 4) / 5);
+    expect(none, `${mode} at 9,000 light years`).toBe(0);
   }
+});
+
+test('the overlay fades out across the far end of the zoom band', async ({ page }) => {
+  await openMap(page);
+
+  for (const mode of DRAWING_MODES) {
+    await setRegionMode(page, mode);
+    const readings: number[] = [];
+    for (const distance of FAR_FADE_DISTANCES) {
+      await look(page, NEAR_BOTH_SETS.point, distance);
+      readings.push(await contributionNear(page, NEAR_BOTH_SETS.point));
+    }
+    console.log('the far end reading', { mode, FAR_FADE_DISTANCES, readings });
+
+    const [full, half, none] = readings as [number, number, number];
+    // The range fade is 1 at all three, because the centre's range is the zoom and
+    // every zoom here is 20,000 light years or more. The zoom fade is 1 at 20,000,
+    // 0.5 at 25,000 and 0 at 31,000.
+    expect(full, `${mode} at 20,000 light years`).toBeGreaterThan(0.05);
+    expect(half, `${mode} at 25,000 light years`).toBeGreaterThan(full / 5);
+    expect(half, `${mode} at 25,000 light years`).toBeLessThan((full * 4) / 5);
+    expect(none, `${mode} at 31,000 light years`).toBe(0);
+  }
+});
+
+/**
+ * How many pixels of a band of rows the overlay changed. The band is stated as two
+ * shares of the frame height, from the top.
+ */
+async function changedInRows(
+  page: Page,
+  fromShare: number,
+  toShare: number,
+): Promise<number> {
+  const ratio = await devicePixelRatio(page);
+  const size = await page.evaluate(
+    () => window.__galaxyMap?.drawingBufferSize?.() ?? [0, 0],
+  );
+  const height = size[1] as number;
+  const rect = {
+    x: 0,
+    y: Math.round(height * fromShare),
+    width: size[0] as number,
+    height: Math.max(1, Math.round(height * (toShare - fromShare))),
+  };
+  expect(ratio, 'the reading takes one device pixel per CSS pixel').toBe(1);
+  await setPasses(page, { regions: true });
+  const withOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: false });
+  const withoutOverlay = await luminanceRect(page, rect);
+  await setPasses(page, { regions: true });
+
+  let changed = 0;
+  for (let index = 0; index < withOverlay.length; index += 1) {
+    const change = Math.abs(
+      (withOverlay[index] as number) - (withoutOverlay[index] as number),
+    );
+    if (change > 0.001) changed += 1;
+  }
+  return changed;
+}
+
+test('a far line still draws while the near line is gone', async ({ page }) => {
+  await openMap(page);
+  await setRegionMode(page, 'accurate');
+  // A pitch of 30 degrees puts the horizon at the top edge, because the vertical field
+  // of view is 60 degrees, so every row of the frame reads the plane. At a zoom of
+  // 4,000 light years the camera sits 2,000 above the plane. The rows whose plane point
+  // is beyond 20,000 light years are the top 11.0 per cent, and the rows whose plane
+  // point is under 10,000 are everything below 21.1 per cent.
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 4000,
+      yaw: 0,
+      pitch: 30,
+    });
+    window.__galaxyMap?.drawNow?.();
+  });
+
+  const top = await changedInRows(page, 0, 0.1);
+  const lower = await changedInRows(page, 0.3, 1);
+  console.log('the changed pixels by band', { top, lower });
+
+  expect(top, 'the top 10 per cent of the rows').toBeGreaterThan(0);
+  expect(lower, 'the rows below 30 per cent').toBe(0);
 });
 
 /** The luminance of the band's own tone, which the composite writes over the frame. */
@@ -647,10 +744,12 @@ async function readBandRow(page: Page, choice: CrossingChoice): Promise<BandRead
 }
 
 test.describe('the band across a chain', () => {
-  // The crossing views sit at 1,920 by 1,080, where the region grid cell is 4.62 CSS
-  // pixels at a zoom of 10,000 light years and the blur runs. The module reads 1280x720
-  // otherwise.
-  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  // Both crossing views sit at 3,840 by 2,160 at a zoom of 20,000 light years, which is
+  // the viewport and the zoom `e2e/region-views.ts` holds for them. One CSS pixel covers
+  // 10.69 light years there, so the region grid cell is 4.62 CSS pixels and the blur runs
+  // at its widest. The reading point sits beyond the range fade at that zoom, so the line
+  // draws in full. The module reads 1280x720 otherwise.
+  test.use({ viewport: { width: 3840, height: 2160 }, deviceScaleFactor: 1 });
 
   test('is one tone, lightens what it crosses, and widens with the blur', async ({
     page,
@@ -695,6 +794,46 @@ test.describe('the band across a chain', () => {
 
     // The normalisation is what holds the two peaks together. Without it the blurred
     // band would draw at about three fifths of the unblurred band's alpha.
+    const ratio = accurate.peakAlpha / simplified.peakAlpha;
+    expect(Math.abs(ratio - 1), 'the peak alpha of the two modes').toBeLessThan(0.15);
+  });
+});
+
+test.describe('the band across a chain at half the height', () => {
+  // The same two views at 1,920 by 1,080. One CSS pixel covers 21.38 light years here, so
+  // the region grid cell is 2.31 CSS pixels and the standard deviation falls to its floor
+  // of 1. This is the reading the floor buys: the rule this change replaces ran no blur at
+  // a radius under 3, so both modes gave the same unblurred width here.
+  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+
+  test('the far band is wider than the unblurred one as well', async ({ page }) => {
+    await openMap(page);
+
+    await setRegionMode(page, 'simplified');
+    const simplified = await readBandRow(page, SMOOTHED_CROSSING);
+    await setRegionMode(page, 'accurate');
+    const accurate = await readBandRow(page, TRACED_CROSSING);
+
+    for (const [mode, reading] of [
+      ['simplified', simplified],
+      ['accurate', accurate],
+    ] as const) {
+      console.log('the far band reading', {
+        mode,
+        runCss: reading.runCss,
+        widthCss: reading.widthCss,
+        peakAlpha: reading.peakAlpha,
+        darkened: reading.darkened,
+      });
+      expect(reading.darkened, `${mode} darkened pixels`).toBe(0);
+      expect(reading.middleIsLighter, `${mode} middle`).toBe(true);
+    }
+
+    expect(simplified.widthCss, 'the simplified width').toBeGreaterThanOrEqual(3);
+    expect(simplified.widthCss, 'the simplified width').toBeLessThanOrEqual(3.5);
+    expect(accurate.widthCss, 'the accurate width').toBeGreaterThanOrEqual(3.75);
+    expect(accurate.widthCss, 'the accurate width').toBeLessThanOrEqual(4.18);
+
     const ratio = accurate.peakAlpha / simplified.peakAlpha;
     expect(Math.abs(ratio - 1), 'the peak alpha of the two modes').toBeLessThan(0.15);
   });
@@ -795,13 +934,16 @@ async function readJoin(page: Page, choice: CornerChoice): Promise<JoinReading> 
 }
 
 test.describe('the corner readings', () => {
-  // Both corner views sit at 1,920 by 1,080. The join reads at a zoom of 12,000 light
-  // years and the traced corner at 10,000, where the blur runs at a radius of 4.62 CSS
-  // pixels. At 1280x720 the blur would not run and the reading would check nothing this
-  // change added.
-  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  // The two corner views read at their own viewports, which `e2e/region-views.ts` holds:
+  // 3,200 by 1,800 for the join and 3,840 by 2,160 for the traced corner, each at a zoom
+  // of 20,000 light years. Each pairs its rows with its zoom so that one CSS pixel covers
+  // the light years the reading was calibrated at, and each reading point sits beyond the
+  // range fade, where the line draws in full. Each test therefore sets the size of its own
+  // view rather than sharing one.
+  test.use({ deviceScaleFactor: 1 });
 
   test('a join is not brighter than the line', async ({ page }) => {
+    await page.setViewportSize(SHARP_CORNER.viewport);
     await openMap(page);
     const reading = await readJoin(page, SHARP_CORNER);
     console.log('the join reading', {
@@ -812,12 +954,15 @@ test.describe('the corner readings', () => {
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
     expect(reading.straightChange).toBeGreaterThan(0.05);
-    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange);
+    // The bend may read 3 per cent above the straight run. The coverage is a
+    // point-sampled ridge, so the sampled peak of a turn moves with its own phase.
+    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange * 1.03);
   });
 
   test('a 90 degree corner of the traced set is not brighter than its line', async ({
     page,
   }) => {
+    await page.setViewportSize(TRACED_CORNER.viewport);
     await openMap(page);
     await setRegionMode(page, 'accurate');
     const reading = await readJoin(page, TRACED_CORNER);
@@ -830,7 +975,9 @@ test.describe('the corner readings', () => {
     expect(reading.insideCount).toBeGreaterThan(8);
     expect(reading.unchangedInside).toBe(0);
     expect(reading.straightChange).toBeGreaterThan(0.05);
-    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange);
+    // The corner reads up to 1.010 of a straight run at this radius, which the
+    // requirement's 3 per cent covers.
+    expect(reading.bendChange).toBeLessThanOrEqual(reading.straightChange * 1.03);
   });
 });
 

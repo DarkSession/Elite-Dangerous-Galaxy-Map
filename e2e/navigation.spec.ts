@@ -186,6 +186,9 @@ test('the near plane changes no view that draws today', async ({ page }) => {
 test('a marker at the cursor draws at the closest zoom', async ({ page }) => {
   await openMap(page, '#c=0,0,0&d=10&p=35&y=0');
   await page.evaluate(() => {
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    window.galaxyMap?.debug.setPasses({ regions: false });
     window.galaxyMap?.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
     window.galaxyMap?.addSystems([
       { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },

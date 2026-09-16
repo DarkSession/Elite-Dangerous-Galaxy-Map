@@ -9,15 +9,16 @@ import {
   chooseLabels,
   fitSampleBuffers,
   filterAnchor,
+  anchorCap,
+  anchorFloor,
+  anchorShare,
   anchorStep,
   smoothTarget,
-  TARGET_RESET_PIXELS,
-  TARGET_SHARE,
+  rememberLabels,
+  TARGET_DRIFT_PIXELS,
   targetShare,
   ANCHOR_FULL_SPEED_PIXELS,
-  ANCHOR_LEAST_PIXELS,
-  ANCHOR_MAX_PIXELS,
-  ANCHOR_SHARE,
+  ANCHOR_REACH_SHARE,
   HELD_SHARE,
   LABEL_INSET,
   labelCandidates,
@@ -27,7 +28,13 @@ import {
   samplePointCount,
   sampleFrame,
 } from './labels';
-import type { AnchorPoint, FrameSamples, LabelMemory, PlanePoint } from './labels';
+import type {
+  AnchorPoint,
+  FrameSamples,
+  FrameTiming,
+  LabelMemory,
+  PlanePoint,
+} from './labels';
 // The test builds the coarse grid the page gets from the region worker. The page
 // never imports this module: it would pull the 199 KiB region lookup into the main
 // bundle, which `tests/main-bundle.test.ts` holds the line against.
@@ -35,6 +42,18 @@ import { buildCoarseRegionGrid, fillRegionGrid } from '../scene-data/region-line
 import { REGIONS } from '../scene-data/regions';
 import type { Region } from '../scene-data/regions';
 import type { CoarseRegionGrid } from '../scene-data/types';
+
+/** The time a frame of a 60 frame a second display covers, in seconds. */
+const FRAME_SECONDS = 1 / 60;
+
+/** A frame of 60 a second that is not a view jump, which most scenarios read. */
+const FRAME: FrameTiming = { seconds: FRAME_SECONDS, jump: false };
+
+/** How far the anchor goes on the screen in such a frame, in CSS pixels. */
+const ANCHOR_MAX_PIXELS = anchorCap(FRAME_SECONDS);
+
+/** The least it goes in such a frame, in CSS pixels. */
+const ANCHOR_LEAST_PIXELS = anchorFloor(FRAME_SECONDS);
 
 const WIDE = { width: 1920, height: 1080 };
 const VIEWPORT = { width: 1280, height: 720 };
@@ -121,6 +140,8 @@ function memoryOf(
     previous: new Set(previous),
     anchors: new Map(anchors),
     targets: new Map(targets),
+    targetScreens: new Map(),
+    centres: new Set(),
   };
 }
 
@@ -727,7 +748,7 @@ describe('the label target', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure).slice(
+      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME).slice(
         0,
         MAX_LABELS,
       );
@@ -741,11 +762,7 @@ describe('the label target', () => {
         if (before.x === one.plane.x && before.z === one.plane.z) still += 1;
         else moved += 1;
       }
-      memory = {
-        previous: new Set(shown.map((one) => one.id)),
-        anchors: new Map(shown.map((one) => [one.id, one.plane])),
-        targets: new Map(shown.map((one) => [one.id, one.target])),
-      };
+      memory = rememberLabels(shown);
     }
     console.log('label readings on the centre that did not move at all', still);
     console.log('label readings on the centre that moved', moved);
@@ -760,80 +777,140 @@ describe('the target smoothing', () => {
   const identity = (x: number, z: number): AnchorPoint => ({ x, y: z });
   const anywhere = (): boolean => true;
 
+  /** The smoothed target of one gap, with no carried screen point and no jump. */
+  function smoothed(
+    carried: PlanePoint | undefined,
+    target: PlanePoint,
+    seconds = FRAME_SECONDS,
+    onRegion = anywhere,
+  ): PlanePoint {
+    return smoothTarget({
+      carried,
+      target,
+      toScreen: identity,
+      onRegion,
+      seconds,
+    });
+  }
+
   test('takes the target whole when the frame before carried none', () => {
-    const smoothed = smoothTarget(undefined, { x: 200, z: 100 }, identity, anywhere);
-    expect(smoothed).toEqual({ x: 200, z: 100 });
+    expect(smoothed(undefined, { x: 200, z: 100 })).toEqual({ x: 200, z: 100 });
   });
 
   test('moves the carried target its share of the way to this one', () => {
-    const smoothed = smoothTarget(
-      { x: 100, z: 100 },
-      { x: 200, z: 100 },
-      identity,
-      anywhere,
-    );
-    expect(smoothed.x).toBeCloseTo(100 + 100 * targetShare(100), 9);
-    expect(smoothed.z).toBeCloseTo(100, 9);
+    // The gap is 4 CSS pixels, which is the step the sample grid gives a still region,
+    // so the share and not the drift cap decides the move.
+    const point = smoothed({ x: 100, z: 100 }, { x: 104, z: 100 });
+    expect(point.x).toBeCloseTo(100 + 4 * targetShare(FRAME_SECONDS), 6);
+    expect(point.z).toBeCloseTo(100, 9);
   });
 
-  test('gives a small gap the share the noise of the grid asks for', () => {
-    // The sample grid steps the target of a still region a few pixels. That share stays
-    // near `TARGET_SHARE`, so the label does not take the noise.
-    expect(targetShare(4)).toBeCloseTo(TARGET_SHARE, 3);
-    expect(targetShare(30)).toBeLessThan(0.17);
-    // A real move takes far more of the gap, and the whole of it at the figure.
-    expect(targetShare(90)).toBeGreaterThan(0.4);
-    expect(targetShare(TARGET_RESET_PIXELS)).toBe(1);
-  });
-
-  test('takes the target whole when it relocates', () => {
-    // A region that shows as two patches moves its target a long way at once. To walk
-    // that gap would take the label over the ground between the two patches.
-    const far = TARGET_RESET_PIXELS + 10;
-    const smoothed = smoothTarget(
-      { x: 100, z: 100 },
-      { x: 100 + far, z: 100 },
-      identity,
-      anywhere,
-    );
-    expect(smoothed).toEqual({ x: 100 + far, z: 100 });
+  test('moves no target over a frame that covers no time', () => {
+    expect(smoothed({ x: 100, z: 100 }, { x: 104, z: 100 }, 0)).toEqual({
+      x: 100,
+      z: 100,
+    });
   });
 
   test('holds the carried target when the smoothed point is off the region', () => {
-    const smoothed = smoothTarget(
+    const point = smoothed(
       { x: 100, z: 100 },
-      { x: 200, z: 100 },
-      identity,
+      { x: 104, z: 100 },
+      FRAME_SECONDS,
       () => false,
     );
-    expect(smoothed).toEqual({ x: 100, z: 100 });
+    expect(point).toEqual({ x: 100, z: 100 });
+  });
+
+  test('cuts a move the drift cap does not allow', () => {
+    // A gap of 100 CSS pixels asks for 15 at this share. The map holds still here, so
+    // the label may add `TARGET_DRIFT_PIXELS` a second and no more.
+    const point = smoothed({ x: 100, z: 100 }, { x: 200, z: 100 });
+    expect(point.x - 100).toBeCloseTo(TARGET_DRIFT_PIXELS * FRAME_SECONDS, 4);
+  });
+
+  test('gives the map its own move for free', () => {
+    // The carried point projected 30 CSS pixels from where it projected the frame
+    // before, so the map moved it 30. The label may add 2 to that.
+    const point = smoothTarget({
+      carried: { x: 100, z: 100 },
+      carriedScreen: { x: 70, y: 100 },
+      target: { x: 400, z: 100 },
+      toScreen: identity,
+      onRegion: anywhere,
+      seconds: FRAME_SECONDS,
+    });
+    const moved = point.x - 70;
+    expect(moved).toBeCloseTo(30 + TARGET_DRIFT_PIXELS * FRAME_SECONDS, 4);
+  });
+});
+
+describe('the rates of the label filter', () => {
+  // The scenario reads a frame of 16.667 milliseconds, which is the frame the figures
+  // of this requirement were measured at.
+  const SIXTY_HZ = 0.016667;
+
+  test('gives the old figures at 60 frames a second', () => {
+    expect(targetShare(SIXTY_HZ)).toBeCloseTo(0.15, 3);
+    expect(anchorShare(SIXTY_HZ)).toBeCloseTo(0.5, 3);
+    expect(anchorCap(SIXTY_HZ)).toBeCloseTo(20, 3);
+    expect(anchorFloor(SIXTY_HZ)).toBeCloseTo(0.4, 3);
+  });
+
+  test('takes one share of the gap at every gap', () => {
+    // The share grew with the cube of the gap before this change, from 0.150 at a gap of
+    // 4 CSS pixels to 1 at a gap of 120, which took the whole gap in one frame. It reads
+    // one figure now, and the drift cap holds a large gap instead.
+    //
+    // The map moves the carried point 200 CSS pixels across the line to the target in
+    // every reading, so the cap allows every move below and the share alone decides it.
+    const identity = (x: number, z: number): AnchorPoint => ({ x, y: z });
+    for (const gap of [4, 30, 90, 120]) {
+      const point = smoothTarget({
+        carried: { x: 0, z: 0 },
+        carriedScreen: { x: 0, y: -200 },
+        target: { x: gap, z: 0 },
+        toScreen: identity,
+        onRegion: () => true,
+        seconds: SIXTY_HZ,
+      });
+      expect(point.x / gap).toBeCloseTo(0.15, 3);
+    }
+  });
+
+  test('moves nothing over a frame that covers no time', () => {
+    expect(targetShare(0)).toBe(0);
+    expect(anchorShare(0)).toBe(0);
+    expect(anchorCap(0)).toBe(0);
+    expect(anchorFloor(0)).toBe(0);
+    expect(anchorStep(300, 0)).toBe(0);
   });
 });
 
 describe('the anchor step', () => {
   test('runs at its share of the gap once the gap is wide', () => {
     const knee = ANCHOR_FULL_SPEED_PIXELS;
-    expect(anchorStep(knee)).toBeCloseTo(
-      Math.min(ANCHOR_MAX_PIXELS, knee * ANCHOR_SHARE),
+    expect(anchorStep(knee, FRAME_SECONDS)).toBeCloseTo(
+      Math.min(ANCHOR_MAX_PIXELS, knee * anchorShare(FRAME_SECONDS)),
       9,
     );
   });
 
   test('runs slower as the gap closes', () => {
-    expect(anchorStep(10)).toBeLessThan(anchorStep(20));
-    expect(anchorStep(4)).toBeLessThan(1);
+    expect(anchorStep(10, FRAME_SECONDS)).toBeLessThan(anchorStep(20, FRAME_SECONDS));
+    expect(anchorStep(4, FRAME_SECONDS)).toBeLessThan(1);
   });
 
   test('never goes over the cap', () => {
     for (const gap of [1, 10, 100, 1000, 10000]) {
-      expect(anchorStep(gap)).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS);
+      expect(anchorStep(gap, FRAME_SECONDS)).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS);
     }
   });
 
   test('always takes a step, so a pushed label arrives', () => {
     // Below the floor the step is the whole gap, so the label lands on the target.
-    expect(anchorStep(0.2)).toBeCloseTo(0.2, 9);
-    expect(anchorStep(30)).toBeGreaterThanOrEqual(ANCHOR_LEAST_PIXELS);
+    expect(anchorStep(0.2, FRAME_SECONDS)).toBeCloseTo(0.2, 9);
+    expect(anchorStep(30, FRAME_SECONDS)).toBeGreaterThanOrEqual(ANCHOR_LEAST_PIXELS);
   });
 });
 
@@ -845,8 +922,8 @@ describe('the anchor filter', () => {
 
   test('moves the carried point its share of the gap to the target', () => {
     const gap = Math.hypot(10, 10);
-    const share = anchorStep(gap) / gap;
-    const filtered = filterAnchor({ x: 210, z: 110 }, { x: 200, z: 100 }, identity);
+    const share = anchorStep(gap, FRAME_SECONDS) / gap;
+    const filtered = filterAnchor({ x: 210, z: 110 }, { x: 200, z: 100 }, identity, FRAME_SECONDS);
     expect(filtered.x).toBeCloseTo(210 - 10 * share, 9);
     expect(filtered.z).toBeCloseTo(110 - 10 * share, 9);
     // The step is under the cap, so the cap does not touch it.
@@ -857,7 +934,7 @@ describe('the anchor filter', () => {
 
   test('scales a longer step down to the cap', () => {
     const carried: PlanePoint = { x: 500, z: 400 };
-    const filtered = filterAnchor(carried, { x: 200, z: 100 }, identity);
+    const filtered = filterAnchor(carried, { x: 200, z: 100 }, identity, FRAME_SECONDS);
     const from = identity(carried.x, carried.z);
     const to = identity(filtered.x, filtered.z);
     expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeCloseTo(ANCHOR_MAX_PIXELS, 6);
@@ -872,22 +949,22 @@ describe('the anchor filter', () => {
     const target: PlanePoint = { x: 200, z: 100 };
     // The same plane step, at a zoom that shows 10 pixels for a light year, moves the
     // anchor 10 times as far, so the cap takes it back.
-    const wide = filterAnchor(carried, target, identity);
-    const close = filterAnchor(carried, target, zoomed);
+    const wide = filterAnchor(carried, target, identity, FRAME_SECONDS);
+    const close = filterAnchor(carried, target, zoomed, FRAME_SECONDS);
     const planeStep = (point: PlanePoint): number =>
       Math.hypot(point.x - carried.x, point.z - carried.z);
     const gap = Math.hypot(10, 10);
-    expect(planeStep(wide)).toBeCloseTo(anchorStep(gap), 9);
+    expect(planeStep(wide)).toBeCloseTo(anchorStep(gap, FRAME_SECONDS), 9);
     // At the zoom the gap on the screen is 10 times as wide, and the plane step is the
     // step that gap earns, read back through the same zoom.
-    expect(planeStep(close)).toBeCloseTo(anchorStep(gap * 10) / 10, 6);
+    expect(planeStep(close)).toBeCloseTo(anchorStep(gap * 10, FRAME_SECONDS) / 10, 6);
     const from = zoomed(carried.x, carried.z);
     const to = zoomed(close.x, close.z);
     expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeCloseTo(ANCHOR_MAX_PIXELS, 6);
   });
 
   test('takes no step when the carried point is the target', () => {
-    const filtered = filterAnchor({ x: 200, z: 100 }, { x: 200, z: 100 }, identity);
+    const filtered = filterAnchor({ x: 200, z: 100 }, { x: 200, z: 100 }, identity, FRAME_SECONDS);
     expect(filtered).toEqual({ x: 200, z: 100 });
   });
 
@@ -895,7 +972,7 @@ describe('the anchor filter', () => {
     let point: PlanePoint = { x: 0, z: 0 };
     const target: PlanePoint = { x: 10, z: 0 };
     for (let frame = 0; frame < 200; frame += 1) {
-      point = filterAnchor(point, target, identity);
+      point = filterAnchor(point, target, identity, FRAME_SECONDS);
       expect(point.x).toBeLessThanOrEqual(target.x);
     }
     expect(point.x).toBeCloseTo(target.x, 3);
@@ -912,7 +989,7 @@ describe('the anchor filter', () => {
     });
     const carried = { x: 0, z: 0 };
     const target = { x: 100, z: 0 };
-    const stepped = filterAnchor(carried, target, curved, () => false);
+    const stepped = filterAnchor(carried, target, curved, FRAME_SECONDS, () => false);
     const from = curved(carried.x, carried.z);
     const at = curved(stepped.x, stepped.z);
     const went = Math.hypot(at.x - from.x, at.y - from.y);
@@ -921,7 +998,7 @@ describe('the anchor filter', () => {
       curved(target.x, target.z).y - from.y,
     );
     console.log('the step off the region went', went, 'of a gap of', gap);
-    expect(went).toBeCloseTo(anchorStep(gap), 0);
+    expect(went).toBeCloseTo(anchorStep(gap, FRAME_SECONDS), 0);
     expect(went).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS + 1);
   });
 
@@ -933,7 +1010,8 @@ describe('the anchor filter', () => {
       carried,
       { x: 200, z: 100 },
       identity,
-      (x) => x < 490,
+      FRAME_SECONDS,
+      (x: number) => x < 490,
     );
     expect(filtered.x).toBeLessThan(490);
     // The shorter step is still a step toward the target.
@@ -965,15 +1043,25 @@ describe('the carried anchor', () => {
     samples: FrameSamples,
     memory: LabelMemory,
   ): AnchorPoint | undefined {
-    return labelCandidates(samples, VIEWPORT, regions, memory).find(
+    return labelCandidates(samples, VIEWPORT, regions, memory, undefined, FRAME).find(
       (candidate) => candidate.id === 1,
     )?.anchor;
   }
 
   test('filters the anchor of the frame before toward this frame anchor', () => {
     const samples = framed(() => 1, identity);
-    const anchor = anchorOf(samples, memoryOf([1], [[1, { x: 500, z: 400 }]]));
-    const step = filterAnchor({ x: 500, z: 400 }, { x: 200, z: 100 }, identity);
+    // The frame before carried this frame's own target, so the target smoothing takes no
+    // step and the reading is of the anchor filter alone.
+    const anchor = anchorOf(
+      samples,
+      memoryOf([1], [[1, { x: 500, z: 400 }]], [[1, { x: 200, z: 100 }]]),
+    );
+    const step = filterAnchor(
+      { x: 500, z: 400 },
+      { x: 200, z: 100 },
+      identity,
+      FRAME_SECONDS,
+    );
     expect(anchor?.x).toBeCloseTo(step.x, 9);
     expect(anchor?.y).toBeCloseTo(step.z, 9);
     // The gap is long, so the frame moves the anchor by the cap and no further.
@@ -1166,17 +1254,17 @@ describe('the anchor over a pan', () => {
   function stepFrame(
     samples: FrameSamples,
     memory: LabelMemory,
+    timing: FrameTiming = FRAME,
   ): { anchor: AnchorPoint; plane: PlanePoint; memory: LabelMemory } | null {
-    const candidates = labelCandidates(samples, VIEWPORT, regions, memory);
-    const next: LabelMemory = {
-      previous: new Set(candidates.map((candidate) => candidate.id)),
-      targets: new Map(
-        candidates.map((candidate) => [candidate.id, candidate.target] as const),
-      ),
-      anchors: new Map(
-        candidates.map((candidate) => [candidate.id, candidate.plane] as const),
-      ),
-    };
+    const candidates = labelCandidates(
+      samples,
+      VIEWPORT,
+      regions,
+      memory,
+      undefined,
+      timing,
+    );
+    const next: LabelMemory = rememberLabels(candidates);
     const one = candidates.find((candidate) => candidate.id === 1);
     if (one === undefined) return null;
     return { anchor: one.anchor, plane: one.plane, memory: next };
@@ -1202,7 +1290,12 @@ describe('the anchor over a pan', () => {
         x: start.x + (end.x - start.x) * share,
         y: start.y + (end.y - start.y) * share,
       };
-      const step = stepFrame(pannedSamples(offset, square), memory);
+      // The camera jumps on the last frame of the pan, which is a `setView`. The filter
+      // takes the frame's own target whole there, and the anchor walks to it alone.
+      const step = stepFrame(pannedSamples(offset, square), memory, {
+        seconds: FRAME_SECONDS,
+        jump: frame === panFrames,
+      });
       expect(step).not.toBeNull();
       if (step === null) return;
       if (step.anchor.x >= VIEWPORT.width - LABEL_INSET - 1e-9) insetFrames += 1;
@@ -1295,7 +1388,7 @@ describe('the anchor over a pan', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const one = labelCandidates(samples, VIEWPORT, REGIONS, memory).find(
+      const one = labelCandidates(samples, VIEWPORT, REGIONS, memory, undefined, FRAME).find(
         (candidate) => candidate.id === id,
       );
       expect(one).toBeDefined();
@@ -1330,12 +1423,8 @@ describe('the anchor over a pan', () => {
       }
       closestTie = Math.min(closestTie, tieToMean(samples, id));
 
-      const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory);
-      memory = {
-        previous: new Set(placed.map((label) => label.id)),
-        anchors: new Map(placed.map((label) => [label.id, label.plane])),
-        targets: new Map(placed.map((label) => [label.id, label.target])),
-      };
+      const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory, FRAME);
+      memory = rememberLabels(placed);
     }
     console.log(
       'the filtered anchor moves at worst',
@@ -1395,6 +1484,7 @@ describe('the anchor over a pan', () => {
           REGIONS,
           memory,
           measure,
+          FRAME,
         ).slice(0, MAX_LABELS);
         for (const one of shown) {
           const carried = before.get(one.id);
@@ -1423,11 +1513,7 @@ describe('the anchor over a pan', () => {
           if (last === undefined) continue;
           rough.push(Math.hypot(step.x - last.x, step.y - last.y));
         }
-        memory = {
-          previous: new Set(shown.map((one) => one.id)),
-          anchors: new Map(shown.map((one) => [one.id, one.plane])),
-          targets: new Map(shown.map((one) => [one.id, one.target])),
-        };
+        memory = rememberLabels(shown);
       }
       rough.sort((first, second) => first - second);
       const at = (share: number): number =>
@@ -1478,16 +1564,12 @@ describe('the anchor as the camera turns', () => {
         pitch: 35,
       };
       const samples = sampleFrame(view, WIDE_VIEWPORT, grid);
-      const anchor = labelCandidates(samples, WIDE_VIEWPORT, REGIONS, memory).find(
+      const anchor = labelCandidates(samples, WIDE_VIEWPORT, REGIONS, memory, undefined, FRAME).find(
         (candidate) => candidate.id === id,
       )?.anchor;
       if (anchor !== undefined) anchors.push(anchor);
-      const placed = chooseLabels(samples, WIDE_VIEWPORT, measure, REGIONS, memory);
-      memory = {
-        previous: new Set(placed.map((label) => label.id)),
-        anchors: new Map(placed.map((label) => [label.id, label.plane])),
-        targets: new Map(placed.map((label) => [label.id, label.target])),
-      };
+      const placed = chooseLabels(samples, WIDE_VIEWPORT, measure, REGIONS, memory, FRAME);
+      memory = rememberLabels(placed);
       sets.push(
         placed
           .map((label) => label.id)
@@ -1546,7 +1628,7 @@ describe('the label walk under a zoom', () => {
     for (const view of views) {
       frame += 1;
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure).slice(
+      const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME).slice(
         0,
         MAX_LABELS,
       );
@@ -1572,11 +1654,7 @@ describe('the label walk under a zoom', () => {
         if (was === undefined || was.frame !== frame - 1) continue;
         readings.push(Math.hypot(offset.x - was.offset.x, offset.y - was.offset.y));
       }
-      memory = {
-        previous: new Set(shown.map((one) => one.id)),
-        anchors: new Map(shown.map((one) => [one.id, one.plane])),
-        targets: new Map(shown.map((one) => [one.id, one.target])),
-      };
+      memory = rememberLabels(shown);
     }
     readings.sort((a, b) => a - b);
     return {
@@ -1637,14 +1715,10 @@ describe('the label settles while the camera is still', () => {
     const seen: { frame: number; id: number; x: number; y: number }[] = [];
     for (let frame = 0; frame < 240; frame += 1) {
       const samples = sampleFrame(view, VIEWPORT, grid);
-      const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory);
+      const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory, FRAME);
       for (const one of placed)
         seen.push({ frame, id: one.id, x: one.left, y: one.top });
-      memory = {
-        previous: new Set(placed.map((one) => one.id)),
-        anchors: new Map(placed.map((one) => [one.id, one.plane])),
-        targets: new Map(placed.map((one) => [one.id, one.target])),
-      };
+      memory = rememberLabels(placed);
     }
     const late = seen.filter((one) => one.frame >= 200);
     const byId = new Map<number, Set<string>>();
@@ -1693,7 +1767,7 @@ describe('the label after a view jump', () => {
     const run = (view: View, frames: number, read: boolean): void => {
       for (let frame = 0; frame < frames; frame += 1) {
         const samples = sampleFrame(view, VIEWPORT, grid);
-        const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure);
+        const shown = labelCandidates(samples, VIEWPORT, REGIONS, memory, measure, FRAME);
         const one = shown.find((candidate) => candidate.id === spur.id);
         if (read && one !== undefined && arrived < 0) {
           const target = samples.toScreen(one.target.x, one.target.z);
@@ -1704,12 +1778,8 @@ describe('the label after a view jump', () => {
             arrived = frame;
           }
         }
-        const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory);
-        memory = {
-          previous: new Set(placed.map((each) => each.id)),
-          anchors: new Map(placed.map((each) => [each.id, each.plane])),
-          targets: new Map(placed.map((each) => [each.id, each.target])),
-        };
+        const placed = chooseLabels(samples, VIEWPORT, measure, REGIONS, memory, FRAME);
+        memory = rememberLabels(placed);
       }
     };
     run({ cursor: [0, 0, 0], distance: 640, yaw: 0, pitch: 35 }, 120, false);
@@ -1720,4 +1790,306 @@ describe('the label after a view jump', () => {
     // never got there: the anchor crawled at a third of the cap and took over a second.
     expect(arrived).toBeLessThanOrEqual(30);
   }, 120000);
+});
+
+describe('the frame the placement runs', () => {
+  const regions = [regionOf(1, 'Timed Region', [0, 0]), regionOf(2, 'Around It')];
+
+  /** Three samples of region 1 on one row, so the mean of them is 200, 100. */
+  const row = [
+    { x: 100, y: 100, id: 1 },
+    { x: 200, y: 100, id: 1 },
+    { x: 300, y: 100, id: 1 },
+  ];
+
+  /**
+   * The samples of `row` with the centre of region 1 off its own region, so the frame's
+   * own samples name the target and the reading is of the filter alone.
+   */
+  function framed(): FrameSamples {
+    const samples = samplesOf(row);
+    return {
+      ...samples,
+      regionAtPlane: (x: number, z: number): number =>
+        x === 0 && z === 0 ? 2 : samples.regionAtPlane(x, z),
+    };
+  }
+
+  /** The candidate of region 1 for one frame. */
+  function step(
+    samples: FrameSamples,
+    memory: LabelMemory,
+    timing: FrameTiming,
+  ): { plane: PlanePoint; target: PlanePoint; memory: LabelMemory } {
+    const shown = labelCandidates(samples, VIEWPORT, regions, memory, undefined, timing);
+    const one = shown.find((candidate) => candidate.id === 1) as (typeof shown)[0];
+    return { plane: one.plane, target: one.target, memory: rememberLabels(shown) };
+  }
+
+  test('a frame of no seconds moves no label', () => {
+    const samples = framed();
+    // The anchor and the target both sit 128 CSS pixels from where this frame names them.
+    const pushed = memoryOf([1], [[1, { x: 328, z: 100 }]], [[1, { x: 328, z: 100 }]]);
+    const still = step(samples, pushed, { seconds: 0, jump: false });
+    expect(still.plane).toEqual({ x: 328, z: 100 });
+    expect(still.target).toEqual({ x: 328, z: 100 });
+    // The same frame with a time moves both.
+    const moved = step(samples, pushed, FRAME);
+    expect(moved.plane.x).toBeLessThan(328);
+    expect(moved.target.x).toBeLessThan(328);
+  });
+
+  test('a view jump takes the target whole', () => {
+    const settled = framed();
+    let memory = memoryOf([1], [[1, { x: 200, z: 100 }]], [[1, { x: 200, z: 100 }]]);
+    for (let frame = 0; frame < 10; frame += 1) {
+      memory = step(settled, memory, FRAME).memory;
+    }
+    const held = memory.anchors.get(1) as PlanePoint;
+    expect(held.x).toBeCloseTo(200, 6);
+
+    // The jump frame names a target 300 CSS pixels from the one the label carried.
+    const moved = samplesOf(row.map((point) => ({ ...point, x: point.x + 300 })));
+    const jumped = {
+      ...moved,
+      regionAtPlane: (x: number, z: number): number =>
+        x === 0 && z === 0 ? 2 : moved.regionAtPlane(x, z),
+    };
+    const landing = step(jumped, memory, { seconds: FRAME_SECONDS, jump: true });
+    // The target is this frame's own target and not a smoothed one.
+    expect(landing.target).toEqual({ x: 500, z: 100 });
+    // The anchor is kept and walks. One capped step is all it takes in this frame, and
+    // it is nowhere near the new target.
+    expect(Math.hypot(landing.plane.x - held.x, landing.plane.z - held.z)).toBeCloseTo(
+      anchorCap(FRAME_SECONDS),
+      6,
+    );
+    expect(landing.plane.x).toBeLessThan(400);
+
+    let carried = landing.memory;
+    let arrived = -1;
+    for (let frame = 1; frame < 40; frame += 1) {
+      const next = step(jumped, carried, FRAME);
+      carried = next.memory;
+      const away = Math.hypot(next.plane.x - 500, next.plane.z - 100);
+      if (arrived < 0 && away <= 8) arrived = frame;
+    }
+    console.log('the anchor reaches the new target at frame', arrived);
+    expect(arrived).toBeGreaterThanOrEqual(0);
+    expect(arrived).toBeLessThanOrEqual(25);
+  });
+
+  test('a label moves the same distance at every frame rate', () => {
+    // The rates give the same reading at every frame rate. The frame times are exact
+    // fractions of a second: six additions of 1/60 give 0.09999999999999999, so a test
+    // that read the mark and not the frame would take a different frame at each rate.
+    const samples = framed();
+    const rates: { seconds: number; frames: readonly number[] }[] = [
+      { seconds: 1 / 30, frames: [3, 6, 9] },
+      { seconds: 1 / 60, frames: [6, 12, 18] },
+      { seconds: 1 / 144, frames: [15, 29, 44] },
+    ];
+    const readings: number[][] = [];
+    for (const rate of rates) {
+      // The anchor starts 128 CSS pixels from the middle of its region. The target is
+      // the middle already, so the reading is of the anchor rule alone.
+      let memory = memoryOf([1], [[1, { x: 328, z: 100 }]], [[1, { x: 200, z: 100 }]]);
+      const came: number[] = [];
+      const last = rate.frames[rate.frames.length - 1] as number;
+      for (let frame = 1; frame <= last; frame += 1) {
+        const next = step(samples, memory, { seconds: rate.seconds, jump: false });
+        memory = next.memory;
+        if (rate.frames.includes(frame)) {
+          came.push(128 - Math.hypot(next.plane.x - 200, next.plane.z - 100));
+        }
+      }
+      readings.push(came);
+      console.log('at', 1 / rate.seconds, 'frames a second the anchor came', came);
+    }
+    const spreadAt = (mark: number): number => {
+      const column = readings.map((reading) => reading[mark] as number);
+      return Math.max(...column) - Math.min(...column);
+    };
+    expect(spreadAt(0)).toBeLessThanOrEqual(10);
+    expect(spreadAt(1)).toBeLessThanOrEqual(2);
+    expect(spreadAt(2)).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('the drift of the smoothed target', () => {
+  const grid = buildCoarseRegionGrid(fillRegionGrid());
+
+  /** A drag of 30 light years a frame across the galactic centre. */
+  function dragged(frame: number): View {
+    return { cursor: [frame * 30, 0, 25895], distance: 2000, yaw: 0, pitch: 35 };
+  }
+
+  /**
+   * How far past the smoothed target's own move the frame carried it, for every label of
+   * a run of views. A frame that drops the carried target is left out: the rule takes
+   * this frame's target whole there, and there is nothing to walk from.
+   */
+  function overtakes(views: readonly View[]): number[] {
+    const reachX = VIEWPORT.width * ANCHOR_REACH_SHARE;
+    const reachY = VIEWPORT.height * ANCHOR_REACH_SHARE;
+    let memory: LabelMemory = memoryOf([]);
+    const readings: number[] = [];
+    for (const view of views) {
+      const samples = sampleFrame(view, VIEWPORT, grid);
+      const shown = labelCandidates(
+        samples,
+        VIEWPORT,
+        REGIONS,
+        memory,
+        measure,
+        FRAME,
+      ).slice(0, MAX_LABELS);
+      for (const one of shown) {
+        const carried = memory.targets.get(one.id);
+        const was = memory.targetScreens.get(one.id);
+        if (carried === undefined || was === undefined) continue;
+        const now = samples.toScreen(carried.x, carried.z);
+        if (now === null || one.targetScreen === null) continue;
+        const kept =
+          samples.regionAtPlane(carried.x, carried.z) === one.id &&
+          now.x >= -reachX &&
+          now.y >= -reachY &&
+          now.x <= VIEWPORT.width + reachX &&
+          now.y <= VIEWPORT.height + reachY;
+        if (!kept) continue;
+        const carry = Math.hypot(now.x - was.x, now.y - was.y);
+        const move = Math.hypot(one.targetScreen.x - was.x, one.targetScreen.y - was.y);
+        readings.push(move - carry);
+      }
+      memory = rememberLabels(shown);
+    }
+    return readings;
+  }
+
+  test('the target does not overtake the map', () => {
+    const drag = Array.from({ length: 120 }, (_, frame) => dragged(frame));
+    const still = Array.from({ length: 120 }, () => dragged(119));
+    const overDrag = overtakes(drag);
+    const overStill = overtakes(still);
+    const bound = TARGET_DRIFT_PIXELS * FRAME_SECONDS;
+    console.log(
+      'the target overtakes the map by at most',
+      Math.max(...overDrag),
+      'CSS pixels over the drag and',
+      Math.max(...overStill),
+      'over the still run, against a bound of',
+      bound,
+    );
+    expect(overDrag.length).toBeGreaterThan(200);
+    expect(overStill.length).toBeGreaterThan(200);
+    expect(Math.max(...overDrag)).toBeLessThanOrEqual(bound + 0.01);
+    // The still run moves the map by nothing, so the whole move is the label's own.
+    expect(Math.max(...overStill)).toBeLessThanOrEqual(2.1);
+  }, 120000);
+});
+
+describe('the handover between the two target rules', () => {
+  const regions = [regionOf(1, 'Wide Region', [1275, 360]), regionOf(2, 'Around It')];
+
+  /** Three samples of region 1 whose mean sits at the plane point 606, 360. */
+  const row = [
+    { x: 506, y: 360, id: 1 },
+    { x: 606, y: 360, id: 1 },
+    { x: 706, y: 360, id: 1 },
+  ];
+
+  /**
+   * The samples of `row` under a camera that has panned `shift` CSS pixels. Every plane
+   * point sits on region 1, so the two target rules are the only thing that moves.
+   */
+  function panned(shift: number): FrameSamples {
+    const base = samplesOf(row);
+    return {
+      ...base,
+      regionAtPlane: (): number => 1,
+      toScreen: (x: number, z: number) => ({ x: x + shift, y: z }),
+      toPlane: (x: number, y: number) => ({ x: x - shift, z: y }),
+    };
+  }
+
+  /** The candidate of region 1 of one frame. */
+  function step(
+    shift: number,
+    memory: LabelMemory,
+  ): { target: PlanePoint; centre: boolean; screen: number; memory: LabelMemory } {
+    const samples = panned(shift);
+    const shown = labelCandidates(samples, VIEWPORT, regions, memory, undefined, FRAME);
+    const one = shown.find((candidate) => candidate.id === 1) as (typeof shown)[0];
+    return {
+      target: one.target,
+      centre: one.centre,
+      screen: (one.targetScreen as AnchorPoint).x,
+      memory: rememberLabels(shown),
+    };
+  }
+
+  test('the handover does not cross back and forth', () => {
+    // The pan holds the centre of region 1 within 10 CSS pixels of the right frame edge.
+    // Without the band the rule that names the target changes on almost every frame there.
+    let memory: LabelMemory = memoryOf([]);
+    let rule: boolean | null = null;
+    let changes = 0;
+    for (let frame = 0; frame < 120; frame += 1) {
+      const edge = 1285 + 10 * Math.sin((frame / 40) * Math.PI * 2);
+      const next = step(edge - 1275, memory);
+      if (rule !== null && next.centre !== rule) changes += 1;
+      rule = next.centre;
+      memory = next.memory;
+    }
+    console.log('the rule that names the target changed', changes, 'times');
+    expect(changes).toBeLessThanOrEqual(1);
+  });
+
+  test('a target that must cross the frame walks there', () => {
+    // The pan takes the centre of the region out past the band, one CSS pixel a frame,
+    // and the camera then stands still. The centre rule holds the target against the
+    // inset, at a screen x of 1232. The sample rule names the mean of the samples, which
+    // is 300 CSS pixels away on the screen when the handover comes.
+    let memory: LabelMemory = memoryOf([]);
+    let handover = -1;
+    for (let shift = 0; shift <= 400 && handover < 0; shift += 1) {
+      const next = step(shift, memory);
+      memory = next.memory;
+      if (!next.centre) handover = shift;
+    }
+    expect(handover).toBeGreaterThan(0);
+
+    // The camera is still from here. One frame settles the carry of the pan, so every
+    // reading below is of the label's own drift over a map that holds still.
+    const settle = step(handover, memory);
+    memory = settle.memory;
+    const mean = 606 + handover;
+    expect(Math.abs(settle.screen - mean)).toBeGreaterThan(290);
+
+    let worst = 0;
+    let arrived = -1;
+    let passed = 0;
+    let screen = settle.screen;
+    for (let frame = 0; frame < 200; frame += 1) {
+      const next = step(handover, memory);
+      const move = Math.abs(next.screen - screen);
+      if (move > worst) worst = move;
+      if (next.screen < mean - 1e-6) passed += 1;
+      if (arrived < 0 && Math.abs(next.screen - mean) <= 1) arrived = frame;
+      screen = next.screen;
+      memory = next.memory;
+    }
+    console.log(
+      'the target walked to the new rule in',
+      arrived,
+      'frames, worst move',
+      worst,
+    );
+    expect(worst).toBeLessThanOrEqual(2.1);
+    // The approach is exponential, so the target never reaches the point exactly.
+    expect(passed).toBe(0);
+    expect(arrived).toBeGreaterThanOrEqual(0);
+    // Three seconds is 180 frames of 16.667 milliseconds.
+    expect(arrived).toBeLessThanOrEqual(180);
+  });
 });

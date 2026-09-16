@@ -390,13 +390,6 @@ const styleText = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.gm-hud__system-row::after {
-  content: attr(data-distance);
-  flex: 0 0 auto;
-  font-family: ${MONO};
-  font-size: 9px;
-  color: rgba(244, 230, 216, 0.35);
-}
 .gm-hud__system-cut {
   padding: 6px 12px 6px 16px;
   font-family: ${MONO};
@@ -552,9 +545,14 @@ const styleText = `
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 8px 9px;
 }
-/* An odd count of fields leaves the last one alone on its row. It takes both columns,
-   so the grid shows no empty cell. */
-.gm-hud__field:last-child:nth-child(odd) {
+/* The position field holds the longest value of the panel, so it takes both columns. */
+.gm-hud__field--wide {
+  grid-column: 1 / -1;
+}
+/* The position field fills two cells, so a grid of n fields fills n + 1 cells. An even
+   count of fields leaves the last one alone on its row. It takes both columns, so the
+   grid shows no empty cell. */
+.gm-hud__field:last-child:nth-child(even) {
   grid-column: 1 / -1;
 }
 .gm-hud__field-head {

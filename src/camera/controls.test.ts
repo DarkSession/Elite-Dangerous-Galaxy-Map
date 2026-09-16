@@ -9,11 +9,16 @@ import {
   isClick,
   moveByKeys,
   notchesFromWheel,
+  NO_TOUCH,
   orbit,
+  pinchDistance,
+  pinchMiddle,
+  touchGesture,
   trackPress,
   zoomStep,
   zoomTarget,
 } from './controls';
+import type { TouchPhase, TouchResult, TouchState } from './controls';
 import { createDefaultView, MAX_DISTANCE, MIN_DISTANCE } from './view';
 
 const viewport = { width: 1920, height: 1080 };
@@ -285,5 +290,199 @@ describe('the form-field guard', () => {
     moveByKeys(view, keys, 1);
 
     expect(view.cursor).toEqual(before);
+  });
+});
+
+describe('the pinch', () => {
+  test('reads the distance from the gap the gesture started with', () => {
+    expect(pinchDistance(20000, 200, 400)).toBeCloseTo(10000, 6);
+    expect(pinchDistance(20000, 200, 100)).toBeCloseTo(40000, 6);
+  });
+
+  test('holds the zoom limits', () => {
+    expect(pinchDistance(20, 200, 800)).toBe(MIN_DISTANCE);
+    expect(pinchDistance(60000, 200, 1)).toBe(MAX_DISTANCE);
+  });
+
+  test('gives the point half way between two pointers', () => {
+    expect(pinchMiddle({ x: 100, y: 200 }, { x: 300, y: 400 })).toEqual({
+      x: 200,
+      y: 300,
+    });
+  });
+});
+
+describe('the touch gesture', () => {
+  /** Drives the rule with one reading and keeps the distance the view holds. */
+  const step = (
+    state: TouchState,
+    phase: TouchPhase,
+    pointerId: number,
+    x: number,
+    y: number,
+    timeMs = 0,
+    distance = state.distance,
+  ): TouchResult =>
+    touchGesture(
+      { ...state, distance },
+      { phase, pointerId, pointerType: 'touch', x, y, timeMs },
+    );
+
+  test('asks for a plane drag while one finger moves', () => {
+    const down = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000);
+    expect(down.action.beginPlane).toEqual({ x: 400, y: 300 });
+    expect(down.action.input).toBe(true);
+
+    const moved = step(down.state, 'move', 1, 600, 300, 20);
+    expect(moved.action.dragTo).toEqual({ x: 600, y: 300 });
+    expect(moved.action.orbit).toBeUndefined();
+    expect(moved.action.distance).toBeUndefined();
+  });
+
+  test('asks for an orbit and a distance while two fingers move', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+
+    const moved = step(state, 'move', 2, 700, 300, 20, 20000);
+    expect(moved.action.dragTo).toBeUndefined();
+    // The middle went from 500 to 550, which is 50 CSS pixels of yaw.
+    expect(moved.action.orbit).toEqual({ deltaX: 50, deltaY: 0 });
+    // The gap went from 200 to 300, so the distance takes two thirds.
+    expect(moved.action.distance).toBeCloseTo(20000 * (200 / 300), 6);
+  });
+
+  test('zooms in as the fingers move apart', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+    const out = step(state, 'move', 2, 800, 300, 20, 20000);
+    expect(out.action.distance).toBeCloseTo(10000, 6);
+
+    const back = step(out.state, 'move', 2, 500, 300, 30, 20000);
+    expect(back.action.distance).toBeCloseTo(40000, 6);
+  });
+
+  test('takes no view change from a second finger going down', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    const moved = step(state, 'move', 1, 450, 300, 10, 20000);
+    state = moved.state;
+
+    const second = step(state, 'down', 2, 650, 300, 20, 20000);
+    expect(second.action.dragTo).toBeUndefined();
+    expect(second.action.orbit).toBeUndefined();
+    expect(second.action.distance).toBeUndefined();
+    expect(second.state.startGap).toBeCloseTo(200, 6);
+    expect(second.state.middle).toEqual({ x: 550, y: 300 });
+  });
+
+  test('takes no view change from one of two fingers coming up', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+    const moved = step(state, 'move', 2, 800, 300, 20, 20000);
+    state = moved.state;
+
+    const up = step(state, 'up', 2, 800, 300, 30, 10000);
+    expect(up.action.dragTo).toBeUndefined();
+    expect(up.action.orbit).toBeUndefined();
+    expect(up.action.distance).toBeUndefined();
+    expect(up.action.select).toBeUndefined();
+    // One finger is left, and it asks for its plane point again.
+    expect(up.action.beginPlane).toEqual({ x: 400, y: 300 });
+  });
+
+  test('reads the two earliest of three fingers', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+
+    const third = step(state, 'down', 3, 900, 300, 20, 20000);
+    expect(third.action.distance).toBeUndefined();
+    state = third.state;
+
+    // The first two double their gap from 200 to 400, so the distance halves.
+    const moved = step(state, 'move', 2, 800, 300, 30, 20000);
+    expect(moved.action.distance).toBeCloseTo(10000, 6);
+  });
+
+  test('ignores a move of a finger the gesture does not read', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+    state = step(state, 'down', 3, 900, 300, 20, 20000).state;
+
+    const moved = step(state, 'move', 3, 1200, 300, 30, 20000);
+    expect(moved.action).toEqual({});
+  });
+
+  test('selects on a tap and not on a drag', () => {
+    const tap = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000);
+    const lifted = step(tap.state, 'up', 1, 406, 303, 100, 20000);
+    expect(lifted.action.select).toEqual({ x: 406, y: 303 });
+
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'move', 1, 440, 300, 40, 20000).state;
+    const dragged = step(state, 'up', 1, 400, 300, 80, 20000);
+    expect(dragged.action.select).toBeUndefined();
+  });
+
+  test('does not select a cancelled touch', () => {
+    // The browser or the operating system takes the pointer away inside both tap
+    // limits. A tap is a pointer that goes down and comes up, so this one selects
+    // nothing, and the gesture ends as a come-up ends it.
+    const pressed = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000);
+    const cancelled = step(pressed.state, 'cancel', 1, 406, 303, 100, 20000);
+    expect(cancelled.action.select).toBeUndefined();
+    expect(cancelled.state.pointers).toEqual([]);
+    expect(cancelled.state.press).toBeNull();
+  });
+
+  test('a cancelled second finger leaves the first one dragging', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+
+    const cancelled = step(state, 'cancel', 2, 600, 300, 40, 20000);
+    expect(cancelled.action.select).toBeUndefined();
+    // The finger that is still down asks for its plane point again and drags on.
+    expect(cancelled.action.beginPlane).toEqual({ x: 400, y: 300 });
+    const moved = step(cancelled.state, 'move', 1, 500, 300, 60, 20000);
+    expect(moved.action.dragTo).toEqual({ x: 500, y: 300 });
+  });
+
+  test('does not select a tap that becomes a second finger', () => {
+    let state = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000).state;
+    state = step(state, 'down', 2, 600, 300, 10, 20000).state;
+    const lifted = step(state, 'up', 1, 400, 300, 40, 20000);
+    expect(lifted.action.select).toBeUndefined();
+  });
+
+  test('holds the tap limits at 10 CSS pixels and 400 milliseconds', () => {
+    const onLimit = step(NO_TOUCH, 'down', 1, 0, 0, 0, 20000);
+    expect(step(onLimit.state, 'up', 1, 10, 0, 400, 20000).action.select).toEqual({
+      x: 10,
+      y: 0,
+    });
+    expect(
+      step(onLimit.state, 'up', 1, 11, 0, 100, 20000).action.select,
+    ).toBeUndefined();
+    expect(
+      step(onLimit.state, 'up', 1, 0, 0, 401, 20000).action.select,
+    ).toBeUndefined();
+  });
+
+  test('ends the wheel glide where a pinch starts', () => {
+    const first = step(NO_TOUCH, 'down', 1, 400, 300, 0, 20000);
+    expect(first.action.endGlide).toBeUndefined();
+    const second = step(first.state, 'down', 2, 600, 300, 10, 20000);
+    expect(second.action.endGlide).toBe(true);
+  });
+
+  test('reads no pointer that is not a touch pointer', () => {
+    const result = touchGesture(NO_TOUCH, {
+      phase: 'down',
+      pointerId: 1,
+      pointerType: 'mouse',
+      x: 400,
+      y: 300,
+      timeMs: 0,
+    });
+    expect(result.action).toEqual({});
+    expect(result.state).toBe(NO_TOUCH);
   });
 });

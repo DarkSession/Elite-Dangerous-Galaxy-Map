@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { cameraPosition, viewProjectionMatrix } from '../camera/projection';
 import type { View } from '../camera/view';
-import { gridLevelAlpha, gridVisibility } from '../render/grid-pass';
+import { GRID_MAX_ALPHA, gridLevelAlpha, gridVisibility } from '../render/grid-pass';
 import { MODEL_BOUNDS } from '../scene-data/real-systems';
 import {
   createGridLabelOverlay,
@@ -12,6 +12,7 @@ import {
   gridLabelAlpha,
   gridLabelBackground,
   gridLabelColour,
+  gridLabelLineFactor,
   gridLabelOpacity,
   gridLabelPlacements,
   GRID_LABEL_OPACITY,
@@ -523,6 +524,30 @@ describe('the label background', () => {
     expect(gridLabelOpacity(background.luminance)).toBeCloseTo(
       GRID_LABEL_OPACITY * GRID_LABEL_MERGE_FLOOR,
       9,
+    );
+  });
+});
+
+describe('the label line factor', () => {
+  test('is 1 at the cursor', () => {
+    // The label level's spacing on the screen is at least 400 CSS pixels at the cursor,
+    // so the level is fully bold there and the label keeps all of its own opacity.
+    expect(gridLabelLineFactor(GRID_MAX_ALPHA)).toBeCloseTo(1, 9);
+    // The gate is the floor of the factor as well as of the line.
+    expect(gridLabelLineFactor(GRID_LABEL_MIN_ALPHA)).toBeCloseTo(0.2, 9);
+  });
+
+  test('takes the opacity down with the alpha of the line', () => {
+    // A dark background leaves the whole background weight, so the reading is of the
+    // line factor alone.
+    expect(gridLabelOpacity(0, GRID_MAX_ALPHA)).toBeCloseTo(GRID_LABEL_OPACITY, 9);
+    expect(gridLabelOpacity(0, GRID_LABEL_MIN_ALPHA)).toBeCloseTo(
+      GRID_LABEL_OPACITY * 0.2,
+      9,
+    );
+    // No label is placed below the gate, so no label draws below a fifth of its opacity.
+    expect(gridLabelOpacity(0, GRID_MAX_ALPHA / 2)).toBeLessThan(
+      gridLabelOpacity(0, GRID_MAX_ALPHA),
     );
   });
 });

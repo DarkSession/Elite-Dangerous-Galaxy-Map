@@ -430,6 +430,9 @@ test('the size does not follow the viewport height', async ({ page }) => {
 
 test('the marker colours reach the frame over both grounds', async ({ page }) => {
   await openMap(page, '#c=15,-35,25895&d=4000&p=35&y=0');
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   // The disc style, because the reading is the ring, and a glow has no ring.
   await addCategories(page, [{ name: 'Empire', color: CORE, markerStyle: 'disc' }]);
   await addSystems(page, [
@@ -458,6 +461,9 @@ test('the marker colours reach the frame over both grounds', async ({ page }) =>
 
 test('the colour follows the category and not the position', async ({ page }) => {
   await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   await addCategories(page, [{ name: 'Empire', color: CORE }]);
   await addSystems(page, [
     record('Sol', [0, 0, 0], 'Empire'),
@@ -490,6 +496,9 @@ test('the colour follows the category and not the position', async ({ page }) =>
 
 test('a recoloured category recolours its markers', async ({ page }) => {
   await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   await addCategories(page, [{ name: 'Empire', color: CORE }]);
   await addSystems(page, [record('Sol', [0, 0, 0], 'Empire')]);
   await setView(page, [0, 0, 0], 4000);
@@ -581,6 +590,9 @@ test('the far view does not change', async ({ page }) => {
 
 test('two markers overlap in the order the set holds them', async ({ page }) => {
   await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   // Both categories take the disc style, because the reading is a pixel 1.25 CSS pixels
   // from a marker centre. A disc is opaque that far inside its edge; a glow is not, so
   // under the default style the pixel would hold a blend of the two colours.
@@ -672,6 +684,9 @@ test('the handle works before the first frame', async ({ page }) => {
   expect(early.count).toBe(1);
 
   await waitForReady(page);
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   const pixel = await pixelAt(page, [0, 0, 0]);
   console.log('the first frame', pixel);
   for (let channel = 0; channel < 3; channel += 1) {
@@ -1023,6 +1038,9 @@ test.describe('the category table through the handle', () => {
     page,
   }) => {
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+    // The region overlay draws at every zoom under 30,000 light years now, and this
+    // reading is an absolute one, so the overlay goes.
+    await setPasses(page, { regions: false });
     await addCategories(page, [
       { name: 'A', color: [10, 10, 10] },
       { name: 'B', color: [153, 230, 255] },
@@ -1293,6 +1311,9 @@ test('the range follows each system and not the zoom', async ({ page }) => {
 test('the cut does not fade', async ({ page }) => {
   const where: [number, number, number] = [0, 0, 0];
   await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  // The region overlay draws at every zoom under 30,000 light years now, and this
+  // reading is an absolute one, so the overlay goes.
+  await setPasses(page, { regions: false });
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 5000 }]);
   await addSystems(page, [record('Sol', where, 'Empire')]);
 

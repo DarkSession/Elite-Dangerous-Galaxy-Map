@@ -89,21 +89,84 @@ function chordDeparture(lines: RegionLines, from: number, to: number): number {
   return worst;
 }
 
+/** The side of one cell of the vertex hash, in light years. */
+const VERTEX_CELL_LY = 500;
+
+/** The key of one cell of the vertex hash. */
+function cellKey(cellX: number, cellZ: number): number {
+  return cellX * 100000 + cellZ;
+}
+
+/** A cell hash of the vertices of a boundary set, and the extent it covers. */
+interface VertexIndex {
+  readonly buckets: Map<number, number[]>;
+  readonly rings: number;
+}
+
+/** One hash per boundary set. Each search reads the same set many times over. */
+const vertexIndexes = new WeakMap<RegionLines, VertexIndex>();
+
+function indexVertices(lines: RegionLines): VertexIndex {
+  const held = vertexIndexes.get(lines);
+  if (held !== undefined) return held;
+  const buckets = new Map<number, number[]>();
+  let lowX = Number.POSITIVE_INFINITY;
+  let highX = Number.NEGATIVE_INFINITY;
+  let lowZ = Number.POSITIVE_INFINITY;
+  let highZ = Number.NEGATIVE_INFINITY;
+  for (let vertex = 0; vertex < lines.vertexCount; vertex += 1) {
+    const point = planeAt(lines, vertex);
+    const cellX = Math.floor(point[0] / VERTEX_CELL_LY);
+    const cellZ = Math.floor(point[1] / VERTEX_CELL_LY);
+    if (cellX < lowX) lowX = cellX;
+    if (cellX > highX) highX = cellX;
+    if (cellZ < lowZ) lowZ = cellZ;
+    if (cellZ > highZ) highZ = cellZ;
+    const key = cellKey(cellX, cellZ);
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [vertex]);
+    else bucket.push(vertex);
+  }
+  // The widest ring a search can need is the whole extent of the set.
+  const rings = Math.max(highX - lowX, highZ - lowZ) + 1;
+  const index: VertexIndex = { buckets, rings };
+  vertexIndexes.set(lines, index);
+  return index;
+}
+
 /**
  * The distance from a plane point to the nearest vertex the caller does not exclude.
  * The browser tests read a few tens of pixels around their point, so they need to
  * know that no other part of the boundary is inside that window.
+ *
+ * The reading walks the cells of a hash outward from the point and stops as soon as the
+ * nearest vertex it holds is nearer than the ring it is about to read. The answer is the
+ * one a walk over every vertex gives, and the searches read it once per candidate.
  */
 function clearanceFrom(
   lines: RegionLines,
   point: Plane,
   keepOut: (vertex: number) => boolean,
 ): number {
+  const index = indexVertices(lines);
+  const cellX = Math.floor(point[0] / VERTEX_CELL_LY);
+  const cellZ = Math.floor(point[1] / VERTEX_CELL_LY);
   let nearest = Number.POSITIVE_INFINITY;
-  for (let vertex = 0; vertex < lines.vertexCount; vertex += 1) {
-    if (keepOut(vertex)) continue;
-    const away = gap(point, planeAt(lines, vertex));
-    if (away < nearest) nearest = away;
+  for (let ring = 0; ring <= index.rings; ring += 1) {
+    for (let stepZ = -ring; stepZ <= ring; stepZ += 1) {
+      for (let stepX = -ring; stepX <= ring; stepX += 1) {
+        if (Math.max(Math.abs(stepX), Math.abs(stepZ)) !== ring) continue;
+        const bucket = index.buckets.get(cellKey(cellX + stepX, cellZ + stepZ));
+        if (bucket === undefined) continue;
+        for (const vertex of bucket) {
+          if (keepOut(vertex)) continue;
+          const away = gap(point, planeAt(lines, vertex));
+          if (away < nearest) nearest = away;
+        }
+      }
+    }
+    // A vertex outside this ring cannot be nearer than the ring's own reach.
+    if (nearest <= ring * VERTEX_CELL_LY) break;
   }
   return nearest;
 }
@@ -193,6 +256,10 @@ export function findVerticalCrossing(
   runs.sort((a, b) => b.length - a.length);
 
   const perPixel = lightYearsPerPixel(distance, viewport);
+  // The search reports how many runs hold every premise, so the spec states a count that
+  // this run measured. The runs are in order of length, so the first holder is the best.
+  let held = 0;
+  let first: CrossingChoice | null = null;
   for (const run of runs) {
     // The cursor sits at the middle of the segment nearest the middle of the run, so
     // the centre of the frame lands on the drawn line and not at a corner of it.
@@ -243,7 +310,9 @@ export function findVerticalCrossing(
     if (!low.inFront || !high.inFront) continue;
     if (top > row - CROSSING_ROW_PIXELS || bottom < row + CROSSING_ROW_PIXELS) continue;
 
-    return {
+    held += 1;
+    if (first !== null) continue;
+    first = {
       view,
       viewport: { width: viewport.width, height: viewport.height },
       chain: run.chain,
@@ -253,9 +322,13 @@ export function findVerticalCrossing(
       angleFromVertical: upright.angle,
       clearanceLy: clearance,
       lightYearsPerPixel: perPixel,
+      heldCount: 0,
     };
   }
-  throw new Error('no chain crosses the reading row within 5 degrees of vertical');
+  if (first === null) {
+    throw new Error('no chain crosses the reading row within 5 degrees of vertical');
+  }
+  return { ...first, heldCount: held };
 }
 
 /** How far the join reading reaches from the bend, in CSS pixels. */
@@ -345,6 +418,8 @@ export function findSharpCorner(
   }
   bends.sort((a, b) => (b.turn === a.turn ? a.vertex - b.vertex : b.turn - a.turn));
 
+  let held = 0;
+  let kept: CornerChoice | null = null;
   for (const found of bends) {
     const first = lines.first[found.chain] as number;
     const last = lines.last[found.chain] as number;
@@ -401,7 +476,9 @@ export function findSharpCorner(
       bendLine.push(game(planeAt(lines, vertex)));
     }
 
-    return {
+    held += 1;
+    if (kept !== null) continue;
+    kept = {
       view: { cursor: game(bend), distance, yaw: 0, pitch: PITCH },
       viewport: { width: viewport.width, height: viewport.height },
       chain: found.chain,
@@ -414,9 +491,13 @@ export function findSharpCorner(
       straightTo: game(planeAt(lines, run.to)),
       clearanceLy: clearance,
       lightYearsPerPixel: perPixel,
+      heldCount: 0,
     };
   }
-  throw new Error('no place turns 30 degrees within the reading reach');
+  if (kept === null) {
+    throw new Error('no place turns 30 degrees within the reading reach');
+  }
+  return { ...kept, heldCount: held };
 }
 
 /** A cell hash of the segments of a boundary set, for a nearest-segment reading. */
@@ -498,6 +579,12 @@ const BOTH_SETS_GAP_LY = 0.5;
 /** How far the nearest other chain must stay from the chosen point, in CSS pixels. */
 const BOTH_SETS_CLEARANCE_PIXELS = 20;
 
+/** The zooms the fade scenarios open the chosen point at, in light years. */
+const BOTH_SETS_ZOOMS: readonly number[] = [9000, 15000, 20000, 25000, 31000];
+
+/** How wide the window the fade scenarios read around the point is, in CSS pixels. */
+const BOTH_SETS_WINDOW_PIXELS = 8;
+
 /**
  * Finds a plane point that sits on a chain of both boundary sets.
  *
@@ -514,6 +601,11 @@ const BOTH_SETS_CLEARANCE_PIXELS = 20;
  * The clearance is 20 CSS pixels at the viewport and the zoom the fade scenario reads at.
  * A neighbouring band is 6 CSS pixels wide, so its near edge then sits 17 CSS pixels from
  * the centre and outside the 8 CSS pixel window the scenario reads.
+ *
+ * The fade scenarios open the point at five zooms, from 9,000 to 31,000 light years, and
+ * one CSS pixel covers the most light years at the widest of them. Every other chain
+ * therefore stays clear of the 8 CSS pixel window at each of the five, which the search
+ * reads as one distance in light years.
  */
 export function findPointNearBothSets(
   lines: RegionLines,
@@ -522,10 +614,20 @@ export function findPointNearBothSets(
   distance: number,
 ): BothSetsChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
+  // The window holds at every zoom the fade scenarios open, so the widest of them, where
+  // one CSS pixel covers the most light years, is the one that binds.
+  const windowLy = Math.max(
+    ...BOTH_SETS_ZOOMS.map(
+      (zoom) => BOTH_SETS_WINDOW_PIXELS * lightYearsPerPixel(zoom, viewport),
+    ),
+  );
+  const leastClearance = Math.max(BOTH_SETS_CLEARANCE_PIXELS * perPixel, windowLy);
   const smoothedIndex = indexSegments(lines);
   /** The longest traced segment the search has accepted so far. */
   let best: BothSetsChoice | null = null;
   let bestLength = 0;
+  /** How many points hold every premise of the search. */
+  let held = 0;
 
   for (let chain = 0; chain < traced.chainCount; chain += 1) {
     const first = traced.first[chain] as number;
@@ -534,7 +636,6 @@ export function findPointNearBothSets(
       const a = planeAt(traced, vertex);
       const b = planeAt(traced, vertex + 1);
       const length = gap(a, b);
-      if (length <= bestLength) continue;
       const point: Plane = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 
       // The band lightens what it crosses, which it cannot do over the core itself.
@@ -557,8 +658,13 @@ export function findPointNearBothSets(
           return other >= first2 && other <= last2;
         }),
       );
-      if (clearance < BOTH_SETS_CLEARANCE_PIXELS * perPixel) continue;
+      if (clearance < leastClearance) continue;
 
+      // The premises are read first and the length second, so the count below is the
+      // count of points that hold every premise and not of the ones that improve on the
+      // best so far.
+      held += 1;
+      if (length <= bestLength) continue;
       bestLength = length;
       best = {
         point: game(point),
@@ -567,11 +673,12 @@ export function findPointNearBothSets(
         smoothedGapLy: smoothedGap,
         tracedGapLy: 0,
         clearanceLy: clearance,
+        heldCount: 0,
       };
     }
   }
   if (best === null) throw new Error('no point sits on a chain of both sets');
-  return best;
+  return { ...best, heldCount: held };
 }
 
 /** How far the traced corner reading reaches from the node, in CSS pixels. */
@@ -615,6 +722,8 @@ export function findTracedCorner(
   distance: number,
 ): CornerChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
+  let held = 0;
+  let kept: CornerChoice | null = null;
 
   for (let chain = 0; chain < traced.chainCount; chain += 1) {
     const first = traced.first[chain] as number;
@@ -692,7 +801,9 @@ export function findTracedCorner(
       };
       if (!inFrame(straightFrom) || !inFrame(straightTo)) continue;
 
-      return {
+      held += 1;
+      if (kept !== null) continue;
+      kept = {
         view,
         viewport: { width: viewport.width, height: viewport.height },
         chain,
@@ -709,8 +820,10 @@ export function findTracedCorner(
         straightTo: game(straightTo),
         clearanceLy: clearance,
         lightYearsPerPixel: perPixel,
+        heldCount: 0,
       };
     }
   }
-  throw new Error('no traced corner meets the reading conditions');
+  if (kept === null) throw new Error('no traced corner meets the reading conditions');
+  return { ...kept, heldCount: held };
 }

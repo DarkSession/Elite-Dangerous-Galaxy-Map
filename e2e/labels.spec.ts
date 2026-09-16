@@ -229,7 +229,10 @@ test.describe('the labels at 1280 by 720', () => {
     const fading = await readLabels(page);
     const spur = fading.find((label) => label.name === 'Inner Orion Spur');
     expect(spur, 'no Inner Orion Spur label at 7,500 light years').toBeDefined();
-    console.log('the label opacity at 7,500 light years', (spur as LabelReading).opacity);
+    console.log(
+      'the label opacity at 7,500 light years',
+      (spur as LabelReading).opacity,
+    );
     expect((spur as LabelReading).opacity).toBeGreaterThan(0.2);
     expect((spur as LabelReading).opacity).toBeLessThan(0.8);
 
@@ -249,7 +252,11 @@ test.describe('the labels at 1280 by 720', () => {
     });
     const sampling = await page.evaluate(
       () =>
-        window.__galaxyMap?.labelSampling?.() ?? { frames: -1, meanMs: -1, worstMs: -1 },
+        window.__galaxyMap?.labelSampling?.() ?? {
+          frames: -1,
+          meanMs: -1,
+          worstMs: -1,
+        },
     );
     console.log('the sampling below the band', sampling);
 
@@ -382,20 +389,63 @@ test.describe('the labels at 1280 by 720', () => {
       worstMove.toFixed(2),
     );
 
-    // The camera move leaves the anchor a long way from the middle of the region.
-    expect(away(first)).toBeGreaterThan(50);
+    // The camera move leaves the anchor a long way from the middle of the region. The
+    // first reading is taken in the frame after the jump, and the jump takes the target
+    // whole, so the anchor has already run one step of its cap by then: the reading is
+    // 47.5 CSS pixels and it was about 70 while the target crept as well.
+    expect(away(first)).toBeGreaterThan(40);
     // No frame is dropped, so the label travels and does not blink.
     expect(readings.filter((reading) => reading.x === null).length).toBe(0);
-    // The filter takes it there in steps of no more than 20 CSS pixels a frame, so the
-    // label slides and does not jump.
-    expect(worstMove).toBeLessThan(21);
-    // It reaches the middle of the region and does not crawl. The camera jump moves the
-    // target as well as the anchor, so the target smoothing and the anchor filter run in
-    // series. The spec reads 382 milliseconds for this push.
+    // The filter takes it there at the cap of 1,200 CSS pixels a second, so the label
+    // slides and does not jump. The bound is a rate and not a figure per frame, because
+    // the display decides how long a frame is.
+    for (let index = 1; index < readings.length; index += 1) {
+      const before = readings[index - 1] as AnchorReading;
+      const after = readings[index] as AnchorReading;
+      if (before.x === null || after.x === null) continue;
+      const move = Math.hypot(
+        after.x - before.x,
+        (after.y as number) - (before.y as number),
+      );
+      // One CSS pixel of slack covers the step the projection solve leaves.
+      expect(move).toBeLessThanOrEqual((1200 * (after.t - before.t)) / 1000 + 1);
+    }
+    // It reaches the middle of the region and does not crawl. The push is a `setView`,
+    // which the page marks as a view jump, so the target is taken whole and the anchor
+    // runs alone. The reading the spec holds is printed above.
     const arrival = reached(8);
     expect(arrival).not.toBeNull();
     expect(arrival as number).toBeLessThan(400);
     expect(away(last)).toBeLessThan(2);
+  });
+
+  test('a redraw leaves every label where it was', async ({ page }) => {
+    // Every call outside the frame loop passes 0 seconds, so a redraw does not advance
+    // the label filter. The test pushes the labels first, so the filter has somewhere to
+    // go and a redraw that advanced it would move them.
+    await openView(page, '#c=0,0,0&d=20000&p=35&y=0');
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.galaxyMap?.setView({ cursor: [22000, 0, 0] }));
+    // The frame loop settles the labels of the new view first. Without the wait the
+    // reading before the redraws is of the view the camera left, and the first redraw
+    // would move every label for that reason and not for the seconds it reads.
+    await page.waitForTimeout(3000);
+    const boxes = await page.evaluate(() => {
+      const read = (): { name: string; left: number; top: number }[] =>
+        Array.from(document.querySelectorAll('.region-label')).map((node) => {
+          const box = node.getBoundingClientRect();
+          return {
+            name: node.textContent ?? '',
+            left: box.left,
+            top: box.top,
+          };
+        });
+      const before = read();
+      for (let draw = 0; draw < 30; draw += 1) window.galaxyMap?.debug.drawNow();
+      return { before, after: read() };
+    });
+    expect(boxes.before.length).toBeGreaterThan(0);
+    expect(boxes.after).toEqual(boxes.before);
   });
 });
 

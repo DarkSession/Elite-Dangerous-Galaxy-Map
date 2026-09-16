@@ -1,3 +1,4 @@
+import { mat4 } from 'gl-matrix';
 import { describe, expect, test } from 'vitest';
 import { galaxyModel } from '../galaxy-model/model';
 import {
@@ -162,6 +163,56 @@ describe('the near plane', () => {
         expect(steps).toBeLessThan(200);
       }
       expect(steps).toBe(68);
+    }
+  });
+});
+
+describe('the inverse the region overlay unprojects with', () => {
+  // The renderer builds one inverse a frame and gives it to the volume pass, the grid
+  // pass and the region composite. Each of the three unprojects a pixel with it, so the
+  // inverse and the matrix it came from must multiply to the identity.
+  test('multiplies with its own matrix to the identity', () => {
+    const views: View[] = [
+      { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 },
+      { cursor: [425, 0, -21391], distance: 20000, yaw: 90, pitch: 89 },
+      { cursor: [-9530, -910, 19808], distance: 3000, yaw: 217.5, pitch: 5 },
+      { cursor: [15, -35, 25895], distance: MIN_DISTANCE, yaw: 40, pitch: 89 },
+      { cursor: [0, 0, 0], distance: MAX_DISTANCE, yaw: 0, pitch: 60 },
+    ];
+    for (const view of views) {
+      const matrix = viewProjectionMatrix(view, viewport);
+      const inverse = inverseViewProjection(view, viewport);
+      const product = mat4.create();
+      mat4.multiply(product, matrix, inverse);
+      for (let row = 0; row < 4; row += 1) {
+        for (let column = 0; column < 4; column += 1) {
+          const held = product[column * 4 + row] as number;
+          expect(held).toBeCloseTo(row === column ? 1 : 0, 4);
+        }
+      }
+    }
+  });
+
+  test('takes a pixel of the frame back to the ray it came from', () => {
+    const view: View = { cursor: [0, 0, 0], distance: 20000, yaw: 30, pitch: 35 };
+    const inverse = inverseViewProjection(view, viewport);
+    const point: [number, number, number] = [1200, 0, -4300];
+    const screen = project(view, point, viewport);
+    expect(screen.inFront).toBe(true);
+    const direction = rayDirectionFrom(
+      inverse,
+      { x: screen.x, y: screen.y },
+      viewport,
+    );
+    const camera = cameraPosition(view);
+    const along = [point[0] - camera[0], point[1] - camera[1], point[2] - camera[2]];
+    const span = Math.hypot(along[0], along[1], along[2]);
+    const reach = Math.hypot(direction[0], direction[1], direction[2]);
+    for (let axis = 0; axis < 3; axis += 1) {
+      expect((direction[axis] as number) / reach).toBeCloseTo(
+        (along[axis] as number) / span,
+        4,
+      );
     }
   });
 });

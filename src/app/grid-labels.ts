@@ -23,6 +23,7 @@ import {
   gridBackgroundWeight,
   GRID_LABEL_MERGE_FLOOR,
   GRID_LABEL_TINT_MAX,
+  GRID_MAX_ALPHA,
   gridLevelAlpha,
   gridVisibility,
 } from '../render/grid-pass';
@@ -192,11 +193,36 @@ export function gridLabelBackground(
 }
 
 /**
- * The opacity of a label over a background of this luminance. The floor of the label's
- * weight is above the line's, because text needs more contrast than a line.
+ * How much of its own opacity a label keeps, for a level that draws at `alpha` at the
+ * label's crossing.
+ *
+ * A label must not draw stronger than the line it names. The label level's spacing on the
+ * screen is at least 400 CSS pixels at the cursor, so the level is fully bold there and
+ * the factor is 1: a label at the cursor keeps the whole of its own opacity. The factor
+ * falls away from the cursor, where the projection closes the lines up toward the horizon
+ * and the level's alpha falls with them.
+ *
+ * `GRID_LABEL_MIN_ALPHA` is the gate the placement already holds, so the factor never
+ * goes below 0.2 in a placed label.
  */
-export function gridLabelOpacity(luminance: number): number {
-  return GRID_LABEL_OPACITY * gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR);
+export function gridLabelLineFactor(alpha: number): number {
+  return alpha / GRID_MAX_ALPHA;
+}
+
+/**
+ * The opacity of a label over a background of this luminance, for a level that draws at
+ * `alpha` at the label's crossing. The floor of the label's background weight is above
+ * the line's, because text needs more contrast than a line.
+ *
+ * The plane label names no crossing, so it reads the full alpha of a bold level and its
+ * line factor is 1.
+ */
+export function gridLabelOpacity(luminance: number, alpha = GRID_MAX_ALPHA): number {
+  return (
+    GRID_LABEL_OPACITY *
+    gridLabelLineFactor(alpha) *
+    gridBackgroundWeight(luminance, GRID_LABEL_MERGE_FLOOR)
+  );
 }
 
 /** The colour of a label over a background, as a CSS `rgb` value. */
@@ -356,12 +382,32 @@ export function gridLabelPlacements(frame: GridLabelFrame): GridLabelPlacement[]
   return placed;
 }
 
+/**
+ * What one crossing label of the last frame reads. The opacity is a product of two
+ * numbers and only one of them reaches a pixel of the frame, so a test cannot read the
+ * line factor from the picture alone.
+ */
+export interface GridLabelPlaced {
+  /** The text the label carries. */
+  readonly text: string;
+  /** The left edge of the label box, in CSS pixels from the left of the canvas. */
+  readonly left: number;
+  /** The top edge of the label box, in CSS pixels from the top of the canvas. */
+  readonly top: number;
+  /** The drawn alpha of the label level at the label's crossing. */
+  readonly alpha: number;
+  /** The opacity the label was given. */
+  readonly opacity: number;
+}
+
 /** The overlay that holds the grid labels. */
 export interface GridLabelOverlay {
   /** Places the labels of one frame. */
   update(frame: GridLabelFrame): void;
   /** How many crossing labels the last frame placed. */
   labelCount(): number;
+  /** The crossing labels of the last frame, as the overlay placed them. */
+  readings(): GridLabelPlaced[];
   /** Takes every label out of the overlay. */
   clear(): void;
 }
@@ -391,11 +437,14 @@ function placeLabel(
   element: HTMLElement,
   box: LabelBox,
   background: GridLabelBackground,
-): void {
+  alpha = GRID_MAX_ALPHA,
+): number {
+  const opacity = gridLabelOpacity(background.luminance, alpha);
   setStyle(element, 'left', `${box.left}px`);
   setStyle(element, 'top', `${box.top}px`);
-  setStyle(element, 'opacity', `${gridLabelOpacity(background.luminance)}`);
+  setStyle(element, 'opacity', `${opacity}`);
   setStyle(element, 'color', gridLabelColour(background));
+  return opacity;
 }
 
 /**
@@ -407,6 +456,7 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
   const labels: HTMLElement[] = [];
   const plane = makeLabel(document, 'gm-grid-plane-label');
   let shown = 0;
+  let placed: GridLabelPlaced[] = [];
 
   const labelAt = (index: number): HTMLElement => {
     let element = labels[index];
@@ -421,6 +471,7 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
     for (const element of labels) element.remove();
     plane.remove();
     shown = 0;
+    placed = [];
   };
 
   return {
@@ -431,6 +482,7 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
       }
 
       const placements = gridLabelPlacements(frame);
+      const readings: GridLabelPlaced[] = [];
       for (let index = 0; index < placements.length; index += 1) {
         const placement = placements[index] as GridLabelPlacement;
         const element = labelAt(index);
@@ -446,9 +498,22 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
           centreY,
           frame.viewport,
         );
-        placeLabel(element, placement.box, background);
+        const opacity = placeLabel(
+          element,
+          placement.box,
+          background,
+          placement.alpha,
+        );
+        readings.push({
+          text: placement.text,
+          left: placement.box.left,
+          top: placement.box.top,
+          alpha: placement.alpha,
+          opacity,
+        });
         if (element.parentNode === null) host.append(element);
       }
+      placed = readings;
       for (let index = placements.length; index < shown; index += 1) {
         labels[index]?.remove();
       }
@@ -465,6 +530,9 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
       );
       placeLabel(plane, box, planeBackground);
       if (plane.parentNode === null) host.append(plane);
+    },
+    readings(): GridLabelPlaced[] {
+      return placed;
     },
     labelCount(): number {
       return shown;

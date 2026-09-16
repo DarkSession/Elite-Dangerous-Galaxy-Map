@@ -602,6 +602,10 @@ export function createRenderer(
     if (passes.regions && regionDraw && regionPass !== null && regions > 0) {
       regionPass.draw({
         viewProjection: viewProjection as Float32Array,
+        inverseViewProjection: inverseViewProjection as Float32Array,
+        // The galactic plane is `y = 0` in game coordinates, and the world frame is
+        // camera-relative, so the plane sits one camera height below the origin.
+        planeY: -camera[1],
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio,

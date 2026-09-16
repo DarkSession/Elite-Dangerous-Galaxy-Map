@@ -11,8 +11,9 @@
 // smoothed set is not one of the traced staircase, and the width scenario reads each mode
 // over its own view.
 //
-// Every view sits at a zoom of 10,000 light years or more, which is inside the band the
-// overlay draws in.
+// The three governed views sit at a zoom of 20,000 light years, where the zoom fade is
+// full and the range fade's slope at the reading point is zero. The both-sets point is
+// exempt from both premises, because it is the view the fade scenarios read inside.
 // `tests/region-views.test.ts` builds the boundary set, runs the search in
 // `tests/region-views.ts`, and fails if these constants are not what it gives.
 //
@@ -51,6 +52,8 @@ export interface CrossingChoice {
   readonly clearanceLy: number;
   /** How many light years one CSS pixel covers at the cursor. */
   readonly lightYearsPerPixel: number;
+  /** How many runs of this set hold every premise of the search. */
+  readonly heldCount: number;
 }
 
 /** A view centred on a bend of a chain. */
@@ -79,6 +82,8 @@ export interface CornerChoice {
   readonly clearanceLy: number;
   /** How many light years one CSS pixel covers at the cursor. */
   readonly lightYearsPerPixel: number;
+  /** How many bends or nodes of this set hold every premise of the search. */
+  readonly heldCount: number;
 }
 
 /** A plane point that sits on a chain of both boundary sets. */
@@ -95,35 +100,38 @@ export interface BothSetsChoice {
   readonly tracedGapLy: number;
   /** How far the nearest other chain is, in light years. */
   readonly clearanceLy: number;
+  /** How many points hold every premise of the search. */
+  readonly heldCount: number;
 }
 
 /** The view the width reading of the smoothed set takes. */
 export const SMOOTHED_CROSSING: CrossingChoice = {
   view: {
     cursor: [425.40960693359375, 0, -21390.783203125],
-    distance: 10000,
+    distance: 20000,
     yaw: 90,
     pitch: 89,
   },
-  viewport: { width: 1920, height: 1080 },
+  viewport: { width: 3840, height: 2160 },
   chain: 2,
   from: 1503,
   to: 1505,
   point: [425.40960693359375, 0, -21390.783203125],
-  angleFromVertical: 0.00018084706696939738,
+  angleFromVertical: 0.0001811384906898909,
   clearanceLy: 1860.6261597048726,
   lightYearsPerPixel: 10.691671651659735,
+  heldCount: 23,
 };
 
 /** The view the width reading of the traced set takes. */
 export const TRACED_CROSSING: CrossingChoice = {
   view: {
     cursor: [400.7349548339844, 0, 10266.85546875],
-    distance: 10000,
+    distance: 20000,
     yaw: 0,
     pitch: 89,
   },
-  viewport: { width: 1920, height: 1080 },
+  viewport: { width: 3840, height: 2160 },
   chain: 38,
   from: 8227,
   to: 8228,
@@ -131,17 +139,18 @@ export const TRACED_CROSSING: CrossingChoice = {
   angleFromVertical: 0,
   clearanceLy: 1653.205078125,
   lightYearsPerPixel: 10.691671651659735,
+  heldCount: 2,
 };
 
 /** The view the join reading takes. */
 export const SHARP_CORNER: CornerChoice = {
   view: {
     cursor: [-10509.220703125, 0, 72352.921875],
-    distance: 12000,
+    distance: 20000,
     yaw: 0,
     pitch: 89,
   },
-  viewport: { width: 1920, height: 1080 },
+  viewport: { width: 3200, height: 1800 },
   chain: 122,
   vertex: 67643,
   turnDegrees: 86.936662546233,
@@ -193,18 +202,19 @@ export const SHARP_CORNER: CornerChoice = {
   straightFrom: [-10420.7060546875, 0, 71892.6015625],
   straightTo: [-10447.4931640625, 0, 72007.9609375],
   clearanceLy: 6420.418048697758,
-  lightYearsPerPixel: 12.830005981991683,
+  lightYearsPerPixel: 12.830005981991684,
+  heldCount: 6713,
 };
 
 /** The view the 90 degree corner reading of the traced set takes. */
 export const TRACED_CORNER: CornerChoice = {
   view: {
     cursor: [400.7349548339844, 0, -4760.0361328125],
-    distance: 10000,
+    distance: 20000,
     yaw: 0,
     pitch: 89,
   },
-  viewport: { width: 1920, height: 1080 },
+  viewport: { width: 3840, height: 2160 },
   chain: 9,
   vertex: 3514,
   turnDegrees: 90,
@@ -219,6 +229,7 @@ export const TRACED_CORNER: CornerChoice = {
   straightTo: [-26.931911232405014, 0, -4760.0361328125],
   clearanceLy: 3306.40966796875,
   lightYearsPerPixel: 10.691671651659735,
+  heldCount: 10,
 };
 
 /**
@@ -233,4 +244,5 @@ export const NEAR_BOTH_SETS: BothSetsChoice = {
   smoothedGapLy: 0,
   tracedGapLy: 0,
   clearanceLy: 3578.171421264255,
+  heldCount: 4605,
 };
