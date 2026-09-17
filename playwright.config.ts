@@ -29,6 +29,17 @@ const launchArguments = [
 const timedSpecs = ['frame-budget.spec.ts', 'stars.spec.ts', 'labels.spec.ts'];
 
 /**
+ * What the Firefox project runs. Chromium and Firefox do not share a paint path:
+ * Chromium blurs on the GPU and Firefox blurs on the CPU, so a CSS property that costs
+ * Chromium 1 ms a frame can cost Firefox 7 ms. The project reads the card, as every
+ * project does, and the paint cost of a camera move. It runs no other spec: the rest of
+ * the suite reads behaviour that does not follow the browser, and `e2e/look.spec.ts`
+ * holds one committed baseline image, taken in Chromium, that a second browser cannot
+ * match pixel for pixel.
+ */
+const firefoxSpecs = ['00-renderer.spec.ts', 'paint-cost.spec.ts'];
+
+/**
  * How many spec files run at once in the parallel pass. The container has 32 cores
  * and one card, and each worker holds a browser with its own WebGL context, so the
  * default leaves the card room. Set GALAXY_MAP_E2E_WORKERS to read a different count.
@@ -66,8 +77,15 @@ export default defineConfig({
       name: 'chromium-gpu',
       // The touch spec needs a touch-capable context, which the project below gives it.
       // Every other spec but the timed ones runs here, so `e2e/look.spec.ts` and its
-      // committed baseline image are read by one project alone.
-      testIgnore: ['00-renderer.spec.ts', 'touch.spec.ts', ...timedSpecs],
+      // committed baseline image are read by one project alone. The paint budget is
+      // Firefox's: Chromium reads 0.8 ms for the same move and would pass whatever the
+      // CPU paint cost, which is the fault the budget exists to catch.
+      testIgnore: [
+        '00-renderer.spec.ts',
+        'touch.spec.ts',
+        'paint-cost.spec.ts',
+        ...timedSpecs,
+      ],
       dependencies: ['renderer-check'],
       use: {
         ...devices['Desktop Chrome'],
@@ -87,6 +105,29 @@ export default defineConfig({
         channel: 'chromium',
         hasTouch: true,
         launchOptions: { args: launchArguments },
+      },
+    },
+    {
+      // Firefox. It needs none of the Chromium flags above: it reaches the card headless
+      // with its default settings. `scripts/e2e.mjs` runs it in the timed pass, on one
+      // worker, because it reads a time.
+      name: 'firefox',
+      testMatch: firefoxSpecs,
+      dependencies: ['renderer-check'],
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          firefoxUserPrefs: {
+            // Firefox answers `NVIDIA GeForce GTX 980, or similar` for every NVIDIA
+            // card. The sanitizer off, `WEBGL_debug_renderer_info` gives the card the
+            // container passed through and the renderer check reads the true string.
+            'webgl.sanitize-unmasked-renderer': false,
+            // A browser locked to the display runs at 16.7 ms a frame and hides every
+            // cost below it. Uncapped, `requestAnimationFrame` runs as fast as the work
+            // allows, and the mean interval is then the per-frame main-thread cost.
+            'layout.frame_rate': 0,
+          },
+        },
       },
     },
     {

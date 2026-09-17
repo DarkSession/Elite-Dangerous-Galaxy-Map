@@ -190,7 +190,12 @@ function makeLabel(document: Document): HTMLElement {
   style.font = `10px/${LABEL_HEIGHT_CSS - 2}px 'IBM Plex Mono', ui-monospace, monospace`;
   style.letterSpacing = '1px';
   style.color = 'rgba(244, 230, 216, 0.82)';
-  style.textShadow = '0 0 8px #000, 0 1px 3px #000';
+  // A drawn stroke and not a blurred glow. Firefox rasterises a blurred text shadow on
+  // the CPU, and the overlay's two blurred shadows cost 4.2 ms of a frame that cost
+  // 12.1 ms while the camera moves. `browser-suite` holds the reading. The stroke is
+  // 2 pixels, against the coordinate label's 2.5, because this label draws smaller.
+  style.paintOrder = 'stroke fill';
+  style.webkitTextStroke = '2px rgba(0, 0, 0, 0.9)';
   style.background = 'rgba(8, 6, 10, 0.45)';
   return element;
 }

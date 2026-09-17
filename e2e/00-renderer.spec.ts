@@ -3,7 +3,7 @@ import { startState } from './helpers';
 
 const SOFTWARE_NAMES = ['SwiftShader', 'llvmpipe', 'Software'];
 
-test('the page draws on the hardware renderer', async ({ page }) => {
+test('the page draws on the hardware renderer', async ({ page, browserName }) => {
   await page.goto('./');
   await page.waitForFunction(
     () =>
@@ -20,6 +20,14 @@ test('the page draws on the hardware renderer', async ({ page }) => {
   expect(renderer.length, 'the renderer string is empty').toBeGreaterThan(0);
   for (const name of SOFTWARE_NAMES) {
     expect(renderer, `the renderer is software: ${renderer}`).not.toContain(name);
+  }
+  if (browserName === 'firefox') {
+    // Firefox answers `NVIDIA GeForce GTX 980, or similar` for every NVIDIA card, which
+    // separates hardware from software but names no card. The project turns
+    // `webgl.sanitize-unmasked-renderer` off, and this is what that buys.
+    expect(renderer, `the renderer string is sanitized: ${renderer}`).not.toContain(
+      'or similar',
+    );
   }
   console.log('renderer:', renderer);
 });

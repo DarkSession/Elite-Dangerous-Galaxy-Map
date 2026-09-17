@@ -4,7 +4,7 @@ The map is built in the phases below. Each phase is one OpenSpec change. This do
 records what each phase must do and what we know about it so far. Update it when a
 phase starts, when a decision changes, or when a question below gets an answer.
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-17.
 
 ## Facts that hold for every phase
 
@@ -30,7 +30,8 @@ Last updated: 2026-09-15.
 - **Data and rendering stay separate.** Data producers emit typed arrays and plain
   objects. The renderer knows nothing about where they came from. A lint rule enforces
   the import direction.
-- **Hardware rendering is asserted.** The browser suite fails on a software renderer.
+- **Hardware rendering is asserted.** The browser suite fails on a software renderer,
+  in Chromium and in Firefox.
 - **Look.** The target is the game's galaxy map background: a cream bulge, pink-brown
   arms that turn violet at the edge, dust lanes along the arms, sparkle from many
   small points. The game's logo and the satellite blob in its map background are not
@@ -629,6 +630,13 @@ and publishes the demo site.
   suite fails a run that falls back to SwiftShader or llvmpipe, and a GitHub-hosted
   runner carries no GPU. A run without a card skips the suite; it does not run it against
   a software renderer.
+- **The browser suite runs two browsers.** Chromium takes the whole suite. Firefox takes
+  the renderer check and the paint budget alone. Chromium blurs on the GPU and Firefox
+  blurs on the CPU, so a CSS property that costs Chromium 1 ms a frame can cost Firefox
+  7 ms, and a suite that runs one browser reads one of the two costs. Phase 5.6 gives the
+  reading. The rest of the suite reads behaviour that does not follow the browser, and
+  `e2e/look.spec.ts` holds one committed baseline image that a second browser cannot
+  match pixel for pixel.
 
 ## Phase 5.1: the overlay blend and the position precision
 
@@ -937,6 +945,57 @@ the owner found while reading the map after phase 5.4.
   place, and both the plane rectangle and the element's own box read it, so the two cannot
   disagree. The ring reads 58, 47, 24 and 24 CSS pixels wide at camera distances of 12,000,
   30,000, 60,000 and 120,000.
+
+## Phase 5.6: the overlay paint cost
+
+Change: `cut-the-overlay-paint-cost`. Status: in progress.
+
+Takes the two CPU blurs out of the per-frame paint path, puts Firefox in the browser gate
+with a budget on the paint cost, and shows a system position to the exact game step.
+
+- **Firefox joins the browser gate.** The dev container installs it, `playwright.config.ts`
+  carries a `firefox` project, and `scripts/e2e.mjs` runs it in the timed pass, on one
+  worker. Firefox needs none of the Chromium GPU flags. It reports
+  `NVIDIA GeForce GTX 980, or similar` for every NVIDIA card, so the project sets
+  `webgl.sanitize-unmasked-renderer` to `false` and the renderer check reads the true
+  string. Firefox could not start in the container at all before this: the browser volume
+  mounts at `.cache/ms-playwright`, docker creates `.cache` as root, and Firefox cannot
+  write `.cache/mozilla` under a root-owned parent.
+
+- **The instrument is the frame interval with the frame rate uncapped.** Every other
+  budget in the specs reads the animation frame interval, which is 16.7 ms whatever the
+  work is, as long as the work fits. The two blurs cost 7.5 ms of a 12.1 ms frame and
+  dropped nothing. The Firefox project sets `layout.frame_rate` to `0`, so
+  `requestAnimationFrame` runs as fast as the work allows and the mean interval is the
+  work. Reading the process CPU time from `/proc` found the fault but needs a process id
+  the test fixture does not give; the Gecko profiler gives the true attribution but is a
+  stack sample, not a number a budget can compare.
+
+- **The label edge is a stroke, not a smaller blur.** `-webkit-text-stroke` with
+  `paint-order: stroke fill` replaces the blurred text shadow: 2.5 CSS pixels on a
+  coordinate label and 2 on a marker name label, which draws at a smaller size. A blur of
+  3 pixels keeps the look and returns a third of the cost; the stroke returns nearly all
+  of it and changes the look. The owner chose the stroke with the measured options in
+  front of them. The edge is hard rather than soft, and that is the price of the frame.
+
+- **The HUD panels are flat, and the mockup is not followed here.** No rule of
+  `src/hud/styles.ts` carries `backdrop-filter`. An element that carries it draws over the
+  canvas, the canvas draws a new frame every frame, and Firefox re-blurs the backdrop on
+  the CPU in each one. Five rules carried it, on six elements, and the two panels beside
+  the map were the only ones on the screen while the camera moved. Those two and the
+  information panel raise their background alpha to 0.94, so the text keeps its contrast
+  with the glass gone; the dialog scrim, the dialog frame and the lightbox keep the alpha
+  they had. **The mockup in `.design/` draws the panels with the blur, so the HUD departs
+  from the mockup on purpose.** The alternative was to turn the blur off while the camera
+  moves, which needs a "the camera is moving" class that `map-hud` forbids the HUD to
+  derive from the map's internals, and which would still blur in every frame of every
+  move.
+
+- **The position shows five decimal places.** The game resolves a position to 1/32 of a
+  light year, which is 0.03125. Five places in base ten reproduce every such value
+  exactly; four still round the odd steps, and the three places the panel had read
+  `-9530.9375` as `-9,530.938`. `DISTANCE FROM SOL` and `RANGE` stay whole: they are
+  distances the user reads to judge a journey, not the identity of a place.
 
 ## Sources
 
