@@ -10,6 +10,7 @@ import {
   CLOUD_RADIUS_MAX_LY,
   CLOUD_RADIUS_MIN_LY,
   generateCloudSet,
+  peakCellDensity,
   placementMasses,
 } from './cloud-set';
 import { buildSurfaceTable, generatePointCloud } from './point-cloud';
@@ -38,6 +39,15 @@ function planeRadius(positions: Float32Array, index: number): number {
     (positions[index * 3 + 2] as number) - galaxyModel.centre[2],
   );
 }
+
+describe('the surface table peak', () => {
+  test('is the peak the cloud set would sweep for', () => {
+    // The table build reads the smooth density at every cell centre already, so it
+    // keeps the largest and the set reads it. `peakCellDensity` states the rule, and
+    // this holds the two to one number.
+    expect(table.peak).toBe(peakCellDensity(galaxyModel, table));
+  });
+});
 
 describe('the cloud set', () => {
   test('gives the requested count inside the model bounds', () => {

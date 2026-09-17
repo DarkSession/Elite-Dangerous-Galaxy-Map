@@ -6,6 +6,7 @@ import { loadGalaxyModel } from './load';
 import {
   armAzimuth,
   armPoint,
+  correctedFromSurface,
   correctedSurfaceDensity,
   pitchAngleDegrees,
   prepareSurface,
@@ -40,12 +41,22 @@ export interface GalaxyModel {
   surfaceDensity(x: number, z: number): number;
   /** Surface density in map units, with the correction grid. */
   correctedSurfaceDensity(x: number, z: number): number;
+  /**
+   * The correction grid applied to a surface density the caller already has. It gives
+   * the same number as `correctedSurfaceDensity` at the same point.
+   */
+  correctedFromSurface(base: number, x: number, z: number): number;
   /** The bilinear correction value at a plane point. */
   correction(x: number, z: number): number;
   /** The bilinear detail value at a plane point. It is 0 without a detail grid. */
   detail(x: number, z: number): number;
   /** Surface density in map units, with the correction grid and the detail grid. */
   detailedSurfaceDensity(x: number, z: number): number;
+  /**
+   * The detail grid applied to a corrected surface density the caller already has. It
+   * gives the same number as `detailedSurfaceDensity` at the same point.
+   */
+  detailedFromCorrected(corrected: number, x: number, z: number): number;
   /** The fraction of a column's mass per light year at a height above the mid-plane. */
   verticalProfile(height: number, radius: number): number;
   /** The height that holds half of one side's mass, in light years. */
@@ -121,13 +132,15 @@ export function createGalaxyModel(
       : (x: number, z: number): number =>
           sampleDetail(detailGrid, document.bounds, x, z);
 
-  const detailedSurfaceDensity = (x: number, z: number): number => {
-    const corrected = correctedSurfaceDensity(surface, x, z);
+  const detailedFromCorrected = (corrected: number, x: number, z: number): number => {
     if (detailGrid === undefined) return corrected;
     const epsilon = document.epsilon;
     const detailed = (corrected + epsilon) * Math.exp(detail(x, z)) - epsilon;
     return detailed > 0 ? detailed : 0;
   };
+
+  const detailedSurfaceDensity = (x: number, z: number): number =>
+    detailedFromCorrected(correctedSurfaceDensity(surface, x, z), x, z);
 
   const detailedVolumeDensity = (x: number, y: number, z: number): number => {
     const radius = Math.hypot(x - document.centre[0], z - document.centre[2]);
@@ -147,9 +160,11 @@ export function createGalaxyModel(
     radius: (x, z) => Math.hypot(x - document.centre[0], z - document.centre[2]),
     surfaceDensity: (x, z) => surfaceDensity(surface, x, z),
     correctedSurfaceDensity: (x, z) => correctedSurfaceDensity(surface, x, z),
+    correctedFromSurface: (base, x, z) => correctedFromSurface(surface, base, x, z),
     correction: (x, z) => sampleCorrection(surface, x, z),
     detail,
     detailedSurfaceDensity,
+    detailedFromCorrected,
     verticalProfile: (height, radius) => verticalProfile(vertical, height, radius),
     halfMassHeight: (radius) => halfMassHeight(vertical, radius),
     volumeDensity,

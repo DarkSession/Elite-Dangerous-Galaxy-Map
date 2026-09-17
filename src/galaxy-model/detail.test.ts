@@ -84,6 +84,19 @@ describe('the detail grid', () => {
     }
   });
 
+  test('gives the same density from a corrected density the caller holds', () => {
+    // The table build applies the detail grid to the corrected density it already has.
+    // The two routes must agree exactly, or the point cloud draws from a table that
+    // differs from the model.
+    for (const point of fixture.points) {
+      const corrected = model.correctedSurfaceDensity(point.x, point.z);
+      expect(
+        model.detailedFromCorrected(corrected, point.x, point.z),
+        `density at ${point.x}, ${point.z}`,
+      ).toBe(model.detailedSurfaceDensity(point.x, point.z));
+    }
+  });
+
   test('gives the first arm more texture than the corrected model does', () => {
     let detailedLow = Number.POSITIVE_INFINITY;
     let detailedHigh = 0;
@@ -118,6 +131,10 @@ describe('the detail grid', () => {
     expect(plain.detailedSurfaceDensity(0, 0)).toBe(
       plain.correctedSurfaceDensity(0, 0),
     );
+    // Without a grid the detail route gives the corrected density back unchanged, and
+    // not the corrected density put through the formula with an exponent of zero.
+    const corrected = plain.correctedSurfaceDensity(0, 0);
+    expect(plain.detailedFromCorrected(corrected, 0, 0)).toBe(corrected);
     expect(plain.detailedVolumeDensity(0, 0, 0)).toBe(plain.volumeDensity(0, 0, 0));
     expect(plain.detailedMassDensity(0, 0, 0)).toBe(plain.massDensity(0, 0, 0));
   });

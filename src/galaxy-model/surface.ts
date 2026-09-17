@@ -292,15 +292,29 @@ export function sampleCorrection(
   return ((low + (high - low) * tz) * prepared.correctionScale) / 127;
 }
 
+/**
+ * The correction grid applied to a surface density the caller already has.
+ *
+ * A caller that needs both the smooth density and the corrected one reads this rather
+ * than `correctedSurfaceDensity`, which would compute the smooth density a second time.
+ */
+export function correctedFromSurface(
+  prepared: PreparedSurface,
+  base: number,
+  x: number,
+  z: number,
+): number {
+  const epsilon = prepared.epsilon;
+  const corrected =
+    (base + epsilon) * Math.exp(sampleCorrection(prepared, x, z)) - epsilon;
+  return corrected > 0 ? corrected : 0;
+}
+
 /** The stellar-mass surface density in map units, with the correction grid. */
 export function correctedSurfaceDensity(
   prepared: PreparedSurface,
   x: number,
   z: number,
 ): number {
-  const base = surfaceDensity(prepared, x, z);
-  const epsilon = prepared.epsilon;
-  const corrected =
-    (base + epsilon) * Math.exp(sampleCorrection(prepared, x, z)) - epsilon;
-  return corrected > 0 ? corrected : 0;
+  return correctedFromSurface(prepared, surfaceDensity(prepared, x, z), x, z);
 }
