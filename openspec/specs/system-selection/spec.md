@@ -81,7 +81,6 @@ do not.
   200 calls to `systemAt`
 - **THEN** the mean call takes 1 ms or less
 
-
 ### Requirement: The map holds one hovered system and one selected system
 
 The handle SHALL carry `getHover()`, `getSelection()`, `setSelection(identity)` and
@@ -312,7 +311,6 @@ running flight and 0 when none runs.
 - **THEN** the mean interval is 18 ms or less, which is the bound this capability already
   holds for the frame loop
 
-
 ### Requirement: The selected system carries the game's system marker
 
 The map SHALL draw a pin over the selected system: the shape the game's own galaxy map
@@ -363,9 +361,6 @@ the marker moves, so the two never separate on the screen.
   tip and the marker's projected centre in the same frame at the start and at the end
 - **THEN** the offset between them is the same at both readings, within 1 CSS pixel
 
-
-
-
 ### Requirement: The hovered marker carries a ring
 
 The map SHALL draw a ring around the hovered marker, as an element in the same overlay.
@@ -386,9 +381,6 @@ that is both hovered and selected SHALL carry the ring and the pin together.
 - **WHEN** the browser test selects a system and leaves the pointer on it
 - **THEN** the overlay holds one ring and one pin, both centred on that marker
 
-
-
-
 ### Requirement: The marker name labels are bounded
 
 The map SHALL place a name label under a marker as an element in the same overlay. A label
@@ -401,6 +393,15 @@ switch below says.
 The handle SHALL carry `setSystemNamesVisible(on)` and `areSystemNamesVisible()`. The
 switch SHALL be off when the map starts. While it is on, every drawn marker SHALL be a
 label candidate.
+
+**A name label SHALL carry a stroke and SHALL NOT carry a blurred shadow.** The stroke
+SHALL be **2 CSS pixels** in `rgba(0, 0, 0, 0.9)`, drawn under the glyph. The label was
+`0 0 8px` and `0 1px 3px` of black. Firefox rasterises a blurred text shadow on the CPU,
+and the two blurred shadows of the overlay together cost 4.2 ms of a frame that cost
+12.1 ms, which `browser-suite` states with the reading it comes from. The coordinate
+labels take the same treatment, which `coordinate-grid` states. The stroke here is
+2 pixels rather than 2.5 because a name label draws at a smaller size than a coordinate
+label.
 
 The placement SHALL hold to these bounds:
 
@@ -440,9 +441,15 @@ The placement SHALL hold to these bounds:
   turns the switch on, draws a frame and reads the label boxes
 - **THEN** one label is placed and the other is not
 
+#### Scenario: A name label carries a stroke and no shadow
 
-
-
+- **WHEN** the browser test adds 10 systems in view, turns the name switch on, draws a
+  frame and reads the computed `text-shadow`, `-webkit-text-stroke-width`,
+  `-webkit-text-stroke-color` and `paint-order` of every name label
+- **THEN** every label reads `none` for the shadow, `2px` for the stroke width, a stroke
+  colour within 2 on each channel of `rgba(0, 0, 0, 0.9)`, and `stroke` or `stroke fill`
+  for the paint order, which is what puts the stroke under the glyph. `coordinate-grid`
+  states why the paint order has two strings
 ### Requirement: Selection holds the frame budget
 
 The hover pick, the pin, the ring and the name label placement together SHALL add at most
@@ -484,4 +491,3 @@ This requirement adds the two readings the new work needs and does not restate t
   and reads the selection work statistics over 120 frames
 - **THEN** the mean is 2 ms or less, which a sort of the whole candidate list every frame
   would not hold
-
