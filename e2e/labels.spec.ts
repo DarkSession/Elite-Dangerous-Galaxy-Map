@@ -6,6 +6,7 @@ import {
   startState,
   waitForReady,
 } from './helpers';
+import { NO_LINE_VIEW } from './region-views';
 
 /** How many views this file has opened, so each one gets its own address. */
 let visits = 0;
@@ -168,7 +169,7 @@ async function changedByRegionPass(page: Page): Promise<number> {
  * reads a figure of its own and not the one the page computed.
  */
 function rangeFade(rangeLy: number): number {
-  const t = Math.min(1, Math.max(0, (rangeLy - 10000) / (20000 - 10000)));
+  const t = Math.min(1, Math.max(0, (rangeLy - 8000) / (12000 - 8000)));
   return t * t * (3 - 2 * t);
 }
 
@@ -321,7 +322,7 @@ test.describe('the labels at 1280 by 720', () => {
       }
       if (spur === undefined) continue;
       // The zoom fade is 1 at and below 20,000 light years, so the opacity is the range
-      // fade alone.
+      // fade alone, which is `smoothstep(8000, 12000, range)`.
       expect(Math.abs(spur.opacity - rangeFade(spur.rangeLy))).toBeLessThan(0.05);
     }
   });
@@ -358,12 +359,15 @@ test.describe('the labels at 1280 by 720', () => {
   });
 
   test('no label where no line draws', async ({ page }) => {
-    // Every plane point of this frame is under 10,000 light years from the camera, so
-    // the band draws nothing. Before this requirement the names stood over a frame with
-    // no lines under them.
+    // Every plane point of this frame is under the 8,000 light year range floor, so the
+    // band draws nothing. Before this requirement the names stood over a frame with no
+    // lines under them. A unit test searches for the view and `e2e/region-views.ts`
+    // records it, so the view moves with the floor.
+    const view = NO_LINE_VIEW.view;
+    const place = view.cursor.map((value) => value.toFixed(5)).join(',');
     await openView(
       page,
-      '#c=1840.85884,-15539.75557,16507.94703&d=20016.72348&p=58.57998&y=24.66002&g=1',
+      `#c=${place}&d=${view.distance}&p=${view.pitch}&y=${view.yaw}&g=1`,
     );
     const labels = await readLabels(page);
     const changed = await changedByRegionPass(page);
@@ -398,7 +402,7 @@ test.describe('the labels at 1280 by 720', () => {
   }) => {
     // The zoom is 20,000 light years so that the range fade takes nothing: the camera
     // sits 11,472 light years above the plane and the nearest plane point in the frame
-    // is 12,657 away, so every anchor clears the 10,000 light year floor. The 5 per cent
+    // is 12,657 away, so every anchor clears the 8,000 light year floor. The 5 per cent
     // clause then reads the placement alone. The shares are measured by the test and not
     // written into it.
     for (const yaw of [0, 180]) {

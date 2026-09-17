@@ -28,13 +28,20 @@ build's output where the first one's is looked for.
 
 The entry point SHALL export `createGalaxyMap` and the types the public surface names:
 `GalaxyMapOptions`, `GalaxyMap`, `MapView`, `Category`, `RealSystem`, `SystemImage`,
-`RegionMode`, `CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
-`HudHandle`, `AddReport`, `CategoryReport`, `Reject`, `CategoryReject`, and the four
+`CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
+`HudHandle`, `AddReport`, `CategoryReport`, `Reject`, `CategoryReject`, the four
 dataset types the catalog names: `DatasetEntry`, `DatasetContent`, `DatasetInfo` and
-`DatasetLoadResult`. A host writes the catalog itself, so it needs `DatasetEntry` in a
+`DatasetLoadResult`, and the seven shape types `map-shapes` names: `SphereInput`,
+`LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport` and `ShapeReject`. A host writes
+the catalog itself, so it needs `DatasetEntry` in a
 type position; a list that left the four out would make the `datasets` option unwritable
-in typed code. It SHALL NOT
+in typed code. The same holds for `SphereInput` and `LineInput`, which a host needs to
+write the argument of `addSpheres` and `addLines`. It SHALL NOT
 export the `debug` hook type as part of the supported surface.
+
+**`RegionMode` is gone from the list.** The region overlay took three modes and now takes
+one switch, which `galactic-regions` states, so the type it named no longer exists. This is
+a breaking change to the published surface, and the package is at version 0.1.0.
 
 `package.json` SHALL name the entry point in `exports` and `types`, SHALL name the built
 files in `files`, and SHALL stop being `private`.
@@ -45,7 +52,7 @@ lint rule, and SHALL NOT read an element by id.
 The HUD SHALL stay a chunk of its own, loaded on demand, so a host that does not ask for
 the HUD downloads none of it.
 
-The library's own entry chunk SHALL stay under **200,000 bytes**. The bound is the guard
+The library's own entry chunk SHALL stay under **254,000 bytes**. The bound is the guard
 `tests/main-bundle.test.ts` already holds, and it is a guard against one fault: a
 main-thread import of the region cell lookup adds about 199 KiB and takes the chunk over
 370,000 bytes.
@@ -59,9 +66,18 @@ bytes, which fails on the next comment and guards nothing. The finished chunk me
 170,932 bytes, which is over the old bound. 200,000 keeps the guard well under the reading a
 leaked lookup gives.
 
-With this change in, the entry chunk measures **198,764** bytes, which leaves about 1.2 kB
-under the bound. That is little room, and the next change that touches the entry chunk
-SHALL read the bound again rather than assume it holds.
+The bound was 200,000 and the chunk measured 198,764, which left about 1.2 kB. The shape
+set, the shape pass and the two handle calls of `map-shapes` take more than that, and the
+smoothed boundary set that goes with the region modes gives a little back. **The
+implementation SHALL read the built size and write it here**, and SHALL set the bound at
+about 30 kB above that reading, which is the room the 200,000 bound gave when it was set.
+230,000 is the figure this change planned for; a reading that lands far from it SHALL move
+the bound rather than be worked around.
+
+**The built chunk reads 224,559 bytes**, which is 23,738 bytes over the 200,821 of the
+last change. The bound is therefore **254,000** and not the 230,000 the plan named:
+230,000 would leave about 6 kB over the reading, which is the room that made the old
+170,000 bound guard nothing.
 
 **The library build is now measured.** At commit `7cd18d7` the page build's entry chunk
 measured 152,506 bytes and its HUD chunk 27,419. The first library build measured 162,593
@@ -101,7 +117,7 @@ chunk's 54.8 kB, so the library is the smaller of the two over the wire. The pag
 #### Scenario: The entry chunk stays under the bound
 
 - **WHEN** a test runs the library build and reads the size of the entry chunk
-- **THEN** the size is under 200,000 bytes, and the region cell lookup is in **no entry
+- **THEN** the size is under 254,000 bytes, and the region cell lookup is in **no entry
   chunk** and in **no chunk the entry chunk imports at load**.
 
   **How many chunks carry it follows the build, and the scenario SHALL NOT assert a fixed

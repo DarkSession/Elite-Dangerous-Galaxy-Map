@@ -1,52 +1,58 @@
 // Chooses the views the browser tests of the boundary line need.
 //
-// Four scenarios of `openspec/specs/galactic-regions` name a view that a unit test has to
+// Five scenarios of `openspec/specs/galactic-regions` name a view that a unit test has to
 // choose: one where a chain crosses the reading row within 5 degrees of vertical, one
 // where the drawn line turns by at least 30 degrees within a reach of 8 CSS pixels, the
-// sharpest corner of the traced set, and one plane point that sits on a chain of both
-// sets. Both turns are measured over a reach and not between two neighbouring segments,
-// because both sets are smoothed lines whose vertices sit far closer together than the
-// reading window. Every view comes from the boundary set itself, so nobody picks a place
-// on the map by hand.
+// sharpest corner of the boundary set, one plane point whose reading window holds one
+// chain and no other, and one view where no plane point of the frame is far enough away to
+// draw a line. Both turns are measured over a reach and not between two neighbouring
+// segments, because the set is a smoothed line whose vertices sit far closer together than
+// the reading window. Every view comes from the boundary set itself, so nobody picks a
+// place on the map by hand.
 //
-// The crossing search runs once for each set, and the constants file holds one view for
-// each: a near-vertical straight run of the smoothed set is not one of the traced set.
+// The crossing search runs once. It ran once for each set, because a near-vertical
+// straight run of the smoothed set is not one of the traced set, and there is one set now.
 //
 // Each search takes its zoom as a parameter and states its premises in CSS pixels, so a
 // premise holds at the viewport and the zoom its own scenario names. The overlay draws in
-// a band of zoom distance from 5,000 to 30,000 light years, so every view sits at 10,000
+// a band of zoom distance from 5,000 to 30,000 light years, so every view sits at 7,000
 // light years or more.
 //
-// Every window here was first measured against a band of 6 CSS pixels. The band is now
-// 1.6 per cent of the viewport height, clamped to 8 and 24 CSS pixels of half width, so a
-// window that must clear the band takes **the half width plus** the figure it held: the
-// clearances, the reading windows, and the distance from a bend at which a comparison run
-// starts. A window that measures **along** the band keeps its figure: an arc, a run
-// length, the span of a comparison run, and the reach over which a bend turns. The
-// windows are not scaled by the band's growth. The old half width was 3 CSS pixels and the
-// new one is at most 24, so a scale of 8 would ask the traced corner search for a straight
-// run of 2,395 light years, where the longest straight run of the drawn traced set
+// **The half width follows the range.** Every window that must clear the band takes the
+// half width **at the reading range** and not `base`: the three governed searches put the
+// cursor on the reading point, so that range is the zoom itself. The one-chain search
+// reads six zooms, so it takes the half width at each of them and keeps the widest window.
+//
+// A window that measures **along** the band keeps its figure: an arc, a run length, the
+// span of a comparison run, and the reach over which a bend turns. The windows are not
+// scaled by the band's growth. A scale of 8 would ask the traced corner search for a
+// straight run of 2,395 light years, where the longest straight run of the drawn set
 // measures 3,745.9 and only 7 of its 3,833 runs reach past 2,395.
 //
 // Every premise of the traced corner search is a length along the plane and none is the
-// length of one segment. The traced set's median segment is 185 light years, far under the
-// 320.8 the read radius covers, so a premise on one segment would read where the vertices
-// fall and not where the line goes.
+// length of one segment. The set's median segment is 185 light years, far under the radius
+// the read window covers, so a premise on one segment would read where the vertices fall
+// and not where the line goes.
 //
 // The search lives here and `region-views.test.ts` checks that the constants in
 // `e2e/region-views.ts` are what it gives. The browser test reads those constants,
 // because Playwright cannot import the camera module: it reaches the PNG of the
 // detail grid, which only Vite can load.
-import { project } from '../src/camera/projection';
+import { cameraPosition, project } from '../src/camera/projection';
 import type { Viewport } from '../src/camera/projection';
 import type { View } from '../src/camera/view';
-import { regionBandHalfWidthCss } from '../src/render/region-pass';
+import { farthestPlaneRange } from '../src/app/labels';
+import {
+  REGION_RANGE_NONE,
+  regionBandHalfWidthAtRange,
+} from '../src/render/region-pass';
 import type { RegionLines } from '../src/scene-data/types';
 import type {
-  BothSetsChoice,
   CornerChoice,
   CrossingChoice,
   ChosenView,
+  NoLineChoice,
+  OneChainChoice,
 } from '../e2e/region-views';
 
 /** The galactic centre in game coordinates, as the browser helpers hold it. */
@@ -276,7 +282,8 @@ export function findVerticalCrossing(
   runs.sort((a, b) => b.length - a.length);
 
   const perPixel = lightYearsPerPixel(distance, viewport);
-  const halfWidth = regionBandHalfWidthCss(viewport.height);
+  // Premise three: the reading point sits at the cursor, so its range is the zoom.
+  const halfWidth = regionBandHalfWidthAtRange(viewport.height, distance);
   // The search reports how many runs hold every premise, so the spec states a count that
   // this run measured. The runs are in order of length, so the first holder is the best.
   let held = 0;
@@ -414,7 +421,8 @@ export function findSharpCorner(
   distance: number,
 ): CornerChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
-  const halfWidth = regionBandHalfWidthCss(viewport.height);
+  // Premise three: the reading point sits at the cursor, so its range is the zoom.
+  const halfWidth = regionBandHalfWidthAtRange(viewport.height, distance);
   const reach = JOIN_REACH_PIXELS * perPixel;
 
   interface Bend {
@@ -622,76 +630,74 @@ function indexSegments(lines: RegionLines): SegmentIndex {
   };
 }
 
-/** How near the chosen point must sit to a chain of each set, in light years. */
-const BOTH_SETS_GAP_LY = 0.5;
-
 /**
  * How far the nearest other chain must stay from the edge of the band at the chosen
  * point, in CSS pixels. The search adds the half width to it.
  */
-const BOTH_SETS_CLEARANCE_PIXELS = 20;
+const ONE_CHAIN_CLEARANCE_PIXELS = 20;
 
 /** The zooms the fade scenarios open the chosen point at, in light years. */
-const BOTH_SETS_ZOOMS: readonly number[] = [9000, 15000, 20000, 25000, 31000];
+const ONE_CHAIN_ZOOMS: readonly number[] = [7000, 10000, 12000, 20000, 25000, 31000];
 
 /** How wide the window the fade scenarios read around the point is, in CSS pixels. */
-const BOTH_SETS_WINDOW_PIXELS = 8;
+const ONE_CHAIN_WINDOW_PIXELS = 8;
 
 /**
- * Finds a plane point that sits on a chain of both boundary sets.
+ * Finds a plane point on the boundary set whose reading window holds one chain and no
+ * other.
  *
- * The scenario "The boundary draws in full at the close end of the band" reads the same
- * point in both modes, and the scenario "The overlay fades out across the close end of
- * the band" reads it at 12,000, 7,500 and 5,000 light years. The smoothed line may sit
- * 49.3 light years from the traced one, so a point chosen against one set alone can leave
- * the other set's line off the middle of the frame.
+ * The scenario "The boundary draws in full at the close end of the band" and the two fade
+ * scenarios read the same 8 CSS pixel window around this point, at six zooms from 7,000 to
+ * 31,000 light years. A point chosen only for sitting on a line can carry a second chain
+ * inside that window, and the reading would then follow two bands and not one.
  *
- * The search takes the midpoint of a long traced segment, because the two lines coincide
- * along a straight run of the boundary, and keeps the longest such segment whose
- * midpoint is within half a light year of the smoothed set as well.
+ * The search takes the midpoint of the longest segment that holds every premise, so the
+ * line leaves the window on both sides.
  *
- * The clearance is the half width and 20 CSS pixels at the viewport and the zoom the fade
- * scenario reads at, so the near edge of a neighbouring band sits 20 CSS pixels from the
- * centre and outside the 8 CSS pixel window the scenario reads.
+ * This search is exempt from the three premises the other three hold. It exists to be read
+ * inside both fades, so a premise that put it outside them would take away the only view
+ * that reads them. The half width still follows the range: the search reads the window at
+ * each of the six zooms and keeps the widest of them, and the widest is not the widest zoom,
+ * because the band narrows as the zoom grows.
  *
- * The fade scenarios open the point at five zooms, from 9,000 to 31,000 light years, and
- * one CSS pixel covers the most light years at the widest of them. Every other chain
- * therefore stays clear of the 8 CSS pixel window at each of the five, which the search
- * reads as one distance in light years.
+ * The search was the **both-sets** search, which held a point on a chain of the traced set
+ * within half a light year of the smoothed set. That set is gone, so the second gap is gone
+ * with it.
  */
-export function findPointNearBothSets(
+export function findOneChainPoint(
   lines: RegionLines,
-  traced: RegionLines,
   viewport: Viewport,
   distance: number,
-): BothSetsChoice {
+): OneChainChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
-  // The window holds at every zoom the fade scenarios open, so the widest of them, where
-  // one CSS pixel covers the most light years, is the one that binds.
-  const halfWidth = regionBandHalfWidthCss(viewport.height);
+  // The window holds at every zoom the fade scenarios open. One CSS pixel covers the most
+  // light years at the widest of them and the band is narrowest there, so the search reads
+  // every zoom and keeps the widest window.
   const windowLy = Math.max(
-    ...BOTH_SETS_ZOOMS.map(
+    ...ONE_CHAIN_ZOOMS.map(
       (zoom) =>
-        (BOTH_SETS_WINDOW_PIXELS + halfWidth) * lightYearsPerPixel(zoom, viewport),
+        (ONE_CHAIN_WINDOW_PIXELS + regionBandHalfWidthAtRange(viewport.height, zoom)) *
+        lightYearsPerPixel(zoom, viewport),
     ),
   );
   const leastClearance = Math.max(
-    (halfWidth + BOTH_SETS_CLEARANCE_PIXELS) * perPixel,
+    (regionBandHalfWidthAtRange(viewport.height, distance) +
+      ONE_CHAIN_CLEARANCE_PIXELS) *
+      perPixel,
     windowLy,
   );
-  const smoothedIndex = indexSegments(lines);
-  /** The longest traced segment the search has accepted so far. */
-  let best: BothSetsChoice | null = null;
+  /** The longest segment the search has accepted so far. */
+  let best: OneChainChoice | null = null;
   let bestLength = 0;
   /** How many points hold every premise of the search. */
   let held = 0;
 
-  for (let chain = 0; chain < traced.chainCount; chain += 1) {
-    const first = traced.first[chain] as number;
-    const last = traced.last[chain] as number;
+  for (let chain = 0; chain < lines.chainCount; chain += 1) {
+    const first = lines.first[chain] as number;
+    const last = lines.last[chain] as number;
     for (let vertex = first; vertex < last; vertex += 1) {
-      const a = planeAt(traced, vertex);
-      const b = planeAt(traced, vertex + 1);
+      const a = planeAt(lines, vertex);
+      const b = planeAt(lines, vertex + 1);
       const length = gap(a, b);
       const point: Plane = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 
@@ -702,18 +708,11 @@ export function findPointNearBothSets(
       );
       if (radius < CENTRE_FLOOR_LY) continue;
 
-      const smoothedGap = smoothedIndex.gapTo(point);
-      if (smoothedGap > BOTH_SETS_GAP_LY) continue;
-
-      // No other chain may come near, in either set, so the reading at the closest
-      // zoom holds one boundary and not two.
-      const clearance = Math.min(
-        clearanceFrom(traced, point, (other) => other >= first && other <= last),
-        clearanceFrom(lines, point, (other) => {
-          const first2 = lines.first[chain] as number;
-          const last2 = lines.last[chain] as number;
-          return other >= first2 && other <= last2;
-        }),
+      // No other chain may come near, so the reading holds one boundary and not two.
+      const clearance = clearanceFrom(
+        lines,
+        point,
+        (other) => other >= first && other <= last,
       );
       if (clearance < leastClearance) continue;
 
@@ -727,14 +726,14 @@ export function findPointNearBothSets(
         point: game(point),
         chain,
         segmentLengthLy: length,
-        smoothedGapLy: smoothedGap,
-        tracedGapLy: 0,
         clearanceLy: clearance,
+        windowLy,
         heldCount: 0,
       };
     }
   }
-  if (best === null) throw new Error('no point sits on a chain of both sets');
+  if (best === null)
+    throw new Error('no point on a chain holds one chain and no other');
   return { ...best, heldCount: held };
 }
 
@@ -759,11 +758,11 @@ const TRACED_RUN_SPAN_PIXELS = 28;
  * **derived** and it is not a clearance past the edge of the band.
  *
  * Two scenarios read this node. The brightness reading reaches the read radius, which is
- * the half width and 6 CSS pixels, so 30. The radius reading reaches the half width and
- * 12, so 36, and marches each ray out to it. A line 60 CSS pixels from the node can still
- * light a pixel 36 from it, and a line further away cannot, so the radius is the larger
- * reading window plus the half width: `2 * halfWidth + 12`, which is 60 at a half width of
- * 24.
+ * the half width and 6 CSS pixels, so 20.4. The radius reading reaches the half width and
+ * 12, so 26.4, and marches each ray out to it. A line 40.8 CSS pixels from the node can
+ * still light a pixel 26.4 from it, and a line further away cannot, so the radius is the
+ * larger reading window plus the half width: `2 * halfWidth + 12`, which is 40.8 at the
+ * half width of 14.4 the reading range gives.
  */
 function tracedClearancePixels(halfWidth: number): number {
   return 2 * halfWidth + TRACED_RUN_FROM_PIXELS;
@@ -804,7 +803,8 @@ export function findTracedCorner(
   distance: number,
 ): CornerChoice {
   const perPixel = lightYearsPerPixel(distance, viewport);
-  const halfWidth = regionBandHalfWidthCss(viewport.height);
+  // Premise three: the reading point sits at the cursor, so its range is the zoom.
+  const halfWidth = regionBandHalfWidthAtRange(viewport.height, distance);
   /** How far the browser reading reaches from the node, in CSS pixels. */
   const reachPixels = halfWidth + TRACED_REACH_PIXELS;
   const reachLy = reachPixels * perPixel;
@@ -944,4 +944,66 @@ export function findTracedCorner(
   }
   if (kept === null) throw new Error('no traced corner meets the reading conditions');
   return { ...kept, heldCount: held };
+}
+
+/**
+ * The pitch, the yaw and the zoom the no-line view keeps, as the recorded view held them.
+ * The search moves the camera's height alone, so the view the browser opens stays the one
+ * the scenario has always opened, at a height the new floor allows.
+ */
+const NO_LINE_PITCH = 58.57998;
+const NO_LINE_YAW = 24.66002;
+const NO_LINE_DISTANCE = 20016.72348;
+
+/** The plane point the no-line view looks at, as `x` then `z`. */
+const NO_LINE_PLANE: Plane = [1840.85884, 16507.94703];
+
+/**
+ * How much of the range floor the farthest plane point of the frame must leave clear. A
+ * tenth of the floor keeps the reading off the edge, so a browser that projects a corner a
+ * few light years differently still draws nothing.
+ */
+const NO_LINE_ROOM = 0.1;
+
+/**
+ * Finds the view the scenario "No label where no line draws" opens: a frame where every
+ * plane point sits under the range floor, so no boundary draws and no label stands.
+ *
+ * The zoom stays above the label zoom fade's own floor, so the zoom gate of the label
+ * sweep passes and the plane-range gate is the only thing that stops it. A view that
+ * failed both gates would not read what the scenario reads.
+ *
+ * The search lowers the camera one light year at a time and keeps the highest camera whose
+ * farthest plane point clears the floor with `NO_LINE_ROOM` of it to spare. The highest
+ * such camera is the tightest reading the scenario can take.
+ */
+export function findNoLineView(viewport: Viewport): NoLineChoice {
+  const bound = REGION_RANGE_NONE * (1 - NO_LINE_ROOM);
+  for (let height = 4000; height >= 1; height -= 1) {
+    // The cursor sits under the camera by the height the step names. The camera rises
+    // from the cursor along the view direction, so the cursor's own height follows.
+    const probe: View = {
+      cursor: [NO_LINE_PLANE[0], 0, NO_LINE_PLANE[1]],
+      distance: NO_LINE_DISTANCE,
+      yaw: NO_LINE_YAW,
+      pitch: NO_LINE_PITCH,
+    };
+    const rise = cameraPosition(probe)[1];
+    const view: ChosenView = {
+      cursor: [NO_LINE_PLANE[0], height - rise, NO_LINE_PLANE[1]],
+      distance: NO_LINE_DISTANCE,
+      yaw: NO_LINE_YAW,
+      pitch: NO_LINE_PITCH,
+    };
+    const farthest = farthestPlaneRange(view as View, viewport);
+    if (farthest > bound) continue;
+    return {
+      view,
+      viewport: { width: viewport.width, height: viewport.height },
+      cameraHeightLy: cameraPosition(view as View)[1],
+      farthestPlaneRangeLy: farthest,
+      rangeFloorLy: REGION_RANGE_NONE,
+    };
+  }
+  throw new Error('no camera height puts the whole frame under the range floor');
 }

@@ -30,32 +30,39 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 
 ## Scripts
 
-| Script                 | What it does                                           |
-| ---------------------- | ------------------------------------------------------ |
-| `pnpm dev`             | Starts the Vite dev server on port 5173                |
-| `pnpm build`           | Checks the types, then builds the library into `dist/` |
-| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                 |
-| `pnpm build:demo-data` | Writes the three demo data files from the Canonn dumps |
-| `pnpm preview`         | Serves `dist-demo/` on port 4173                       |
-| `pnpm test`            | Runs the Vitest unit tests                             |
-| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests   |
-| `pnpm lint`            | Runs ESLint                                            |
-| `pnpm format`          | Runs Prettier over the repository                      |
+| Script                 | What it does                                            |
+| ---------------------- | ------------------------------------------------------- |
+| `pnpm dev`             | Starts the Vite dev server on port 5173                 |
+| `pnpm build`           | Checks the types, then builds the library into `dist/`  |
+| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                  |
+| `pnpm build:demo-data` | Writes the five demo data files from the Canonn sources |
+| `pnpm preview`         | Serves `dist-demo/` on port 4173                        |
+| `pnpm test`            | Runs the Vitest unit tests                              |
+| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests    |
+| `pnpm lint`            | Runs ESLint                                             |
+| `pnpm format`          | Runs Prettier over the repository                       |
 
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
-The demo page carries three data sets in [demo-data/](demo-data/), which
+The demo page carries five data sets in [demo-data/](demo-data/), which
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names: Guardian Ruins, 212 systems in 3
-categories; Guardian Structures, 163 systems in 10 categories; and Notable Systems, 16
-systems in 4 categories. It names them in the `datasets` option any host uses, and it
-loads Guardian Ruins at start. The HUD's dataset field switches between them.
-`pnpm build:demo-data` writes the three files again from the Canonn dumps.
+categories; Guardian Structures, 163 systems in 10 categories; Notable Systems, 16
+systems in 4 categories; UIA Map, 1,116 systems in 18 categories with 54 spheres and 983
+lines; and
+Adamastor Routes, 8 systems in 4 categories with 8 lines. It names them in the `datasets`
+option any host uses, and it loads Guardian Ruins at start. The HUD's dataset field
+switches between them. `pnpm build:demo-data` writes the five files again from the Canonn
+sources.
+
+The last two sets carry shapes. `DatasetContent` carries records and no shape, so the
+page holds the shapes of each file by entry id and adds them from its own
+`onDatasetChange` listener with `addSpheres` and `addLines`.
 
 A Guardian Ruins record names its thumbnails at
 `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
-repository holds no picture of them. The other two sets name no picture. The dev server
-and the demo site build both carry the three files, and the library build carries no
+repository holds no picture of them. The other four sets name no picture. The dev server
+and the demo site build both carry the five files, and the library build carries no
 record of them. The browser suite serves the demo site and clears the set in its own
 helper, so a test that does not ask for a set opens an empty map. Open
 `#c=1500,0,-500&d=3000&p=35&y=0&g=1` to see the markers.
@@ -136,24 +143,35 @@ map.addSystems([
 ```
 
 The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCount`,
-`getView`, `setView`, `onViewChange`, `getRegionMode`, `setRegionMode`, `dispose` and a
-`debug` member the browser tests read. For the system set it carries `getSystem`,
+`getView`, `setView`, `onViewChange`, `areRegionsVisible`, `setRegionsVisible`, `dispose`
+and a `debug` member the browser tests read. For the system set it carries `getSystem`,
 `categoryCount`, `getCategory`, `setCategoryVisible`, `isCategoryVisible`,
 `setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
 carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
 `isGridVisible`, `onGridChange`, `setCursorMarkerVisible`, `getCursorMarkerVisible`,
-`regionNameAt` and `regionNameAtExact`. For the dataset catalog it carries
+`regionNameAt` and `regionNameAtExact`. For the shapes it carries `addSpheres`,
+`addLines`, `clearShapes`, `sphereCount`, `lineCount`, `getSphere`, `getLine`,
+`areShapesVisible` and `setShapesVisible`. For the dataset catalog it carries
 `getDatasets`, `getLoadedDataset`, `loadDataset` and `onDatasetChange`. The `hud`
-member is the HUD handle, or null when the options do not ask for the HUD. The region
-mode is `off`, `simplified` or `accurate`, and it is `accurate` unless the options
-name another. `accurate` draws the traced set, a line through the midpoints of the
-edges the 49.3494 light year region grid holds, smoothed and reduced to 5,727 vertices;
-`simplified` draws the smoothed boundary; and `off` draws no boundary and places no label.
-Both sets are smoothed and both depart from the grid by well under one cell. `accurate` is
-the nearer of the two to the data and is a twelfth the size; `simplified` rounds every
-corner away, and that is the one thing it gives that `accurate` does not. A mode change takes effect in the next frame and
-does not rebuild the scene data.
+member is the HUD handle, or null when the options do not ask for the HUD.
+
+The map also draws **spheres and lines**, which the host adds with `addSpheres` and
+`addLines`. A shape is drawn and is never picked: no shape hovers, none is selected, and
+`systemAt` reads none. A shape carries its own colour and belongs to no category, so a
+category switch never moves it. A sphere takes a centre, a radius in light years, a colour
+and an opacity, and it draws as a shell and not as a solid. A line takes at least two
+points, a colour and a width in CSS pixels, and a point is a game coordinate or
+`{ system: 'Sol' }`, which the map resolves against the systems it holds when the line is
+added. The set holds up to 1,024 spheres, 4,096 lines and 65,536 line points together.
+`setShapesVisible` takes both parts off at once, and the shapes are on unless the
+`shapes` option says otherwise.
+
+The region overlay is one switch, and it is on unless the `regions` option says
+otherwise. It draws the traced set, a line through the midpoints of the edges the 49.3494
+light year region grid holds, smoothed and reduced to 5,727 vertices. The set departs from
+the grid by well under one cell. A switch takes effect in the next frame and does not
+rebuild the scene data.
 
 `regionNameAt(point)` reads the coarse region grid, whose cells are 197.3976 light years,
 and answers in the same tick. `regionNameAtExact(point)` reads the game's own 49.3494
@@ -164,16 +182,20 @@ frame, and the second where one place is named as a fact. The library owns the r
 the frame loop. It does not read or write the URL: [src/app/main.ts](src/app/main.ts) is
 the demo page, and it owns the fragment, the message box and the test hooks.
 
-The boundary is one warm cream band with a soft edge. Its half width is 1.6 per cent of
-the viewport height in CSS pixels, held between 8 and 24, so the whole band measures 34.6
-CSS pixels at 1,080 rows. The width is **not** what hides the raster — the line is smoothed
+The boundary is one warm cream band with a soft edge. Its base half width is 1.6 per cent
+of the viewport height in CSS pixels, held between 8 and 24, so the whole band measures
+34.6 CSS pixels at 1,080 rows. **The band takes that width at 12,000 light years and
+nearer, and it falls as `1 / range` beyond it**, held at a floor of 2 CSS pixels. The band
+bounds an area of the plane, so it belongs to the picture and takes a size in the picture:
+a band of one width at every range covered a far region from edge to edge. The width is
+**not** what hides the raster — the line is smoothed
 for that, and the staircase is periodic, so the eye reads the repeat and not one step. What
 the width does is round a corner: the map runs no blur, because the coverage is the exact
 distance to the nearest segment under a `MAX` blend, so the sharpest corner of the traced set
 draws as a round turn of the band's own half width.
 
 Two fades multiply. The **range fade** is read for each pixel, from the camera to the
-plane point under it: nothing at 10,000 light years and below, rising to full at 20,000.
+plane point under it: nothing at 8,000 light years and below, rising to full at 12,000.
 The **zoom fade** is read once for the frame, from the camera to the cursor: full at
 20,000 light years and below, falling to nothing at 30,000. A region label takes the same
 two fades, the range one read at the label's own plane anchor, so a name and the line
@@ -331,6 +353,7 @@ and it draws neither when the catalog is empty.
 | Wheel           | Divides the distance by 1.15 per notch, between 10 and 120,000 light years. The camera glides to the new distance and lands in about 0.2 seconds. |
 | `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second.                                                  |
 | `R` `F`         | Move the cursor up and down at the same speed.                                                                                                    |
+| `Q` `E`         | Turn the camera around the cursor at 60 degrees per second. `E` turns it the way a drag to the right turns it.                                    |
 | `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                                                                  |
 
 The view lives in the URL fragment as

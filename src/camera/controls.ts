@@ -29,8 +29,16 @@ export const ZOOM_LEAST_NOTCHES_PER_SECOND = 2;
 /** The share of the distance the keys move the cursor in one second. */
 export const MOVE_FRACTION_PER_SECOND = 0.25;
 
-/** The keys that move the cursor. */
-export const MOVEMENT_KEYS = ['W', 'A', 'S', 'D', 'R', 'F'] as const;
+/** How far the turn keys move the yaw in one second, in degrees. */
+export const TURN_DEGREES_PER_SECOND = 60;
+
+/**
+ * The keys that move the camera. `W`, `A`, `S`, `D`, `R` and `F` move the cursor, and `Q`
+ * and `E` turn the camera around it. Every rule this file holds for a movement key holds
+ * for all eight: the window listener, the form-field guard, and the end of a running
+ * selection flight.
+ */
+export const MOVEMENT_KEYS = ['W', 'A', 'S', 'D', 'R', 'F', 'Q', 'E'] as const;
 
 /** How far a left press may move from its first pixel and still be a click. */
 export const CLICK_MOVE_CSS = 4;
@@ -184,13 +192,26 @@ export function notchesFromWheel(deltaY: number, deltaMode: number): number {
   return -deltaY / 100;
 }
 
-/** Moves the cursor for the keys that are down, over a number of seconds. */
+/**
+ * Moves the camera for the keys that are down, over a number of seconds.
+ *
+ * `Q` and `E` turn the camera around the cursor and move nothing else: the pitch, the
+ * distance and the cursor stay as they are. `E` raises the yaw, which is the way a drag to
+ * the right turns the camera. Both keys held together turn by 0 degrees, because the two
+ * rates cancel.
+ */
 export function moveByKeys(
   view: View,
   keys: ReadonlySet<string>,
   seconds: number,
 ): void {
   if (keys.size === 0 || seconds <= 0) return;
+
+  const turn = (keys.has('E') ? 1 : 0) - (keys.has('Q') ? 1 : 0);
+  if (turn !== 0) {
+    view.yaw = wrapYaw(view.yaw + turn * TURN_DEGREES_PER_SECOND * seconds);
+  }
+
   const speed = view.distance * MOVE_FRACTION_PER_SECOND * seconds;
   const { forward, right } = planeAxes(view.yaw);
   let x = view.cursor[0];

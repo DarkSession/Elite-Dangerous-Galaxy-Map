@@ -226,32 +226,25 @@ test('the closest zoom is under budget with every marker in range', async ({
   expect(mean).toBeLessThan(BUDGET_MS);
 });
 
-// The traced boundary set is the one the `accurate` mode draws. It holds 5,727 vertices,
-// which is 67.11 KiB, against the smoothed set's 68,672, over the same 123 instanced
-// calls, so it is by far the cheaper of the two. The views are at a corner of it, at close zooms. The pass now draws
-// at every zoom under 30,000 light years, so 4,000 is in the list. The radius rule reads
-// the cell at `max(cursorDistance, 10000)`, so every zoom of 10,000 and below gives the
-// same widest radius of 4.62 CSS pixels at this height, which is 11 taps on each of the
-// two blur passes. 10,000 light years is where the range fade reaches full opacity.
-test('the accurate region mode is under budget at the close end of the band', async ({
+// The boundary set the overlay draws holds 5,727 vertices, which is 67.11 KiB, over 123
+// instanced calls. The views are at a corner of it, at close zooms. The pass draws at
+// every zoom under 30,000 light years, so 4,000 is in the list, and 12,000 is where the
+// range fade reaches full opacity.
+test('the region overlay is under budget at the close end of the band', async ({
   page,
 }) => {
   test.setTimeout(180000);
   await openMap(page);
-  await page.evaluate(() => {
-    window.galaxyMap?.setRegionMode('accurate');
-  });
-  expect(await page.evaluate(() => window.galaxyMap?.getRegionMode())).toBe('accurate');
+  expect(await page.evaluate(() => window.galaxyMap?.areRegionsVisible())).toBe(true);
 
-  for (const distance of [4000, 10000]) {
+  for (const distance of [4000, 12000]) {
     const mean = await measureView(page, TRACED_CORNER.bend, distance);
-    console.log(`the accurate overlay at distance ${distance}: ${mean.toFixed(3)} ms`);
+    console.log(`the region overlay at distance ${distance}: ${mean.toFixed(3)} ms`);
     expect(mean).toBeGreaterThan(0);
     expect(mean).toBeLessThan(BUDGET_MS);
   }
 
-  // The overlay's own cost at the widest kernel, against the same view with the pass
-  // switched off.
+  // The overlay's own cost, against the same view with the pass switched off.
   await page.evaluate(() => {
     window.__galaxyMap?.setPasses?.({ regions: false });
   });
@@ -261,7 +254,7 @@ test('the accurate region mode is under budget at the close end of the band', as
   });
   const on = await measureView(page, TRACED_CORNER.bend, 4000);
   console.log(
-    `the accurate overlay at 4,000 light years: ${off.toFixed(3)} ms off, ` +
+    `the region overlay at 4,000 light years: ${off.toFixed(3)} ms off, ` +
       `${on.toFixed(3)} ms on`,
   );
   expect(on - off).toBeLessThanOrEqual(1);
@@ -521,7 +514,7 @@ test('reading the background back does not stall the frame', async ({ page }) =>
   expect(stats.worstMs).toBeLessThanOrEqual(WORST_INTERVAL_MS);
 });
 
-// The flight moves the view every frame for 350 ms, so it writes a new view matrix, a
+// The flight moves the view every frame for 600 ms, so it writes a new view matrix, a
 // new marker overlay and a new label position in each of about 21 frames. The reading
 // covers the flight alone, because the statistics reset one frame before it starts.
 test('the selection flight holds the frame rate', async ({ page }) => {
@@ -565,5 +558,132 @@ test('the selection flight holds the frame rate', async ({ page }) => {
   console.log('the interval over the flight', stats);
 
   expect(stats.frames).toBeGreaterThanOrEqual(10);
+  expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+/**
+ * Adds 1,024 spheres and 4,096 lines whose points come to 65,536, spread over the model
+ * bounds, and reports how long the two calls took on the main thread.
+ */
+async function addFullShapeSet(page: Page): Promise<{
+  spheres: number;
+  lines: number;
+  points: number;
+  readMs: number;
+}> {
+  return page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) {
+      return { spheres: -1, lines: -1, points: 0, readMs: Number.POSITIVE_INFINITY };
+    }
+    let state = 1237;
+    const unit = (): number => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+    const place = (): [number, number, number] => [
+      -49985 + unit() * 100000,
+      -40985 + unit() * 81910,
+      -24105 + unit() * 100000,
+    ];
+    const spheres = [];
+    for (let index = 0; index < 1024; index += 1) {
+      spheres.push({
+        position: place(),
+        radius: 100 + unit() * 900,
+        color: [0, 255, 255],
+      });
+    }
+    // 4,096 lines of 16 points come to 65,536, which is the point bound.
+    const lines = [];
+    for (let index = 0; index < 4096; index += 1) {
+      const start = place();
+      const points: [number, number, number][] = [];
+      for (let step = 0; step < 16; step += 1) {
+        points.push([start[0] + step * 40, start[1] + step * 8, start[2] + step * 40]);
+      }
+      lines.push({ points, color: [255, 0, 255], width: 2 });
+    }
+    const started = performance.now();
+    const sphereReport = map.addSpheres(spheres as never);
+    const lineReport = map.addLines(lines as never);
+    const readMs = performance.now() - started;
+    return {
+      spheres: sphereReport.added,
+      lines: lineReport.added,
+      points: 4096 * 16,
+      readMs,
+    };
+  });
+}
+
+// The shape set is read on the main thread, so the read is one task and not a worker
+// message. `dataset-catalog` holds a dataset switch to 40 milliseconds, and a full shape
+// set is the same kind of work.
+test('a full shape set is read inside its budget', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  const reading = await addFullShapeSet(page);
+  console.log('the shape set read', reading);
+
+  expect(reading.spheres).toBe(1024);
+  expect(reading.lines).toBe(4096);
+  expect(reading.readMs).toBeLessThan(40);
+});
+
+// The whole set at the widest viewport, with the markers and the HUD in the frame. The
+// camera moves over the whole reading, so the pass is measured while the view changes
+// every frame and not on a still map.
+test('a full shape set holds the frame rate', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page, '', { hud: true });
+  expect(await addSpreadSystems(page)).toBe(10000);
+  const added = await addFullShapeSet(page);
+  expect(added.spheres).toBe(1024);
+  expect(added.lines).toBe(4096);
+
+  await page.evaluate(() => {
+    window.galaxyMap?.setView({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+  await waitFrames(page, 10);
+
+  const stats = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    const started = performance.now();
+    // The camera pans 1,000 light years and zooms from 20,000 to 2,000 over two seconds.
+    await new Promise<void>((resolve) => {
+      const step = (): void => {
+        const share = Math.min(1, (performance.now() - started) / 2000);
+        map?.setView({
+          cursor: [1000 * share, 0, 0],
+          distance: 20000 - 18000 * share,
+          yaw: 0,
+          pitch: 35,
+        });
+        if (share >= 1) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    return (
+      window.__galaxyMap?.frameIntervalStats?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      }
+    );
+  });
+  console.log('the interval over the shape set', stats);
+
+  expect(stats.frames).toBeGreaterThanOrEqual(60);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });

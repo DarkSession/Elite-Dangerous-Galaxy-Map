@@ -39,6 +39,15 @@ import type {
   SystemRecordInput,
 } from '../scene-data/real-systems';
 import { coarseRegionIdAt, regionOfId } from '../scene-data/regions';
+import { createShapeSet } from '../scene-data/shapes';
+import type {
+  Line,
+  LineInput,
+  ShapeReport,
+  ShapeSet,
+  Sphere,
+  SphereInput,
+} from '../scene-data/shapes';
 import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
 import { createDatasetState } from './datasets';
 import type {
@@ -77,22 +86,6 @@ export type {
  */
 export const SELECTION_DISTANCE_LY = 500;
 
-/**
- * What the region overlay draws. `off` draws no boundary and places no label.
- * `simplified` draws the smoothed boundary set, and `accurate` draws the traced set,
- * which runs through the midpoints of the region grid's own edges and is then smoothed.
- * `accurate` places the same labels.
- */
-export type RegionMode = 'off' | 'simplified' | 'accurate';
-
-/**
- * The mode the map takes when the host names none. Both sets are smoothed and both sit
- * well inside one grid cell of the data, so the choice between them is corners: the
- * traced set keeps a real corner of the region data, and `simplified` rounds every corner
- * away. The traced set is also the nearer of the two to the data and by far the smaller.
- */
-export const DEFAULT_REGION_MODE: RegionMode = 'accurate';
-
 /** What `regionNameAtExact` reads from the region cell lookup. */
 type RegionLookup =
   typeof import('@elite-dangerous-almanac/core/astro/codex-region-lookup');
@@ -130,8 +123,16 @@ export interface GalaxyMapOptions {
    * canvas's parent, so a host that gives a canvas alone gets a working map.
    */
   readonly labelHost?: HTMLElement;
-  /** What the region overlay draws. The default is `accurate`. */
-  readonly regionMode?: RegionMode;
+  /**
+   * False takes the region overlay off. The overlay is on unless the options turn it off.
+   * A value that is not a boolean takes the default.
+   */
+  readonly regions?: boolean;
+  /**
+   * False takes the spheres and the lines off. The shapes are on unless the options turn
+   * them off. A value that is not a boolean takes the default.
+   */
+  readonly shapes?: boolean;
   /** True draws the coordinate grid. The grid is off unless the options ask for it. */
   readonly grid?: boolean;
   /**
@@ -213,9 +214,9 @@ export interface GalaxyMapDebug {
   project(point: readonly [number, number, number]): { x: number; y: number };
   planePointAt(x: number, y: number): [number, number, number] | null;
   regionNameAtScreen(x: number, y: number): string | null;
-  /** The vertices of the smoothed set, whatever mode the map is in. */
+  /** The vertices of the traced set, whether the region overlay draws or not. */
   regionLinePositions(): Float32Array;
-  /** The chain bounds of the smoothed set, whatever mode the map is in. */
+  /** The chain bounds of the traced set, whether the region overlay draws or not. */
   regionLineChains(): { first: Uint32Array; last: Uint32Array };
   regionSampleCounts(): { id: number; name: string; count: number }[];
   regionSampleTotal(): number;
@@ -266,6 +267,16 @@ export interface GalaxyMapDebug {
    */
   regionCoverageSize(): [number, number] | null;
   /**
+   * How many draw calls the shape pass made in the last frame. The count is fixed at
+   * three whatever the shape count, and 0 in a frame that drew no shape.
+   */
+  shapeDrawCalls(): number;
+  /**
+   * The width and the height of the shape pass's line buffer, and null before the first
+   * frame that drew a line.
+   */
+  shapeLineBufferSize(): [number, number] | null;
+  /**
    * The background reading of the last frame, and null in a frame that built none. The
    * read waits for the card, so it is a probe and not the path the labels take.
    */
@@ -307,13 +318,35 @@ export interface GalaxyMap {
   setView(view: Partial<MapView>): void;
   /** Calls `listener` after the view changes. Returns an unsubscribe. */
   onViewChange(listener: (view: MapView) => void): () => void;
-  /** Reads what the region overlay draws. */
-  getRegionMode(): RegionMode;
+  /** True while the region overlay draws its boundary lines and places its labels. */
+  areRegionsVisible(): boolean;
   /**
-   * Chooses what the region overlay draws, from the next frame on. A value that is not
-   * one of the three leaves the mode as it was.
+   * Turns the region overlay on or off, from the next frame on. It rebuilds no scene
+   * data: the worker already built the boundary set and the renderer holds it. A value
+   * that is not a boolean leaves the state as it was.
    */
-  setRegionMode(mode: RegionMode): void;
+  setRegionsVisible(on: boolean): void;
+  /** Reads spheres into the shape set and returns the report. */
+  addSpheres(spheres: readonly SphereInput[]): ShapeReport;
+  /** Reads lines into the shape set and returns the report. */
+  addLines(lines: readonly LineInput[]): ShapeReport;
+  /** Empties the shape set. */
+  clearShapes(): void;
+  /** How many spheres the shape set holds. */
+  sphereCount(): number;
+  /** How many lines the shape set holds. */
+  lineCount(): number;
+  /** Reads one sphere as a copy, or null outside the set. */
+  getSphere(index: number): Sphere | null;
+  /** Reads one line as a copy, or null outside the set. */
+  getLine(index: number): Line | null;
+  /** True while the spheres and the lines draw. */
+  areShapesVisible(): boolean;
+  /**
+   * Turns the spheres and the lines on or off, from the next frame on. It rebuilds no
+   * scene data. A value that is not a boolean leaves the state as it was.
+   */
+  setShapesVisible(on: boolean): void;
   /** Reads one system of the set as a copy, or null outside the set. */
   getSystem(index: number): RealSystem | null;
   /** How many categories the table holds. */
@@ -485,6 +518,34 @@ export function createGalaxyMap(
 ): GalaxyMap {
   // The set comes first, so a host can add systems before the first frame.
   const set: RealSystemSet = createSystemSet();
+  // The lookup a `{ system }` line point resolves through. `indexOfIdentity` holds the
+  // `id64` and the name as the record wrote it, and a line point compares the name
+  // without case, so a miss falls to a folded name table. The table is built once per
+  // change of the set and not once per point, because a full line set holds 65,536
+  // points and a sweep of 10,000 systems for each one would break the read budget.
+  let foldedNames: Map<string, number> | null = null;
+  let foldedVersion = -1;
+  const shapes: ShapeSet = createShapeSet(
+    (identity: string): readonly [number, number, number] | null => {
+      let index = set.indexOfIdentity(identity);
+      if (index < 0) {
+        if (foldedNames === null || foldedVersion !== set.version) {
+          foldedNames = new Map<string, number>();
+          foldedVersion = set.version;
+          for (let slot = 0; slot < set.count; slot += 1) {
+            const system = set.system(slot);
+            if (system === null) continue;
+            // The first record of a folded name wins, which is the order `addSystems`
+            // wrote them in.
+            const folded = system.name.toLowerCase();
+            if (!foldedNames.has(folded)) foldedNames.set(folded, slot);
+          }
+        }
+        index = foldedNames.get(identity.toLowerCase()) ?? -1;
+      }
+      return index < 0 ? null : (set.system(index)?.position ?? null);
+    },
+  );
   const view: View = createDefaultView();
   const listeners = new Set<(view: MapView) => void>();
   const selectionListeners = new Set<(system: RealSystem | null) => void>();
@@ -546,13 +607,12 @@ export function createGalaxyMap(
   let heldTouchAction: string | null = null;
   let regionGrid: CoarseRegionGrid | null = null;
   let regionLines: RegionLines | null = null;
-  let regionsOn = true;
-  let regionMode: RegionMode =
-    options.regionMode === 'off' ||
-    options.regionMode === 'simplified' ||
-    options.regionMode === 'accurate'
-      ? options.regionMode
-      : DEFAULT_REGION_MODE;
+  // The `regions` pass switch of `debug`, which the browser tests read. It is not the
+  // host switch below: the pass switch belongs to the tests and the host switch to the
+  // host and the HUD. Both off draw the same frame.
+  let regionPassOn = true;
+  let regionsVisible = typeof options.regions === 'boolean' ? options.regions : true;
+  let shapesVisible = typeof options.shapes === 'boolean' ? options.shapes : true;
   let frameHandle: number | null = null;
   let disposed = false;
   // `dispose` releases the renderer, so the last reading is kept. The test that checks
@@ -716,6 +776,9 @@ export function createGalaxyMap(
    */
   const writeDataset = (content: DatasetContent): DatasetLoadResult => {
     set.clearSystemsAndCategories();
+    // The shapes of the entry that goes leave with it, so a route never draws over the
+    // systems of the entry that comes. The listener of the new entry adds its own.
+    shapes.clearShapes();
     set.setNameFilter('');
     const categories = set.addCategories(content.categories);
     const systems = set.addSystems(content.systems);
@@ -783,7 +846,7 @@ export function createGalaxyMap(
       namesOn,
     });
     selectionWork.add(performance.now() - started);
-    labels?.update(view, size, regionsOn && regionMode !== 'off', {
+    labels?.update(view, size, regionPassOn && regionsVisible, {
       seconds: timing.seconds,
       jump: timing.jump || jumped,
     });
@@ -825,6 +888,8 @@ export function createGalaxyMap(
     renderer = createRenderer(gl, canvas);
     renderer.resize();
     renderer.setSystems(set);
+    renderer.setShapes(shapes);
+    renderer.setShapeDraw(shapesVisible);
 
     const host = options.labelHost ?? makeLabelHost(canvas);
     if (host !== null && host !== options.labelHost) ownedHost = host;
@@ -887,8 +952,8 @@ export function createGalaxyMap(
 
     await nextFrame();
     if (disposed) return;
-    renderer.setRegionLines(scene.regionLines, scene.regionLinesTraced);
-    renderer.setRegionDraw(regionMode !== 'off', regionMode === 'accurate');
+    renderer.setRegionLines(scene.regionLines);
+    renderer.setRegionDraw(regionsVisible);
     labels?.setGrid(scene.regionGrid, scene.regionFlow);
     regionGrid = scene.regionGrid;
     regionLines = scene.regionLines;
@@ -959,7 +1024,7 @@ export function createGalaxyMap(
   const debug: GalaxyMapDebug = {
     setPasses(passes: Partial<PassSwitches>): void {
       renderer?.setPasses(passes);
-      if (passes.regions !== undefined) regionsOn = passes.regions;
+      if (passes.regions !== undefined) regionPassOn = passes.regions;
       drawFrame();
     },
     get look(): LookSettings {
@@ -1077,6 +1142,12 @@ export function createGalaxyMap(
     regionCoverageSize(): [number, number] | null {
       return renderer?.regionCoverageSize() ?? null;
     },
+    shapeDrawCalls(): number {
+      return renderer?.shapeDrawCalls() ?? 0;
+    },
+    shapeLineBufferSize(): [number, number] | null {
+      return renderer?.shapeLineBufferSize() ?? null;
+    },
     backgroundReading(): BackgroundReading | null {
       return renderer?.backgroundReading() ?? null;
     },
@@ -1117,11 +1188,14 @@ export function createGalaxyMap(
     clearSystems(): void {
       if (set.count > 0) hudDirty = true;
       set.clearSystems();
+      // A line may hold the position of a system of the set, so the shapes go with it.
+      shapes.clearShapes();
       syncSelection();
     },
     clearSystemsAndCategories(): void {
       if (set.count > 0 || set.categoryCount > 0) hudDirty = true;
       set.clearSystemsAndCategories();
+      shapes.clearShapes();
       syncSelection();
     },
     systemCount(): number {
@@ -1136,6 +1210,7 @@ export function createGalaxyMap(
         frameHandle = null;
       }
       loadStop.abort();
+      shapes.dispose();
       endFlight();
       if (renderer !== null) lastStats = renderer.frameStats();
       controls?.dispose();
@@ -1186,16 +1261,47 @@ export function createGalaxyMap(
         listeners.delete(listener);
       };
     },
-    getRegionMode(): RegionMode {
-      return regionMode;
+    areRegionsVisible(): boolean {
+      return regionsVisible;
     },
-    setRegionMode(mode: RegionMode): void {
-      // A value the map does not know leaves the mode as it was, as a bad view field
-      // does. The host reads `getRegionMode` to see what took effect.
-      if (mode !== 'off' && mode !== 'simplified' && mode !== 'accurate') return;
-      if (mode === regionMode) return;
-      regionMode = mode;
-      renderer?.setRegionDraw(mode !== 'off', mode === 'accurate');
+    setRegionsVisible(on: boolean): void {
+      // A value that is not a boolean leaves the state as it was, as a bad view field
+      // does. The host reads `areRegionsVisible` to see what took effect.
+      if (typeof on !== 'boolean') return;
+      if (on === regionsVisible) return;
+      regionsVisible = on;
+      renderer?.setRegionDraw(regionsVisible);
+      drawFrame();
+    },
+    addSpheres(spheres: readonly SphereInput[]): ShapeReport {
+      return shapes.addSpheres(spheres);
+    },
+    addLines(lines: readonly LineInput[]): ShapeReport {
+      return shapes.addLines(lines);
+    },
+    clearShapes(): void {
+      shapes.clearShapes();
+    },
+    sphereCount(): number {
+      return shapes.sphereCount;
+    },
+    lineCount(): number {
+      return shapes.lineCount;
+    },
+    getSphere(index: number): Sphere | null {
+      return shapes.getSphere(index);
+    },
+    getLine(index: number): Line | null {
+      return shapes.getLine(index);
+    },
+    areShapesVisible(): boolean {
+      return shapesVisible;
+    },
+    setShapesVisible(on: boolean): void {
+      if (typeof on !== 'boolean') return;
+      if (on === shapesVisible) return;
+      shapesVisible = on;
+      renderer?.setShapeDraw(shapesVisible);
       drawFrame();
     },
     getSystem(index: number): RealSystem | null {

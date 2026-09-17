@@ -10,8 +10,8 @@ const CORE: [number, number, number] = [153, 230, 255];
 
 /** What the test asks the page to build the HUD with. */
 interface HudBuild {
-  /** The region overlay mode the map opens in. */
-  readonly regionMode?: string;
+  /** What `regions` the map is built with. A non-boolean reads the default. */
+  readonly regions?: unknown;
   /** The title in the top bar. */
   readonly title?: string;
   /** One footer action, which counts its calls or throws. */
@@ -76,7 +76,7 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
         : undefined;
     const map = factory(canvas, {
       hud,
-      regionMode: options.regionMode,
+      regions: options.regions,
       ...(datasets === undefined ? {} : { datasets }),
     } as never);
     window.__hudMap = map;
@@ -1012,6 +1012,26 @@ test.describe('the search box', () => {
     expect(after.distance).toBe(before.distance);
   });
 
+  test('typing in the search box does not turn the camera', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+    await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 });
+
+    const before = await readView(page);
+    await hud(page).locator('.gm-hud__search').click();
+    await hud(page).locator('.gm-hud__search').pressSequentially('qe', { delay: 30 });
+    // The turn keys move the yaw by 60 degrees a second, so one second is long enough to
+    // read a turn.
+    await page.waitForTimeout(1000);
+    const after = await readView(page);
+    const text = await hud(page).locator('.gm-hud__search').inputValue();
+    console.log('the yaw while the box holds the turn keys', { before, after, text });
+
+    expect(text).toBe('qe');
+    expect(after.yaw).toBe(before.yaw);
+  });
+
   /** Adds the categories `A`, `B` and `C` and the four systems the scenarios read. */
   async function addSearchSet(page: Page): Promise<void> {
     await addCategories(page, ['A', 'B', 'C']);
@@ -1298,34 +1318,56 @@ test.describe('the expanded system list', () => {
 });
 
 test.describe('the map options panel', () => {
-  test('the region buttons change the mode', async ({ page }) => {
+  test('the regions switch changes the overlay', async ({ page }) => {
     await openHud(page);
-    await hud(page).locator('.gm-hud__segment[data-name="accurate"]').click();
-    expect(await page.evaluate(() => window.__hudMap?.getRegionMode())).toBe(
-      'accurate',
-    );
-    await expect(
-      hud(page).locator('.gm-hud__segment[data-name="accurate"]'),
-    ).toHaveAttribute('aria-pressed', 'true');
+    const regions = hud(page).locator('.gm-hud__toggle[data-name="galactic-regions"]');
+    expect(await page.evaluate(() => window.__hudMap?.areRegionsVisible())).toBe(true);
+    await expect(regions).toHaveAttribute('aria-pressed', 'true');
 
-    await hud(page).locator('.gm-hud__segment[data-name="off"]').click();
-    expect(await page.evaluate(() => window.__hudMap?.getRegionMode())).toBe('off');
+    await regions.click();
+    expect(await page.evaluate(() => window.__hudMap?.areRegionsVisible())).toBe(false);
+    await expect(regions).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('the panel opens on the state the options named', async ({ page }) => {
+    await openHud(page, { regions: false });
     await expect(
-      hud(page).locator('.gm-hud__segment[data-name="off"]'),
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(
-      hud(page).locator('.gm-hud__segment[data-name="accurate"]'),
+      hud(page).locator('.gm-hud__toggle[data-name="galactic-regions"]'),
     ).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('the panel opens on the mode the options named', async ({ page }) => {
-    await openHud(page, { regionMode: 'accurate' });
-    await expect(
-      hud(page).locator('.gm-hud__segment[data-name="accurate"]'),
-    ).toHaveAttribute('aria-pressed', 'true');
+  test('the panel holds no segmented control', async ({ page }) => {
+    await openHud(page);
+    expect(await hud(page).locator('.gm-hud__segment').count()).toBe(0);
+    const switches = await hud(page)
+      .locator('.gm-hud__options-panel .gm-hud__toggle')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset['name'] ?? ''));
+    console.log('the switches of the map options panel', switches);
+    expect(switches).toEqual([
+      'galactic-regions',
+      'system-names',
+      'coordinate-grid',
+      'shapes',
+    ]);
   });
 
-  test('the switches call the map and open off', async ({ page }) => {
+  test('the shapes switch draws with no shape on the map', async ({ page }) => {
+    await openHud(page);
+    const shapes = hud(page).locator('.gm-hud__toggle[data-name="shapes"]');
+    expect(await page.evaluate(() => window.__hudMap?.sphereCount())).toBe(0);
+    expect(await page.evaluate(() => window.__hudMap?.lineCount())).toBe(0);
+    await expect(shapes).toBeVisible();
+    await expect(shapes).toContainText('Shapes');
+    await expect(shapes).toHaveAttribute('aria-pressed', 'true');
+
+    await shapes.click();
+    expect(await page.evaluate(() => window.__hudMap?.areShapesVisible())).toBe(false);
+    await expect(shapes).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('the switches call the map and open on the state the map is in', async ({
+    page,
+  }) => {
     await openHud(page);
     const names = hud(page).locator('.gm-hud__toggle[data-name="system-names"]');
     const grid = hud(page).locator('.gm-hud__toggle[data-name="coordinate-grid"]');
@@ -1347,10 +1389,16 @@ test.describe('the map options panel', () => {
 
   test('a change through the handle moves the control', async ({ page }) => {
     await openHud(page);
-    await page.evaluate(() => window.__hudMap?.setGridVisible(true));
+    await page.evaluate(() => {
+      window.__hudMap?.setGridVisible(true);
+      window.__hudMap?.setShapesVisible(false);
+    });
     await expect(
       hud(page).locator('.gm-hud__toggle[data-name="coordinate-grid"]'),
     ).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      hud(page).locator('.gm-hud__toggle[data-name="shapes"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -2263,6 +2311,23 @@ test.describe('the keyboard', () => {
     expect(moved).toBeGreaterThan(1000);
   });
 
+  test('a turn key works with a button focused', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+    await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 });
+
+    await categoryRow(page, 'Alpha').focus();
+    await page.keyboard.down('e');
+    await page.waitForTimeout(1000);
+    await page.keyboard.up('e');
+    const view = await readView(page);
+    console.log('the yaw after one second of E', view.yaw);
+
+    // The turn keys move the yaw by 60 degrees a second.
+    expect(view.yaw).toBeGreaterThan(20);
+  });
+
   test('Enter and Space work a control', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -2311,11 +2376,10 @@ test.describe('the keyboard', () => {
       'gm-hud__category-row|Beta',
       'gm-hud__bulk-button|all',
       'gm-hud__bulk-button|none',
-      'gm-hud__segment|off',
-      'gm-hud__segment|simplified',
-      'gm-hud__segment|accurate',
+      'gm-hud__toggle|galactic-regions',
       'gm-hud__toggle|system-names',
       'gm-hud__toggle|coordinate-grid',
+      'gm-hud__toggle|shapes',
       'gm-hud__reset|',
       'gm-hud__copy|name',
       'gm-hud__copy|position',
@@ -2330,17 +2394,20 @@ test.describe('the keyboard', () => {
     await addCategories(page, ['Alpha']);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    const segments = await hud(page)
-      .locator('.gm-hud__segment')
+    const switches = await hud(page)
+      .locator('.gm-hud__options-panel .gm-hud__toggle')
       .evaluateAll((nodes) =>
         nodes.map((node) => ({
           pressed: node.getAttribute('aria-pressed'),
           text: node.textContent ?? '',
         })),
       );
-    console.log('the region segments', segments);
-    expect(segments.filter((entry) => entry.pressed === 'true')).toHaveLength(1);
-    for (const entry of segments) expect(entry.text.length).toBeGreaterThan(0);
+    console.log('the map option switches', switches);
+    expect(switches.length).toBeGreaterThan(0);
+    for (const entry of switches) {
+      expect(entry.pressed === 'true' || entry.pressed === 'false').toBe(true);
+      expect(entry.text.length).toBeGreaterThan(0);
+    }
 
     await expect(
       hud(page).locator('.gm-hud__toggle[data-name="system-names"]'),
@@ -2348,6 +2415,9 @@ test.describe('the keyboard', () => {
     await expect(
       hud(page).locator('.gm-hud__toggle[data-name="coordinate-grid"]'),
     ).toHaveAttribute('aria-pressed', 'false');
+    await expect(
+      hud(page).locator('.gm-hud__toggle[data-name="shapes"]'),
+    ).toHaveAttribute('aria-pressed', 'true');
     await expect(categoryRow(page, 'Alpha')).toHaveAttribute('aria-pressed', 'true');
     await expect(categoryRow(page, 'Alpha')).toContainText('Alpha');
     await expect(expandButton(page, 'Alpha')).toHaveAttribute(
@@ -2384,7 +2454,7 @@ test.describe('the keyboard', () => {
 });
 
 test.describe('the HUD budget', () => {
-  // A selection flies the camera for 350 ms, and the top bar follows the view each frame
+  // A selection flies the camera for 600 ms, and the top bar follows the view each frame
   // of the flight. The reading below is of a still map, so the flight is off.
   test.use({ contextOptions: { reducedMotion: 'reduce' } });
 

@@ -3,13 +3,13 @@ import type { RegionLines } from '../scene-data/types';
 import {
   createRegionPass,
   createRegionPrograms,
+  REGION_BAND_HALF_WIDTH_FLOOR_CSS,
   REGION_BAND_HALF_WIDTH_MAX_CSS,
   REGION_BAND_HALF_WIDTH_MIN_CSS,
   REGION_BAND_HALF_WIDTH_SHARE,
-  REGION_CORE_EDGE_CSS,
+  REGION_CORE_EDGE_SHARE,
   REGION_CORE_SHARE,
-  REGION_EDGE_CSS,
-  REGION_EDGE_MAX_SHARE,
+  REGION_EDGE_SHARE,
   REGION_FADE_IN_FAR,
   REGION_FADE_IN_NEAR,
   REGION_LINE_OPACITY,
@@ -17,11 +17,11 @@ import {
   REGION_RANGE_NONE,
   REGION_TONE,
   REGION_TONE_CORE,
+  regionBandHalfWidthAtRange,
   regionBandHalfWidthCss,
-  regionBandShares,
   regionFade,
 } from './region-pass';
-import type { RegionBandShares, RegionPassFrame, RegionPrograms } from './region-pass';
+import type { RegionPassFrame, RegionPrograms } from './region-pass';
 import type { Program } from './program';
 import ribbonVertexSource from './shaders/regions.vert?raw';
 import ribbonFragmentSource from './shaders/regions.frag?raw';
@@ -116,7 +116,9 @@ function fakePrograms(): RegionPrograms {
       'uViewProjection',
       'uChunkOffset',
       'uTargetSize',
-      'uHalfWidth',
+      'uBaseHalfWidth',
+      'uFloorHalfWidth',
+      'uReferenceRange',
     ]),
     composite: fakeProgram([
       'uCoverage',
@@ -148,25 +150,7 @@ const FRAME: RegionPassFrame = {
   chunkOffset: [0, 0, 0] as const,
   fade: 1,
   pixelRatio: 1,
-  traced: false,
 };
-
-/** The same two chains as a traced set: the same chain count, other positions. */
-function twoTracedChains(): RegionLines {
-  const positions = new Float32Array([
-    0, 0, 0, 100, 0, 0, 100, 0, 100, 500, 0, 500, 600, 0, 500,
-  ]);
-  for (let index = 0; index < positions.length; index += 1) {
-    positions[index] = (positions[index] as number) + 7;
-  }
-  return {
-    chainCount: 2,
-    vertexCount: 5,
-    positions,
-    first: Uint32Array.from([0, 3]),
-    last: Uint32Array.from([2, 4]),
-  };
-}
 
 describe('the region overlay zoom fade', () => {
   test('draws nothing at and above 30,000 light years', () => {
@@ -199,12 +183,12 @@ describe('the region overlay zoom fade', () => {
 });
 
 describe('the region overlay range fade', () => {
-  test('holds the two figures the owner kept', () => {
-    // The two do not move in this change. They hold the overlay off a camera that is
-    // inside the boundary rather than looking at it, and the band's width rests on
-    // them: the largest cell that can draw is the cell at 10,000 light years.
-    expect(REGION_RANGE_NONE).toBe(10000);
-    expect(REGION_RANGE_FULL).toBe(20000);
+  test('takes away a line at 8,000 light years and draws it in full at 12,000', () => {
+    // The fade moves in, so the lines reach about 2,000 light years nearer the camera
+    // than they did. The far figure is also the range at which the band carries its base
+    // width, so the width rule and the fade read one constant.
+    expect(REGION_RANGE_NONE).toBe(8000);
+    expect(REGION_RANGE_FULL).toBe(12000);
   });
 
   test('the composite shader reads the range of the plane point', () => {
@@ -247,7 +231,7 @@ describe('the region overlay range fade', () => {
       context.gl,
       fakePrograms(),
       twoChains(),
-      twoTracedChains(),
+      {} as WebGLVertexArrayObject,
     );
     pass.draw({ ...FRAME, planeY: -250 });
     expect(uniformValues(context, 'uniform1f', 'uRangeNone')).toContain(
@@ -294,7 +278,7 @@ describe('the near fade is gone', () => {
     } as unknown as WebGL2RenderingContext;
     createRegionPrograms(gl);
     expect(names).not.toContain('uNearFade');
-    expect(names).toContain('uHalfWidth');
+    expect(names).toContain('uBaseHalfWidth');
   });
 });
 
@@ -317,11 +301,13 @@ describe('the boundary band', () => {
     expect(apart * REGION_LINE_OPACITY).toBeCloseTo(0.132, 3);
   });
 
-  test('holds the edge and the core at the stated widths', () => {
-    expect(REGION_EDGE_CSS).toBe(4);
-    expect(REGION_EDGE_MAX_SHARE).toBe(0.25);
+  test('holds the edge and the core as shares of the half width', () => {
+    // The half width now follows the range, so a fixed CSS pixel edge would be a
+    // different share of the band at every range and the band would change profile as it
+    // narrows. Both are shares, so one profile holds at every width.
+    expect(REGION_EDGE_SHARE).toBe(0.25);
     expect(REGION_CORE_SHARE).toBe(0.25);
-    expect(REGION_CORE_EDGE_CSS).toBe(1.5);
+    expect(REGION_CORE_EDGE_SHARE).toBe(0.087);
   });
 
   test('the composite program declares the core tone and the two shares', () => {
@@ -360,16 +346,19 @@ describe('the boundary band', () => {
       .of('uniform3f')
       .find((call) => call.args[0] === 'uToneCore')?.args;
     expect(core?.slice(1)).toEqual([0.9, 0.79, 0.52]);
-    // At 1,080 CSS rows the half width is 17.28, so the edge share is 4 / 17.28.
-    expect(uniformValues(context, 'uniform1f', 'uEdgeShare')[0]).toBeCloseTo(0.2315, 4);
-    expect(uniformValues(context, 'uniform1f', 'uCoreEdge')[0]).toBeCloseTo(0.0868, 4);
+    // Both are constants, so the composite reads the same two at every viewport height.
+    expect(uniformValues(context, 'uniform1f', 'uEdgeShare')[0]).toBeCloseTo(0.25, 12);
+    expect(uniformValues(context, 'uniform1f', 'uCoreEdge')[0]).toBeCloseTo(0.087, 12);
   });
 
   test('gives the ribbon quad the same half width the ramp divides by', () => {
-    // The quad reaches the half width on each side of the segment and the ramp divides
-    // the gap by the same uniform, so the quad covers the whole ramp and cuts none of it.
-    expect(ribbonVertexSource).toContain('sideways * aCorner.y * uHalfWidth');
-    expect(ribbonFragmentSource).toContain('1.0 - gap / uHalfWidth');
+    // The quad reaches that end's own half width on each side of the segment, and the
+    // ramp divides the gap by the same two numbers mixed by the same parameter, so the
+    // quad covers the whole ramp and cuts none of it.
+    expect(ribbonVertexSource).toContain('sideways * aCorner.y * halfHere');
+    expect(ribbonVertexSource).toContain('mix(halfStart, halfEnd, aCorner.x)');
+    expect(ribbonFragmentSource).toContain('mix(vHalfStart, vHalfEnd, part)');
+    expect(ribbonFragmentSource).toContain('1.0 - gap / halfWidth');
 
     const context = fakeContext(1280, 720);
     const pass = createRegionPass(
@@ -380,11 +369,30 @@ describe('the boundary band', () => {
     );
     pass.draw({ ...FRAME, pixelRatio: 1 });
     pass.draw({ ...FRAME, pixelRatio: 2 });
-    // The half width follows the viewport in CSS pixels and the uniform is in device
-    // pixels. At a ratio of 1 the buffer is 720 CSS rows, which gives 11.52. At a ratio
-    // of 2 it is 360 CSS rows, where the floor of 8 acts, and 8 CSS pixels are 16
+    // The base half width follows the viewport in CSS pixels and the uniform is in
+    // device pixels. At a ratio of 1 the buffer is 720 CSS rows, which gives 11.52. At a
+    // ratio of 2 it is 360 CSS rows, where the floor of 8 acts, and 8 CSS pixels are 16
     // device pixels.
-    expect(uniformValues(context, 'uniform1f', 'uHalfWidth')).toEqual([11.52, 16]);
+    expect(uniformValues(context, 'uniform1f', 'uBaseHalfWidth')).toEqual([11.52, 16]);
+    // The floor is 2 CSS pixels, so it is 2 and then 4 device pixels.
+    expect(uniformValues(context, 'uniform1f', 'uFloorHalfWidth')).toEqual([2, 4]);
+  });
+
+  test('writes the reference range from one constant and not a second literal', () => {
+    // The shader takes the range through a uniform, so `REGION_RANGE_FULL` is the only
+    // place the figure is written.
+    expect(ribbonVertexSource).not.toContain('12000');
+    const context = fakeContext(1280, 720);
+    const pass = createRegionPass(
+      context.gl,
+      fakePrograms(),
+      twoChains(),
+      {} as WebGLVertexArrayObject,
+    );
+    pass.draw(FRAME);
+    expect(uniformValues(context, 'uniform1f', 'uReferenceRange')).toEqual([
+      REGION_RANGE_FULL,
+    ]);
   });
 });
 
@@ -425,6 +433,57 @@ describe('the band half width', () => {
   });
 });
 
+describe('the band width at a range', () => {
+  test('holds the base width in and narrows as one over the range beyond it', () => {
+    // The whole band at 1,080 CSS rows, where the base half width is 17.28. The band
+    // keeps its base width at the reference range and nearer, and falls as 1 / range
+    // beyond it. The tolerance is 0.05, which is tight enough that a wrong figure in the
+    // spec fails this test.
+    const widthAt = (range: number): number =>
+      2 * regionBandHalfWidthAtRange(1080, range);
+    expect(widthAt(8000)).toBeCloseTo(34.6, 1);
+    expect(widthAt(12000)).toBeCloseTo(34.6, 1);
+    expect(widthAt(20000)).toBeCloseTo(20.7, 1);
+    expect(widthAt(30000)).toBeCloseTo(13.8, 1);
+    expect(widthAt(40000)).toBeCloseTo(10.4, 1);
+    expect(widthAt(60000)).toBeCloseTo(6.9, 1);
+    for (const [range, stated] of [
+      [8000, 34.6],
+      [12000, 34.6],
+      [20000, 20.7],
+      [30000, 13.8],
+      [40000, 10.4],
+      [60000, 6.9],
+    ] as const) {
+      expect(Math.abs(widthAt(range) - stated)).toBeLessThanOrEqual(0.05);
+    }
+  });
+
+  test('never grows above the base width, however near the point is', () => {
+    for (const range of [1, 100, 1000, 4000, 8000, 12000]) {
+      expect(regionBandHalfWidthAtRange(1080, range)).toBeCloseTo(17.28, 12);
+    }
+  });
+
+  test('takes the floor of 2 CSS pixels at 103,680 light years', () => {
+    expect(REGION_BAND_HALF_WIDTH_FLOOR_CSS).toBe(2);
+    // 17.28 * 12000 / range is 2 at 103,680 light years, which is more than twice the
+    // width of the mapped galaxy, so the floor holds a line drawn rather than sets it.
+    expect(regionBandHalfWidthAtRange(1080, 103680)).toBeCloseTo(2, 9);
+    expect(regionBandHalfWidthAtRange(1080, 200000)).toBe(2);
+    expect(regionBandHalfWidthAtRange(1080, 1e9)).toBe(2);
+  });
+
+  test('follows the viewport height at every range', () => {
+    // The floor of the base width acts at 360 CSS rows, so the base is 8 and the band
+    // narrows from there.
+    expect(regionBandHalfWidthAtRange(360, 12000)).toBeCloseTo(8, 12);
+    expect(regionBandHalfWidthAtRange(360, 24000)).toBeCloseTo(4, 12);
+    expect(regionBandHalfWidthAtRange(2160, 12000)).toBeCloseTo(24, 12);
+    expect(regionBandHalfWidthAtRange(2160, 24000)).toBeCloseTo(12, 12);
+  });
+});
+
 describe('the coverage buffer', () => {
   test('follows the drawing buffer size', () => {
     const context = fakeContext(1280, 720);
@@ -440,12 +499,12 @@ describe('the coverage buffer', () => {
     expect(pass.coverageSize()).toBeNull();
     expect(context.of('texImage2D')).toHaveLength(0);
 
-    // The pass holds one full-resolution target in both modes, where it held three.
+    // The pass holds one full-resolution target, where it held three.
     pass.draw(FRAME);
     expect(pass.coverageSize()).toEqual([1280, 720]);
     expect(context.of('texImage2D')).toHaveLength(1);
 
-    pass.draw({ ...FRAME, traced: true });
+    pass.draw(FRAME);
     const first = context.of('texImage2D');
     expect(first).toHaveLength(1);
     for (const call of first) {
@@ -465,7 +524,7 @@ describe('the coverage buffer', () => {
     for (const call of filters) expect(call.args[2]).toBe(context.gl.LINEAR);
 
     context.setDrawingBuffer(1920, 1080);
-    pass.draw({ ...FRAME, traced: true });
+    pass.draw(FRAME);
     expect(pass.coverageSize()).toEqual([1920, 1080]);
     const second = context.of('texImage2D');
     expect(second).toHaveLength(2);
@@ -474,11 +533,11 @@ describe('the coverage buffer', () => {
     ]);
 
     // A draw at an unchanged size takes no new storage.
-    pass.draw({ ...FRAME, traced: true });
+    pass.draw(FRAME);
     expect(context.of('texImage2D')).toHaveLength(2);
   });
 
-  test('holds one target in every mode and at every zoom', () => {
+  test('holds one target over repeated draws', () => {
     const context = fakeContext(1280, 720);
     const pass = createRegionPass(
       context.gl,
@@ -486,9 +545,8 @@ describe('the coverage buffer', () => {
       twoChains(),
       {} as WebGLVertexArrayObject,
     );
-    for (const traced of [false, true]) {
-      pass.draw({ ...FRAME, traced });
-    }
+    pass.draw(FRAME);
+    pass.draw(FRAME);
     expect(context.of('texImage2D')).toHaveLength(1);
   });
 
@@ -551,7 +609,7 @@ describe('the pass no longer blurs', () => {
       twoChains(),
       {} as WebGLVertexArrayObject,
     );
-    pass.draw({ ...FRAME, traced: true });
+    pass.draw(FRAME);
     // A blurring pass drew the full-screen triangle three times: one on each axis and
     // the composite. It now draws it once.
     expect(context.of('drawArrays')).toHaveLength(1);
@@ -570,30 +628,30 @@ describe('the flat top of the band', () => {
 });
 
 describe('the two shares of the coverage channel', () => {
-  test('gives the edge share and the core transition at each half width', () => {
-    // The edge is 4 CSS pixels, or a quarter of the half width where that is less. The
-    // quarter binds at a half width under 16 CSS pixels, which is 1,000 CSS rows.
-    const readings = [8, 11.52, 17.28, 24].map((half) => regionBandShares(half));
-    expect((readings[0] as RegionBandShares).edgeShare).toBeCloseTo(0.25, 4);
-    expect((readings[1] as RegionBandShares).edgeShare).toBeCloseTo(0.25, 4);
-    expect((readings[2] as RegionBandShares).edgeShare).toBeCloseTo(0.2315, 4);
-    expect((readings[3] as RegionBandShares).edgeShare).toBeCloseTo(0.1667, 4);
-    // The core transition is 1.5 CSS pixels at every half width.
-    for (const [index, half] of [8, 11.52, 17.28, 24].entries()) {
-      const shares = readings[index] as RegionBandShares;
-      expect(shares.coreEdge * half).toBeCloseTo(REGION_CORE_EDGE_CSS, 9);
+  test('sends the same two shares at every viewport height', () => {
+    // The composite reads one coverage channel and knows no half width, so a share is
+    // the only form the profile can take. The pass therefore sends two constants.
+    for (const rows of [360, 720, 1080, 2160]) {
+      const context = fakeContext((rows * 16) / 9, rows);
+      const pass = createRegionPass(
+        context.gl,
+        fakePrograms(),
+        twoChains(),
+        {} as WebGLVertexArrayObject,
+      );
+      pass.draw(FRAME);
+      expect(uniformValues(context, 'uniform1f', 'uEdgeShare')).toEqual([0.25]);
+      expect(uniformValues(context, 'uniform1f', 'uCoreEdge')).toEqual([0.087]);
     }
   });
 
-  test('leaves the outer part a flat top at the half width floor', () => {
-    // The edge is 2 CSS pixels at a half width of 8, and the mix reaches the outer tone
-    // at a gap of 3.5 CSS pixels, so 2.5 CSS pixels of flat top are left between them.
-    // A fixed 4 CSS pixel edge would leave 0.5.
-    const shares = regionBandShares(8);
-    expect(shares.edgeShare * 8).toBeCloseTo(2, 9);
-    const coreEnds = 8 * (1 - (0.75 - shares.coreEdge));
-    expect(coreEnds).toBeCloseTo(3.5, 9);
-    expect(8 - shares.edgeShare * 8 - coreEnds).toBeCloseTo(2.5, 9);
+  test('leaves the outer part a flat top at every half width', () => {
+    // The edge takes a quarter of the half width, and the mix reaches the outer tone at
+    // 0.75 minus the core edge of coverage, which is a gap of 0.337 of the half width.
+    // The flat top between them is therefore 0.413 of the half width at every width.
+    const coreEnds = 1 - (0.75 - REGION_CORE_EDGE_SHARE);
+    expect(coreEnds).toBeCloseTo(0.337, 3);
+    expect(1 - REGION_EDGE_SHARE - coreEnds).toBeCloseTo(0.413, 3);
   });
 });
 
@@ -638,57 +696,5 @@ describe('the ribbon draw', () => {
       [0, 36],
       [1, 48],
     ]);
-  });
-});
-
-describe('the two boundary sets', () => {
-  test('a mode change binds another vertex array and uploads nothing', () => {
-    const context = fakeContext(800, 600);
-    const pass = createRegionPass(
-      context.gl,
-      fakePrograms(),
-      twoChains(),
-      {} as WebGLVertexArrayObject,
-      twoTracedChains(),
-    );
-
-    // Both sets upload at creation: the corner buffer once and one position buffer each.
-    const uploads = context.of('bufferData').length;
-    expect(uploads).toBe(3);
-
-    const boundBy = (traced: boolean): unknown => {
-      const before = context.of('bindVertexArray').length;
-      pass.draw({ ...FRAME, traced });
-      const binds = context.of('bindVertexArray').slice(before);
-      return binds.find((call) => call.args[0] !== null)?.args[0];
-    };
-
-    const smoothed = boundBy(false);
-    const traced = boundBy(true);
-    const again = boundBy(false);
-    expect(smoothed).toBeDefined();
-    expect(traced).toBeDefined();
-    expect(traced).not.toBe(smoothed);
-    expect(again).toBe(smoothed);
-
-    // A mode change is a bind and not an upload.
-    expect(context.of('bufferData')).toHaveLength(uploads);
-    expect(context.of('bufferSubData')).toHaveLength(0);
-  });
-
-  test('draws the chains of the set the frame names', () => {
-    const context = fakeContext(800, 600);
-    const pass = createRegionPass(
-      context.gl,
-      fakePrograms(),
-      twoChains(),
-      {} as WebGLVertexArrayObject,
-      twoTracedChains(),
-    );
-    pass.draw({ ...FRAME, traced: true });
-
-    const draws = context.of('drawArraysInstanced');
-    expect(draws).toHaveLength(2);
-    expect(draws.map((call) => call.args[3])).toEqual([2, 1]);
   });
 });

@@ -410,37 +410,6 @@ const styleText = `
   flex-direction: column;
   gap: 13px;
 }
-.gm-hud__group {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.gm-hud__group-label {
-  font-family: ${MONO};
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: rgba(244, 230, 216, 0.5);
-}
-.gm-hud__segments {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-.gm-hud__segment {
-  text-align: center;
-  font-family: ${MONO};
-  font-size: 9px;
-  letter-spacing: 1px;
-  padding: 7px 2px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: transparent;
-  color: rgba(244, 230, 216, 0.55);
-}
-.gm-hud__segment[aria-pressed='true'] {
-  border-color: ${ACCENT};
-  background: rgba(255, 150, 60, 0.22);
-  color: ${ACCENT};
-}
 .gm-hud__toggle {
   display: flex;
   align-items: center;

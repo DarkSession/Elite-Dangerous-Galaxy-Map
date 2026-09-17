@@ -1,19 +1,18 @@
 // The views and the points the boundary line tests read.
 //
 // Five scenarios of the galactic regions spec need a view or a point chosen from the
-// boundary sets and not by hand: one where a chain of the smoothed set crosses the
-// reading row within 5 degrees of vertical, one where a chain of the traced set does the
-// same, one where the drawn line turns by at least 30 degrees within a reach of 8 CSS
-// pixels, the sharpest corner of the traced set, and one plane point that sits on a chain
-// of both sets.
+// boundary set and not by hand: one where a chain crosses the reading row within 5 degrees
+// of vertical, one where the drawn line turns by at least 30 degrees within a reach of 8
+// CSS pixels, the sharpest corner of the set, one plane point whose reading window holds
+// one chain and no other, and one view where no plane point of the frame is far enough
+// away to draw a line.
 //
-// The crossing search runs once for each set, because a near-vertical straight run of the
-// smoothed set is not one of the traced set, and the width scenario reads each mode over
-// its own view.
+// The crossing search runs once. It ran once for each set, because a near-vertical
+// straight run of the smoothed set is not one of the traced set, and there is one set now.
 //
 // The three governed views sit at a zoom of 20,000 light years, where the zoom fade is
-// full and the range fade's slope at the reading point is zero. The both-sets point is
-// exempt from both premises, because it is the view the fade scenarios read inside.
+// full and the range fade's slope at the reading point is zero. The one-chain point is
+// exempt from every premise, because it is the view the fade scenarios read inside.
 // `tests/region-views.test.ts` builds the boundary set, runs the search in
 // `tests/region-views.ts`, and fails if these constants are not what it gives.
 //
@@ -86,47 +85,41 @@ export interface CornerChoice {
   readonly heldCount: number;
 }
 
-/** A plane point that sits on a chain of both boundary sets. */
-export interface BothSetsChoice {
+/** A plane point whose reading window holds one chain and no other. */
+export interface OneChainChoice {
   /** The point, in game coordinates, on the plane `y = 0`. */
   readonly point: [number, number, number];
-  /** The chain of each set the point sits on. The two sets share a chain order. */
+  /** The chain the point sits on. */
   readonly chain: number;
-  /** How long the traced segment the point sits on is, in light years. */
+  /** How long the segment the point sits on is, in light years. */
   readonly segmentLengthLy: number;
-  /** How far the point sits from the smoothed set, in light years. */
-  readonly smoothedGapLy: number;
-  /** How far the point sits from the traced set, in light years. It sits on it. */
-  readonly tracedGapLy: number;
   /** How far the nearest other chain is, in light years. */
   readonly clearanceLy: number;
+  /**
+   * How wide the reading window is, in light years. It is the widest of the six zooms the
+   * fade scenarios open, because the band narrows as the zoom grows.
+   */
+  readonly windowLy: number;
   /** How many points hold every premise of the search. */
   readonly heldCount: number;
 }
 
-/** The view the width reading of the smoothed set takes. */
-export const SMOOTHED_CROSSING: CrossingChoice = {
-  view: {
-    cursor: [425.40960693359375, 0, -21390.783203125],
-    distance: 20000,
-    yaw: 90,
-    pitch: 89,
-  },
-  viewport: {
-    width: 3840,
-    height: 2160,
-  },
-  chain: 2,
-  from: 1503,
-  to: 1505,
-  point: [425.40960693359375, 0, -21390.783203125],
-  angleFromVertical: 0.0001811384906898909,
-  clearanceLy: 1860.6261597048726,
-  lightYearsPerPixel: 10.691671651659735,
-  heldCount: 23,
-};
+/** A view where no plane point of the frame is far enough away to draw a line. */
+export interface NoLineChoice {
+  readonly view: ChosenView;
+  readonly viewport: ChosenViewport;
+  /** How far the camera sits above the galactic plane, in light years. */
+  readonly cameraHeightLy: number;
+  /** How far the farthest plane point of the frame sits from the camera. */
+  readonly farthestPlaneRangeLy: number;
+  /** The range at which a line draws nothing, in light years. */
+  readonly rangeFloorLy: number;
+}
 
-/** The view the width reading of the traced set takes. */
+/**
+ * The view the width reading takes. The search ran once for each boundary set and now runs
+ * once, because there is one set.
+ */
 export const TRACED_CROSSING: CrossingChoice = {
   view: {
     cursor: [449.9320068359375, 0, -21390.630859375],
@@ -151,7 +144,7 @@ export const TRACED_CROSSING: CrossingChoice = {
 /** The view the join reading takes. */
 export const SHARP_CORNER: CornerChoice = {
   view: {
-    cursor: [-4746.80419921875, 0, 20442.744140625],
+    cursor: [28628.97265625, 0, 3526.336669921875],
     distance: 20000,
     yaw: 0,
     pitch: 89,
@@ -160,84 +153,34 @@ export const SHARP_CORNER: CornerChoice = {
     width: 3200,
     height: 1800,
   },
-  chain: 61,
-  vertex: 34588,
-  turnDegrees: 71.35250688855459,
+  chain: 21,
+  vertex: 1173,
+  turnDegrees: 75.24457846215614,
   reachPixels: 8,
-  bend: [-4746.80419921875, 0, 20442.744140625],
+  bend: [28628.97265625, 0, 3526.336669921875],
   bendLine: [
-    [-4684.6650390625, 0, 20357.171875],
-    [-4687.24169921875, 0, 20359.8515625],
-    [-4689.8046875, 0, 20362.615234375],
-    [-4692.353515625, 0, 20365.4609375],
-    [-4694.88916015625, 0, 20368.388671875],
-    [-4697.41015625, 0, 20371.400390625],
-    [-4699.91796875, 0, 20374.49609375],
-    [-4702.41162109375, 0, 20377.671875],
-    [-4704.8916015625, 0, 20380.93359375],
-    [-4707.298828125, 0, 20384.046875],
-    [-4709.6337890625, 0, 20387.015625],
-    [-4711.8955078125, 0, 20389.8359375],
-    [-4714.08447265625, 0, 20392.509765625],
-    [-4716.201171875, 0, 20395.0390625],
-    [-4718.24462890625, 0, 20397.421875],
-    [-4720.2158203125, 0, 20399.65625],
-    [-4722.1142578125, 0, 20401.74609375],
-    [-4723.9697265625, 0, 20403.728515625],
-    [-4725.78271484375, 0, 20405.603515625],
-    [-4727.55224609375, 0, 20407.37109375],
-    [-4729.27978515625, 0, 20409.03125],
-    [-4730.9638671875, 0, 20410.5859375],
-    [-4732.60546875, 0, 20412.03125],
-    [-4734.2041015625, 0, 20413.37109375],
-    [-4735.76025390625, 0, 20414.603515625],
-    [-4737.21826171875, 0, 20415.990234375],
-    [-4738.57861328125, 0, 20417.53125],
-    [-4739.84130859375, 0, 20419.2265625],
-    [-4741.00634765625, 0, 20421.076171875],
-    [-4742.07373046875, 0, 20423.080078125],
-    [-4743.04296875, 0, 20425.23828125],
-    [-4743.9150390625, 0, 20427.55078125],
-    [-4744.68896484375, 0, 20430.017578125],
-    [-4745.36474609375, 0, 20432.76953125],
-    [-4745.9423828125, 0, 20435.80859375],
-    [-4746.42236328125, 0, 20439.1328125],
-    [-4746.80419921875, 0, 20442.744140625],
-    [-4747.087890625, 0, 20446.638671875],
-    [-4747.2734375, 0, 20450.822265625],
-    [-4747.361328125, 0, 20455.2890625],
-    [-4747.3505859375, 0, 20460.04296875],
-    [-4747.19873046875, 0, 20464.615234375],
-    [-4746.9052734375, 0, 20469.0078125],
-    [-4746.47021484375, 0, 20473.220703125],
-    [-4745.89404296875, 0, 20477.251953125],
-    [-4745.17578125, 0, 20481.103515625],
-    [-4744.31640625, 0, 20484.7734375],
-    [-4743.3154296875, 0, 20488.263671875],
-    [-4742.1728515625, 0, 20491.57421875],
-    [-4740.60400390625, 0, 20495.19921875],
-    [-4738.60888671875, 0, 20499.140625],
-    [-4736.18701171875, 0, 20503.3984375],
-    [-4733.3388671875, 0, 20507.970703125],
-    [-4728.92578125, 0, 20514.318359375],
-    [-4722.94775390625, 0, 20522.439453125],
-    [-4710.8515625, 0, 20538.173828125],
-    [-4359.13818359375, 0, 20988.912109375],
+    [28573.19921875, 0, 3404.10986328125],
+    [28604.15234375, 0, 3453.22705078125],
+    [28653.3828125, 0, 3503.586669921875],
+    [28628.97265625, 0, 3526.336669921875],
+    [28588.81640625, 0, 3542.963623046875],
+    [28554.3671875, 0, 3586.608154296875],
+    [28314.216796875, 0, 3783.806884765625],
   ],
-  straightFrom: [-4109.046875, 0, 19930.4765625],
-  straightTo: [-4297.5390625, 0, 20058.41015625],
-  clearanceLy: 1633.3472705476113,
+  straightFrom: [28314.216796875, 0, 3783.806884765625],
+  straightTo: [28104.025390625, 0, 3968.41015625],
+  clearanceLy: 4264.044447108186,
   lightYearsPerPixel: 12.830005981991684,
-  heldCount: 81,
+  heldCount: 3,
 };
 
 /**
- * The view the corner reading of the traced set takes. It is the sharpest node the
- * search holds, and its turn is read over the read radius and not between two segments.
+ * The view the corner reading takes. It is the sharpest node the search holds, and its
+ * turn is read over the read radius and not between two segments.
  */
 export const TRACED_CORNER: CornerChoice = {
   view: {
-    cursor: [4424.13427734375, 0, 32276.728515625],
+    cursor: [-7855.072265625, 0, 27953.935546875],
     distance: 20000,
     yaw: 0,
     pitch: 89,
@@ -246,38 +189,60 @@ export const TRACED_CORNER: CornerChoice = {
     width: 3840,
     height: 2160,
   },
-  chain: 78,
-  vertex: 3718,
-  turnDegrees: 88.47221654289281,
-  reachPixels: 30,
-  bend: [4424.13427734375, 0, 32276.728515625],
+  chain: 65,
+  vertex: 3170,
+  turnDegrees: 86.69133539740145,
+  reachPixels: 20.4,
+  bend: [-7855.072265625, 0, 27953.935546875],
   bendLine: [
-    [4077.26513671875, 0, 31857.216796875],
-    [4249.98779296875, 0, 32079.2890625],
-    [4337.27734375, 0, 32182.119140625],
-    [4424.13427734375, 0, 32276.728515625],
-    [4473.21044921875, 0, 32227.36328125],
-    [4522.4541015625, 0, 32195.66015625],
-    [4678.53076171875, 0, 32077.560546875],
+    [-8341.3359375, 0, 27976.0625],
+    [-8034.50634765625, 0, 27947.19140625],
+    [-7958.68505859375, 0, 27949.22265625],
+    [-7922.5087890625, 0, 27932.650390625],
+    [-7878.32177734375, 0, 27930.216796875],
+    [-7855.072265625, 0, 27953.935546875],
+    [-7855.2353515625, 0, 28051.939453125],
+    [-7844.73193359375, 0, 28088.404296875],
+    [-7823.1669921875, 0, 28261.9375],
   ],
-  straightFrom: [4765.7236328125, 0, 32029.8203125],
-  straightTo: [4929.9130859375, 0, 32189.564453125],
-  clearanceLy: 806.5218776674309,
+  straightFrom: [-7823.1669921875, 0, 28261.9375],
+  straightTo: [-7783.45556640625, 0, 28468.974609375],
+  clearanceLy: 486.7668442282749,
   lightYearsPerPixel: 10.691671651659735,
-  heldCount: 1070,
+  heldCount: 1457,
 };
 
 /**
- * The plane point the close end reading takes. It sits on a chain of the smoothed set and
- * on the chain of the same index of the traced set, so both modes draw a line through the
- * centre of the frame over the whole close end of the zoom band.
+ * The plane point the close end reading takes. Its 8 CSS pixel window holds one chain and
+ * no other at every one of the six zooms the fade scenarios open, so the reading follows
+ * one band.
  */
-export const NEAR_BOTH_SETS: BothSetsChoice = {
+export const ONE_CHAIN_POINT: OneChainChoice = {
   point: [449.9320068359375, 0, -21390.630859375],
   chain: 2,
   segmentLengthLy: 3602.201428901422,
-  smoothedGapLy: 0.15234375,
-  tracedGapLy: 0,
   clearanceLy: 3633.759612205606,
-  heldCount: 1126,
+  windowLy: 619.4326888105584,
+  heldCount: 4688,
+};
+
+/**
+ * The view the scenario "No label where no line draws" opens. Every plane point of the
+ * frame sits under the range floor, so the overlay draws nothing and the label sweep is
+ * skipped although the zoom fade admits it.
+ */
+export const NO_LINE_VIEW: NoLineChoice = {
+  view: {
+    cursor: [1840.85884, -14507.645227067129, 16507.94703],
+    distance: 20016.72348,
+    yaw: 24.66002,
+    pitch: 58.57998,
+  },
+  viewport: {
+    width: 1280,
+    height: 720,
+  },
+  cameraHeightLy: 2574,
+  farthestPlaneRangeLy: 7199.004663580092,
+  rangeFloorLy: 8000,
 };

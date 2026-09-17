@@ -1,0 +1,157 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "Hyford's Cache & D-2's LPs",
+      "color": [
+        255,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Project Seraph Settlements",
+      "color": [
+        102,
+        102,
+        255
+      ]
+    }
+  ],
+  "systems": [
+    {
+      "name": "HIP 22460",
+      "coords": {
+        "x": -41.3125,
+        "y": -58.96875,
+        "z": -354.78125
+      },
+      "primaryCategory": "Project Seraph Settlements",
+      "secondaryCategories": [],
+      "description": "Fort Asch"
+    },
+    {
+      "name": "HIP 26176",
+      "coords": {
+        "x": 394.4375,
+        "y": -323.53125,
+        "z": -1431.84375
+      },
+      "primaryCategory": "Project Seraph Settlements",
+      "secondaryCategories": [
+        "Hyford's Cache & D-2's LPs"
+      ]
+    },
+    {
+      "name": "Wregoe DK-R b4-1",
+      "coords": {
+        "x": 171.65625,
+        "y": 7.5625,
+        "z": -951.1875
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": []
+    },
+    {
+      "name": "Colonia",
+      "coords": {
+        "x": -9530.5,
+        "y": -910.28125,
+        "z": 19808.125
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": []
+    }
+  ],
+  "spheres": [],
+  "lines": [
+    {
+      "points": [
+        [
+          -63.5,
+          -120.9,
+          -137.2
+        ],
+        [
+          -149.7,
+          -75.6,
+          21.9
+        ],
+        [
+          -141.5,
+          -64.9,
+          23.3
+        ]
+      ],
+      "color": [
+        255,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Adamastor Initial Route"
+    },
+    {
+      "points": [
+        [
+          -63.5,
+          -120.9,
+          -137.2
+        ],
+        [
+          -149.7,
+          -75.6,
+          21.9
+        ]
+      ],
+      "color": [
+        102,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Line Through Waypoints"
+    },
+    {
+      "points": [
+        [
+          -149.7,
+          -75.6,
+          21.9
+        ],
+        [
+          -141.5,
+          -64.9,
+          23.3
+        ]
+      ],
+      "color": [
+        160,
+        160,
+        160
+      ],
+      "width": 2
+    },
+    {
+      "points": [
+        {
+          "system": "HIP 26176"
+        },
+        {
+          "system": "Wregoe DK-R b4-1"
+        },
+        {
+          "system": "HIP 22460"
+        }
+      ],
+      "color": [
+        255,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Hyford's Cache & D-2's LPs"
+    }
+  ]
+}

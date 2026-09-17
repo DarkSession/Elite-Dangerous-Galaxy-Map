@@ -7,6 +7,7 @@ import type { View } from '../camera/view';
 import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import type { RealSystemSet } from '../scene-data/real-systems';
+import type { ShapeSet } from '../scene-data/shapes';
 import { createStarField } from '../scene-data/star-field';
 import type { StarField } from '../scene-data/star-field';
 import type {
@@ -70,6 +71,8 @@ import type { PointPass } from './point-pass';
 import type { Program } from './program';
 import { createRegionPass, createRegionPrograms, regionFade } from './region-pass';
 import type { RegionPass, RegionPrograms } from './region-pass';
+import { createShapePass, createShapePrograms } from './shape-pass';
+import type { ShapePass, ShapePrograms } from './shape-pass';
 import {
   createStarPass,
   createStarProgram,
@@ -149,6 +152,7 @@ export interface PassSwitches {
   glow: boolean;
   grid: boolean;
   regions: boolean;
+  shapes: boolean;
   systems: boolean;
 }
 
@@ -181,18 +185,21 @@ export interface Renderer {
    * because the counts and the light both read the detailed density.
    */
   setStarField(model: GalaxyModel): void;
+  /** Uploads the region boundary set. Call it in its own animation frame. */
+  setRegionLines(lines: RegionLines): void;
+  /** Turns the region overlay on or off. */
+  setRegionDraw(draw: boolean): void;
   /**
-   * Uploads the two region boundary sets, the smoothed one and the traced one. Call it in
-   * its own animation frame.
+   * Takes the shape set the shape overlay draws, or null. The set is live: the renderer
+   * reads its version each frame.
    */
-  setRegionLines(lines: RegionLines, traced: RegionLines): void;
-  /**
-   * Chooses what the region overlay draws. `draw` false draws no overlay at all, and
-   * `traced` true draws the traced boundary set in place of the smoothed one. The
-   * renderer holds no host-facing mode: `create-map.ts` owns the three region modes and
-   * turns the one it holds into these two values.
-   */
-  setRegionDraw(draw: boolean, traced: boolean): void;
+  setShapes(set: ShapeSet | null): void;
+  /** Turns the shape overlay on or off. */
+  setShapeDraw(draw: boolean): void;
+  /** How many draw calls the last frame's shape overlay issued. */
+  shapeDrawCalls(): number;
+  /** The size of the shape line buffer in device pixels, or null while it holds none. */
+  shapeLineBufferSize(): [number, number] | null;
   /**
    * Takes the real-system set the star field suppresses by and the marker pass draws.
    * The set is live: the renderer reads its version each frame.
@@ -301,6 +308,7 @@ export function createRenderer(
   const starProgram: Program = createStarProgram(gl);
   const systemProgram: Program = createSystemProgram(gl);
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
+  const shapePrograms: ShapePrograms = createShapePrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
@@ -339,7 +347,10 @@ export function createRenderer(
   let gridLevelsOfFrame: GridLevelReading[] = [];
   let regionPass: RegionPass | null = null;
   let regionDraw = true;
-  let regionTraced = false;
+  const shapePass: ShapePass = createShapePass(gl, shapePrograms, triangle.vertexArray);
+  let shapeSet: ShapeSet | null = null;
+  let shapeDraw = true;
+  let shapeCalls = 0;
   let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -353,6 +364,7 @@ export function createRenderer(
     glow: true,
     grid: true,
     regions: true,
+    shapes: true,
     systems: true,
   };
   const look: LookSettings = {
@@ -616,7 +628,19 @@ export function createRenderer(
         chunkOffset: [-camera[0], -camera[1], camera[2]],
         fade: regions,
         pixelRatio,
-        traced: regionTraced,
+      });
+    }
+
+    // The shapes draw over the boundary overlay and under the markers: the spheres
+    // first, then the lines. A marker is what the user clicks, so nothing draws over one.
+    shapeCalls = 0;
+    if (passes.shapes && shapeDraw && shapeSet !== null) {
+      shapeCalls = shapePass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        pixelRatio,
+        focal,
+        set: shapeSet,
       });
     }
 
@@ -656,19 +680,24 @@ export function createRenderer(
       detailTexture?.dispose();
       detailTexture = createDetailTexture(gl, detail);
     },
-    setRegionLines(lines: RegionLines, traced: RegionLines): void {
+    setRegionLines(lines: RegionLines): void {
       regionPass?.dispose();
-      regionPass = createRegionPass(
-        gl,
-        regionPrograms,
-        lines,
-        triangle.vertexArray,
-        traced,
-      );
+      regionPass = createRegionPass(gl, regionPrograms, lines, triangle.vertexArray);
     },
-    setRegionDraw(draw: boolean, traced: boolean): void {
+    setRegionDraw(draw: boolean): void {
       regionDraw = draw;
-      regionTraced = traced;
+    },
+    setShapes(set: ShapeSet | null): void {
+      shapeSet = set;
+    },
+    setShapeDraw(draw: boolean): void {
+      shapeDraw = draw;
+    },
+    shapeDrawCalls(): number {
+      return shapeCalls;
+    },
+    shapeLineBufferSize(): [number, number] | null {
+      return shapePass.lineBufferSize();
     },
     setStarField(model: GalaxyModel): void {
       starPass?.dispose();
@@ -766,6 +795,7 @@ export function createRenderer(
       if (next.stars !== undefined) passes.stars = next.stars;
       if (next.grid !== undefined) passes.grid = next.grid;
       if (next.regions !== undefined) passes.regions = next.regions;
+      if (next.shapes !== undefined) passes.shapes = next.shapes;
       if (next.glow !== undefined) passes.glow = next.glow;
       if (next.systems !== undefined) passes.systems = next.systems;
     },
@@ -843,6 +873,7 @@ export function createRenderer(
       systemPass?.dispose();
       gridPass.dispose();
       regionPass?.dispose();
+      shapePass.dispose();
       cloudPass?.dispose();
       volumePass?.dispose();
       detailTexture?.dispose();
@@ -856,6 +887,9 @@ export function createRenderer(
       gl.deleteProgram(gridProgram.program);
       gl.deleteProgram(regionPrograms.ribbon.program);
       gl.deleteProgram(regionPrograms.composite.program);
+      gl.deleteProgram(shapePrograms.spheres.program);
+      gl.deleteProgram(shapePrograms.lines.program);
+      gl.deleteProgram(shapePrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();

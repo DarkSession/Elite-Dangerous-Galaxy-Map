@@ -10,6 +10,7 @@ import {
   moveByKeys,
   notchesFromWheel,
   NO_TOUCH,
+  TURN_DEGREES_PER_SECOND,
   orbit,
   pinchDistance,
   pinchMiddle,
@@ -198,6 +199,86 @@ describe('the movement keys', () => {
     // The old cursor now sits left of the screen centre, so `D` moved the view right.
     const old = project(view, [0, 0, 0], viewport);
     expect(old.x).toBeLessThan(viewport.width / 2 - 1);
+  });
+});
+
+describe('the turn keys', () => {
+  test('turn 60 degrees a second, E up and Q down', () => {
+    expect(TURN_DEGREES_PER_SECOND).toBe(60);
+
+    const view = createDefaultView();
+    view.yaw = 0;
+    moveByKeys(view, new Set(['E']), 1);
+    expect(view.yaw).toBeCloseTo(60, 6);
+
+    view.yaw = 100;
+    moveByKeys(view, new Set(['Q']), 0.5);
+    expect(view.yaw).toBeCloseTo(70, 6);
+  });
+
+  test('wrap the yaw into 0 to 360', () => {
+    const view = createDefaultView();
+    view.yaw = 10;
+    moveByKeys(view, new Set(['Q']), 1);
+    expect(view.yaw).toBeCloseTo(310, 6);
+
+    view.yaw = 330;
+    moveByKeys(view, new Set(['E']), 1);
+    expect(view.yaw).toBeCloseTo(30, 6);
+  });
+
+  test('cancel when both are held', () => {
+    const view = createDefaultView();
+    view.yaw = 45;
+    moveByKeys(view, new Set(['Q', 'E']), 2);
+    expect(view.yaw).toBeCloseTo(45, 6);
+  });
+
+  test('change no pitch, no distance and no cursor', () => {
+    const view = createDefaultView();
+    view.distance = 20000;
+    view.pitch = 35;
+    const cursor: [number, number, number] = [...view.cursor];
+    moveByKeys(view, new Set(['E']), 1);
+
+    expect(view.pitch).toBeCloseTo(35, 6);
+    expect(view.distance).toBeCloseTo(20000, 6);
+    expect(view.cursor).toEqual(cursor);
+  });
+
+  test('turn the same amount whatever the frame rate', () => {
+    const whole = createDefaultView();
+    whole.yaw = 0;
+    moveByKeys(whole, new Set(['E']), 1);
+
+    const stepped = createDefaultView();
+    stepped.yaw = 0;
+    for (let frame = 0; frame < 100; frame += 1) {
+      moveByKeys(stepped, new Set(['E']), 0.01);
+    }
+
+    expect(Math.abs(stepped.yaw - whole.yaw)).toBeLessThan(0.001);
+  });
+
+  test('stop at the release, and hold no key the form-field guard dropped', () => {
+    const keys = new Set<string>();
+    const view = createDefaultView();
+    view.yaw = 0;
+
+    applyKeyDown(keys, 'KeyE', { tagName: 'CANVAS' });
+    expect(keys.has('E')).toBe(true);
+    moveByKeys(view, keys, 1);
+    const turned = view.yaw;
+    applyKeyUp(keys, 'KeyE');
+    moveByKeys(view, keys, 1);
+
+    expect(view.yaw).toBeCloseTo(turned, 6);
+
+    applyKeyDown(keys, 'KeyQ', { tagName: 'INPUT' });
+    moveByKeys(view, keys, 1);
+
+    expect(keys.size).toBe(0);
+    expect(view.yaw).toBeCloseTo(turned, 6);
   });
 });
 

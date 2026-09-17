@@ -105,9 +105,8 @@ export interface SceneData {
   readonly cloudSet: CloudSet;
   readonly volume: DensityVolume;
   readonly detail: SurfaceDetail;
+  /** The boundary set the region overlay draws. */
   readonly regionLines: RegionLines;
-  /** The traced boundary set, which the `accurate` region mode draws. */
-  readonly regionLinesTraced: RegionLines;
   readonly regionGrid: CoarseRegionGrid;
   /**
    * The flow field over the coarse region grid, one byte per cell. A label whose

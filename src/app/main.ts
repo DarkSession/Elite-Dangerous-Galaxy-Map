@@ -2,6 +2,7 @@
 import type { View } from '../camera/view';
 import { galaxyMapGlobal } from '../render/global';
 import type { CategoryInput, SystemRecordInput } from '../scene-data/real-systems';
+import type { LineInput, SphereInput } from '../scene-data/shapes';
 import { createGalaxyMap } from './create-map';
 import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
 import { createFragmentWriter, parseGridFragment, parseViewFragment } from './url-view';
@@ -42,17 +43,63 @@ function demoSet(file: {
   };
 }
 
+/** The shapes of one demo file, as the catalog listener adds them. */
+interface DemoShapes {
+  readonly spheres: readonly SphereInput[];
+  readonly lines: readonly LineInput[];
+}
+
 /**
- * The three demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
+ * The shapes of each entry that carries them, held by entry id.
+ *
+ * `DatasetInfo` gives the listener the id of the entry and no content, so the listener
+ * needs a way back to the shapes the file holds. Each `load()` writes this map before it
+ * returns, and the listener reads the map in the same step it is called in. A listener
+ * that imported the file itself would settle later, and a second load started in between
+ * would already have cleared the shapes, so the first entry's route would draw over the
+ * second entry's systems.
+ */
+const DEMO_SHAPES = new Map<string, DemoShapes>();
+
+/**
+ * Reads one demo file that holds shapes: it writes the shapes under the entry id and
+ * gives back the two arrays the dataset reader takes.
+ *
+ * JSON holds no tuple, so the file types a position and a colour as `number[]`. The page
+ * casts them through `unknown`, as it does the categories, and the shape set still checks
+ * every field.
+ */
+function demoShapeSet(
+  id: string,
+  file: {
+    categories: unknown;
+    systems: readonly SystemRecordInput[];
+    spheres: unknown;
+    lines: unknown;
+  },
+): DatasetContent {
+  DEMO_SHAPES.set(id, {
+    spheres: file.spheres as unknown as readonly SphereInput[],
+    lines: file.lines as unknown as readonly LineInput[],
+  });
+  return demoSet(file);
+}
+
+/**
+ * The five demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
  * application, so it gives the map a catalog the way any other host does: each entry
  * carries the counts the committed file holds and a `load()` that imports it. The
  * library bundles no data and fetches none.
  *
  * The Guardian Ruins records name their thumbnails at
  * `https://ruins.canonn.tech/images/maps/`, so the browser loads those pictures from
- * Canonn when the user selects such a system. The other two sets name no picture.
+ * Canonn when the user selects such a system. The other four sets name no picture.
  *
- * The demo site build carries the three files, so the dev server and the built site
+ * The last two sets carry shapes as well as systems. Their `load()` writes the shapes
+ * into `DEMO_SHAPES` before it gives the two arrays back, and the catalog listener
+ * below adds them.
+ *
+ * The demo site build carries the five files, so the dev server and the built site
  * draw the same map. The library build reaches this module from nowhere, because
  * `src/index.ts` does not import it.
  */
@@ -93,6 +140,34 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
     load: async (): Promise<DatasetContent> =>
       demoSet((await import('../../demo-data/notable-systems.json')).default),
   },
+  {
+    id: 'uia',
+    label: 'UIA Map',
+    collection: 'Canonn Research Group',
+    region: 'Inner Orion Spur and the nebulae around it',
+    description:
+      'The UIA map of the Canonn Research Group. The lines trace the route of each ' +
+      'anomaly and every hyperdiction a commander reported. The spheres mark the ' +
+      'permit locked centres and the space the hyperdictions cover.',
+    systemCount: 1116,
+    load: async (): Promise<DatasetContent> =>
+      demoShapeSet('uia', (await import('../../demo-data/uia.json')).default),
+  },
+  {
+    id: 'adamastor',
+    label: 'Adamastor Routes',
+    collection: 'Canonn Research Group',
+    region: 'Inner Orion Spur and Colonia',
+    description:
+      'The routes the Canonn Research Group records for the Adamastor, as one line per ' +
+      'route and one category per subject.',
+    systemCount: 8,
+    load: async (): Promise<DatasetContent> =>
+      demoShapeSet(
+        'adamastor',
+        (await import('../../demo-data/adamastor.json')).default,
+      ),
+  },
 ];
 
 function start(target: HTMLCanvasElement): void {
@@ -104,7 +179,7 @@ function start(target: HTMLCanvasElement): void {
     // The page reads the base path from the build, because the published site sits
     // under a path and the dev server sits at the root.
     loadingImage: `${import.meta.env.BASE_URL}EDLoader1.svg`,
-    // The page gives the map the three demo sets and asks for the Guardian Ruins at
+    // The page gives the map the five demo sets and asks for the Guardian Ruins at
     // start. The HUD then shows the dataset field and the dataset library dialog.
     datasets: DEMO_DATASETS,
     dataset: 'guardian-ruins',
@@ -124,6 +199,19 @@ function start(target: HTMLCanvasElement): void {
       ],
     },
   });
+  // The shapes of the set that loads. `loadDataset` writes the systems and clears the
+  // shapes, and it raises the listeners after that write, so the listener adds the
+  // shapes of the entry it is given. It reads the map in this same step and waits for
+  // nothing, so a second load started in between cannot leave the first entry's shapes
+  // on the second entry's systems.
+  map.onDatasetChange((entry) => {
+    if (entry === null) return;
+    const held = DEMO_SHAPES.get(entry.id);
+    if (held === undefined) return;
+    map.addSpheres(held.spheres);
+    map.addLines(held.lines);
+  });
+
   window.galaxyMap = map;
   // The entry point itself, so a browser test can build a second map with a canvas of
   // its own and check what the library makes when the host gives no options.

@@ -790,7 +790,7 @@ test.describe('the selection flight', () => {
     await waitFrames(page);
     const during = await readView(page);
     const left = await flightMs(page);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const after = await readView(page);
     const ended = await flightMs(page);
     console.log('the flight', { before, during, left, after, ended });
@@ -821,7 +821,7 @@ test.describe('the selection flight', () => {
     await page.mouse.up({ button: 'left' });
     await waitFrames(page);
     const during = await readView(page);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const after = await readView(page);
     const name = await selectionName(page);
     console.log('the click flight', { during, after, name });
@@ -858,7 +858,7 @@ test.describe('the selection flight', () => {
     });
     await waitFrames(page);
     const during = await readView(page);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const after = await readView(page);
     console.log('the second flight', { reached, during, after });
 
@@ -927,7 +927,7 @@ test.describe('the selection flight', () => {
     await page.waitForTimeout(100);
     // The wheel event goes to the canvas in one task with the two readings, so no frame
     // runs between them. The wheel sets a target and moves no view, so the two readings
-    // are the same. The frames of the 500 ms wait carry the camera to the target.
+    // are the same. The frames of the 800 ms wait carry the camera to the target.
     const notch = await page.evaluate(() => {
       const map = window.galaxyMap;
       const canvas = document.getElementById('map');
@@ -939,7 +939,7 @@ test.describe('the selection flight', () => {
       return { before, after: map.getView() };
     });
     const left = await flightMs(page);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const rested = await readView(page);
     console.log('the wheel notch', { notch, left, rested });
 
@@ -969,7 +969,7 @@ test.describe('the selection flight', () => {
     await page.mouse.down({ button: 'left' });
     await page.mouse.move(700, 360, { steps: 6 });
     await page.mouse.up({ button: 'left' });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const after = await readView(page);
     console.log('the orbit that ends the flight', after);
 
@@ -983,7 +983,7 @@ test.describe('the selection flight', () => {
   // `keydown` until the auto-repeat of the browser. The map reads the held key before it
   // advances the flight, so the flight ends without taking a single frame of its ease.
   // Without that, the flight would write the view again after every move and the key
-  // would do nothing for 350 ms.
+  // would do nothing for 600 ms.
   test('a held movement key ends the flight', async ({ page }) => {
     const place: [number, number, number] = [400, 0, 0];
     await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
@@ -1001,7 +1001,7 @@ test.describe('the selection flight', () => {
     });
     await waitFrames(page);
     const left = await flightMs(page);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const after = await readView(page);
     await page.keyboard.up('KeyW');
     console.log('the held key against the flight', { left, after });
@@ -1016,6 +1016,40 @@ test.describe('the selection flight', () => {
     // W runs along z at this yaw, so nothing else can hold x at its start.
     expect(after.cursor[0]).toBe(0);
     expect(after.distance).toBe(20000);
+  });
+
+  test('a turn key ends a running selection flight', async ({ page }) => {
+    const place: [number, number, number] = [400, 0, 0];
+    await openMap(page, '#c=0,0,0&d=20000&p=35&y=0');
+    await addCategory(page, 'Alpha');
+    await addSystems(page, [record('One', place, 'Alpha')]);
+    await setView(page, START, 20000, 0, 35);
+
+    await page.evaluate(() => {
+      window.galaxyMap?.setSelection('One');
+    });
+    await page.waitForTimeout(100);
+    const reached = await readView(page);
+    // `E` is a movement key, so one frame of it ends the flight. The turn runs 60
+    // degrees a second, so one frame moves the yaw by about 1 degree.
+    await page.keyboard.down('KeyE');
+    await waitFrames(page);
+    await page.keyboard.up('KeyE');
+    await page.waitForTimeout(800);
+    const after = await readView(page);
+    const left = await flightMs(page);
+    console.log('the turn key against the flight', { reached, after, left });
+
+    expect(left).toBe(0);
+    // The flight stopped where it had reached. It never came to the system.
+    expect(after.cursor).not.toEqual(place);
+    expect(after.cursor[0]).toBeLessThan(400);
+    expect(after.cursor[0]).toBeGreaterThanOrEqual(reached.cursor[0]);
+    expect(after.distance).toBeGreaterThan(500);
+    // The turn moved the yaw alone.
+    expect(after.yaw).toBeGreaterThan(0.2);
+    expect(after.yaw).toBeLessThan(45);
+    expect(after.pitch).toBeCloseTo(35, 6);
   });
 });
 

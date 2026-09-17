@@ -71,6 +71,98 @@ test('W moves the cursor one quarter of the distance in a second', async ({ page
   expect(old.y).toBeGreaterThan(361);
 });
 
+test('E turns the camera right and moves nothing else', async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('e');
+  const before = await page.evaluate(() => ({
+    time: performance.now(),
+    view: window.__galaxyMap?.getView?.(),
+  }));
+  await page.waitForTimeout(1000);
+  const after = await page.evaluate(() => ({
+    time: performance.now(),
+    view: window.__galaxyMap?.getView?.(),
+  }));
+  await page.keyboard.up('e');
+
+  const seconds = (after.time - before.time) / 1000;
+  const turned = (after.view?.yaw ?? 0) - (before.view?.yaw ?? 0);
+  console.log(
+    'held E for',
+    seconds.toFixed(3),
+    's and turned',
+    turned.toFixed(2),
+    'deg',
+  );
+
+  // 60 degrees a second, within a tenth. The bound is the frame the press and the
+  // reading fall between and not the rate itself.
+  expect(Math.abs(turned - 60 * seconds)).toBeLessThan(6);
+  expect(after.view?.pitch).toBeCloseTo(before.view?.pitch as number, 6);
+  expect(after.view?.distance).toBeCloseTo(before.view?.distance as number, 6);
+  expect(after.view?.cursor).toEqual(before.view?.cursor);
+});
+
+test('Q turns the camera the other way', async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 180,
+      pitch: 35,
+    });
+  });
+
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('q');
+  const before = await page.evaluate(() => window.__galaxyMap?.getView?.().yaw ?? 0);
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => window.__galaxyMap?.getView?.().yaw ?? 0);
+  await page.keyboard.up('q');
+  console.log('held Q for 0.5 s from', before, 'to', after);
+
+  expect(after).toBeLessThan(before);
+});
+
+test('a release outside the page stops the turn', async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 20000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('e');
+  await page.waitForTimeout(200);
+  // A `keyup` whose target is the window is what a release outside the page sends.
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE' }));
+  });
+  await page.waitForTimeout(100);
+  const first = await page.evaluate(() => window.__galaxyMap?.getView?.().yaw ?? 0);
+  await page.waitForTimeout(500);
+  const second = await page.evaluate(() => window.__galaxyMap?.getView?.().yaw ?? 0);
+  await page.keyboard.up('e');
+  console.log('the yaw after the release', { first, second });
+
+  expect(second).toBeCloseTo(first, 6);
+});
+
 test('a zoom writes the distance into the fragment', async ({ page }) => {
   await openMap(page);
   await page.evaluate(() => {

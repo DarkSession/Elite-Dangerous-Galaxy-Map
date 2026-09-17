@@ -653,12 +653,49 @@ describe('the category switch', () => {
     expect(set.drawsMarker(0)).toBe(true);
   });
 
-  test('keeps the primary category index for the colour', () => {
+  test('keeps the primary category index while the primary category is on', () => {
+    const set = setWith('A', 'B');
+    set.addSystems([{ ...record('one', 'B'), secondaryCategories: ['A'] }]);
+
+    expect(set.drawsMarker(0)).toBe(true);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
+  });
+
+  test('takes the index of the first category the record names that is on', () => {
+    const set = setWith('A', 'B', 'C');
+    // The record names `A`, then `C`, then `B`. The order the index follows is the
+    // record's own order and not the table's.
+    set.addSystems([{ ...record('one', 'A'), secondaryCategories: ['C', 'B'] }]);
+
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('A'));
+
+    set.setCategoryVisible('A', false);
+
+    expect(set.drawsMarker(0)).toBe(true);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('C'));
+
+    set.setCategoryVisible('C', false);
+
+    expect(set.drawsMarker(0)).toBe(true);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
+
+    // Every category is off, so the marker draws nothing and the index it holds never
+    // reaches the frame. It stays a row of the table.
+    set.setCategoryVisible('B', false);
+
+    expect(set.drawsMarker(0)).toBe(false);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('A'));
+  });
+
+  test('gives the index back when the category comes back on', () => {
     const set = setWith('A', 'B');
     set.addSystems([{ ...record('one', 'B'), secondaryCategories: ['A'] }]);
     set.setCategoryVisible('B', false);
 
-    expect(set.drawsMarker(0)).toBe(true);
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('A'));
+
+    set.setCategoryVisible('B', true);
+
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
   });
 
