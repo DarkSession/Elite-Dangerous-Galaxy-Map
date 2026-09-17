@@ -96,6 +96,18 @@ Draws the galaxy's shape from far away and lets the user move across it.
   The points carry a large share of the light in the disc, which gives the disc its
   grain. The frame budget test measures ten views: two cursors at 2,000, 12,000,
   20,000, 30,000 and 120,000 light years.
+- **Scene-data build cost.** Three workers run at once. The volume worker and the
+  region worker each take about 230 milliseconds. The point cloud worker is the long
+  one, and it sets the load time. Three rules cut it from 2,110 to 1,300 milliseconds in
+  the container, and the page reached its first frame in 1,542 milliseconds rather than
+  2,309, over the median of nine loads of each build. First, the surface table build reads the smooth
+  density once per cell and applies the correction grid and the detail grid to the value
+  it holds. Second, the same build keeps the largest smooth density it reads, so the
+  cloud set does not sweep the model again for its peak. Third, the sample draw reads a
+  guide table of 262,144 buckets and steps forward, rather than binary search a million
+  cumulative masses two million times. Each rule gives byte-identical output, and unit
+  tests hold the short route to the long one.
+
 - **Navigation.** A cursor on the galactic plane. Left drag orbits the cursor with
   pitch clamped to 5 to 89 degrees. Right drag moves the cursor in the plane. The wheel
   zooms between 10 and 120,000 light years. Phase 3.1 moved the close end from 500. A

@@ -36,6 +36,13 @@ export interface SurfaceTable {
   readonly cell: readonly [number, number];
   /** The ratio of the detailed to the corrected surface density, over the same cells. */
   readonly detail: SurfaceDetail;
+  /**
+   * The largest smooth surface density over the centres of the cells. The build reads
+   * that density for every cell already, so the peak costs nothing here and the cloud
+   * set does not sweep the model a second time. `peakCellDensity` states the same rule,
+   * and a unit test holds the two to the same number.
+   */
+  readonly peak: number;
 }
 
 /**
@@ -57,13 +64,20 @@ export function buildSurfaceTable(
   const limit = DETAIL_RATIO_SCALE;
 
   let total = 0;
+  let peak = 0;
   for (let iz = 0; iz < size; iz += 1) {
     const z = zLow + (iz + 0.5) * cellZ;
     const row = iz * size;
     for (let ix = 0; ix < size; ix += 1) {
       const x = xLow + (ix + 0.5) * cellX;
-      const corrected = model.correctedSurfaceDensity(x, z);
-      const detailed = model.detailedSurfaceDensity(x, z);
+      // The three densities come from one sweep of the model. The corrected density is
+      // the smooth one with the correction grid, and the detailed one is the corrected
+      // one with the detail grid, so each grid is applied to the value below it rather
+      // than computed again from the plane point.
+      const smooth = model.surfaceDensity(x, z);
+      if (smooth > peak) peak = smooth;
+      const corrected = model.correctedFromSurface(smooth, x, z);
+      const detailed = model.detailedFromCorrected(corrected, x, z);
       total += detailed;
       cumulative[row + ix] = total;
 
@@ -89,6 +103,7 @@ export function buildSurfaceTable(
       scale: limit,
       data: ratios,
     },
+    peak,
   };
 }
 
@@ -105,6 +120,55 @@ export function findCell(cumulative: Float64Array, target: number): number {
     }
   }
   return low;
+}
+
+/**
+ * How many buckets a cell finder's guide table holds. The guide is a `uint32` per
+ * bucket, so this many buckets cost 1 MB. The surface table holds a million cells,
+ * which is four cells to a bucket.
+ */
+export const GUIDE_BUCKETS = 1 << 18;
+
+/**
+ * Builds a cell finder over a cumulative distribution.
+ *
+ * It gives the same cell as `findCell` for every target, and it reads a guide table
+ * rather than search. The guide holds, for each of its buckets, the cell `findCell`
+ * gives for the low end of that bucket. A lookup starts at that cell and steps forward,
+ * because the answer for a target inside the bucket is never below the answer for the
+ * low end of it.
+ *
+ * A lookup steps once on average: a target lands in each bucket as often as any other,
+ * and the steps over all the buckets come to the number of cells. A bucket that spans a
+ * long run of cells of near zero mass costs more than that, and one that sits inside a
+ * single heavy cell costs nothing.
+ *
+ * The point cloud draws two million samples from a table of a million cells. A binary
+ * search costs 20 steps over 8 MB, and nearly every step misses the cache. The build of
+ * the guide walks the cumulative once and costs about 2 milliseconds.
+ */
+export function createCellFinder(
+  cumulative: Float64Array,
+  buckets: number = GUIDE_BUCKETS,
+): (target: number) => number {
+  const last = cumulative.length - 1;
+  const total = cumulative[last] as number;
+  const guide = new Uint32Array(buckets + 1);
+  let cell = 0;
+  for (let bucket = 0; bucket <= buckets; bucket += 1) {
+    const target = (bucket / buckets) * total;
+    while (cell < last && (cumulative[cell] as number) < target) cell += 1;
+    guide[bucket] = cell;
+  }
+  const scale = buckets / total;
+  return (target: number): number => {
+    let bucket = (target * scale) | 0;
+    if (bucket < 0) bucket = 0;
+    if (bucket > buckets) bucket = buckets;
+    let found = guide[bucket] as number;
+    while (found < last && (cumulative[found] as number) < target) found += 1;
+    return found;
+  };
 }
 
 /** What one height draw needs from the model's vertical profile. */
@@ -189,6 +253,7 @@ export function generatePointCloud(
   const size = table.size;
   const cumulative = table.cumulative;
   const total = cumulative[cumulative.length - 1] as number;
+  const cellAt = createCellFinder(cumulative);
   const originX = table.origin[0];
   const originZ = table.origin[1];
   const cellX = table.cell[0];
@@ -201,7 +266,7 @@ export function generatePointCloud(
   const tints = new Uint8Array(count);
 
   for (let index = 0; index < count; index += 1) {
-    const cell = findCell(cumulative, random.float() * total);
+    const cell = cellAt(random.float() * total);
     const ix = cell % size;
     const iz = (cell - ix) / size;
     const x = originX + (ix + random.float()) * cellX;

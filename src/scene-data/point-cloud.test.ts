@@ -7,7 +7,9 @@ import { createGalaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
 import {
   buildSurfaceTable,
+  createCellFinder,
   decodeDetailRatio,
+  findCell,
   generatePointCloud,
 } from './point-cloud';
 import type { SurfaceTable } from './point-cloud';
@@ -24,6 +26,33 @@ beforeAll(async () => {
   galaxyModel = createGalaxyModel(parameters, grid);
   table = buildSurfaceTable(galaxyModel);
 }, 120000);
+
+describe('the cell finder', () => {
+  test('gives the cell the binary search gives', () => {
+    const find = createCellFinder(table.cumulative);
+    const total = table.cumulative[table.cumulative.length - 1] as number;
+    // The guide table is read at both ends and over a fine sweep between them, so a
+    // bucket that starts one cell too high shows up here and not in a picture.
+    const targets: number[] = [0, total, total / 2];
+    for (let step = 0; step < 20000; step += 1) targets.push((step / 20000) * total);
+    let wrong: string | null = null;
+    for (const target of targets) {
+      const wanted = findCell(table.cumulative, target);
+      if (find(target) !== wanted) {
+        wrong = `target ${target} gave ${find(target)} and not ${wanted}`;
+        break;
+      }
+    }
+    expect(wrong).toBeNull();
+  });
+
+  test('takes a target outside the range', () => {
+    const find = createCellFinder(table.cumulative);
+    const total = table.cumulative[table.cumulative.length - 1] as number;
+    expect(find(-1)).toBe(findCell(table.cumulative, -1));
+    expect(find(2 * total)).toBe(findCell(table.cumulative, 2 * total));
+  });
+});
 
 describe('the point cloud', () => {
   test('gives the requested count inside the model bounds', () => {

@@ -1,7 +1,12 @@
 // Draws cloud samples from a flattened form of the model's surface density.
 import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
-import { buildSurfaceTable, drawHeight, findCell, heightDrawOf } from './point-cloud';
+import {
+  buildSurfaceTable,
+  createCellFinder,
+  drawHeight,
+  heightDrawOf,
+} from './point-cloud';
 import type { SurfaceTable } from './point-cloud';
 import { DEFAULT_SEED } from './point-cloud';
 import { SeededRandom } from './random';
@@ -71,6 +76,10 @@ export function cellMasses(table: SurfaceTable): Float64Array {
  * sprite brightness reads the smooth density, without the correction and the detail
  * grids, because the two grids hold structure inside the size range of the sprites
  * and a sprite that carries it reads as noise rather than as a puff.
+ *
+ * This is the rule `buildSurfaceTable` carries out as it fills the table. The set reads
+ * the peak the table holds; this function states the rule, and a unit test holds the
+ * two to the same number.
  */
 export function peakCellDensity(model: GalaxyModel, table: SurfaceTable): number {
   let best = 0;
@@ -147,7 +156,8 @@ export function generateCloudSet(
     placement[index] = sum;
   }
   const total = sum;
-  const peak = peakCellDensity(model, table);
+  const cellAt = createCellFinder(placement);
+  const peak = table.peak;
   const radiusRatio = CLOUD_RADIUS_MAX_LY / CLOUD_RADIUS_MIN_LY;
 
   const height = heightDrawOf(model);
@@ -159,7 +169,7 @@ export function generateCloudSet(
   const ratios = new Float32Array(count);
 
   for (let index = 0; index < count; index += 1) {
-    const cell = findCell(placement, random.float() * total);
+    const cell = cellAt(random.float() * total);
     const ix = cell % size;
     const iz = (cell - ix) / size;
     const x = originX + (ix + random.float()) * cellX;

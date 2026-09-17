@@ -71,6 +71,18 @@ describe('the surface density', () => {
     expect(worst).toBeLessThan(TOLERANCE);
   });
 
+  test('gives the same density from a surface density the caller holds', () => {
+    // `buildSurfaceTable` needs both densities at each of a million cells. It reads the
+    // smooth one and applies the correction to that value, rather than compute the
+    // smooth density a second time, so the two routes must agree exactly.
+    for (const point of fixture.points) {
+      const base = galaxyModel.surfaceDensity(point.x, point.z);
+      expect(galaxyModel.correctedFromSurface(base, point.x, point.z)).toBe(
+        galaxyModel.correctedSurfaceDensity(point.x, point.z),
+      );
+    }
+  });
+
   test('falls to nothing at the edge and rises above Sol at the centre', () => {
     const [centreX, , centreZ] = galaxyModel.centre;
     const centre = galaxyModel.surfaceDensity(centreX, centreZ);
