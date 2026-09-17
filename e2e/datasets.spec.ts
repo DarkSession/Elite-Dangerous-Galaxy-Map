@@ -1,9 +1,10 @@
 // The dataset catalog, the dataset field and the dataset library dialog, read through
 // the browser.
 //
-// Every test but the last builds a second map over a canvas of its own, with a catalog
-// the test wrote. Each entry's `load()` returns records the test made, so the suite
-// reaches no host but the page's own.
+// Every test but the last four builds a second map over a canvas of its own, with a
+// catalog the test wrote. Each entry's `load()` returns records the test made, so the
+// suite reaches no host but the page's own. The last four read the demo page's own
+// catalog, which is the five committed files.
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
@@ -190,12 +191,18 @@ test('a load replaces the set and clears the selection and the filter', async ({
   console.log('the map at start', before);
   expect(before).toMatchObject({ systems: 5, categories: 2, loaded: 'first' });
 
-  const view = await page.evaluate(() => {
+  await page.evaluate(() => {
     const map = window.__datasetMap;
     map?.setSelection('first-2');
     map?.setNameFilter('sol');
-    return map?.getView();
   });
+  // `setSelection` starts a flight to the system, which moves the view over 600 ms. The
+  // reading below is a comparison of two views, so it waits for the flight to end first.
+  // Without the wait the two readings come from two moments of one flight and differ.
+  await page.waitForFunction(
+    () => (window.__datasetMap?.debug.selectionFlightMs() ?? 0) === 0,
+  );
+  const view = await page.evaluate(() => window.__datasetMap?.getView());
 
   const result = await loadDataset(page, 'second');
   const after = await reading(page);
@@ -659,7 +666,7 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
   expect(loads).toEqual(['one']);
 });
 
-test('the demo page carries the three Canonn sets', async ({ page }) => {
+test('the demo page carries the five Canonn sets', async ({ page }) => {
   await openMap(page, '', { demoData: true });
 
   const catalog = await page.evaluate(() => ({
@@ -672,30 +679,141 @@ test('the demo page carries the three Canonn sets', async ({ page }) => {
     'guardian-ruins',
     'guardian-structures',
     'notable-systems',
+    'uia',
+    'adamastor',
   ]);
   expect(catalog.collections).toEqual([
+    'Canonn Research Group',
+    'Canonn Research Group',
     'Canonn Research Group',
     'Canonn Research Group',
     'Canonn Research Group',
   ]);
   expect(catalog.loaded).toBe('guardian-ruins');
 
-  const readings: { systems: number; categories: number }[] = [];
-  for (const id of ['guardian-ruins', 'guardian-structures', 'notable-systems']) {
+  const readings: {
+    systems: number;
+    categories: number;
+    spheres: number;
+    lines: number;
+  }[] = [];
+  for (const id of catalog.ids) {
     readings.push(
       await page.evaluate(async (name) => {
         await window.galaxyMap?.loadDataset(name);
         return {
           systems: window.galaxyMap?.systemCount() ?? -1,
           categories: window.galaxyMap?.categoryCount() ?? -1,
+          spheres: window.galaxyMap?.sphereCount() ?? -1,
+          lines: window.galaxyMap?.lineCount() ?? -1,
         };
       }, id),
     );
   }
-  console.log('the three sets read', readings);
+  console.log('the five sets read', readings);
   expect(readings).toEqual([
-    { systems: 212, categories: 3 },
-    { systems: 163, categories: 10 },
-    { systems: 16, categories: 4 },
+    { systems: 212, categories: 3, spheres: 0, lines: 0 },
+    { systems: 163, categories: 10, spheres: 0, lines: 0 },
+    { systems: 16, categories: 4, spheres: 0, lines: 0 },
+    { systems: 1116, categories: 18, spheres: 54, lines: 983 },
+    { systems: 8, categories: 4, spheres: 0, lines: 8 },
   ]);
+});
+
+test('a switch away from a shape set clears the shapes', async ({ page }) => {
+  await openMap(page, '', { demoData: true });
+
+  const readings = await page.evaluate(async () => {
+    await window.galaxyMap?.loadDataset('uia');
+    const withShapes = window.galaxyMap?.sphereCount() ?? -1;
+    await window.galaxyMap?.loadDataset('guardian-ruins');
+    return { withShapes, after: window.galaxyMap?.sphereCount() ?? -1 };
+  });
+  console.log('the sphere count over the switch', readings);
+  expect(readings.withShapes).toBe(54);
+  expect(readings.after).toBe(0);
+});
+
+test('a second load leaves only its own shapes', async ({ page }) => {
+  await openMap(page, '', { demoData: true });
+
+  // The second load starts before the first settles, so the first loses its ticket and
+  // rejects as cancelled. Its listener never runs, so its spheres never reach the map.
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    const first = map.loadDataset('uia').then(
+      () => 'kept',
+      () => 'cancelled',
+    );
+    await map.loadDataset('adamastor');
+    return {
+      first: await first,
+      spheres: map.sphereCount(),
+      lines: map.lineCount(),
+      loaded: map.getLoadedDataset()?.id ?? null,
+    };
+  });
+  console.log('the shapes after the second load', reading);
+  expect(reading.first).toBe('cancelled');
+  expect(reading.loaded).toBe('adamastor');
+  expect(reading.spheres).toBe(0);
+  expect(reading.lines).toBe(8);
+});
+
+test('the Adamastor lines connect the markers', async ({ page }) => {
+  await openMap(page, '', { demoData: true });
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    await map.loadDataset('adamastor');
+    const positions = new Map<string, [number, number, number]>();
+    for (let index = 0; index < map.systemCount(); index += 1) {
+      const system = map.getSystem(index);
+      if (system !== null)
+        positions.set(system.position.join(','), [...system.position]);
+    }
+    // The first point of any line that is the position of a system of the set.
+    let end: [number, number, number] | null = null;
+    for (let index = 0; index < map.lineCount() && end === null; index += 1) {
+      const line = map.getLine(index);
+      if (line === null) continue;
+      for (const point of line.points) {
+        if (positions.has(point.join(','))) {
+          end = [...point];
+          break;
+        }
+      }
+    }
+    const first = map.getLine(0);
+    if (end === null) {
+      return { lines: map.lineCount(), firstPoints: first?.points.length ?? 0, end };
+    }
+    // Put the camera on that point, so the marker draws where the line ends.
+    map.setView({ cursor: [...end], distance: 400 });
+    map.debug.drawNow();
+    const at = map.debug.project(end);
+    const picked = map.systemAt(Math.round(at.x), Math.round(at.y));
+    const marker = picked === null ? null : map.debug.project([...picked.position]);
+    return {
+      lines: map.lineCount(),
+      firstPoints: first?.points.length ?? 0,
+      end,
+      at,
+      picked: picked === null ? null : picked.name,
+      marker,
+    };
+  });
+  console.log('the line over the markers', reading);
+  // Every line of the file reached the map, so no line was rejected.
+  expect(reading.lines).toBe(8);
+  expect(reading.firstPoints).toBeGreaterThan(1);
+  expect(reading.end).not.toBeNull();
+  // The pick at the pixel of the line end reads a marker, so the two are at one place.
+  expect(reading.picked).not.toBeNull();
+  const at = reading.at as { x: number; y: number };
+  const marker = reading.marker as { x: number; y: number };
+  expect(Math.abs(marker.x - at.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(marker.y - at.y)).toBeLessThanOrEqual(2);
 });

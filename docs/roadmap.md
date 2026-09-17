@@ -997,6 +997,119 @@ with a budget on the paint cost, and shows a system position to the exact game s
   `-9530.9375` as `-9,530.938`. `DISTANCE FROM SOL` and `RANGE` stay whole: they are
   distances the user reads to judge a journey, not the identity of a place.
 
+## Phase 5.7: the region band at range, the shapes and the two turn keys
+
+Change: `shapes-region-lines-and-controls`. Status: in progress.
+
+Draws the region band in perspective, takes the region overlay down to one switch, adds
+spheres and lines the host draws, and gives the camera two turn keys.
+
+- **The band takes a size in the picture.** It held 34.6 CSS pixels at every range, so a
+  region on the far side of the galaxy read as a wash of colour from edge to edge. The
+  half width now takes its base value at 12,000 light years and nearer and falls as
+  `1 / range` beyond it, held at a floor of 2 CSS pixels. The floor is what keeps a far
+  boundary a line and not a dotted trail: a band under a pixel wide draws as gaps.
+
+- **A line starts to go at 12,000 light years and is gone at 8,000.** The range fade is
+  read per pixel, from the camera to the plane point the pixel sees, and it ran from
+  10,000 to 20,000. The band near the cursor crosses the whole frame and names nothing, so
+  it goes sooner.
+
+- **The region overlay is a switch.** The `simplified` mode is gone, with the smoothed
+  boundary set, the `roundChain` helper and the second worker message. The worker posts
+  one set. `getRegionMode` and `setRegionMode` become `areRegionsVisible` and
+  `setRegionsVisible`, and the HUD's three buttons become one switch. The traced set is
+  nearer the data and a twelfth the size; rounding every corner away was all the other one
+  gave, and the band's own half width rounds a corner anyway.
+
+- **A marker follows the first category that is on.** A record carries a primary category
+  and secondary ones, and the marker took the primary colour whether that category was on
+  or off. `anyCategoryOn` now gives back the index of the first category that is on, and
+  `refreshFlags` writes the marker flag and the colour index from that one reading.
+
+- **Q and E turn the camera, at 60 degrees a second.** They change the yaw alone: no
+  pitch, no distance and no cursor. The turn runs while a HUD button holds the focus,
+  because the controls read the key on the window.
+
+- **The selection flight takes 600 ms.** It took 350. The owner asked for a slower move,
+  and 600 reads as a flight rather than a jump while still settling before the user
+  reaches for the next system.
+
+- **Shapes are drawn and never picked.** `addSpheres` and `addLines` take their own
+  colours and belong to no category, so a category switch never moves one. The set holds
+  1,024 spheres, 4,096 lines and 65,536 line points together, and a full set reads in
+  11 ms against a 40 ms budget. The cap was 1,024 lines, and the UIA set draws 983 of
+  them from a report file that grows with every report, so 4 per cent of room was too
+  little. The cost of the raise is the segment buffer of the pass, which holds
+  `MAX_LINE_POINTS + MAX_LINES` segments: 4,096 costs 4.6 per cent more than 1,024. A line point is a coordinate or a system identity, which
+  the set resolves once, when the line is added: a line that followed a set it was not
+  added against is a surprise, and a hash lookup for each point in the frame loop is a
+  cost.
+
+- **A sphere is an impostor and a shell.** One instanced quad at the centre, with the
+  alpha `min(1, opacity / sqrt(1 - r^2))`, where `r` is the distance from the centre of
+  the quad as a share of the radius. That is the path length a ray takes through the
+  shell, so the alpha is the sphere's own opacity at the middle and rises to 1 near the
+  rim, which is what reads as a shell and not as a disc. At the default opacity of 0.18 it
+  reaches 1 at 0.9838 of the radius. Nothing draws at `r = 1` and beyond, where the path
+  length is unbounded and the corners of the quad sit outside the shell. The three culls are a projected
+  radius under one pixel, a centre at or behind the near plane, and a camera inside the
+  shell. **The near-plane cull needs a relative bound.** A centre on the plane reads
+  `clip.z = -clip.w`, and the sum is worked out in float32 over a camera-relative
+  position, so a test against 0 exactly is a coin flip and the same frame draws two ways.
+  The bound is `1e-4 * clip.w`, which is a bound on the depth in normalised coordinates.
+
+- **The lines draw into a buffer of their own, in three calls.** Per-segment quads write
+  premultiplied colour into an RGBA8 frame-size buffer under a `MAX` blend, and a
+  full-screen pass divides the alpha back out. `MAX` is what keeps a corner from reading
+  as a bright dot: two segments meet at every corner, and a normal blend adds them. The
+  count is three draw calls whatever the size of the set.
+
+- **The overlay order is the region boundaries, the spheres, the lines, then the
+  markers.** A marker is what the user clicks, so nothing draws over one.
+
+- **The demo site carries two more sets, and the converters parse their sources.** The
+  UIA set gives 1,116 systems, 18 categories, 54 spheres and 983 lines of 2,214 points;
+  `MapData-Adamastor.js` gives 8 systems, 4 categories and 8 lines of 38 points. Both
+  sources are JavaScript, so the converter holds a tolerant parser for the `systemsData`
+  literal and **runs no statement of the file**. A route point names a system, and a name
+  the source's own list does not hold is read from EDSM at build time, one call a second,
+  with the answers committed in the JSON. Three of 41 Adamastor points resolve nowhere —
+  they are the original map's own waypoint placeholders — and every drop is reported.
+
+- **The UIA map builds itself from two more files, so the converter reads them too.**
+  `MapData-UIA.js` alone holds 16 systems and no route: `formatHDs` fetches nine waypoint
+  tables and one report file and builds every other marker and every line at run time.
+  Eight of the nine tables hold data, and they give 363 waypoint markers, the route of
+  each anomaly and one mean direction line each. The report file holds 2,924 rows, which
+  come to 1,819 system and destination pairs, of which 870 have an end at a waypoint or
+  within 24 light years of one; the other 949 are anywhere in the galaxy and are dropped.
+  The report file writes a coordinate as a quoted number with a **comma** decimal
+  separator, so the reader parses the quoting.
+
+- **Two figures of the source cannot be committed.** The source places one marker per
+  anomaly at the point it has reached, worked out from the clock at the moment the page
+  opens, and the converter leaves it out. The mean direction line runs 65,000 light years
+  out, which is past the model bounds on every axis, so the converter stops it where the
+  ray leaves the bounds; a record outside them is one `real-systems` rejects.
+
+- **The set names commanders.** A hyperdiction record carries the name of the commander
+  who filed the report and its date, as the Notable Systems records carry Canonn's own
+  text. Both are published in the Canonn repository under the MIT licence, and
+  `THIRD_PARTY_NOTICES.md` says so. The committed test fixtures carry invented names.
+
+- **The demo page holds the shapes by entry id, and its listener adds them with no
+  wait.** `DatasetContent` carries records and no shape, and `DatasetInfo` carries an id
+  and no content. Each `load()` writes its file's shapes into a module-level map before it
+  returns, and the `onDatasetChange` listener reads that map in the same step. A listener
+  that imported the file itself would settle later, and a second load started in between
+  would already have cleared the shapes, so the first entry's route would draw over the
+  second entry's systems.
+
+- **The entry chunk reads 224,559 bytes** and its bound is 254,000. The bound was 210,000.
+  The plan named 230,000, which would leave about 6 kB over the reading; that is the room
+  that made the old 170,000 bound guard nothing.
+
 ## Sources
 
 - Galaxy density model: [galaxy-density-model.md](galaxy-density-model.md) in this

@@ -6,8 +6,11 @@
 // time, so `selectionFlightMs` would have no answer.
 import type { View } from './view';
 
-/** How long a selection flight runs, in milliseconds. */
-export const FLIGHT_MS = 350;
+/**
+ * How long a selection flight runs, in milliseconds. It ran 350, which read as a jump at
+ * the zooms a selection crosses.
+ */
+export const FLIGHT_MS = 600;
 
 /**
  * The ease of the flight: `1 - (1 - u)^3`, which is an ease-out. `u` is the part of the

@@ -10,7 +10,6 @@ scope.addEventListener('message', () => {
   const data = buildRegionData();
   const response: RegionLinesResponse = {
     lines: data.lines,
-    traced: data.traced,
     grid: data.grid,
     flow: data.flow,
   };

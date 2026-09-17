@@ -1,0 +1,355 @@
+## REMOVED Requirements
+
+### Requirement: The demo site carries three data sets
+
+**Reason**: The catalog grows from three entries to five, and its scenario "The catalog
+holds the three sets" names a count the change moves. A MODIFIED block replaces a
+requirement but cannot drop one of its scenarios, so the rewrite is written as a removal and
+an addition. The replacement is the added requirement "The demo site carries five data
+sets", which carries every rule of this one and the two new entries.
+
+**Migration**: None for a host. The catalog belongs to the demo site, and a host writes its
+own. The demo site's first set is still `guardian-ruins`, so a saved link to the site opens
+on the same data.
+
+## ADDED Requirements
+
+### Requirement: The demo site carries five data sets
+
+The demo site SHALL give the map a catalog of five entries, built by the repository's own
+scripts from the Canonn Research Group's `CanonnED3D-Map` sources. Each entry SHALL carry
+a `collection` of `Canonn Research Group`, a `label`, a `region` and a `systemCount`, and
+its `load` SHALL import one JSON file the build wrote.
+
+| Entry                 | Source                     | What it holds                                      |
+| --------------------- | -------------------------- | -------------------------------------------------- |
+| `guardian-ruins`      | `guardian_ruins.json`      | 600 sites in 212 systems, 3 categories by layout    |
+| `guardian-structures` | `guardian_structures.json` | 209 sites in 163 systems, 10 categories by site type |
+| `notable-systems`     | `notable_systems.json`     | 16 systems, 4 categories by subject                 |
+| `uia`                 | `MapData-UIA.js` and two more | 1,116 systems, 18 categories, **54 spheres**, **983 lines** of 2,214 points |
+| `adamastor`           | `MapData-Adamastor.js`     | 8 systems, 4 categories, **8 lines** of 38 points  |
+
+**The counts describe the committed files** and not the live dumps, by the same rule
+`real-systems` states for the Guardian Ruins set. The first three were read from the dumps
+on 2026-09-14 and the last two on 2026-09-17, at `https://api.canonn.tech` and
+`https://raw.githubusercontent.com/canonn-science/CanonnED3D-Map` through the
+CanonnED3D-Map sources. A dump gains records over time, so a later run of a converter may
+write another count, and the counts in the tests move with the committed files.
+
+Each converter SHALL be an exported function the unit tests run over a committed fixture,
+with no network and no file write, as the Guardian Ruins converter already is. The entry
+part SHALL fetch the dump into the ignored `data/` directory. The repository SHALL commit
+no dump.
+
+A record SHALL be one system and not one site. A system that holds several site types
+SHALL carry the first as `primaryCategory` and the rest as `secondaryCategories`, which is
+what the Guardian Ruins converter does today.
+
+The Notable Systems source carries an `html` field. The converter SHALL turn it into plain
+text for `description`: it SHALL remove the tags, decode the character references, join the
+paragraphs with a blank line, and keep no markup. A `description` SHALL NOT hold `<` or
+`>`.
+
+The Notable Systems records carry no `id64`, so their identity is the system name, which
+`real-systems` already states.
+
+**The two shape sets.** The ED3D sources hold their shapes in lists of their own, beside
+the `systems` list:
+
+- A **sphere** comes from a list whose entries carry `radius`, `coords` and `name`. The
+  UIA source holds four such lists, which come to 54 spheres. The list entry carries no
+  colour, and the source's own category table is **not** where the colour comes from: that
+  table colours the markers. The source draws each list with a material of its own, in
+  `finishMap`, and **the converter SHALL take the colour of that material**:
+
+  | List     | What it holds           | Count | Material                  | Colour        |
+  | -------- | ----------------------- | ----- | ------------------------- | ------------- |
+  | `pls`    | Permit-locked sectors   | 28    | shader tint (0.2,0.7,1.0) | (51,179,255)  |
+  | `puls`   | Permit-unlocked sectors | 20    | shader tint (1.0,0.75,0.1)| (255,191,26)  |
+  | `hd_soi` | Hyperdiction zones      | 5     | `0x336600`                | (51,102,0)    |
+  | `g_soi`  | The Gamma Velorum zone  | 1     | `0x000099`                | (0,0,153)     |
+
+  **The opacity does not come across.** The source draws a lit surface at an opacity of
+  0.75, 0.75, 0.3 and 0.15. This map draws a limb-brightened shell, whose alpha is the
+  opacity at the middle and 1 near the rim, so the same figure reads far more solid: at
+  0.75 the alpha reaches 1 at 0.66 of the radius and the sphere hides what is behind it.
+  Every sphere SHALL therefore take the map's own default opacity of 0.18, which
+  `map-shapes` states.
+- A **line** takes its colour from the category its `routes` entry names, read from the
+  source's own category table. A route naming a category the table does not hold SHALL take
+  a fallback of (160, 160, 160); the Adamastor source holds one such route, which names the
+  category `50`.
+- A **line** comes from a `routes` entry, whose `points` name systems. The converter SHALL
+  resolve each name to a position: first against the source's own `systems` list, then
+  against the EDSM name lookup, comparing without case. A point that resolves nowhere SHALL
+  be dropped, and a route left with fewer than two points SHALL be dropped whole. The
+  converter SHALL report every drop. On the Adamastor source read on 2026-09-17, 3 of 41
+  points resolve nowhere — `Extention1`, `Extention2` and `Route Intersection`, which are
+  the original map's own waypoint placeholders — and all 8 routes survive with 38 points.
+- A route point whose system is in the entry's own record set SHALL be written as a
+  **system reference**, and one that is not SHALL be written as a **coordinate**. The demo
+  therefore exercises both point forms `map-shapes` defines, and a line that connects two
+  markers on the screen says so in the data.
+- The **UIA source's `routes` list is empty**: every entry in it is commented out at the
+  source. The converter SHALL read the `routes` list as it does for any source, so a
+  restored route reaches the map with no code change. The UIA lines come from two more
+  files, which the next requirement states.
+
+**The UIA map builds itself from two more files, and the converter SHALL read them.**
+`MapData-UIA.js` holds 16 systems and no route of its own. Every other marker and every
+line the map draws is built at run time, in `formatWaypoints` and `formatHDs`, from two
+static files beside it in the same repository. A converter that reads only the literal
+therefore writes a set the map never shows. The two files are:
+
+| File                                     | What it holds                               |
+| ---------------------------------------- | ------------------------------------------- |
+| `csvCache/uia_waypoints_1.json` … `_9.json` | One waypoint table per UIA                |
+| `csvCache/route_UIA_Hyperdictions.csv`   | One row per reported hyperdiction            |
+
+The entry part SHALL fetch the two into `data/csvCache/`, which is ignored, by the same
+rule the dumps hold. The report file is 432 kB and the repository SHALL commit no copy of
+it. The unit tests SHALL read committed fixtures of this project's own writing and not the
+files themselves, so no commander name reaches a fixture.
+
+**The waypoint tables.** Each file is an array whose first row is the headers and whose
+other rows are waypoints. The converter SHALL read `System`, `X`, `Y`, `Z` and `Estimate`,
+and SHALL skip a table whose second row names no system or names `Placeholder`; UIA#9 is
+such a table, so 8 of the 9 hold data. Each row SHALL become one record. The `Estimate`
+letter SHALL give the record its category and the line it belongs to:
+
+| Letter | Category        | Id    | Colour     |
+| ------ | --------------- | ----- | ---------- |
+| `N`    | Recorded Route  | `101` | `66FF66`   |
+| `Y`    | Estimated Route | `102` | `334400`   |
+| `F`    | Lost Section    | `103` | `4F0000`   |
+
+A run of rows carrying one letter SHALL become one line, and a change of letter SHALL end
+that line and start another, by the join rules the source holds: a run of `F` SHALL take
+the row before it as its first point, a run of `Y` SHALL take the row before it unless that
+row is `F`, and a run of `N` SHALL NOT take the row before it but SHALL be added to the
+open `F` or `Y` line as its last point. A line of fewer than two points SHALL be dropped.
+
+**The direction line.** Each waypoint table SHALL also give one line of category `100`,
+**Estimated Direction**, colour `004F4F`. It SHALL run from the table's first waypoint
+**against** the mean step of the table, which is back the way the anomaly came, and its far
+point SHALL be written as a record of the same category named
+`extended mean direction of UIA#N`. The source scales the mean step by **-65,000**, so the
+line points at where the anomaly came from and not at where it goes.
+
+**The sum of the steps lags by one row, and the converter SHALL keep the lag.** The source
+holds the row before the last one and adds `row - that row` at each row, so each step
+reaches over two rows and the first two rows add nothing. The sum comes to
+`(c_n + c_n-1) - (c_1 + c_2)` and not to `c_n - c_1`. The two directions differ by
+**0.011 to 0.245 degrees** over the eight tables of the source. The rule here is the source's line and
+not a better one, so the converter copies the lag and a test holds it.
+
+The source draws this line only for a table that holds two parseable times, because the
+whole block sits behind the test that also gives the clock marker. The converter draws it
+for every table of three or more waypoints. All eight tables meet both tests today, so the
+committed file is the same either way.
+
+**That far point SHALL stop at the model bounds.** The source runs the line 65,000 light
+years out, which is past the edge of the model on every axis, and `real-systems` rejects a
+record outside the bounds. The converter SHALL therefore cut the ray where it leaves the
+bounds, and SHALL run it no farther than the 65,000 light years the source names. The
+line still points where the source points it, and it stops where the map stops. The
+converter SHALL read the bounds from `src/galaxy-model/galaxy-model.json`, so the two
+cannot drift.
+
+**The estimated current position SHALL NOT be written.** The source also places one marker
+per UIA at the point the anomaly has reached, worked out from the clock at the moment the
+page opens. A committed file cannot hold a value that follows the clock, so the converter
+SHALL leave it out. The demo set therefore holds 8 markers of category `100` and not the
+16 the live map shows.
+
+**The hyperdiction reports.** The CSV carries `Timestamp`, `Commander`, `System`, `Sx`,
+`Sy`, `Sz`, `Destination`, `Dx`, `Dy`, `Dz` and `Hostile`. A coordinate field is quoted and
+uses a **comma** as its decimal separator, so the reader SHALL parse the quoted fields and
+SHALL read `"-1238,53125"` as -1238.53125.
+
+The source reads the same field with `parseFloat`, which stops at the comma and gives
+-1238, so it drops the whole fraction of each of the three axes. A hyperdiction marker of
+the demo set therefore sits up to **0.96875 light years** from the live one on one axis, and
+up to **1.607 light years** from it in space. Both figures come from the report file, and the
+worst pair is `Oochorrs RE-O d7-4` to `Oochorrs SZ-N d7-5`. The demo marker is
+the one the report put there. The converter SHALL:
+
+1. Keep one row for each `System` + `Destination` pair, the first one read, and SHALL mark
+   the pair hostile if **any** row of the pair reads `Hostile` of `Y`.
+
+   This is one rule the converter does **not** take from the source. The source holds the
+   first row of a pair and then reads `hostile` of it, which no row carries: the column is
+   `Hostile`. Only a repeated row therefore sets the flag, and a pair reported once is
+   never hostile on the live map. The converter reads the flag of every row of the pair.
+2. Drop a pair unless one of its two ends is a waypoint of some table, or lies within **24
+   light years** of a waypoint whose `Estimate` is not `F`. The report file covers the whole
+   galaxy and the map is about the anomalies.
+3. Write both ends as records and the pair as one two-point line.
+
+A hyperdiction record SHALL carry the category `UIA#N` of the table it was matched against,
+then `All Hyperdictions`, and then `Hostile` where the pair is hostile. The `UIA#N`
+categories are not in the source's table either: `init()` adds `301` to `308`, named
+`UIA#1 Taranis`, `UIA#2 Leigong`, `UIA#3 Indra`, `UIA#4 Oya`, `UIA#5 Cocijo`, `UIA#6 Thor`,
+`UIA#7 Raijin` and `UIA#8 Hadad`, each in `999900`. The converter SHALL add them the same
+way.
+
+**A hyperdiction record SHALL name the commander and the date of the report** in its
+`description`, as the Notable Systems records carry Canonn's own text. The names are
+already published in the Canonn repository under the MIT licence, and
+`THIRD_PARTY_NOTICES.md` SHALL say that the demo set carries them.
+
+**The spheres SHALL also be records.** `formatHDs` pushes each entry of `pls`, `puls` and
+`hd_soi` into the systems list, in the categories `Permit Locked Centers`,
+`Permit Unlocked Centers` and `Thargoid Systems`. The converter SHALL do the same, so a
+sphere carries a marker at its centre as the live map does. `g_soi` gets no record, as the
+source gives it none.
+
+**One name SHALL give one record.** A waypoint is also an end of a hyperdiction, two
+hyperdictions share an end, and a sphere sits on a waypoint, so the same name reaches the
+list several times. `real-systems` holds one record per name, so the converter SHALL keep
+the **first** entry of a name, SHALL add the categories of a later entry to that record as
+secondary ones, and SHALL take a later entry's description only where the first entry
+carries none. The position of the first entry SHALL stand.
+
+**Every UIA line point SHALL be a system reference.** Each end of every line is a record of
+the same set, so no UIA line holds a coordinate and the EDSM lookup is never asked for one.
+
+#### Scenario: The waypoint letters cut the lines
+
+- **WHEN** a unit test runs the waypoint conversion over a fixture table whose `Estimate`
+  column reads `N N Y Y F N`
+- **THEN** it writes one `101` line of the two `N` rows, one `102` line holding the last
+  `N` row and the two `Y` rows, one `103` line holding the last `Y` row and the `F` row and
+  the `N` row after it, and one `101` line of that last `N` row alone is dropped for
+  holding one point
+
+#### Scenario: A hyperdiction pair far from every waypoint is dropped
+
+- **WHEN** a unit test runs the hyperdiction conversion over a fixture holding one pair
+  whose system is a waypoint, one pair 10 light years from a waypoint, and one pair 3,000
+  light years from every waypoint
+- **THEN** the first two are written and the third is dropped, and the report names the
+  drop
+
+#### Scenario: A repeated pair is read once and keeps its hostile flag
+
+- **WHEN** a unit test runs the hyperdiction conversion over a fixture holding the same
+  system and destination three times, of which the last reads `Hostile` of `Y`
+- **THEN** one line is written, and its two records carry the `Hostile` category
+
+**The demo site adds the shapes itself.** `DatasetContent` carries `categories` and
+`systems` and no shape, so the demo site SHALL add the shapes of an entry through
+`addSpheres` and `addLines` from its `onDatasetChange` listener. `loadDataset` clears the
+shapes, so an entry that carries none leaves the map with none.
+
+#### Scenario: The catalog holds the five sets
+
+- **WHEN** the browser test opens the demo site, waits for `ready` and reads
+  `getDatasets()` and `getLoadedDataset()`
+- **THEN** the reading holds the five ids above and the loaded one is `guardian-ruins`
+
+#### Scenario: Each set loads and draws
+
+- **WHEN** the browser test loads each of the five entries in turn and reads
+  `systemCount`, `categoryCount()`, `sphereCount()` and `lineCount()` after each
+- **THEN** the readings are 212, 3, 0, 0; then 163, 10, 0, 0; then 16, 4, 0, 0; then
+  1,116, 18, 54, 983; then 8, 4, 0, 8
+
+#### Scenario: A switch away from a shape set clears the shapes
+
+- **WHEN** the browser test loads `uia`, reads `sphereCount()`, loads `guardian-ruins` and
+  reads it again
+- **THEN** the first reading is 54 and the second is 0
+
+#### Scenario: The Adamastor lines connect the markers
+
+- **WHEN** the browser test loads `adamastor`, reads `getLine(0)`, and reads the position
+  of every system of the set
+- **THEN** at least one point of one line is the position of a system in the set, and no
+  line was rejected
+
+#### Scenario: The converters run over fixtures
+
+- **WHEN** a unit test runs each converter over its committed fixture extract and compares
+  the result with the committed expected output beside it
+- **THEN** the two are the same for each converter, and every record it emits passes
+  `addSystems` with no rejection, and every shape it emits passes `addSpheres` or
+  `addLines` with no rejection.
+
+  The counts in the table above describe the committed `demo-data/` file of each set and not
+  the fixture. A fixture holds about 20 records, and its own expected counts are in the file
+  beside it
+
+#### Scenario: The route resolver drops what it cannot resolve
+
+- **WHEN** a unit test runs the route converter over a fixture holding one route of three
+  points, of which the middle one names no system the fixture or the stub lookup holds, and
+  one route of two points of which one is unresolvable
+- **THEN** the first route is written with two points, the second is dropped, and the
+  report names both drops
+
+#### Scenario: The html becomes plain text
+
+- **WHEN** a unit test runs the Notable Systems converter over a fixture record whose
+  `html` holds two paragraphs, a link and the entity `&amp;`
+- **THEN** the `description` holds the two paragraph texts separated by a blank line, the
+  link's text but not its tag, an `&`, and no `<` or `>`
+
+### Requirement: A load clears the shapes and announces after it writes
+
+A load SHALL leave the map with no shape of the set it replaced. The shape set and the
+system set are two objects, so the load SHALL clear both: it calls the system set's
+`clearSystemsAndCategories()` and then `clearShapes()`, in that order, before it writes the
+new set. The two calls are one step and SHALL stay together. The handle member
+`clearSystemsAndCategories()` makes the same pair, which `map-shapes` states; the load does
+not go through that member, so a reader who takes `clearShapes()` for a repeat of it and
+removes the line leaves the old set's lines over the new set's systems.
+
+A line may name a system of the set being replaced, so a shape set that outlived its records
+would draw a route through positions that no longer mean anything.
+
+**The demo site SHALL hold its shapes in a map from entry id to shapes, and its `load()`
+SHALL fill that map before it returns.** `DatasetInfo`, which a listener reads, carries the
+entry's id and no content, and `DatasetContent` carries the categories and the systems alone.
+The demo's `load()` already imports one JSON file, and that file holds the shapes beside the
+records, so `load()` writes the shapes into the map under the entry's id and returns the two
+arrays the reader wants.
+
+The listener SHALL then read that map by the id it is given and SHALL call `addSpheres` and
+`addLines` **in the same step**, with no wait. The listener runs inside the load, after the
+load has won its ticket and written the set, so a shape add that never waits cannot land on a
+later load's set. A listener that imported the shapes itself could resolve after a second
+load had cleared them, and would then draw the first entry's route over the second entry's
+systems.
+
+The listeners `onDatasetChange` holds SHALL be raised **after** `addCategories` and
+`addSystems` have written the set. A listener that adds a line naming a system of that set
+SHALL therefore resolve it. Without that order a host could not add a line through the
+listener at all, because the systems would not yet be in.
+
+A failed load SHALL leave the shapes as it leaves the set: the clear runs after `load()`
+settles, so a rejected `load()` clears nothing.
+
+#### Scenario: A load clears the shapes
+
+- **WHEN** a unit test adds one sphere and one line, calls `loadDataset` for an entry
+  carrying two systems, awaits it, and reads `sphereCount()` and `lineCount()`
+- **THEN** both are 0
+
+#### Scenario: A second load leaves only its own shapes
+
+- **WHEN** the browser test loads `uia`, then loads `adamastor` before the first load
+  settles, waits for both, and reads `sphereCount()` and `lineCount()`
+- **THEN** the readings are 0 and 8, which is the Adamastor set alone
+
+#### Scenario: A listener can add a line naming a loaded system
+
+- **WHEN** a unit test registers an `onDatasetChange` listener that calls `addLines` with a
+  line naming a system of the entry being loaded, then calls `loadDataset` and awaits it
+- **THEN** the line was added with no rejection, and its points are that system's position
+
+#### Scenario: A failed load leaves the shapes
+
+- **WHEN** a unit test adds one sphere, calls `loadDataset` for an entry whose `load`
+  rejects, catches the rejection, and reads `sphereCount()`
+- **THEN** the reading is 1

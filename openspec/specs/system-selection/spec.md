@@ -188,7 +188,7 @@ keeps the distance it has, because the user has chosen how close to look and the
 does not take that back. The yaw and the pitch do not change.
 
 **The flight** SHALL start in the frame the selection is made, with no wait, and SHALL run
-for **350 ms**. Let `u` be the milliseconds since the start over 350, held at 1, and let
+for **600 ms**. Let `u` be the milliseconds since the start over 600, held at 1, and let
 `e` be `1 - (1 - u)^3`, which is an ease-out. Then in each frame of the flight:
 
 - The cursor SHALL be the start cursor plus `e` times the move to the end cursor.
@@ -200,10 +200,17 @@ for **350 ms**. Let `u` be the milliseconds since the start over 350, held at 1,
 
 At `u` of 1 the view SHALL be the end state exactly, and the flight SHALL end.
 
+**The flight ran for 350 ms.** The owner read that as too quick to follow: the view was at
+the system before the eye found what had moved. 600 ms is the same curve over a longer
+time. It still ends well inside a second, and every rule that gives the flight back to the
+user is unchanged, so the wait is never forced on anyone who wants to act.
+
 **The flight gives way to the user.** A pointer press on the canvas, a wheel notch, a
 movement key press, or a call to `setView` SHALL end the flight in the frame it happens.
+The movement keys are the eight `map-navigation` names, so `Q` and `E` end a flight as `W`
+does.
 The view SHALL stay where the flight had reached, and the input SHALL then act on that
-view. The user is never held for 350 ms.
+view. The user is never held for 600 ms.
 
 **A selection during a flight** SHALL start a new flight, from the view as it stands to the
 new end state.
@@ -229,7 +236,7 @@ running flight and 0 when none runs.
 
 - **WHEN** the browser test opens a view at a distance of 20,000 light years with a yaw of
   40 and a pitch of 60, adds a system 400 light years from the cursor, selects it through
-  `setSelection`, reads the view in the next frame, and reads it again after 500 ms
+  `setSelection`, reads the view in the next frame, and reads it again after 800 ms
 - **THEN** the first reading is neither the start view nor the end view, and the second
   reading has the cursor at the system's position, the distance at 500, the yaw at 40 and
   the pitch at 60
@@ -237,7 +244,7 @@ running flight and 0 when none runs.
 #### Scenario: A click at a far view centres and comes in
 
 - **WHEN** the browser test opens a view at 20,000 light years, clicks a marker, reads the
-  view in the very next frame, then waits 500 ms and reads the view and the selection
+  view in the very next frame, then waits 800 ms and reads the view and the selection
 - **THEN** the first reading already has a smaller distance and a moved cursor, and after
   the wait the selection names that system, the distance is 500 and the cursor is the
   system's position
@@ -245,7 +252,7 @@ running flight and 0 when none runs.
 #### Scenario: The flight holds its curve
 
 - **WHEN** a unit test reads the flight rule from a start of (0, 0, 0) at 20,000 light
-  years to an end of (400, 0, 0) at 500 light years, at 0, 87.5, 175, 262.5 and 350 ms
+  years to an end of (400, 0, 0) at 500 light years, at 0, 150, 300, 450 and 600 ms
 - **THEN** the first reading is the start, the last is the end exactly, the cursor moves
   by 0, 0.578, 0.875, 0.984 and 1 of the way, and each distance is
   `20000 * (500 / 20000)^e` for the same five values of `e`
@@ -272,21 +279,21 @@ running flight and 0 when none runs.
 #### Scenario: A wheel notch ends the flight
 
 - **WHEN** the browser test selects a system from a view at 20,000 light years, waits 100
-  ms, sends one wheel notch, reads the view, waits 500 ms and reads it again
+  ms, sends one wheel notch, reads the view, waits 800 ms and reads it again
 - **THEN** the first reading is between the start and the end, the second is the first with
   the wheel's own zoom step applied, and `selectionFlightMs` is 0 at both readings
 
 #### Scenario: A drag ends the flight
 
 - **WHEN** the browser test selects a system from a view at 20,000 light years, waits 100
-  ms, presses the left button and orbits 60 pixels, then waits 500 ms and reads the view
+  ms, presses the left button and orbits 60 pixels, then waits 800 ms and reads the view
 - **THEN** the cursor is where the flight had reached and not the system's position, and
   the yaw has changed by the orbit
 
 #### Scenario: A second selection flies from where the first reached
 
 - **WHEN** the browser test selects one system from a view at 20,000 light years, waits
-  100 ms, selects a second system, and waits 500 ms
+  100 ms, selects a second system, and waits 800 ms
 - **THEN** the view ends at the second system with a distance of 500, and the cursor never
   returned to the first reading
 
@@ -450,6 +457,7 @@ The placement SHALL hold to these bounds:
   colour within 2 on each channel of `rgba(0, 0, 0, 0.9)`, and `stroke` or `stroke fill`
   for the paint order, which is what puts the stroke under the glyph. `coordinate-grid`
   states why the paint order has two strings
+
 ### Requirement: Selection holds the frame budget
 
 The hover pick, the pin, the ring and the name label placement together SHALL add at most

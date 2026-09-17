@@ -17,8 +17,10 @@ describe('the flight ease', () => {
 describe('the flight', () => {
   // The scenario "The flight holds its curve" of `system-selection`.
   test('holds its curve over the five readings of the spec', () => {
+    expect(FLIGHT_MS).toBe(600);
+
     const parts = [0, 0.578125, 0.875, 0.984375, 1];
-    const times = [0, 87.5, 175, 262.5, 350];
+    const times = [0, 150, 300, 450, 600];
 
     for (let index = 0; index < times.length; index += 1) {
       const eased = parts[index] as number;
@@ -57,7 +59,7 @@ describe('the flight', () => {
   });
 
   test('moves the distance by a constant factor for each unit of eased time', () => {
-    const half = flightAt(FROM, TO, 175).distance;
+    const half = flightAt(FROM, TO, 300).distance;
     expect(half).toBeCloseTo(20000 * Math.pow(500 / 20000, 0.875), 6);
     // A linear distance would still be at 10,250 half way through.
     expect(half).toBeLessThan(2000);

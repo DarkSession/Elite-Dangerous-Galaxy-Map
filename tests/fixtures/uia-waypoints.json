@@ -1,0 +1,9 @@
+[
+  ["WP#","System","X","Y","Z","Distance","Midpoint Time","Traversal Speed","Traversal Time","Avg Speed Ly/h","Estimate","Update Time","Remarks","","LY - Sol"],
+  ["0","Fixture Waypoint A","100","0","-200","","","","","","N","","first recorded system","","224"],
+  ["1","Fixture Waypoint B","140","0","-200","40","","","","","N","","second recorded system","","244"],
+  ["2","Fixture Waypoint C","180","0","-200","40","","","","","Y","","estimated from the mean step","","262"],
+  ["3","Fixture Waypoint D","220","0","-200","40","","","","","Y","","estimated from the mean step","","298"],
+  ["4","Fixture Waypoint E","260","0","-200","40","","","","","F","","a lost section","","328"],
+  ["5","Fixture Waypoint F","300","0","-200","40","","","","","N","","recorded again","","360"]
+]

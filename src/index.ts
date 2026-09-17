@@ -18,7 +18,6 @@ export type {
   GalaxyMapOptions,
   MapView,
   RealSystem,
-  RegionMode,
   SystemImage,
 } from './app/create-map';
 export type {
@@ -29,4 +28,13 @@ export type {
   Reject,
   SystemRecordInput,
 } from './scene-data/real-systems';
+export type {
+  Line,
+  LineInput,
+  LinePoint,
+  ShapeReject,
+  ShapeReport,
+  Sphere,
+  SphereInput,
+} from './scene-data/shapes';
 export type { HudAction, HudHandle, HudOptions } from './hud/types';

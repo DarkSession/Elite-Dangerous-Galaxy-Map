@@ -30,6 +30,7 @@ export interface GalaxyMapGlobal {
     stars?: boolean;
     glow?: boolean;
     regions?: boolean;
+    shapes?: boolean;
     systems?: boolean;
     grid?: boolean;
   }) => void;
@@ -61,13 +62,13 @@ export interface GalaxyMapGlobal {
   /** Starts the frame time mean again. */
   resetFrameStats?: () => void;
   /**
-   * The vertices of the smoothed boundary set, as `x`, `y`, `z` per vertex. It is the
-   * set the `simplified` mode draws, whatever mode the map is in.
+   * The vertices of the traced boundary set, as `x`, `y`, `z` per vertex. It is the set
+   * the region overlay draws.
    */
   regionLinePositions?: () => Float32Array;
   /**
-   * The first and the last vertex index of every chain of the smoothed set, so a reader
-   * can walk the chains of the set rather than read the vertices as loose pairs.
+   * The first and the last vertex index of every chain of the traced set, so a reader can
+   * walk the chains of the set rather than read the vertices as loose pairs.
    */
   regionLineChains?: () => { first: Uint32Array; last: Uint32Array };
   /** Projects a game position to a CSS pixel on the canvas. */

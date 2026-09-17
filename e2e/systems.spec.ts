@@ -1474,10 +1474,20 @@ test.describe('the category switch and the name filter', () => {
     expect(offBoth).toEqual({ count: 0, name: null });
   });
 
-  // The marker pass alone over dark space, so the reading is the marker's own colour.
-  test('the colour still follows the primary category', async ({ page }) => {
-    const red: [number, number, number] = [255, 60, 60];
-    const blue: [number, number, number] = [60, 120, 255];
+  /** A red, a blue and a green the colour readings tell apart at a glance. */
+  const RED: [number, number, number] = [255, 60, 60];
+  const BLUE: [number, number, number] = [60, 120, 255];
+  const GREEN: [number, number, number] = [60, 255, 120];
+
+  /**
+   * Opens the marker pass alone over dark space with one system on the view axis, so the
+   * pixel at its centre is the marker's own colour and nothing else.
+   */
+  const openDark = async (
+    page: Page,
+    categories: readonly unknown[],
+    records: readonly unknown[],
+  ): Promise<void> => {
     await openMap(page, '#c=40015,20000,25895&d=10&p=35&y=0');
     await setPasses(page, {
       volume: false,
@@ -1488,29 +1498,184 @@ test.describe('the category switch and the name filter', () => {
       regions: false,
       systems: true,
     });
-    await addCategories(page, [
-      { name: 'Alpha', color: red, maxDrawRange: 120000 },
-      { name: 'Beta', color: blue, maxDrawRange: 120000 },
-    ]);
-    await addSystems(page, [
-      { ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] },
-    ]);
+    await addCategories(page, categories);
+    await addSystems(page, records);
     await setView(page, DARK_SPACE, 10);
+  };
 
-    // `Beta` is off, so the marker draws through `Alpha` alone. It still takes the
-    // colour of its primary category, which is `Beta`.
-    await page.evaluate(() => {
-      window.galaxyMap?.setCategoryVisible('Beta', false);
-    });
+  /** Turns one category on or off and draws a frame. */
+  const switchCategory = async (
+    page: Page,
+    name: string,
+    on: boolean,
+  ): Promise<void> => {
+    await page.evaluate(
+      (job) => {
+        window.galaxyMap?.setCategoryVisible(job.name, job.on);
+      },
+      { name, on },
+    );
     await drawFrame(page);
-    const pixel = await pixelAt(page, DARK_SPACE);
-    console.log('the marker colour through a secondary category', pixel);
+  };
 
+  /** Fails unless the marker at the dark point carries a colour, within one 8-bit step. */
+  const expectColour = async (
+    page: Page,
+    wanted: readonly number[],
+    what: string,
+  ): Promise<void> => {
+    const pixel = await pixelAt(page, DARK_SPACE);
+    console.log(what, pixel);
     for (let channel = 0; channel < 3; channel += 1) {
       expect(
-        Math.abs((pixel[channel] as number) - (blue[channel] as number)),
+        Math.abs((pixel[channel] as number) - (wanted[channel] as number)),
+        `${what} channel ${channel}`,
       ).toBeLessThanOrEqual(2);
     }
+  };
+
+  test('the colour follows the first category that is on', async ({ page }) => {
+    await openDark(
+      page,
+      [
+        { name: 'Alpha', color: RED, maxDrawRange: 120000 },
+        { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
+      ],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+    );
+
+    await expectColour(page, BLUE, 'the colour with both categories on');
+
+    // `Beta` is off, so the marker draws through `Alpha`, and it takes the colour of the
+    // row the user left on rather than the row they switched off.
+    await switchCategory(page, 'Beta', false);
+    await expectColour(page, RED, 'the colour with the primary category off');
+  });
+
+  test('the colour goes back when the category comes back on', async ({ page }) => {
+    await openDark(
+      page,
+      [
+        { name: 'Alpha', color: RED, maxDrawRange: 120000 },
+        { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
+      ],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+    );
+
+    await switchCategory(page, 'Beta', false);
+    await expectColour(page, RED, 'the colour with the primary category off');
+
+    await switchCategory(page, 'Beta', true);
+    await expectColour(page, BLUE, 'the colour with the primary category back on');
+  });
+
+  test("the order is the record's order", async ({ page }) => {
+    // The table holds `Alpha`, `Beta`, `Gamma`, and the record names `Alpha`, then
+    // `Gamma`, then `Beta`. The order the colour follows is the record's.
+    await openDark(
+      page,
+      [
+        { name: 'Alpha', color: RED, maxDrawRange: 120000 },
+        { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
+        { name: 'Gamma', color: GREEN, maxDrawRange: 120000 },
+      ],
+      [
+        {
+          ...record('Three', DARK_SPACE, 'Alpha'),
+          secondaryCategories: ['Gamma', 'Beta'],
+        },
+      ],
+    );
+
+    await switchCategory(page, 'Alpha', false);
+    await expectColour(page, GREEN, 'the colour of the first secondary category');
+
+    await switchCategory(page, 'Gamma', false);
+    await expectColour(page, BLUE, 'the colour of the second secondary category');
+  });
+
+  test('the style and the range follow the drawn category', async ({ page }) => {
+    // The system sits 1,000 light years from the camera. `Alpha` cuts a marker at 200, so
+    // nothing draws while `Alpha` is the drawn category, and `Beta` reaches 20,000.
+    const where = atRange(DARK_SPACE, 1000, 1000);
+    await openMap(page, '#c=40015,20000,25895&d=1000&p=35&y=0');
+    await setPasses(page, {
+      volume: false,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      regions: false,
+      systems: true,
+    });
+    await addCategories(page, [
+      { name: 'Alpha', color: RED, markerStyle: 'glow', maxDrawRange: 200 },
+      { name: 'Beta', color: BLUE, markerStyle: 'disc', maxDrawRange: 20000 },
+    ]);
+    await addSystems(page, [
+      { ...record('Both', where, 'Alpha'), secondaryCategories: ['Beta'] },
+    ]);
+    await setView(page, DARK_SPACE, 1000);
+
+    const markerCount = async (): Promise<number> =>
+      page.evaluate(() => window.galaxyMap?.debug.systemMarkerCount() ?? -1);
+    await drawFrame(page);
+    const cut = await markerCount();
+
+    await switchCategory(page, 'Alpha', false);
+    const drawn = await markerCount();
+
+    // The drawn category is `Beta`, so the marker carries the blue of `Beta` and the disc
+    // of `Beta`. The disc is read against the same marker restyled to a glow: a glow
+    // spreads about 2.5 times as wide a row as a disc of the same size.
+    const pixel = await pixelAt(page, where);
+    const discRow = await rowThrough(page, where, 30);
+    await setPasses(page, { systems: false });
+    const bare = await rowThrough(page, where, 30);
+    await setPasses(page, { systems: true });
+
+    const report = await addCategories(page, [
+      { name: 'Beta', color: BLUE, markerStyle: 'glow', maxDrawRange: 20000 },
+    ]);
+    await drawFrame(page);
+    const glowRow = await rowThrough(page, where, 30);
+    const disc = differingPixels(discRow, bare);
+    const glow = differingPixels(glowRow, bare);
+    console.log('the style through the drawn category', {
+      cut,
+      drawn,
+      pixel,
+      disc,
+      glow,
+      ratio: glow / disc,
+    });
+
+    expect(cut, 'the marker while `Alpha` cuts it at 200 light years').toBe(0);
+    expect(drawn, 'the marker through `Beta`').toBe(1);
+    expect(report.replaced).toBe(1);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((pixel[channel] as number) - (BLUE[channel] as number)),
+      ).toBeLessThanOrEqual(2);
+    }
+    expect(disc, 'the disc of `Beta`').toBeGreaterThan(0);
+    expect(glow / disc).toBeGreaterThanOrEqual(2);
+  });
+
+  // The marker pass alone over dark space, so the reading is the marker's own colour.
+  test('the colour still follows the primary category', async ({ page }) => {
+    await openDark(
+      page,
+      [
+        { name: 'Alpha', color: RED, maxDrawRange: 120000 },
+        { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
+      ],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+    );
+    await drawFrame(page);
+
+    // Both categories are on, so the first category the record names is the primary one.
+    await expectColour(page, BLUE, 'the colour with every category on');
   });
 
   test('the sweep holds its budget', async ({ page }) => {

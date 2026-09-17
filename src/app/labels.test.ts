@@ -509,13 +509,16 @@ describe('the label fade', () => {
 
   test('reads the range fade at the label own anchor', () => {
     expect(labelRangeFade(REGION_RANGE_NONE)).toBe(0);
+    expect(labelRangeFade(8000)).toBe(0);
     expect(labelRangeFade(4000)).toBe(0);
     expect(labelRangeFade(REGION_RANGE_FULL)).toBe(1);
+    expect(labelRangeFade(12000)).toBe(1);
     expect(labelRangeFade(30000)).toBe(1);
-    expect(labelRangeFade(15000)).toBeCloseTo(0.5, 12);
-    // The two constants are the composite pass's own, so no copy is made.
-    expect(REGION_RANGE_NONE).toBe(10000);
-    expect(REGION_RANGE_FULL).toBe(20000);
+    expect(labelRangeFade(10000)).toBeCloseTo(0.5, 12);
+    // The two constants are the composite pass's own, so no copy is made and the label
+    // fade moves with the band fade.
+    expect(REGION_RANGE_NONE).toBe(8000);
+    expect(REGION_RANGE_FULL).toBe(12000);
   });
 });
 

@@ -7,15 +7,16 @@
 // distance. A join therefore reads the same as a straight run rather than twice as
 // strong.
 //
-// The half width is the same uniform the vertex shader expands the quad by, so the quad
-// covers the whole ramp and cuts none of it.
+// The half width follows the range, so it is read at each end of the segment and
+// interpolated along it by the same parameter the gap is measured at. The vertex shader
+// expands the quad by the same two numbers, so the quad covers the whole ramp and cuts
+// none of it.
 precision highp float;
-
-// Half the width of the whole line, in device pixels.
-uniform float uHalfWidth;
 
 flat in vec2 vStart;
 flat in vec2 vEnd;
+flat in float vHalfStart;
+flat in float vHalfEnd;
 
 out vec4 fragColour;
 
@@ -25,7 +26,8 @@ void main() {
   float span = dot(along, along);
   float part = span > 0.0 ? clamp(dot(point - vStart, along) / span, 0.0, 1.0) : 0.0;
   float gap = length(point - (vStart + part * along));
-  float coverage = 1.0 - gap / uHalfWidth;
+  float halfWidth = mix(vHalfStart, vHalfEnd, part);
+  float coverage = 1.0 - gap / halfWidth;
   if (coverage <= 0.0) discard;
   fragColour = vec4(coverage, 0.0, 0.0, 1.0);
 }

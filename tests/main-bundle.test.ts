@@ -40,17 +40,23 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * markers and grid change. The library entry chunk measured **162,593 bytes** on the
  * first library build, **198,764 bytes** with the cursor marker, the plane overlay and
  * the exact region lookup in, **199,705 bytes** before the band, grid, number and marker
- * tuning, and **200,821 bytes** after it. The next change that touches the entry chunk
+ * tuning, **200,821 bytes** after it and **224,559 bytes** with the shape set, the shape
+ * pass and the shape members of the handle. The next change that touches the entry chunk
  * must read the bound again. It is larger than the page chunk although it carries no page
  * and externalises `gl-matrix` and `@elite-dangerous-almanac/core`, because Vite
  * compresses and mangles a library build but keeps its whitespace: a host's own bundler
  * minifies it.
  *
- * The bound rose from 200,000 to 210,000 with the reading of 200,821. The guard still
- * holds: a chunk that pulled the region cell table in reads over 370,000 bytes, which is
- * far above either figure.
+ * A `.vert`, a `.frag` and a `.glsl` file reach the chunk as text, so a comment in one of
+ * them changes the reading. Take the reading last, after every other edit of the change.
+ *
+ * The bound rose from 200,000 to 210,000 with the reading of 200,821, and to 254,000 with
+ * the reading of 224,559. Each step keeps about 30 kB of room over the reading, which is
+ * the room the 200,000 bound gave when it was set. The guard still holds: a chunk that
+ * pulled the region cell table in reads over 370,000 bytes, which is far above any of
+ * these figures.
  */
-const ENTRY_CHUNK_LIMIT = 210_000;
+const ENTRY_CHUNK_LIMIT = 254_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first
@@ -66,6 +72,17 @@ const HUD_CHUNK_LIMIT = 56_000;
  */
 const LOOKUP_TERMS = ['scaleNumerator', 'minPz'];
 
+/**
+ * The smoothed boundary set's own packing entry point. `src/scene-data/region-lines.ts`
+ * exported it, and the region worker called it once a build to pack the second set the
+ * `simplified` region mode drew. The set is gone, so no source file and no built chunk
+ * may hold a call of it.
+ */
+const SMOOTHED_PACKER = 'packRegionLines';
+
+/** The fields the region worker's message carries: one boundary set, the grid, the flow. */
+const REGION_MESSAGE_FIELDS = ['lines', 'grid', 'flow'];
+
 /** The files of `public/`, which the library build must not copy. */
 const PUBLIC_FILES = ['EDLoader1.svg', 'ruins-site.svg', 'structure-site.svg'];
 
@@ -77,7 +94,6 @@ const PUBLIC_TYPES = [
   'Category',
   'RealSystem',
   'SystemImage',
-  'RegionMode',
   'CategoryInput',
   'SystemRecordInput',
   'HudOptions',
@@ -91,7 +107,21 @@ const PUBLIC_TYPES = [
   'DatasetContent',
   'DatasetInfo',
   'DatasetLoadResult',
+  'SphereInput',
+  'LineInput',
+  'LinePoint',
+  'Sphere',
+  'Line',
+  'ShapeReport',
+  'ShapeReject',
 ];
+
+/**
+ * Names the entry point must not export. `GalaxyMapDebug` is the renderer hook the browser
+ * tests read, and `RegionMode` named the three region overlay modes, which are now one
+ * switch.
+ */
+const GONE_TYPES = ['GalaxyMapDebug', 'RegionMode'];
 
 /** Every file under a directory, with its path. */
 function listFiles(directory: string): string[] {
@@ -285,6 +315,36 @@ describe('the library build', () => {
     expect(readFileSync(entry, 'utf8')).not.toContain('gm-hud-styles');
   });
 
+  test('packs one boundary set in the region worker', () => {
+    // The entry point is gone from the source, so nothing can call it.
+    const source = readFileSync(
+      join(root, 'src', 'scene-data', 'region-lines.ts'),
+      'utf8',
+    );
+    expect(source, 'the source holds the smoothed packer').not.toContain(
+      SMOOTHED_PACKER,
+    );
+
+    const worker = scripts.find((path) =>
+      nameOf(path).startsWith('region-lines.worker-'),
+    ) as string;
+    const text = readFileSync(worker, 'utf8');
+    expect(text, 'the worker chunk holds the smoothed packer').not.toContain(
+      SMOOTHED_PACKER,
+    );
+
+    // The name search alone cannot carry the reading: the library build mangles a local
+    // name, so the chunk holds no readable name of either packer. What the build keeps is
+    // the keys of an object literal. The worker builds its result and posts it as
+    // literals, so their keys say how many boundary sets the build makes and sends.
+    const literals = text.match(/\{lines:[^{}]*\}/g) ?? [];
+    const keys = literals.map(fieldNames);
+    console.log('the region worker posts', keys);
+
+    expect(literals.length, 'the chunk holds no `lines` literal').toBeGreaterThan(0);
+    for (const names of keys) expect(names).toEqual(REGION_MESSAGE_FIELDS);
+  });
+
   test('bundles what each worker imports', () => {
     const workers = scripts.filter((path) => nameOf(path).includes('.worker-'));
     expect(workers).toHaveLength(3);
@@ -337,10 +397,9 @@ describe('the library build', () => {
     const declaration = join(outDir, 'types', 'index.d.ts');
     const text = readFileSync(declaration, 'utf8');
     for (const name of PUBLIC_TYPES) expect(text).toContain(name);
-    expect(text).not.toContain('GalaxyMapDebug');
+    for (const name of GONE_TYPES) expect(text).not.toContain(name);
 
     const good = join(outDir, 'reads-the-surface.ts');
-    const bad = join(outDir, 'reads-the-debug-hook.ts');
     const uses = PUBLIC_TYPES.map(
       (name, index) => `declare const value${index}: ${name};\nvoid value${index};`,
     ).join('\n');
@@ -349,17 +408,41 @@ describe('the library build', () => {
       `import type { ${PUBLIC_TYPES.join(', ')} } from './types/index';\n${uses}\n`,
       'utf8',
     );
-    writeFileSync(
-      bad,
-      "import type { GalaxyMapDebug } from './types/index';\n" +
-        'declare const hook: GalaxyMapDebug;\nvoid hook;\n',
-      'utf8',
-    );
-
     expect(typeCheck(good)).toBe('');
-    expect(typeCheck(bad)).not.toBe('');
+
+    for (const name of GONE_TYPES) {
+      const bad = join(outDir, `reads-${name}.ts`);
+      writeFileSync(
+        bad,
+        `import type { ${name} } from './types/index';\n` +
+          `declare const gone: ${name};\nvoid gone;\n`,
+        'utf8',
+      );
+      expect(typeCheck(bad)).not.toBe('');
+    }
   });
 });
+
+/**
+ * The top-level keys of one object literal, in order. The literal carries no inner brace,
+ * because the search that finds it allows none, so the reader counts round and square
+ * brackets alone: a colon inside a call or an index does not name a key.
+ */
+function fieldNames(literal: string): string[] {
+  const names: string[] = [];
+  let depth = 0;
+  for (let index = 0; index < literal.length; index += 1) {
+    const letter = literal[index] as string;
+    if (letter === '(' || letter === '[') depth += 1;
+    else if (letter === ')' || letter === ']') depth -= 1;
+    else if (letter === ':' && depth === 0) {
+      const before = literal.slice(0, index);
+      const name = /([A-Za-z_$][\w$]*)$/.exec(before);
+      if (name !== null) names.push(name[1] as string);
+    }
+  }
+  return names;
+}
 
 /** Compiles one file against the built declaration and gives back what `tsc` said. */
 function typeCheck(path: string): string {

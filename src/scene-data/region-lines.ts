@@ -30,32 +30,8 @@ export const REGION_GRID_SIZE = 2027;
  */
 export const REGION_DEPARTURE_LY = REGION_CELL_LY;
 
-/** How many average passes each chain takes. */
-export const REGION_SMOOTH_PASSES = 2;
-
 /** The largest number of cells per axis the coarse region grid holds. */
 export const COARSE_REGION_GRID_MAX = 512;
-
-/** How many points on each side of a point the average reads. */
-export const REGION_SMOOTH_HALF_WIDTH = 3;
-
-/**
- * How far a point may move from the node the trace put it on, in cells. It sits below
- * the one cell departure bound twice over: the departure is measured polyline to
- * polyline, so the line can bow between two capped points, and the corner rounding
- * below costs about 5.6 light years of departure of its own.
- */
-export const REGION_MOVE_CAP = 0.75;
-
-/**
- * The tolerance the vertex reduction takes, in cells. It sits far below the noise of
- * the raster, so it only drops a point that is nearly on the line through its two
- * neighbours. It does not put the wander back.
- */
-export const REGION_SIMPLIFY_TOLERANCE = 0.1;
-
-/** How many corner rounding passes each chain takes after the average. */
-export const REGION_ROUND_PASSES = 4;
 
 /** How many points on each side of a point the traced set's average reads. */
 export const REGION_TRACED_SMOOTH_HALF_WIDTH = 4;
@@ -76,12 +52,6 @@ export const REGION_TRACED_MOVE_CAP = 0.5;
  * two neighbours.
  */
 export const REGION_TRACED_SIMPLIFY_TOLERANCE = 0.05;
-
-/**
- * How far a rounding cut reaches along a segment, in cells. The cut also never takes
- * more than a quarter of a segment, so a short segment is not cut away.
- */
-export const REGION_ROUND_CAP = 0.3;
 
 /** The region id at the centre of every cell of the grid over the model bounds. */
 export interface RegionGrid {
@@ -393,40 +363,6 @@ export function capChain(
   return out;
 }
 
-/**
- * Rounds the corners of a chain by one pass of Chaikin's corner cut, with the two
- * endpoints held fixed. The cut is capped: a new point sits at most `cap` cells from
- * the corner it cuts, along the segment it lies on, and never further than a quarter of
- * that segment. Without the cap a corner loses a quarter of each of its two segments,
- * and a smoothed chain has long segments, so a single corner could lose many cells. The
- * pass gives two points per segment, so the point count doubles.
- */
-export function roundChain(points: Float64Array, cap: number): Float64Array {
-  const count = points.length / 2;
-  if (count < 2) return points.slice();
-
-  const out = new Float64Array(count * 4);
-  out[0] = points[0] as number;
-  out[1] = points[1] as number;
-  let write = 2;
-  for (let index = 0; index < count - 1; index += 1) {
-    const ax = points[index * 2] as number;
-    const az = points[index * 2 + 1] as number;
-    const dx = (points[index * 2 + 2] as number) - ax;
-    const dz = (points[index * 2 + 3] as number) - az;
-    const length = Math.hypot(dx, dz);
-    const t = length === 0 ? 0 : Math.min(0.25, cap / length);
-    out[write] = ax + t * dx;
-    out[write + 1] = az + t * dz;
-    out[write + 2] = ax + (1 - t) * dx;
-    out[write + 3] = az + (1 - t) * dz;
-    write += 4;
-  }
-  out[write] = points[count * 2 - 2] as number;
-  out[write + 1] = points[count * 2 - 1] as number;
-  return out;
-}
-
 /** The nodes of a traced chain as a point list in cells. */
 export function chainPoints(chain: TracedChain): Float64Array {
   return Float64Array.from(chain.nodes);
@@ -454,44 +390,6 @@ export function midpointChain(points: Float64Array): Float64Array {
   }
   out[count * 2] = points[count * 2 - 2] as number;
   out[count * 2 + 1] = points[count * 2 - 1] as number;
-  return out;
-}
-
-/**
- * Smooths a chain by an average along it, with the movement of every point capped,
- * and then reduces the vertex count.
- *
- * Each pass averages the chain and then holds every interior point within
- * `REGION_MOVE_CAP` cells of the node the trace put it on. The cap keeps a real corner
- * a corner, because an average alone rounds a genuine 90 degree turn as readily as it
- * removes the steps of the raster.
- *
- * The reduction then runs, by Douglas-Peucker at `REGION_SIMPLIFY_TOLERANCE`. That
- * tolerance is far below the size of one step of the raster, so it only drops a point
- * that is nearly collinear with its neighbours.
- *
- * The average leaves long straight runs that meet at hard corners, so the last stage
- * rounds those corners over `REGION_ROUND_PASSES` capped Chaikin passes. The first two
- * bounds of the spec measure the turn of the line against its length and cannot see a
- * corner, because a corner has turn with no length.
- */
-export function smoothChain(
-  points: Float64Array,
-  passes: number = REGION_SMOOTH_PASSES,
-  roundPasses: number = REGION_ROUND_PASSES,
-): Float64Array {
-  let out = points;
-  for (let pass = 0; pass < passes; pass += 1) {
-    out = capChain(
-      averageChain(out, REGION_SMOOTH_HALF_WIDTH),
-      points,
-      REGION_MOVE_CAP,
-    );
-  }
-  out = simplifyChain(out, REGION_SIMPLIFY_TOLERANCE);
-  for (let pass = 0; pass < roundPasses; pass += 1) {
-    out = roundChain(out, REGION_ROUND_CAP);
-  }
   return out;
 }
 
@@ -554,19 +452,6 @@ export function packChains(
   return { chainCount: chains.length, vertexCount, positions, first, last };
 }
 
-/** Packs the smoothed chains of a trace into the boundary set the renderer reads. */
-export function packRegionLines(
-  grid: RegionGrid,
-  trace: RegionTrace,
-  passes: number = REGION_SMOOTH_PASSES,
-  roundPasses: number = REGION_ROUND_PASSES,
-): RegionLines {
-  return packChains(
-    grid,
-    trace.chains.map((chain) => smoothChain(chainPoints(chain), passes, roundPasses)),
-  );
-}
-
 /**
  * Smooths a chain of the traced set: the polyline through the edge midpoints, then a
  * capped average along it, then the vertex reduction.
@@ -575,8 +460,7 @@ export function packRegionLines(
  * midpoint** and not of the pass before, so the cap bounds the whole departure. Half a
  * cell is the quantisation floor of the data.
  *
- * The chain takes **no** corner round, which is what separates it from `smoothChain`. The
- * band's coverage is the exact distance to the nearest segment under a `MAX` blend, so the
+ * The chain takes **no** corner round. The band's coverage is the exact distance to the nearest segment under a `MAX` blend, so the
  * outside of a corner is already round to the band's half width, and a round in the
  * geometry does the same work a second time at four times the vertex count.
  */
@@ -594,7 +478,7 @@ export function tracedChain(points: Float64Array): Float64Array {
 }
 
 /**
- * Packs the chains of a trace as the traced set the `accurate` mode draws. Each chain runs
+ * Packs the chains of a trace as the boundary set the overlay draws. Each chain runs
  * through the midpoint of every unit edge and is then smoothed by `tracedChain`, so the
  * set keeps the corners of the region data and carries none of the raster's saw tooth.
  */
@@ -605,9 +489,9 @@ export function packTracedLines(grid: RegionGrid, trace: RegionTrace): RegionLin
   );
 }
 
-/** Traces the grid and gives the smoothed boundary set. */
+/** Traces the grid and gives the boundary set the region overlay draws. */
 export function traceRegionLines(grid: RegionGrid): RegionLines {
-  return packRegionLines(grid, traceRegionChains(grid));
+  return packTracedLines(grid, traceRegionChains(grid));
 }
 
 /**
@@ -727,10 +611,8 @@ export function buildRegionFlow(coarse: CoarseRegionGrid): Uint8Array {
 
 /** What one region worker run gives the main thread. */
 export interface RegionData {
-  /** The smoothed boundary set, which the `simplified` mode draws. */
+  /** The boundary set the region overlay draws. */
   readonly lines: RegionLines;
-  /** The traced boundary set, which the `accurate` mode draws. */
-  readonly traced: RegionLines;
   /** The coarse region grid the label placement samples. */
   readonly grid: CoarseRegionGrid;
   /** The flow field over that grid, which a blocked label follows. */
@@ -738,8 +620,9 @@ export interface RegionData {
 }
 
 /**
- * Fills the grid, traces it and takes the coarse grid from it, in one call. One trace
- * serves both boundary sets, so the second set costs the region lookups nothing.
+ * Fills the grid, traces it and takes the coarse grid from it, in one call. The run gives
+ * one boundary set. A second, smoothed set was built beside it and is gone, so 805 KiB of
+ * `float32` positions no longer crosses the worker boundary.
  */
 export function buildRegionData(
   bounds: Range = galaxyModel.bounds,
@@ -749,8 +632,7 @@ export function buildRegionData(
   const trace = traceRegionChains(grid);
   const coarse = buildCoarseRegionGrid(grid);
   return {
-    lines: packRegionLines(grid, trace),
-    traced: packTracedLines(grid, trace),
+    lines: packTracedLines(grid, trace),
     grid: coarse,
     flow: buildRegionFlow(coarse),
   };

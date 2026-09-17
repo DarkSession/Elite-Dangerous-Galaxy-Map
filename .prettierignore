@@ -18,9 +18,23 @@ tests/fixtures/galaxy-detail.json
 demo-data/guardian-ruins.json
 demo-data/guardian-structures.json
 demo-data/notable-systems.json
+demo-data/uia.json
+demo-data/adamastor.json
 tests/fixtures/guardian-ruins-demo-set.json
 tests/fixtures/guardian-structures-demo-set.json
 tests/fixtures/notable-systems-demo-set.json
+tests/fixtures/uia-demo-set.json
+tests/fixtures/adamastor-demo-set.json
+
+# The two waypoint fixtures. Each line is one row of the table, as the source file writes
+# it, and Prettier would put each field of a row on a line of its own.
+tests/fixtures/uia-waypoints.json
+tests/fixtures/uia-waypoints-placeholder.json
+
+# The two extracts of the CanonnED3D-Map sources. They are the Canonn Research Group's own
+# JavaScript, and the parser test reads their quote styles and their comments.
+tests/fixtures/uia-extract.js
+tests/fixtures/adamastor-extract.js
 
 # Baseline images and other snapshots.
 e2e/**/*-snapshots/**

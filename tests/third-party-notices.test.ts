@@ -25,6 +25,9 @@ describe('the third-party notices', () => {
       'Guardian Ruins',
       'Guardian Structures',
       'Notable Systems',
+      'UIA',
+      'Adamastor',
+      'EDSM',
       'EDLoader1.svg',
     ]) {
       expect(notices, `the notices name ${source}`).toContain(source);

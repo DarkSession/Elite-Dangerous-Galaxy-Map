@@ -212,7 +212,12 @@ export interface RealSystemSet {
   readonly categoryVersion: number;
   /** Three game coordinates per system, in the order the records were added. */
   readonly positions: Float64Array;
-  /** The table index of each system's primary category, in the same order. */
+  /**
+   * The table index of the category each system draws through, in the same order. It is
+   * the first category the record names that is on: the primary category first, then the
+   * secondary categories in the record's own order. A system whose categories are all off
+   * draws no marker, and its entry holds the index of its primary category.
+   */
   readonly categoryIndices: Uint16Array;
   /**
    * One byte per system, in the same order: 1 when its marker draws and 0 when the
@@ -433,29 +438,45 @@ export function createSystemSet(): RealSystemSet {
   // a frame, and the spec holds it under 2 milliseconds for 10,000 systems.
   let lastSweepMs = 0;
 
-  /** True when any category the system belongs to is on. */
-  const anyCategoryOn = (system: RealSystem): boolean => {
-    if (categoryVisible.get(system.primaryCategory) !== false) return true;
-    // The marker takes its colour and its style from the primary category, and it
-    // draws while any category it belongs to is on. A row the user left on therefore
-    // keeps the system on the map.
+  /**
+   * The table index of the first category the system names that is on, or -1 when every
+   * one of them is off. The order is the primary category first, then the secondary
+   * categories in the record's own order.
+   *
+   * The marker draws while any category it belongs to is on, and it takes its colour, its
+   * style and its draw range from this one. A row the user left on therefore keeps the
+   * system on the map and gives it the colour of that row.
+   */
+  const firstCategoryOn = (system: RealSystem): number => {
+    if (categoryVisible.get(system.primaryCategory) !== false) {
+      return categoryOf.get(system.primaryCategory) ?? 0;
+    }
     const secondary = system.secondaryCategories;
     for (let index = 0; index < secondary.length; index += 1) {
-      if (categoryVisible.get(secondary[index] as string) !== false) return true;
+      const name = secondary[index] as string;
+      if (categoryVisible.get(name) !== false) return categoryOf.get(name) ?? 0;
     }
-    return false;
+    return -1;
   };
 
+  // One sweep writes both arrays. The drawn category comes out of the same read of the
+  // system's categories that says whether the marker draws at all, so the sweep costs
+  // one walk and the two readings never disagree.
   const refreshFlags = (): void => {
     if (flagsVersion === version && flagsCategoryVersion === categoryVersion) return;
     const startMs = performance.now();
     for (let index = 0; index < systems.length; index += 1) {
       const system = systems[index] as RealSystem;
-      const on = anyCategoryOn(system);
+      const drawn = firstCategoryOn(system);
       const kept =
         nameFilterFold.length === 0 ||
         system.name.toLowerCase().includes(nameFilterFold);
-      markerFlags[index] = on && kept ? 1 : 0;
+      markerFlags[index] = drawn >= 0 && kept ? 1 : 0;
+      // A system with every category off draws no marker, so the index it holds never
+      // reaches the frame. It keeps the primary category's index, which is always a row
+      // of the table, so no reader of the array meets an index outside it.
+      categoryIndices[index] =
+        drawn >= 0 ? drawn : (categoryOf.get(system.primaryCategory) ?? 0);
     }
     flagsVersion = version;
     flagsCategoryVersion = categoryVersion;
@@ -679,6 +700,7 @@ export function createSystemSet(): RealSystemSet {
       return positions.subarray(0, systems.length * 3);
     },
     get categoryIndices(): Uint16Array {
+      refreshFlags();
       return categoryIndices.subarray(0, systems.length);
     },
     get markerFlags(): Uint8Array {

@@ -56,6 +56,14 @@ export default tseslint.config(
       // and nothing here ships. An offline spike is written to be read once and thrown
       // away, and a lint error in one must not fail the lint of the code that ships.
       '*.local/**',
+      // The directory the demo data build fetches the sources into. `.gitignore` holds
+      // it, so the repository never carries one. Two of those sources are JavaScript of
+      // another project, which this project does not own and does not ship.
+      'data/**',
+      // The committed extracts of those two sources. They are test data: each one is cut
+      // from the source and keeps its own style, so the lint of this project says nothing
+      // about them.
+      'tests/fixtures/*-extract.js',
     ],
   },
   js.configs.recommended,

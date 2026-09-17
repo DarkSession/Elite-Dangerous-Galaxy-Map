@@ -1,0 +1,400 @@
+{
+  "source": "https://github.com/canonn-science/CanonnED3D-Map",
+  "licence": "MIT. The site records come from the Canonn Research Group.",
+  "categories": [
+    {
+      "name": "Aegis' Alexandria Disappeared",
+      "color": [
+        102,
+        255,
+        102
+      ]
+    },
+    {
+      "name": "Hyford's Cache & D-2's LPs",
+      "color": [
+        255,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Project Seraph Settlements",
+      "color": [
+        102,
+        102,
+        255
+      ]
+    },
+    {
+      "name": "Battles of Cornsar",
+      "color": [
+        255,
+        102,
+        102
+      ]
+    }
+  ],
+  "systems": [
+    {
+      "name": "HIP 16538",
+      "coords": {
+        "x": -24.625,
+        "y": -84.0625,
+        "z": -139.34375
+      },
+      "primaryCategory": "Aegis' Alexandria Disappeared",
+      "secondaryCategories": [],
+      "description": "Galnet: Aegis Megaship Vanishes In Hyperspace"
+    },
+    {
+      "name": "HIP 22460",
+      "coords": {
+        "x": -41.3125,
+        "y": -58.96875,
+        "z": -354.78125
+      },
+      "primaryCategory": "Project Seraph Settlements",
+      "secondaryCategories": [],
+      "description": "Project Seraph - Fort Asch, the Overlook and two Thargoid Imprint Sites"
+    },
+    {
+      "name": "HIP 26176",
+      "coords": {
+        "x": 394.4375,
+        "y": -323.53125,
+        "z": -1431.84375
+      },
+      "primaryCategory": "Project Seraph Settlements",
+      "secondaryCategories": [
+        "Hyford's Cache & D-2's LPs"
+      ],
+      "description": "Project Seraph - Oaken Point and D-2´s LP #1"
+    },
+    {
+      "name": "Col 69 Sector JI-I c10-4",
+      "coords": {
+        "x": 439.40625,
+        "y": -237.59375,
+        "z": -1208.71875
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": [],
+      "description": "D-2´s LP #2"
+    },
+    {
+      "name": "Wregoe DK-R b4-1",
+      "coords": {
+        "x": 171.65625,
+        "y": 7.5625,
+        "z": -951.1875
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": [],
+      "description": "D-2´s LP #3"
+    },
+    {
+      "name": "Synuefe Gb-O c9-8",
+      "coords": {
+        "x": -48.78125,
+        "y": -72.21875,
+        "z": -656.0625
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": [],
+      "description": "D-2´s Permit LP #4"
+    },
+    {
+      "name": "Colonia",
+      "coords": {
+        "x": -9530.5,
+        "y": -910.28125,
+        "z": 19808.125
+      },
+      "primaryCategory": "Hyford's Cache & D-2's LPs",
+      "secondaryCategories": [],
+      "description": "Hyford´s Cache"
+    },
+    {
+      "name": "Cornsar",
+      "coords": {
+        "x": -94.15625,
+        "y": -53.5625,
+        "z": -15.90625
+      },
+      "primaryCategory": "Battles of Cornsar",
+      "secondaryCategories": [],
+      "description": "Galnet: Thargoid Strike Follows Salvation´s Prediction"
+    }
+  ],
+  "spheres": [],
+  "lines": [
+    {
+      "points": [
+        [
+          195.625,
+          -36.65625,
+          -141.6875
+        ],
+        [
+          173.40625,
+          1.59375,
+          -63.1875
+        ],
+        [
+          142.65625,
+          56.46875,
+          40.34375
+        ]
+      ],
+      "color": [
+        255,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Adamastor Initial Route"
+    },
+    {
+      "points": [
+        [
+          195.625,
+          -36.65625,
+          -141.6875
+        ],
+        [
+          173.40625,
+          1.59375,
+          -63.1875
+        ]
+      ],
+      "color": [
+        102,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Line Through Waypoints"
+    },
+    {
+      "points": [
+        [
+          195.625,
+          -36.65625,
+          -141.6875
+        ],
+        [
+          218.78125,
+          -102.4375,
+          -279.34375
+        ],
+        [
+          432.625,
+          2.53125,
+          288.6875
+        ],
+        [
+          170.96875,
+          113.15625,
+          207.15625
+        ]
+      ],
+      "color": [
+        102,
+        255,
+        102
+      ],
+      "width": 2,
+      "name": "Adamastor Diversion Route"
+    },
+    {
+      "points": [
+        [
+          142.65625,
+          56.46875,
+          40.34375
+        ],
+        [
+          170.96875,
+          113.15625,
+          207.15625
+        ]
+      ],
+      "color": [
+        68,
+        102,
+        68
+      ],
+      "width": 2,
+      "name": "Adamastor's Return Journey"
+    },
+    {
+      "points": [
+        [
+          173.40625,
+          1.59375,
+          -63.1875
+        ],
+        [
+          142.65625,
+          56.46875,
+          40.34375
+        ]
+      ],
+      "color": [
+        160,
+        160,
+        160
+      ],
+      "width": 2
+    },
+    {
+      "points": [
+        [
+          142.65625,
+          56.46875,
+          40.34375
+        ],
+        [
+          170.96875,
+          113.15625,
+          207.15625
+        ]
+      ],
+      "color": [
+        102,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Intersection of Routes"
+    },
+    {
+      "points": [
+        [
+          120.03125,
+          60.21875,
+          44.71875
+        ],
+        [
+          156.6875,
+          22.28125,
+          -33.0625
+        ],
+        [
+          143.75,
+          -33.5625,
+          -106.53125
+        ],
+        [
+          168.0625,
+          -73.90625,
+          -192
+        ],
+        [
+          208.71875,
+          -138.84375,
+          -255.4375
+        ],
+        [
+          198.65625,
+          -214.125,
+          -309.8125
+        ],
+        [
+          191.5625,
+          -259.1875,
+          -391.71875
+        ],
+        [
+          215.96875,
+          -306.125,
+          -468.40625
+        ],
+        [
+          268.21875,
+          -328.25,
+          -544.3125
+        ],
+        [
+          330.46875,
+          -357.65625,
+          -603.4375
+        ],
+        [
+          337.625,
+          -359.71875,
+          -701.125
+        ],
+        [
+          376.8125,
+          -332.875,
+          -784.84375
+        ],
+        [
+          378.59375,
+          -340.6875,
+          -882.15625
+        ],
+        [
+          455.625,
+          -343.8125,
+          -941.4375
+        ],
+        [
+          536.375,
+          -339.3125,
+          -991.59375
+        ],
+        [
+          507.25,
+          -336.1875,
+          -1078.125
+        ],
+        [
+          440.84375,
+          -309.40625,
+          -1136.9375
+        ],
+        [
+          359.75,
+          -325.03125,
+          -1185.3125
+        ]
+      ],
+      "color": [
+        102,
+        102,
+        255
+      ],
+      "width": 2,
+      "name": "Hesperus 17 Beacon Route"
+    },
+    {
+      "points": [
+        {
+          "system": "HIP 26176"
+        },
+        {
+          "system": "Col 69 Sector JI-I c10-4"
+        },
+        {
+          "system": "Wregoe DK-R b4-1"
+        },
+        {
+          "system": "Synuefe Gb-O c9-8"
+        },
+        {
+          "system": "HIP 22460"
+        }
+      ],
+      "color": [
+        255,
+        102,
+        102
+      ],
+      "width": 2,
+      "name": "Hyford's Cache & D-2's LPs"
+    }
+  ]
+}

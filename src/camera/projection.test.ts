@@ -199,11 +199,7 @@ describe('the inverse the region overlay unprojects with', () => {
     const point: [number, number, number] = [1200, 0, -4300];
     const screen = project(view, point, viewport);
     expect(screen.inFront).toBe(true);
-    const direction = rayDirectionFrom(
-      inverse,
-      { x: screen.x, y: screen.y },
-      viewport,
-    );
+    const direction = rayDirectionFrom(inverse, { x: screen.x, y: screen.y }, viewport);
     const camera = cameraPosition(view);
     const along = [point[0] - camera[0], point[1] - camera[1], point[2] - camera[2]];
     const span = Math.hypot(along[0], along[1], along[2]);

@@ -1,15 +1,8 @@
-// The map options panel: the region mode, the system names switch and the coordinate
-// grid switch. Each control shows the state the map is in, so a host that changes a
-// setting through the handle moves the control with it.
-import type { GalaxyMap, RegionMode } from '../app/create-map';
+// The map options panel: the galactic regions switch, the system names switch, the
+// coordinate grid switch and the shapes switch. Each control shows the state the map is
+// in, so a host that changes a setting through the handle moves the control with it.
+import type { GalaxyMap } from '../app/create-map';
 import { make, makeButton, setPressed } from './dom';
-
-/** The three region modes, with the text the mockup gives each. */
-const REGION_MODES: readonly { mode: RegionMode; label: string }[] = [
-  { mode: 'off', label: 'NONE' },
-  { mode: 'simplified', label: 'SIMPLIFIED' },
-  { mode: 'accurate', label: 'ACCURATE' },
-];
 
 /** The map options panel of the HUD. */
 export interface OptionsPanel {
@@ -45,25 +38,11 @@ export function createOptionsPanel(doc: Document, map: GalaxyMap): OptionsPanel 
 
   const body = make(doc, 'div', 'gm-hud__panel-body');
 
-  const group = make(doc, 'div', 'gm-hud__group');
-  const groupLabel = make(doc, 'div', 'gm-hud__group-label');
-  groupLabel.textContent = 'GALAXY REGIONS';
-  const segments = make(doc, 'div', 'gm-hud__segments');
-  segments.setAttribute('role', 'group');
-  segments.setAttribute('aria-label', 'Galaxy regions');
-  const buttons: { mode: RegionMode; button: HTMLButtonElement }[] = [];
-  for (const entry of REGION_MODES) {
-    const button = makeButton(doc, 'gm-hud__segment');
-    button.textContent = entry.label;
-    button.dataset['name'] = entry.mode;
-    button.addEventListener('click', () => {
-      map.setRegionMode(entry.mode);
-      update();
-    });
-    segments.appendChild(button);
-    buttons.push({ mode: entry.mode, button });
-  }
-  group.append(groupLabel, segments);
+  const regions = makeToggle(doc, 'galactic-regions', 'Galactic regions');
+  regions.button.addEventListener('click', () => {
+    map.setRegionsVisible(!map.areRegionsVisible());
+    update();
+  });
 
   const names = makeToggle(doc, 'system-names', 'System names');
   names.button.addEventListener('click', () => {
@@ -77,14 +56,22 @@ export function createOptionsPanel(doc: Document, map: GalaxyMap): OptionsPanel 
     update();
   });
 
-  body.append(group, names.button, grid.button);
+  // The switch draws whether or not the map holds a shape, because a host can add one
+  // at any time.
+  const shapes = makeToggle(doc, 'shapes', 'Shapes');
+  shapes.button.addEventListener('click', () => {
+    map.setShapesVisible(!map.areShapesVisible());
+    update();
+  });
+
+  body.append(regions.button, names.button, grid.button, shapes.button);
   element.append(header, body);
 
   function update(): void {
-    const mode = map.getRegionMode();
-    for (const entry of buttons) setPressed(entry.button, entry.mode === mode);
+    setPressed(regions.button, map.areRegionsVisible());
     setPressed(names.button, map.areSystemNamesVisible());
     setPressed(grid.button, map.isGridVisible());
+    setPressed(shapes.button, map.areShapesVisible());
   }
 
   update();

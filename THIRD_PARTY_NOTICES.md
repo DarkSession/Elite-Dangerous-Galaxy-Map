@@ -136,6 +136,72 @@ carried over under the MIT licence above, with the markup removed.
 The category names, the colours and the category descriptions in that file are this
 project's own.
 
+## The UIA Map records, spheres and lines of the demo page
+
+`demo-data/uia.json` holds 18 categories, 1,116 systems, 54 spheres and 983 lines of 2,214
+points. The records come from the Canonn Research Group's
+[CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map) project, under the
+**MIT** licence above, and the file is a conversion of three files of that project:
+
+| File                                               | What the conversion takes from it                           |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| `Source/data/MapData-UIA.js`                       | 16 systems, the category table, the four sphere lists       |
+| `Source/data/csvCache/uia_waypoints_1..9.json`     | The waypoints of each anomaly and the route each one traces |
+| `Source/data/csvCache/route_UIA_Hyperdictions.csv` | One row for each hyperdiction a commander reported          |
+
+The map builds itself from the last two at run time, so a conversion of the first file
+alone writes a set the live map never shows. `scripts/build-demo-systems.mjs` makes the
+conversion, and `pnpm build:demo-data` runs it. The conversion keeps each system's name,
+its coordinates and its categories, turns the `infos` field of the source into the
+plain-text description the HUD shows, and reads the sphere lists, the waypoint routes and
+the report pairs. **The description text of the 16 systems is Canonn's own writing**,
+carried over under the MIT licence, with the markup removed.
+
+**The set names commanders.** A record that is the end of a hyperdiction carries the name
+of the commander who filed that report and the date of it, as the report file carries
+them. Those names are already published in the Canonn repository under the MIT licence
+above. The committed fixtures of the tests carry invented names and no name of the report
+file.
+
+The source is JavaScript. The converter **parses** the `systemsData` literal and runs no
+statement of the file, so a later source cannot run code in this repository.
+
+The sphere colours are the colours of the source's own materials in `finishMap`. The
+category descriptions in that file are this project's own.
+
+## The Adamastor Routes records and lines of the demo page
+
+`demo-data/adamastor.json` holds 4 categories, 8 systems and 8 lines of 38 points. The
+records come from the same CanonnED3D-Map project, under the same **MIT** licence, and the
+file is a conversion of that project's `Source/data/MapData-Adamastor.js` source. The
+conversion keeps each system's name, its coordinates and its categories, turns the `infos`
+field into a plain-text description, and reads the `routes` list as lines. A line takes the
+colour of the category the route names, which is the source's own colour. A route that
+names a category the source's table does not hold takes a grey of this project's own.
+
+The routes name their points by system name, and the source holds no position for a name
+its own `systems` list does not carry. The converter reads those names from
+[EDSM](https://www.edsm.net/), under the terms of that site's public
+[API](https://www.edsm.net/en/api-v1). **The lookup runs in the converter, at build time**,
+and the answers are committed in the JSON, so the map itself calls EDSM at no point. The
+converter drops a name EDSM does not hold, and it reports every drop.
+
+## The committed extracts of the two CanonnED3D-Map sources
+
+`tests/fixtures/uia-extract.js` and `tests/fixtures/adamastor-extract.js` are extracts of
+`MapData-UIA.js` and `MapData-Adamastor.js`, cut to about 20 records each. They are the
+**Canonn Research Group's own JavaScript**, carried under the **MIT** licence above, and
+they keep the style of the source: its comments, its quote styles and its commented-out
+blocks. The unit tests read them, so the conversion rules are checked with no network and
+on a clean checkout. Neither build carries them, and the lint of this project does not
+read them.
+
+`tests/fixtures/uia-waypoints.json`, `tests/fixtures/uia-waypoints-placeholder.json` and
+`tests/fixtures/uia-hyperdictions.csv` are **this project's own writing**. They keep the
+shape of the two files the UIA map fetches, with invented system names and invented
+commander names, so the tests hold the conversion rules and carry no record of the Canonn
+files.
+
 ## The HUD fonts
 
 The HUD bundles two font families. The build carries the `woff2` files from the two

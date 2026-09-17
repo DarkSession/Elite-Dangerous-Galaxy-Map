@@ -10,12 +10,11 @@
 // carries the alpha and the tone, so one channel holds the whole band.
 //
 // The pass does not smooth the coverage. The band is 1.6 per cent of the viewport height
-// each side, which is 17.28 CSS pixels at 1,080 rows, and the coverage is an exact
-// distance to the segment blended with MAX, so the sharpest corner of the traced set is
-// already a round turn of that half width. What the width does not do is hide the
-// raster: both sets are smoothed lines, and the drawn `accurate` set reads 0.06 CSS
-// pixels of roughness at the nearest range that draws against the lattice polyline's
-// 1.26.
+// each side at the reference range, which is 17.28 CSS pixels at 1,080 rows, and the
+// coverage is an exact distance to the segment blended with MAX, so the sharpest corner of
+// the traced set is already a round turn of that half width. What the width does not do is
+// hide the raster: the traced set is a smoothed line and reads 0.06 CSS pixels of roughness
+// at the nearest range that draws, against the lattice polyline's 1.26.
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -44,20 +43,15 @@ export const REGION_TONE_CORE: readonly [number, number, number] = [0.9, 0.79, 0
 export const REGION_LINE_OPACITY = 0.62;
 
 /**
- * The width of the band's edge, in CSS pixels. The top of the band is flat over the rest
- * of its width. The edge is fixed in CSS pixels and not a share of the half width
- * because it is a crispness and not a size: a share would read as sharp on a small
- * window and soft on a large one.
+ * The share of the coverage channel the band's edge takes. The top of the band is flat
+ * over the rest of its width.
+ *
+ * The edge was 4 CSS pixels, capped at a quarter of the half width. The half width now
+ * follows the range, so a fixed number of CSS pixels would be a quarter of the band at
+ * the near end of the range and the whole of it at the far end, and the band would change
+ * its profile as it narrows. A share keeps one profile at every width.
  */
-export const REGION_EDGE_CSS = 4;
-
-/**
- * The largest share of the half width the edge takes. At the half width floor of 8 CSS
- * pixels a fixed 4 CSS pixel edge would take half of the half width, and the band would
- * read as a core with a ramp around it and no outer part. The quarter leaves the outer
- * part 2.5 CSS pixels of flat top there.
- */
-export const REGION_EDGE_MAX_SHARE = 0.25;
+export const REGION_EDGE_SHARE = 0.25;
 
 /**
  * The share of the band's whole width the core takes. The core is a part of the band, so
@@ -67,11 +61,12 @@ export const REGION_EDGE_MAX_SHARE = 0.25;
 export const REGION_CORE_SHARE = 0.25;
 
 /**
- * The width of the transition from the outer tone to the core tone, in CSS pixels. It is
- * fixed, as the edge is, so the two tones meet over the same short ramp at every
- * viewport.
+ * Half the width of the transition from the outer tone to the core tone, as a share of
+ * the coverage channel. It is 1.5 CSS pixels over the 17.28 half width of 1,080 rows,
+ * which is the width the old fixed rule gave at the reference range, held as a share for
+ * the same reason the edge is.
  */
-export const REGION_CORE_EDGE_CSS = 1.5;
+export const REGION_CORE_EDGE_SHARE = 0.087;
 
 /** The side of one cell of the region grid the traced set runs along, in light years. */
 export const REGION_CELL_LY = 49.3494;
@@ -84,6 +79,13 @@ export const REGION_BAND_HALF_WIDTH_MIN_CSS = 8;
 
 /** The largest half width the band takes, in CSS pixels. */
 export const REGION_BAND_HALF_WIDTH_MAX_CSS = 24;
+
+/**
+ * The smallest half width the band takes at any range, in CSS pixels. It binds at a range
+ * of 103,680 light years at 1,080 rows, which is beyond the far rim of the galaxy from
+ * any view the map draws, so it is there to keep a far line drawn and not to shape it.
+ */
+export const REGION_BAND_HALF_WIDTH_FLOOR_CSS = 2;
 
 /** The zoom distance above which the overlay draws nothing, in light years. */
 export const REGION_FADE_IN_FAR = 30000;
@@ -100,10 +102,10 @@ export const REGION_FADE_IN_NEAR = 20000;
  * region labels read the same two figures at their own plane anchor, so a name and the
  * line under it read at the same strength.
  */
-export const REGION_RANGE_NONE = 10000;
+export const REGION_RANGE_NONE = 8000;
 
 /** The range at and above which a line draws in full, in light years. */
-export const REGION_RANGE_FULL = 20000;
+export const REGION_RANGE_FULL = 12000;
 
 /** The four corners of the ribbon quad, as a triangle strip. */
 const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
@@ -144,35 +146,24 @@ export function regionBandHalfWidthCss(viewportHeightCss: number): number {
   return Math.min(share, REGION_BAND_HALF_WIDTH_MAX_CSS);
 }
 
-/** The two shares of the coverage channel the composite reads the band's profile with. */
-export interface RegionBandShares {
-  /**
-   * The share of the coverage the edge takes, which is `min(0.25, 4 / halfWidth)`. The
-   * alpha is `smoothstep(0, edgeShare, coverage)`, so the band has a flat top and an
-   * edge of 4 CSS pixels, or a quarter of the half width where that is less.
-   */
-  readonly edgeShare: number;
-  /**
-   * Half the width of the transition to the core tone, as a share of the coverage. The
-   * tone runs from the outer one to the core one over `0.75 -/+ coreEdge`, which is 1.5
-   * CSS pixels each side of the core's own edge.
-   */
-  readonly coreEdge: number;
-}
-
 /**
- * The two shares of the coverage channel for a half width in CSS pixels. The coverage is
- * `1 - gap / halfWidth`, so a width in CSS pixels becomes a share by one divide.
+ * The band's half width at one range, in CSS pixels. It is the base width at the
+ * reference range and nearer, and it falls as `1 / range` beyond it, held at the floor.
  *
- * The pass works the half width out for the ribbon quads already, so both shares cost
- * one divide on the processor and no new state.
+ * The band bounds an area of the galactic plane, so it belongs to the picture and takes a
+ * size in the picture. A band that held 34.6 CSS pixels at every range covered a region on
+ * the far side of the galaxy from edge to edge.
+ *
+ * The shader works this out per vertex. This function is the same rule on the processor,
+ * for the tests and for the view searches.
  */
-export function regionBandShares(halfWidthCss: number): RegionBandShares {
-  const half = Math.max(halfWidthCss, 1e-6);
-  return {
-    edgeShare: Math.min(REGION_EDGE_MAX_SHARE, REGION_EDGE_CSS / half),
-    coreEdge: REGION_CORE_EDGE_CSS / half,
-  };
+export function regionBandHalfWidthAtRange(
+  viewportHeightCss: number,
+  range: number,
+): number {
+  const base = regionBandHalfWidthCss(viewportHeightCss);
+  const width = (base * REGION_RANGE_FULL) / Math.max(range, 1);
+  return Math.min(base, Math.max(REGION_BAND_HALF_WIDTH_FLOOR_CSS, width));
 }
 
 /** What one region pass draw needs. */
@@ -189,11 +180,6 @@ export interface RegionPassFrame {
   readonly fade: number;
   /** How many device pixels one CSS pixel holds. */
   readonly pixelRatio: number;
-  /**
-   * True draws the traced boundary set and false the smoothed one. The pass holds both,
-   * so a change is a bind of another vertex array and not an upload.
-   */
-  readonly traced: boolean;
 }
 
 /** The region overlay pass. */
@@ -221,7 +207,9 @@ export function createRegionPrograms(gl: WebGL2RenderingContext): RegionPrograms
       'uViewProjection',
       'uChunkOffset',
       'uTargetSize',
-      'uHalfWidth',
+      'uBaseHalfWidth',
+      'uFloorHalfWidth',
+      'uReferenceRange',
     ]),
     composite: createProgram(
       gl,
@@ -333,15 +321,13 @@ export function createRegionPass(
   programs: RegionPrograms,
   lines: RegionLines,
   fullScreenVertexArray: WebGLVertexArrayObject,
-  traced: RegionLines = lines,
 ): RegionPass {
   const cornerBuffer = gl.createBuffer();
   if (cornerBuffer === null) {
     throw new Error('The context gave no buffer for the region boundaries.');
   }
   // The corner steps once per vertex of the quad. The two endpoints step once per
-  // segment, and the draw loop points them at the chain it is about to draw. The two
-  // sets share it.
+  // segment, and the draw loop points them at the chain it is about to draw.
   gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, RIBBON_CORNERS, gl.STATIC_DRAW);
 
@@ -375,10 +361,7 @@ export function createRegionPass(
     return { set, vertexArray, positionBuffer };
   };
 
-  const smoothedUpload = upload(lines);
-  // The two sets hold the same chain count, so a chain of one is the same boundary as the
-  // chain of the same index in the other.
-  const tracedUpload = traced === lines ? smoothedUpload : upload(traced);
+  const drawn = upload(lines);
 
   const coverage = createCoverageTarget(gl);
 
@@ -400,7 +383,7 @@ export function createRegionPass(
       // covers the same part of the screen at every device pixel ratio.
       const halfWidthCss = regionBandHalfWidthCss(height / frame.pixelRatio);
       const halfWidth = halfWidthCss * frame.pixelRatio;
-      const drawn = frame.traced ? tracedUpload : smoothedUpload;
+      const floorHalfWidth = REGION_BAND_HALF_WIDTH_FLOOR_CSS * frame.pixelRatio;
       coverage.resize(width, height);
 
       // Step one: the coverage of every segment, largest value wins. The MAX equation
@@ -426,7 +409,11 @@ export function createRegionPass(
         frame.chunkOffset[2],
       );
       gl.uniform2f(ribbon.uniforms['uTargetSize'] ?? null, width, height);
-      gl.uniform1f(ribbon.uniforms['uHalfWidth'] ?? null, halfWidth);
+      gl.uniform1f(ribbon.uniforms['uBaseHalfWidth'] ?? null, halfWidth);
+      gl.uniform1f(ribbon.uniforms['uFloorHalfWidth'] ?? null, floorHalfWidth);
+      // The reference range is the range at which the band carries its base width, and it
+      // is the same figure the composite's range fade ends at. One figure, one constant.
+      gl.uniform1f(ribbon.uniforms['uReferenceRange'] ?? null, REGION_RANGE_FULL);
 
       gl.bindVertexArray(drawn.vertexArray);
       gl.bindBuffer(gl.ARRAY_BUFFER, drawn.positionBuffer);
@@ -486,11 +473,11 @@ export function createRegionPass(
         composite.uniforms['uOpacity'] ?? null,
         REGION_LINE_OPACITY * frame.fade,
       );
-      // The two shares of the coverage channel the profile reads. Both follow the half
-      // width in CSS pixels, which the ribbon step worked out above.
-      const shares = regionBandShares(halfWidthCss);
-      gl.uniform1f(composite.uniforms['uEdgeShare'] ?? null, shares.edgeShare);
-      gl.uniform1f(composite.uniforms['uCoreEdge'] ?? null, shares.coreEdge);
+      // The two shares of the coverage channel the profile reads. Both are constants: the
+      // coverage is already normalised by the half width, so a share is a fixed part of
+      // the band at every width and the profile does not change as the band narrows.
+      gl.uniform1f(composite.uniforms['uEdgeShare'] ?? null, REGION_EDGE_SHARE);
+      gl.uniform1f(composite.uniforms['uCoreEdge'] ?? null, REGION_CORE_EDGE_SHARE);
       gl.uniformMatrix4fv(
         composite.uniforms['uInverseViewProjection'] ?? null,
         false,
@@ -507,10 +494,8 @@ export function createRegionPass(
     dispose(): void {
       coverage.dispose();
       gl.deleteBuffer(cornerBuffer);
-      for (const held of new Set([smoothedUpload, tracedUpload])) {
-        gl.deleteBuffer(held.positionBuffer);
-        gl.deleteVertexArray(held.vertexArray);
-      }
+      gl.deleteBuffer(drawn.positionBuffer);
+      gl.deleteVertexArray(drawn.vertexArray);
     },
   };
 }

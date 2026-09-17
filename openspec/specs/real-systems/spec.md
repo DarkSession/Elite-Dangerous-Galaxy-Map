@@ -8,12 +8,13 @@ system.
 
 ## Requirements
 
-### Requirement: The map is created through a library entry point
+### Requirement: The map is created through a library entry point that returns a handle
 
 The map SHALL expose `createGalaxyMap(canvas, options)`. The call SHALL return a handle
 in the same tick, before the scene data is ready. `options` SHALL be optional, and SHALL
 carry an optional `labelHost` element for the region label overlay, an optional
-`regionMode`, which `galactic-regions` defines, an optional `grid`, which
+`regions`, which `galactic-regions` defines, an optional `shapes`, which `map-shapes`
+defines, an optional `grid`, which
 `coordinate-grid` defines, an optional `hud`, which `map-hud` defines, an optional
 `datasets` and an optional `dataset`, which `dataset-catalog` defines, and an optional
 `loadingImage`, which the requirement below defines. With no `labelHost`
@@ -39,8 +40,8 @@ The handle SHALL carry these members:
 | `getView()`                   | Reads the current view                                        |
 | `setView(view)`               | Replaces part or all of the current view                      |
 | `onViewChange(fn)`            | Calls `fn` after the view changes, and returns an unsubscribe |
-| `getRegionMode()`             | Reads the region overlay mode                                 |
-| `setRegionMode(mode)`         | Replaces the region overlay mode                              |
+| `areRegionsVisible()`         | Reads whether the region overlay draws                        |
+| `setRegionsVisible(on)`       | Turns the region overlay on or off                            |
 | `getSystem(index)`            | Reads one system of the set, or null outside it               |
 | `categoryCount()`             | How many categories the table holds                           |
 | `getCategory(index)`          | Reads one category of the table, or null outside it           |
@@ -59,6 +60,15 @@ The handle SHALL carry these members:
 | `isGridVisible()`             | Reads whether the coordinate grid draws                       |
 | `onGridChange(fn)`            | Calls `fn` after the grid switch moves, returns an unsubscribe |
 | `regionNameAt(point)`         | The region name at a point on the galactic plane, or null     |
+| `addSpheres(spheres)`         | Reads spheres into the shape set and returns the report       |
+| `addLines(lines)`             | Reads lines into the shape set and returns the report         |
+| `clearShapes()`               | Empties the shape set                                         |
+| `sphereCount()`               | How many spheres the shape set holds                          |
+| `lineCount()`                 | How many lines the shape set holds                            |
+| `getSphere(index)`            | Reads one sphere of the set, or null outside it               |
+| `getLine(index)`              | Reads one line of the set, or null outside it                 |
+| `setShapesVisible(on)`        | Turns the spheres and the lines on or off                     |
+| `areShapesVisible()`          | Reads whether the spheres and the lines draw                  |
 | `getDatasets()`               | The dataset catalog, which `dataset-catalog` defines          |
 | `getLoadedDataset()`          | The dataset now on the map, or null                           |
 | `loadDataset(id)`             | Loads one dataset and returns a promise of its reports        |
@@ -128,15 +138,32 @@ The demo page SHALL call the entry point, SHALL put the handle on `window.galaxy
 and SHALL keep every `window.__galaxyMap` hook the browser tests read today, including
 `renderer`, which carries the hardware assertion.
 
-`getRegionMode` and `setRegionMode` are on the handle and not on `debug`, because the
-region mode is a setting a host chooses and not a renderer probe. The `regions` pass
-switch stays on `debug`.
+`areRegionsVisible`, `setRegionsVisible`, `areShapesVisible` and `setShapesVisible` are on
+the handle and not on `debug`, because each one is a setting a host chooses and not a
+renderer probe. The `regions` pass switch and the `shapes` pass switch stay on `debug`.
 
-#### Scenario: The region mode is on the handle and not on debug
+The nine shape members are the whole shape surface, which `map-shapes` defines. A shape is
+not in the category table, so no member of the category rows reaches one.
 
-- **WHEN** a browser test reads `getRegionMode` and `setRegionMode` on the handle and on
-  `debug`
-- **THEN** both are functions on the handle, and neither is on `debug`
+**The handle carried `getRegionMode` and `setRegionMode`.** The region overlay now takes one
+switch, which `galactic-regions` states, so the two members and the `regionMode` option are
+gone and the two rows above replace them.
+
+#### Scenario: The overlay switches are on the handle and not on debug
+
+- **WHEN** a browser test reads `areRegionsVisible`, `setRegionsVisible`, `areShapesVisible`
+  and `setShapesVisible` on the handle and on `debug`, and reads `getRegionMode` and
+  `setRegionMode` on both
+- **THEN** the first four are functions on the handle and none of them is on `debug`, and
+  `getRegionMode` and `setRegionMode` are on neither
+
+#### Scenario: The handle carries the shape members
+
+- **WHEN** a browser test builds a map, adds one sphere and one line, and reads
+  `addSpheres`, `addLines`, `clearShapes`, `sphereCount`, `lineCount`, `getSphere` and
+  `getLine` on the handle and on `debug`
+- **THEN** all seven are on the handle, none is on `debug`, and `sphereCount` and
+  `lineCount` each read 1
 
 #### Scenario: The handle works before the first frame
 
@@ -237,8 +264,6 @@ then met as they were before the split.
 - **THEN** `window.__galaxyMap.error` holds the message and the page's message box shows
   it
 
-
-
 ### Requirement: The handle releases what it holds on dispose
 
 `dispose` SHALL stop the frame loop, SHALL remove the event listeners the map added,
@@ -254,8 +279,6 @@ signal, and SHALL terminate every worker it started when the signal fires.
 - **WHEN** the browser test waits for `ready`, reads `debug.frameStats().frames`, calls
   `dispose`, waits 10 animation frames, reads it again, and calls `dispose` a second time
 - **THEN** the two readings are equal and the second call throws nothing
-
-
 
 ### Requirement: A category carries a name, a colour and a description
 
@@ -365,8 +388,6 @@ allegiance and a host that groups them by star class both fit the same call.
 - **WHEN** a unit test adds one category whose `description` is the number 7
 - **THEN** the category is accepted, its name and colour hold, and it carries no
   description
-
-
 
 ### Requirement: A record follows the shape of an EDSM or a Spansh dump
 
@@ -504,8 +525,6 @@ and the report names every record that arrived too early.
   index 2, `no-coords` at index 3, `out-of-bounds` at index 4, `no-category` at index 5
   and `unknown-category` at index 6
 
-
-
 ### Requirement: A system's identity is its id64, or its name
 
 The identity of a record SHALL be its `id64` when it has one, and its `name` when it has
@@ -529,8 +548,6 @@ in it.
 - **THEN** the first is reported under `replaced` and holds the new position, the second
   is rejected as `over-capacity`, and the count stays 10,000
 
-
-
 ### Requirement: The set holds up to 10,000 systems
 
 The set SHALL hold at most 10,000 systems. `addSystems` SHALL accept records up to that
@@ -548,8 +565,6 @@ and a description" defines, SHALL free both bounds: after it the next calls SHAL
   calls `clearSystems` and adds 10,000
 - **THEN** the second call reports `added` 2 and 3 entries of `over-capacity`, and the
   third call reports `added` 10,000 and no rejection
-
-
 
 ### Requirement: The set holds positions in float64
 
@@ -575,8 +590,6 @@ them.
 - **WHEN** a unit test adds three records and reads the set's position array
 - **THEN** the array is a `Float64Array` of length 9 and holds the three positions in
   the order the records were added
-
-
 
 ### Requirement: The demo page loads the Guardian Ruins data set
 
@@ -832,7 +845,6 @@ the set holds.
 - **THEN** the first reading is (153, 230, 255) and the second is (255, 40, 40), each
   within 2 per channel, and the system count does not change
 
-
 ### Requirement: The marker pass draws over the finished frame
 
 The marker pass SHALL draw after the tone map and after the region boundary overlay, and
@@ -870,8 +882,6 @@ overlap blend in a fixed order.
 - **THEN** the two image files are byte-identical, and the frame still matches the
   committed baseline image with at most 2 percent of pixels differing
 
-
-
 ### Requirement: A marker's drawn position is exact
 
 The renderer SHALL subtract the camera position from each system position in `float64`
@@ -891,8 +901,6 @@ only for the near ones.
   spread over the model bounds through a `float32` emulation of the vertex transform
 - **THEN** every drawn position is within 0.01 light years of the `float64` result
 
-
-
 ### Requirement: The marker pass has a switch
 
 The renderer SHALL expose a `systems` switch beside the switches for the volume, the
@@ -905,8 +913,6 @@ SHALL draw nothing.
   and reads the frame, then switches the systems off and reads it again
 - **THEN** the two frames differ with the switch on, and the frame with the switch off is
   byte-identical to the frame the page draws with an empty set
-
-
 
 ### Requirement: Frame budget with a full set
 
@@ -956,7 +962,6 @@ frame budget uses, so it holds that CPU work and the GPU work together.
   `docs/roadmap.md` and no test holds it. The old rule reached its 30 CSS pixel cap at a range of
   about 1,560 light years, so the old worst case put the systems within 10,000 light years
   of Sol
-
 
 ### Requirement: A marker draws in one of two styles
 
@@ -1109,7 +1114,6 @@ odd height: the middle of the screen is then the centre of one pixel.
 - **THEN** the row width grows by a factor between 2.0 and 2.7, and the system count does
   not change. The bounds are the ones the scenario above gives, and for the same reason
 
-
 ### Requirement: A category limits the range its markers draw at
 
 A category SHALL carry a `maxDrawRange` in light years. A marker SHALL draw only while
@@ -1182,8 +1186,6 @@ cuts markers reports fewer than the set holds.
   at each projection
 - **THEN** the first system's marker does not draw and the second's does
 
-
-
 ### Requirement: A category can be turned off
 
 The handle SHALL carry `setCategoryVisible(name, visible)` and `isCategoryVisible(name)`.
@@ -1192,22 +1194,33 @@ the map it sees today.
 
 A marker SHALL draw and SHALL be picked when **any** category the system belongs to is
 on, and SHALL NOT draw and SHALL NOT be picked when every one of them is off. The rule
-reads the primary category and every secondary category together. The marker still takes
-its colour and its style from the primary category alone.
+reads the primary category and every secondary category together.
 
-The rule changed here. It read the primary category alone before, so turning one category
-off hid a system that also belonged to a category the user had left on. A Guardian system
-holding an Alpha ruin and a Beta ruin is one such system, and the demo set holds 166 of
-them.
+**The marker SHALL take its colour, its style and its draw range from the first category
+the record names that is on.** The order SHALL be the primary category first, then the
+secondary categories in the order the record gave them, without a repeat. The reading is
+therefore one category, and it is the first one of that order that the user has left on.
+
+The rule changed here. The marker took all three from the primary category alone, even
+when the user had turned the primary category off. A system that draws through a secondary
+category then kept the colour of the row the user had just switched off, which says the
+opposite of what the row says. The demo Guardian Ruins set holds **166** systems that name
+two categories or more, so the fault is on the screen in the map the demo site opens with.
+
+The drawn category SHALL follow the visibility in the next frame, with no rebuild of the
+scene data and no reupload of the system positions. A system whose categories are all off
+draws no marker, so it has no drawn category and the colour it would have taken never
+reaches the frame.
 
 A call that names a category the table does not hold SHALL change nothing and SHALL NOT
 throw. `isCategoryVisible` SHALL return `false` for such a name.
 
 The sweep that rebuilds which markers draw SHALL run when the set, the category table,
 the visibility or the filter changes, and SHALL NOT run per frame. It SHALL read each
-system's categories once. With 10,000 systems each naming 4 categories, and every category
-turned off in one call, the sweep SHALL cost less than **2 milliseconds** on the main
-thread, and the page SHALL expose the reading so a test can read it.
+system's categories once, and it SHALL write the drawn category in that same read. With
+10,000 systems each naming 4 categories, and every category turned off in one call, the
+sweep SHALL cost less than **2 milliseconds** on the main thread, and the page SHALL expose
+the reading so a test can read it.
 
 A category replaced under the same name SHALL keep the visibility it had, because the
 replacement changes the table entry and not what the user chose to look at.
@@ -1239,12 +1252,51 @@ the system positions.
   category off, draws a frame, and calls `systemAt` at the pixel the system projects to
 - **THEN** the reading is null
 
+#### Scenario: The colour follows the first category that is on
+
+- **WHEN** the browser test adds a red category `A` and a blue category `B`, one system
+  whose primary category is `B` and whose secondary categories hold `A`, reads the marker's
+  pixel, then turns `B` off so the marker draws through `A` alone, draws a frame and reads
+  the pixel again
+- **THEN** the first reading is the blue of `B` and the second is the red of `A`
+
+#### Scenario: The colour goes back when the category comes back on
+
+- **WHEN** the browser test builds the same two categories and system, turns `B` off, draws
+  and reads the pixel, turns `B` on again, draws and reads the pixel
+- **THEN** the second reading is the blue of `B` again
+
+#### Scenario: The order is the record's order
+
+- **WHEN** the browser test adds the categories `A`, `B` and `C` in three colours and one
+  system whose primary category is `A` and whose secondary categories are `C` then `B`,
+  turns `A` off, draws and reads the marker's pixel, then turns `C` off as well, draws and
+  reads it again
+- **THEN** the first reading is the colour of `C` and the second is the colour of `B`,
+  because the order is the record's order and not the table's
+
+#### Scenario: The style and the range follow the drawn category
+
+- **WHEN** the browser test adds a `glow` category `A` with a `maxDrawRange` of 200 and a
+  `disc` category `B` with a `maxDrawRange` of 20,000, one system whose primary category is
+  `A` and whose secondary categories hold `B`, opens a view 1,000 light years from the
+  system, draws a frame and reads the marker count, then turns `A` off, draws and reads the
+  count and the marker's pixel
+- **THEN** the first count is 0, because `A` cuts the marker at 200 light years, and after
+  the switch the count is 1 and the pixel reads the `disc` style of `B`
+
 #### Scenario: The colour still follows the primary category
 
 - **WHEN** the browser test adds a red category `A` and a blue category `B`, one system
-  whose primary category is `B` and whose secondary categories hold `A`, turns `B` off so
-  the marker draws through `A` alone, draws a frame and reads the marker's pixel
-- **THEN** the pixel is the blue of `B`
+  whose primary category is `B` and whose secondary categories hold `A`, keeps both
+  categories on, draws a frame and reads the marker's pixel
+- **THEN** the pixel is the blue of `B`, because the primary category is the first the
+  record names and it is on
+
+  The scenario asserted the pixel stayed blue **after `B` was turned off**. That is the
+  behaviour this change replaces, so the scenario now reads the case the new rule leaves
+  alone: with every category on, the first category the record names is the primary one and
+  the colour is unchanged.
 
 #### Scenario: The sweep holds its budget
 

@@ -450,42 +450,51 @@ selection centres the camera on it and caps the distance at 500 light years, whi
   expands `B` and reads it again
 - **THEN** both lists hold that system
 
-### Requirement: The map options panel carries the region mode, the names and the grid
+### Requirement: The map options panel carries four switches
 
-The map options panel SHALL hold three controls.
+The map options panel SHALL hold four switches and no segmented control. Each one SHALL be
+a switch of the shape the panel already uses, with its label and its track.
 
-**Galaxy regions** SHALL be three buttons, **NONE**, **SIMPLIFIED** and **ACCURATE**, of
-which exactly one is marked as chosen. A click SHALL call `setRegionMode` with `off`,
-`simplified` or `accurate`. The panel SHALL open on the mode the map is in, which
-`simplified` is unless the options named another.
+**Galactic regions** SHALL call `setRegionsVisible`, which `galactic-regions` defines. It
+SHALL open on the state the map is in, which is on unless the options named `regions:
+false`.
 
-**System names** SHALL be a switch that calls `setSystemNamesVisible`, which
-`system-selection` defines. It SHALL open off.
+**System names** SHALL call `setSystemNamesVisible`, which `system-selection` defines. It
+SHALL open off.
 
-**Coordinate grid** SHALL be a switch that calls `setGridVisible`, which
-`coordinate-grid` defines. It SHALL open on the state the map is in, which is off unless
-the options named `grid`. The demo site names it, so the switch opens on there, and a map
-built with no options opens it off.
+**Coordinate grid** SHALL call `setGridVisible`, which `coordinate-grid` defines. It SHALL
+open on the state the map is in, which is off unless the options named `grid`. The demo
+site names it, so the switch opens on there, and a map built with no options opens it off.
+
+**Shapes** SHALL call `setShapesVisible`, which `map-shapes` defines. It SHALL open on the
+state the map is in, which is on unless the options named `shapes: false`. It SHALL draw
+whether or not the map holds a shape, because a host can add one at any time.
+
+The three buttons **NONE**, **SIMPLIFIED** and **ACCURATE** are gone with the region mode
+they set. The overlay now has one state the user chooses, so it takes the control every
+other overlay of this panel takes.
 
 Each control SHALL show the state the map is in, so a host that changes a setting through
 the handle moves the control with it.
 
-#### Scenario: The region buttons change the mode
+#### Scenario: The regions switch changes the overlay
 
-- **WHEN** the browser test clicks **ACCURATE**, reads `getRegionMode`, clicks **NONE** and
-  reads again
-- **THEN** the readings are `accurate` and `off`, and the marked button follows
+- **WHEN** the browser test reads `areRegionsVisible`, clicks the **Galactic regions**
+  switch and reads it again
+- **THEN** the readings are `true` and `false`, and the switch follows
 
-#### Scenario: The panel opens on the mode the options named
+#### Scenario: The panel opens on the state the options named
 
-- **WHEN** a browser test builds a map with `hud: true` and `regionMode: 'accurate'`
-- **THEN** **ACCURATE** is the marked button
+- **WHEN** a browser test builds a map with `hud: true` and `regions: false` and reads the
+  **Galactic regions** switch, and a second builds one with `hud: true` and no `regions`
+  option and reads the same switch
+- **THEN** the first reads off and the second reads on
 
 #### Scenario: A change through the handle moves the control
 
-- **WHEN** the browser test calls `setGridVisible(true)` on the handle and reads the grid
-  switch
-- **THEN** the switch reads on
+- **WHEN** the browser test calls `setGridVisible(true)` and `setShapesVisible(false)` on
+  the handle and reads the two switches
+- **THEN** the grid switch reads on and the shapes switch reads off
 
 #### Scenario: The grid switch opens on the state the options named
 
@@ -493,6 +502,12 @@ the handle moves the control with it.
   coordinate grid switch, and a second builds one with `hud: true` and no `grid` option
   and reads the same switch
 - **THEN** the first reads on and the second reads off
+
+#### Scenario: The shapes switch draws with no shape on the map
+
+- **WHEN** a browser test builds a map with `hud: true` and adds no shape, and reads the
+  map options panel
+- **THEN** the panel holds a **Shapes** switch and it reads on
 
 ### Requirement: The information panel shows the selected system
 
@@ -783,6 +798,7 @@ SHALL NOT let a failure in it stop the frame loop.
   system, clicks both copy buttons, and then draws 10 frames
 - **THEN** neither button shows a tick, the panel still shows the record, and the frames
   draw
+
 ### Requirement: The images open in a lightbox
 
 The panel SHALL show each image of the record as a thumbnail in a grid of two columns,
@@ -828,8 +844,7 @@ name a screen reader can read: its own text, or an `aria-label` where the contro
 icon alone.
 
 A control that holds a state the user can see SHALL report that state: a category row and
-the two switches SHALL carry `aria-pressed`, and the three region mode buttons SHALL carry
-`aria-pressed` on the one that is chosen.
+the four switches of the map options panel SHALL carry `aria-pressed`.
 
 The lightbox SHALL take the focus when it opens and SHALL give it back to the thumbnail
 that opened it when it closes, so a keyboard user is not left at the top of the page.
@@ -842,7 +857,8 @@ the camera while it holds the focus, which is the guard `map-navigation` already
 The movement keys SHALL keep working while a HUD control holds the focus. The guard of
 `map-navigation` stops a key aimed at a text field, and a `button` is not one: a user who
 has tabbed to a category row and presses `S` moves the cursor, as they would with the focus
-on the canvas. Only a field the user types into takes the keys away from the camera.
+on the canvas. Only a field the user types into takes the keys away from the camera. `Q`
+and `E` are movement keys, so the same rule turns the camera from a focused button.
 
 #### Scenario: The movement keys work with a button focused
 
@@ -850,13 +866,18 @@ on the canvas. Only a field the user types into takes the keys away from the cam
   cursor
 - **THEN** the cursor has moved, by the rule `map-navigation` gives
 
+#### Scenario: A turn key works with a button focused
+
+- **WHEN** the browser test focuses a category row, holds `E` for 1 second, and reads the
+  yaw
+- **THEN** the yaw has moved, by the rule `map-navigation` gives
+
 #### Scenario: Tab reaches every control
 
 - **WHEN** the browser test opens the map with the HUD on, focuses the search box, and
   presses `Tab` through the panels, reading the focused element at each step
-- **THEN** every category row, the ALL and NONE buttons, the three region mode buttons, the
-  two switches, the two copy buttons, the dataset field and the reset view button are each
-  focused once
+- **THEN** every category row, the ALL and NONE buttons, the four switches, the two copy
+  buttons, the dataset field and the reset view button are each focused once
 
 #### Scenario: Enter and Space work a control
 
@@ -866,10 +887,9 @@ on the canvas. Only a field the user types into takes the keys away from the cam
 
 #### Scenario: The controls carry their state and their names
 
-- **WHEN** the browser test reads the region mode buttons, the two switches and a category
-  row with the HUD on
-- **THEN** exactly one region mode button has `aria-pressed` true, each switch reports its
-  state in `aria-pressed`, and every control has a readable name
+- **WHEN** the browser test reads the four switches and a category row with the HUD on
+- **THEN** each switch reports its state in `aria-pressed`, and every control has a
+  readable name
 
 #### Scenario: The lightbox holds and returns the focus
 
