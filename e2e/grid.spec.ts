@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap } from './helpers';
+import { channels, openMap } from './helpers';
 
 test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 
@@ -1473,7 +1473,8 @@ test.describe('the grid labels', () => {
       style.letterSpacing = '0';
       style.color = getComputedStyle(element).color;
       style.opacity = element.style.opacity;
-      style.textShadow = element.style.textShadow;
+      style.paintOrder = getComputedStyle(element).paintOrder;
+      style.webkitTextStroke = getComputedStyle(element).webkitTextStroke;
       style.font = `100px/100px ${getComputedStyle(element).fontFamily}`;
       host.append(copy);
       const at100 = copy.getBoundingClientRect().width;
@@ -1697,13 +1698,13 @@ test.describe('the grid labels', () => {
     await setPasses(page, { regions: false });
     await setGrid(page, true);
 
-    /** The label nearest the cursor, with its opacity, its colour and its shadow. */
+    /** The label nearest the cursor, with its opacity, its colour and its stroke. */
     const labelAt = async (
       cursor: readonly [number, number, number],
     ): Promise<{
       opacity: number;
       colour: number[];
-      shadow: string;
+      stroke: string;
       count: number;
     }> => {
       await page.evaluate((where) => {
@@ -1738,7 +1739,7 @@ test.describe('the grid labels', () => {
           }
         }
         if (best === null) {
-          return { opacity: -1, colour: [], shadow: '', count: labels.length };
+          return { opacity: -1, colour: [], stroke: '', count: labels.length };
         }
         const colour = getComputedStyle(best)
           .color.replace(/[^\d,.]/g, '')
@@ -1747,7 +1748,7 @@ test.describe('the grid labels', () => {
         return {
           opacity: Number(best.style.opacity),
           colour,
-          shadow: best.style.textShadow,
+          stroke: getComputedStyle(best).webkitTextStrokeColor,
           count: labels.length,
         };
       });
@@ -1768,9 +1769,45 @@ test.describe('the grid labels', () => {
       Math.max(...wanted.map((one, at) => Math.abs((reading[at] ?? -999) - one)));
     expect(near(core.colour, [20, 88, 140])).toBeLessThanOrEqual(8);
     expect(near(dark.colour, [140, 235, 240])).toBeLessThanOrEqual(8);
-    for (const shadow of [core.shadow, dark.shadow]) {
-      expect(shadow).not.toContain('#000');
-      expect(shadow).not.toContain('rgb(0, 0, 0)');
+    // The dark edge is a stroke now, and it is the same cool dark the blurred glow used.
+    // A pure black edge draws a second outline that no part of the picture carries.
+    for (const stroke of [core.stroke, dark.stroke]) {
+      expect(stroke).not.toBe('rgb(0, 0, 0)');
+      expect(stroke).not.toBe('rgba(0, 0, 0, 0.9)');
+    }
+  });
+
+  // The scenario "A label carries a stroke and no shadow".
+  test('carry a stroke and no shadow', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 1000, 89);
+
+    const read = await page.evaluate(() =>
+      [...document.querySelectorAll('.gm-grid-label')].map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          shadow: style.textShadow,
+          width: style.webkitTextStrokeWidth,
+          colour: style.webkitTextStrokeColor,
+          order: style.paintOrder,
+        };
+      }),
+    );
+    console.log('the coordinate label edge', read[0], `of ${read.length}`);
+
+    expect(read.length).toBeGreaterThan(0);
+    for (const label of read) {
+      expect(label.shadow).toBe('none');
+      expect(label.width).toBe('2.5px');
+      const [red, green, blue, alpha] = channels(label.colour);
+      expect(Math.abs(red - 2), label.colour).toBeLessThanOrEqual(2);
+      expect(Math.abs(green - 12), label.colour).toBeLessThanOrEqual(2);
+      expect(Math.abs(blue - 20), label.colour).toBeLessThanOrEqual(2);
+      expect(alpha).toBeCloseTo(0.9, 2);
+      // `stroke fill markers` is the full order, so a browser may drop the keywords the
+      // order implies. Chromium serialises the computed value as `stroke`.
+      expect(['stroke', 'stroke fill']).toContain(label.order);
     }
   });
 });

@@ -21,7 +21,8 @@ import {
   GRID_LABEL_OPACITY,
   GRID_LABEL_GAP_SHARE,
   GRID_LABEL_REACH,
-  GRID_LABEL_SHADOW,
+  GRID_LABEL_PAINT_ORDER,
+  GRID_LABEL_STROKE,
   GRID_LABEL_SPAN,
   gridLabelAlpha,
   gridLabelBackground,
@@ -732,7 +733,7 @@ describe('the label overlay', () => {
     expect(first.opacity).toBeCloseTo(GRID_LABEL_OPACITY, 6);
   });
 
-  test('carries a soft dark shadow and no pure black', () => {
+  test('carries a drawn stroke, no blurred shadow and no pure black', () => {
     const { host, made } = fakeHost();
     const overlay = createGridLabelOverlay(host);
 
@@ -747,10 +748,15 @@ describe('the label overlay', () => {
     const elements = labelsOf(made);
     expect(elements.length).toBeGreaterThan(0);
     for (const element of elements) {
-      const shadow = element.style.getPropertyValue('text-shadow');
-      expect(shadow).toBe(GRID_LABEL_SHADOW);
-      expect(shadow).not.toContain('#000');
-      expect(shadow).not.toContain('rgb(0, 0, 0)');
+      expect(element.style.getPropertyValue('text-shadow')).toBe('');
+      expect(element.style.getPropertyValue('-webkit-text-stroke')).toBe(
+        GRID_LABEL_STROKE,
+      );
+      expect(element.style.getPropertyValue('paint-order')).toBe(
+        GRID_LABEL_PAINT_ORDER,
+      );
+      expect(GRID_LABEL_STROKE).not.toContain('#000');
+      expect(GRID_LABEL_STROKE).not.toContain('rgb(0, 0, 0)');
     }
   });
 

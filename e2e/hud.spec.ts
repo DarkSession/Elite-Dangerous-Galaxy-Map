@@ -16,6 +16,12 @@ interface HudBuild {
   readonly title?: string;
   /** One footer action, which counts its calls or throws. */
   readonly actions?: 'one' | 'throwing';
+  /**
+   * True gives the map a catalog of one entry, so the top bar carries the dataset field
+   * and a click on it opens the dataset library dialog. `e2e/datasets.spec.ts` reads the
+   * catalog itself; here the dialog is only an element to measure.
+   */
+  readonly datasets?: boolean;
 }
 
 /**
@@ -58,9 +64,20 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
       options.title === undefined && actions === undefined
         ? true
         : { title: options.title, actions };
+    const datasets =
+      options.datasets === true
+        ? [
+            {
+              id: 'one',
+              label: 'One',
+              load: (): unknown => ({ categories: [], systems: [] }),
+            },
+          ]
+        : undefined;
     const map = factory(canvas, {
       hud,
       regionMode: options.regionMode,
+      ...(datasets === undefined ? {} : { datasets }),
     } as never);
     window.__hudMap = map;
     await map.ready;
@@ -70,6 +87,30 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
 /** The root of the HUD the tests drive. */
 function hud(page: Page): Locator {
   return page.locator('#hud-wrap .gm-hud');
+}
+
+/** The background alpha of each named element of the HUD, by selector. */
+async function readAlphas(
+  page: Page,
+  selectors: readonly string[],
+): Promise<Record<string, number>> {
+  return page.evaluate((names) => {
+    const out: Record<string, number> = {};
+    for (const name of names) {
+      const element = document.querySelector(`#hud-wrap .gm-hud ${name}`);
+      if (element === null) {
+        out[name] = -1;
+        continue;
+      }
+      const parts = getComputedStyle(element)
+        .backgroundColor.replace(/[^\d,.]/g, '')
+        .split(',')
+        .map(Number);
+      // An opaque colour reads `rgb(r, g, b)` and carries no alpha.
+      out[name] = parts[3] ?? 1;
+    }
+    return out;
+  }, selectors);
 }
 
 /** Adds categories to the HUD's map. */
@@ -253,6 +294,98 @@ test.describe('the HUD shell', () => {
     expect(left.inParent).toBe(0);
     // The canvas the caller gave stays in the page.
     expect(left.canvases).toBe(1);
+  });
+});
+
+// The scenarios "No panel blurs its backdrop", "The panels over the map hold their
+// contrast" and "The covering elements keep the alpha they had". A blurred backdrop over
+// a canvas re-blurs in every frame, and Firefox does that on the CPU, so no element of
+// the HUD carries the property. `browser-suite` holds the reading and the budget.
+test.describe('the panel backdrop', () => {
+  /** A record with one picture the page serves from its own origin. */
+  const pictured = (): Record<string, unknown> =>
+    record('Pictured', [0, 0, 100], 'Alpha', {
+      images: [{ url: '/picture-one.png', caption: 'APPROACH VECTOR' }],
+    });
+
+  test('no element blurs its backdrop', async ({ page }) => {
+    await openHud(page, { datasets: true });
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [pictured()]);
+    await select(page, 'Pictured');
+    await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
+    await hud(page).locator('.gm-hud__dataset').click();
+    await expect(hud(page).locator('.gm-hud__dialog')).toBeVisible();
+
+    const blurred = await hud(page).evaluateAll((roots) => {
+      const found: { className: string; filter: string }[] = [];
+      for (const root of roots) {
+        for (const element of [root, ...root.querySelectorAll('*')]) {
+          const style = getComputedStyle(element);
+          // The prefixed property is read as well, because a browser that knows only
+          // that one reports an empty string for the standard name.
+          const filter =
+            style.backdropFilter === ''
+              ? style.getPropertyValue('-webkit-backdrop-filter')
+              : style.backdropFilter;
+          if (filter !== 'none' && filter !== '') {
+            found.push({ className: (element as HTMLElement).className, filter });
+          }
+        }
+      }
+      return found;
+    });
+    const counted = await hud(page).evaluateAll(
+      (roots) => roots[0]?.querySelectorAll('*').length ?? 0,
+    );
+    console.log('the blurred elements of', counted, 'read', blurred);
+
+    // The reading says nothing if the HUD is not built, so the element count is part of
+    // the assertion.
+    expect(counted).toBeGreaterThan(50);
+    expect(blurred).toEqual([]);
+  });
+
+  test('the panels over the map hold their contrast', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('One', [0, 0, 100], 'Alpha')]);
+    await select(page, 'One');
+    await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
+
+    const alphas = await readAlphas(page, [
+      '.gm-hud__category-panel',
+      '.gm-hud__options-panel',
+      '.gm-hud__info',
+    ]);
+    console.log('the panel alphas', alphas);
+
+    for (const [selector, alpha] of Object.entries(alphas)) {
+      expect(alpha, selector).toBeGreaterThanOrEqual(0.92);
+    }
+  });
+
+  test('the covering elements keep the alpha they had', async ({ page }) => {
+    await openHud(page, { datasets: true });
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [pictured()]);
+    await select(page, 'Pictured');
+
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    await expect(hud(page).locator('.gm-hud__lightbox')).toBeVisible();
+    const lightbox = await readAlphas(page, ['.gm-hud__lightbox']);
+    await hud(page).locator('.gm-hud__lightbox-close').click();
+    await expect(hud(page).locator('.gm-hud__lightbox')).toBeHidden();
+
+    // The dialog scrim covers the whole HUD, so it opens after the lightbox reading.
+    await hud(page).locator('.gm-hud__dataset').click();
+    await expect(hud(page).locator('.gm-hud__dialog')).toBeVisible();
+    const dialog = await readAlphas(page, ['.gm-hud__dialog', '.gm-hud__dialog-frame']);
+    console.log('the covering alphas', { ...lightbox, ...dialog });
+
+    expect(dialog['.gm-hud__dialog']).toBeCloseTo(0.78, 2);
+    expect(dialog['.gm-hud__dialog-frame']).toBeCloseTo(0.97, 2);
+    expect(lightbox['.gm-hud__lightbox']).toBeCloseTo(0.88, 2);
   });
 });
 
@@ -1284,7 +1417,7 @@ test.describe('the information panel', () => {
     const value = await fieldValue(page, 'POSITION').textContent();
     console.log('the position field of a fractional record', value);
 
-    expect(value).toBe('-9,530.938 / -910.281 / 19,808.125');
+    expect(value).toBe('-9,530.9375 / -910.28125 / 19,808.125');
   });
 
   test('a whole coordinate shows no decimal point', async ({ page }) => {
@@ -1316,7 +1449,8 @@ test.describe('the information panel', () => {
     console.log('the distance fields', { fromSol, range });
 
     // The record sits 103 light years from Sol and the camera is within 500, so neither
-    // field passes 1,000 and neither shows a separator.
+    // field passes 1,000 and neither shows a separator. The separator is what the
+    // scenario "the position keeps its fraction" reads, in `-9,530.9375`.
     expect(fromSol).toMatch(/^\d+ LY$/);
     expect(range).toMatch(/^\d+ LY$/);
   });
@@ -1408,7 +1542,7 @@ test.describe('the information panel', () => {
 
     expect(value).not.toBeNull();
     const read = value as NonNullable<typeof value>;
-    expect(read.text).toBe('-9,530.938 / -910.281 / 19,808.125');
+    expect(read.text).toBe('-9,530.9375 / -910.28125 / 19,808.125');
     // The value's box is one line high, by the line height its own style gives.
     expect(read.height).toBeGreaterThan(0);
     expect(read.height).toBeLessThan(read.lineHeight * 1.5);

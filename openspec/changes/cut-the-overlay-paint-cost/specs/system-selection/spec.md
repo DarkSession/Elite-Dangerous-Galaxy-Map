@@ -65,5 +65,6 @@ The placement SHALL hold to these bounds:
   frame and reads the computed `text-shadow`, `-webkit-text-stroke-width`,
   `-webkit-text-stroke-color` and `paint-order` of every name label
 - **THEN** every label reads `none` for the shadow, `2px` for the stroke width, a stroke
-  colour within 2 on each channel of `rgba(0, 0, 0, 0.9)`, and `stroke fill` for the
-  paint order, which is what puts the stroke under the glyph
+  colour within 2 on each channel of `rgba(0, 0, 0, 0.9)`, and `stroke` or `stroke fill`
+  for the paint order, which is what puts the stroke under the glyph. `coordinate-grid`
+  states why the paint order has two strings

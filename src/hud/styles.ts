@@ -2,6 +2,14 @@
 // `gm-hud-styles`, once per document however many maps the page builds, and every rule
 // is under the `.gm-hud` class, so the HUD changes no element of the host page.
 //
+// No rule carries `backdrop-filter`. An element that carries it draws over the canvas,
+// the canvas draws a new frame every frame, and the browser therefore blurs the backdrop
+// again in every frame. Firefox does that on the CPU: the two panels beside the map cost
+// 3.5 ms a frame, of a frame that cost 12.1 ms. `browser-suite` holds the reading. Five
+// rules carried it, and the panels beside the map raise their background alpha in its
+// place, so the text keeps its contrast over the bright core. The mockup in `.design/`
+// draws the panels with the blur, and this sheet departs from the mockup on purpose.
+//
 // The two faces are bundled with the build. The HUD fetches no font, no style sheet and
 // no icon from a third-party host: a library that reached a font CDN would make every
 // host page send a request the host did not ask for. Each rule names a fallback stack,
@@ -229,9 +237,7 @@ const styleText = `
 }
 .gm-hud__panel {
   pointer-events: auto;
-  background: rgba(14, 10, 14, 0.86);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: rgba(14, 10, 14, 0.94);
   border: 1px solid rgba(255, 150, 60, 0.26);
 }
 .gm-hud__category-panel {
@@ -485,9 +491,7 @@ const styleText = `
   flex-direction: column;
   pointer-events: auto;
   z-index: 20;
-  background: rgba(14, 10, 14, 0.9);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(14, 10, 14, 0.94);
   border: 1px solid #ff9a3c55;
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
 }
@@ -704,8 +708,6 @@ const styleText = `
   pointer-events: auto;
   z-index: 70;
   background: rgba(4, 3, 6, 0.78);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
 }
 .gm-hud__dialog-frame {
   width: min(92%, 960px);
@@ -713,8 +715,6 @@ const styleText = `
   display: flex;
   flex-direction: column;
   background: rgba(12, 9, 13, 0.97);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 150, 60, 0.45);
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8);
 }
@@ -931,8 +931,6 @@ const styleText = `
   z-index: 60;
   cursor: zoom-out;
   background: rgba(4, 3, 6, 0.88);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
 }
 .gm-hud__lightbox-frame {
   position: relative;

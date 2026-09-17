@@ -201,6 +201,13 @@ marker name label carries the other of the two, which `system-selection` states.
 in place of both costs under 1 ms. Chromium blurs on the GPU and shows about 1 ms for the
 same work, so the reading that moves is Firefox's.
 
+**2.5 pixels is the width the label is built at, not the width the user sees.** A
+coordinate label sits on the plane and takes the plane's transform, which scales it with
+the camera. The transform scales the stroke with the glyph, so the drawn edge reads about
+1.25 to 2.5 CSS pixels over the distances the grid labels are drawn at. The computed style
+answers `2.5px` at every distance, because it reads the built width, and that is the number
+the scenario below asserts.
+
 The edge is therefore hard rather than soft. That is a look change, and it is the price of
 the frame.
 
@@ -405,5 +412,10 @@ them from the picture alone.
   computed `text-shadow`, `-webkit-text-stroke-width`, `-webkit-text-stroke-color` and
   `paint-order` of every coordinate label
 - **THEN** every label reads `none` for the shadow, `2.5px` for the stroke width, a stroke
-  colour within 2 on each channel of `rgba(2, 12, 20, 0.9)`, and `stroke fill` for the
-  paint order, which is what puts the stroke under the glyph
+  colour within 2 on each channel of `rgba(2, 12, 20, 0.9)`, and `stroke` or `stroke fill`
+  for the paint order, which is what puts the stroke under the glyph.
+
+  The two paint order strings are one value. `stroke fill markers` is the full order, so a
+  browser may drop the keywords the order implies: Chromium serialises the computed value
+  as `stroke` and the style the element carries is `stroke fill`. The scenario reads the
+  computed property, so it takes either

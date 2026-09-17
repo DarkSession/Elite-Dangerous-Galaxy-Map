@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap } from './helpers';
+import { channels, openMap } from './helpers';
 import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -1322,5 +1322,50 @@ test.describe('the overlay marks', () => {
 
     expect(Math.abs(gap - 4)).toBeLessThan(1);
     expect(labels).toBe(1);
+  });
+
+  // The scenario "A name label carries a stroke and no shadow".
+  test('a name label carries a stroke and no shadow', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addCategory(page, 'Alpha');
+    // The systems stand 30 light years apart, which is about 19 CSS pixels at this view,
+    // so the overlap rule drops none of the ten labels.
+    const records = [];
+    for (let index = 0; index < 10; index += 1) {
+      records.push(record(`S${index}`, [0, (index - 5) * 30, 0], 'Alpha'));
+    }
+    await addSystems(page, records);
+    await setView(page, [0, 0, 0], 1000);
+    await page.evaluate(() => {
+      window.galaxyMap?.setSystemNamesVisible(true);
+    });
+    await drawFrame(page);
+
+    const read = await page.evaluate(() =>
+      [...document.querySelectorAll('.gm-system-label')].map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          shadow: style.textShadow,
+          width: style.webkitTextStrokeWidth,
+          colour: style.webkitTextStrokeColor,
+          order: style.paintOrder,
+        };
+      }),
+    );
+    console.log('the name label edge', read[0], `of ${read.length}`);
+
+    expect(read.length).toBeGreaterThan(0);
+    for (const label of read) {
+      expect(label.shadow).toBe('none');
+      expect(label.width).toBe('2px');
+      const [red, green, blue, alpha] = channels(label.colour);
+      expect(Math.abs(red), label.colour).toBeLessThanOrEqual(2);
+      expect(Math.abs(green), label.colour).toBeLessThanOrEqual(2);
+      expect(Math.abs(blue), label.colour).toBeLessThanOrEqual(2);
+      expect(alpha).toBeCloseTo(0.9, 2);
+      // `stroke fill markers` is the full order, so a browser may drop the keywords the
+      // order implies. Chromium serialises the computed value as `stroke`.
+      expect(['stroke', 'stroke fill']).toContain(label.order);
+    }
   });
 });

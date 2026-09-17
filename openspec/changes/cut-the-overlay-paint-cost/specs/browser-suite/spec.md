@@ -77,9 +77,11 @@ The reading SHALL be taken at this view and this move:
   `40 * (1 + 0.3 * sin(f / 20))` light years, so the camera turns and moves at once;
 - 200 frames, of which the first 20 are dropped, so the mean is over **180 frames**.
 
-That view carries **10 labels**. The overlap rule drops a label whose box meets one
-already placed, so 10,000 markers do not give 10,000 labels, and the budget is stated at
-the set and the view rather than at a label count.
+That view carries **62 labels**: 2 coordinate labels and 60 marker name labels. The
+overlap rule drops a label whose box meets one already placed and the name labels cap at
+64, so 10,000 markers do not give 10,000 labels. The budget is stated at the set and the
+view rather than at a label count, and the scenario below asserts a floor of 8 so a frame
+that drew no label cannot pass the reading by measuring nothing.
 
 **The instrument is the frame interval with the frame rate uncapped.** A browser locked to
 the display runs at 16.7 ms a frame and hides every cost below it: the two blurs cost
@@ -102,6 +104,30 @@ The blurred label shadow therefore costs **4.2 ms** a frame and the blurred pane
 **3.5 ms**, each read against the frame that carries neither. The two together cost 7.5 ms
 of the 12.1 ms frame. The rest of the frame is the draw call, the placement and the HUD's
 own writes, which this change does not touch.
+
+**A later session read the same states again, over the same view and the same move, and
+found the panel backdrop at about 2.5 ms rather than 3.5.** The label shadow read higher,
+not lower: 9.9 ms, on a frame that carried 62 labels. The label count follows the set and
+the overlap rule, and both readings are of the same view, so the two sessions disagree by
+more than the drift the design records. What holds in both is the ranking and the sign:
+the flat state reads 4.3 to 5.3 ms, each blur alone moves the reading by at least 2 ms,
+and the two together more than double it. The scenarios below are written to the reading
+that reproduces.
+
+**The before and the after, from the same machine and the same session.** The old look
+put back with a stylesheet rule, which is the blurred shadow with no stroke on the labels
+and `backdrop-filter` on the panels, against the look this change leaves. Three runs of
+each state, over the view and the move this requirement states.
+
+| What the map draws                     | Mean interval    |
+| -------------------------------------- | ---------------- |
+| Both blurs, as the map was before       | 17.7 to 18.1 ms |
+| The label blur alone, panels flat       | 15.0 to 15.2 ms |
+| The panel blur alone, labels stroked    | 8.0 to 8.2 ms   |
+| Neither blur, as this change leaves it  | 5.0 to 5.3 ms   |
+
+The change therefore takes the frame from about 17.9 ms to about 5.1 ms at this view, and
+the map holds the 7 ms budget with 1.7 to 2.7 ms of headroom.
 
 The budget of 7 ms leaves the map 2.4 ms of headroom, which is five times the widest
 spread, and it sits below both single-blur readings.
@@ -129,24 +155,42 @@ would pass whatever the CPU paint cost, which is the fault it exists to catch.
 
 #### Scenario: The blurred shadow fails the budget
 
-- **WHEN** the same test adds a stylesheet rule that writes the old `0 0 10px` shadow back
-  onto every label, and repeats the same move over the same view
+- **WHEN** the same test adds a stylesheet rule that puts the old label look back, which
+  is the old `0 0 10px` shadow **and no stroke**, and repeats the same move over the same
+  view
 - **THEN** the mean passes 7 ms, and it is at least **2 ms** above the mean the same run
   read without the rule
+
+  The stroke has to go with the shadow. With a stroke on the glyphs Firefox takes another
+  text path, and the same shadow then costs 2.4 ms a frame rather than 9.9. A rule that
+  adds the shadow and leaves the stroke measures the cheaper of the two paths, which is
+  not the state this change replaced.
 
 #### Scenario: The blurred panel fails the budget
 
 - **WHEN** the same test adds a stylesheet rule that writes `backdrop-filter: blur(10px)`
   back onto the HUD panels, and repeats the same move over the same view
-- **THEN** the mean passes 7 ms, and it is at least **2 ms** above the mean the same run
-  read without the rule
+- **THEN** the mean is at least **2 ms** above the mean the same run read without the rule
 
-  The budget guards two properties, so each one gets a scenario that shows it alone fails
-  the reading. **Each scenario reads a rise against its own run, not a number alone.** The
-  measured rises are 4.2 ms and 3.5 ms, so a floor of 2 ms holds four times the widest
-  spread. An absolute threshold would give the panel scenario 1.1 ms of margin, which is
-  close enough to the spread to make the test answer differently on different days, and a
-  test that does that gets loosened or deleted.
+  The budget guards two properties, so each one gets a scenario that shows it alone moves
+  the reading. **Each scenario reads a rise against its own run, not a number alone.**
+
+  **This scenario reads the rise alone, and not a number the mean must pass.** The panel
+  blur costs about **2.5 ms** a frame over the flat reading, measured five times in the
+  container on the project's test card: rises of 2.25, 2.41, 2.45, 2.67 and 2.86 ms over
+  flat readings of 4.33 to 5.29 ms. The mean with the blur therefore lands between 6.8 and
+  7.3 ms, which passes 7 ms on some runs and not on others.
+
+  **The floor of 2 ms carries 0.25 to 0.86 ms of margin, not four times the spread.** The
+  number that matters is the rise less the floor, and the smallest rise recorded is
+  2.25 ms. The instrument's own spread is 0.45 ms on each of the two means the rise
+  subtracts, so a busy machine can read the rise below the floor and fail a correct tree.
+  The floor is still the better of the two readings: the 7 ms clause failed four runs of
+  five and this one failed none of five. Raise the floor only with a reading that shows
+  the rise is larger than this one found.
+
+  The label scenario keeps both clauses, because its rise is 9.9 ms and its mean is about
+  14.8 ms, which is twice the budget.
 
 ### Requirement: The dev container carries both browsers
 

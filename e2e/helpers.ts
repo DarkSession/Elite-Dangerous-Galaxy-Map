@@ -12,6 +12,19 @@ export const RING_POINTS = 72;
 /** The side of the block the band-pass measure reads, in pixels. */
 export const BAND_BLOCK = 120;
 
+/**
+ * The red, green, blue and alpha of a computed CSS colour. A computed colour reads
+ * `rgb(2, 12, 20)` or `rgba(2, 12, 20, 0.9)`, and an opaque one carries no alpha, so the
+ * fourth number is 1 where the string holds three.
+ */
+export function channels(colour: string): [number, number, number, number] {
+  const parts = colour
+    .replace(/[^\d,.]/g, '')
+    .split(',')
+    .map(Number);
+  return [parts[0] ?? -1, parts[1] ?? -1, parts[2] ?? -1, parts[3] ?? 1];
+}
+
 /** Waits until the page has drawn its first frame. */
 export async function waitForReady(page: Page, timeout = 30000): Promise<void> {
   await page.waitForFunction(() => window.__galaxyMap?.ready === true, undefined, {

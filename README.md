@@ -372,6 +372,11 @@ NVIDIA driver answers on inside the container. To see the test fail without the 
 GALAXY_MAP_EXTRA_CHROMIUM_ARGS=--disable-gpu pnpm test:e2e e2e/00-renderer.spec.ts
 ```
 
+Firefox needs none of those flags. It reaches the card headless with its default
+settings. It does hide the card behind a generic name: it answers
+`NVIDIA GeForce GTX 980, or similar` for every NVIDIA card, so the `firefox` project sets
+`webgl.sanitize-unmasked-renderer` to `false` and the check reads the true string.
+
 ## The pipeline
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push to `main` and on
@@ -385,6 +390,13 @@ release for 7 days: a mutable tag gives whatever it points at on the day the run
 reads the renderer string and fails a run that falls back to SwiftShader or llvmpipe,
 and a GitHub-hosted runner carries no GPU. Run `pnpm test:e2e` in the dev container
 before you open a pull request.
+
+**The suite runs two browsers.** Chromium takes the whole suite. Firefox takes the
+renderer check and `e2e/paint-cost.spec.ts`, which reads the main-thread cost of a camera
+move. Chromium blurs on the GPU and Firefox blurs on the CPU, so a CSS property that
+costs Chromium 1 ms a frame can cost Firefox 7 ms, and a suite that runs one browser
+reads one of the two costs. `pnpm test:e2e` runs both, in two passes: every other spec on
+several workers, then the timed specs and Firefox on one worker.
 
 After the checks pass on a push to `main`, the workflow builds the demo site again and
 publishes `dist-demo/` to the repository's GitHub Pages address,

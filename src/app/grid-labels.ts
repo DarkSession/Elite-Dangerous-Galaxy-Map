@@ -110,12 +110,27 @@ const JACOBIAN_STEP = 1e-3;
 export const GRID_LABEL_OPACITY = 0.8;
 
 /**
- * The shadow of a label: a soft dark glow and not a hard black outline. A pure black
- * shadow draws a second outline that no part of the picture carries. The glow is cool,
- * so it sits under a cyan label rather than beside it.
+ * The dark edge of a label: a drawn stroke and not a blurred glow. Firefox rasterises a
+ * blurred text shadow on the CPU, and the overlay's two blurred shadows cost 4.2 ms of a
+ * frame that cost 12.1 ms while the camera moves. `browser-suite` holds the reading.
+ *
+ * The colour is the same cool dark the glow used, so the edge sits under a cyan label
+ * rather than beside it, and it is not pure black: a pure black edge draws a second
+ * outline that no part of the picture carries.
  */
-export const GRID_LABEL_SHADOW =
-  '0 0 10px rgba(2, 12, 20, 0.75), 0 1px 2px rgba(2, 12, 20, 0.55)';
+export const GRID_LABEL_STROKE_COLOUR = 'rgba(2, 12, 20, 0.9)';
+
+/** The width of that stroke, in CSS pixels. */
+export const GRID_LABEL_STROKE_CSS = 2.5;
+
+/** The stroke as the `-webkit-text-stroke` shorthand takes it. */
+export const GRID_LABEL_STROKE = `${GRID_LABEL_STROKE_CSS}px ${GRID_LABEL_STROKE_COLOUR}`;
+
+/**
+ * Draws the stroke under the glyph, so the edge widens outward rather than eating the
+ * letter. Without it the stroke is centred on the outline and takes half the glyph.
+ */
+export const GRID_LABEL_PAINT_ORDER = 'stroke fill';
 
 /**
  * Writes one style property only when it differs. The overlay writes every property of
@@ -611,7 +626,8 @@ function makeLabel(document: Document): HTMLElement {
   // The canvas measures the text without letter spacing, so the element carries none.
   setStyle(element, 'letter-spacing', '0');
   setStyle(element, 'text-align', 'center');
-  setStyle(element, 'text-shadow', GRID_LABEL_SHADOW);
+  setStyle(element, 'paint-order', GRID_LABEL_PAINT_ORDER);
+  setStyle(element, '-webkit-text-stroke', GRID_LABEL_STROKE);
   // Chromium rasterises a transformed element at the composited scale. The placement
   // sizes the element so the transform shrinks it, and this promotes the element so the
   // raster is taken again when the scale changes.
