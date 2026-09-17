@@ -121,7 +121,7 @@
 - [x] 7.1 Run `pnpm lint`, the TypeScript check and `pnpm test`. All three pass
 - [x] 7.2 Run `pnpm test:e2e` end to end, one run only, and read both passes. Every spec
       passes, including the Firefox project, and the renderer line names the card
-- [ ] 7.3 Record the before and after readings of the paint budget in the pull request,
+- [x] 7.3 Record the before and after readings of the paint budget in the pull request,
       from the same machine, so the number in the spec can be checked against a run
 - [x] 7.4 Run the `openspec-implementation-reviewer` subagent on the change and act on its
       findings. State the verdict when presenting
