@@ -393,6 +393,10 @@ describe('the library build', () => {
     expect(Object.keys(library).sort()).toEqual(['createGalaxyMap']);
   });
 
+  // The test runs `tsc` once for the file that reads every public type and once for each
+  // type that must be gone, so it spawns the compiler three times. The default 5 second
+  // bound is too short for that on a pipeline runner, where the three spawns took over
+  // 5 seconds and the test timed out.
   test('the declaration names the public surface', () => {
     const declaration = join(outDir, 'types', 'index.d.ts');
     const text = readFileSync(declaration, 'utf8');
@@ -420,7 +424,7 @@ describe('the library build', () => {
       );
       expect(typeCheck(bad)).not.toBe('');
     }
-  });
+  }, 120_000);
 });
 
 /**
