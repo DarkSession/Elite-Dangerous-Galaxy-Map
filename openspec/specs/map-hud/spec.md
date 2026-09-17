@@ -78,6 +78,34 @@ The HUD SHALL add its style as one `<style>` element in the document head, with 
 Every style rule SHALL be under the `.gm-hud` class, so the HUD changes no element of the
 host page.
 
+**No element of the HUD SHALL carry `backdrop-filter`.** An element that carries it draws
+over the canvas, the canvas draws a new frame every frame, and the browser therefore blurs
+the backdrop again in every frame. Firefox does that on the CPU.
+
+Five rules carry the property, on six elements. Two are on the screen while the camera
+moves: the category panel and the map options panel, both `gm-hud__panel`, at 316 by 807
+and 316 by 169 CSS pixels. Those two alone cost **3.5 ms** a frame, measured at 1920x1080
+with
+10,000 systems and the camera moving, of a frame that cost 12.1 ms with the frame rate
+uncapped. The information panel carries the property too and is on the screen whenever a
+system is selected.
+
+The other three, the dataset dialog's scrim, its frame and the lightbox, cost nothing in
+that reading because none was open. They SHALL lose the property all the same: the map
+keeps drawing behind an open dialog, so each one re-blurs in every frame for as long as it
+is open. That is the same fault at a different moment, and it carries no measurement of
+its own.
+
+**The elements that draw over the moving map SHALL carry a flat background of at least
+0.92 alpha**, so the text holds its contrast over the bright core as the blurred panel did.
+Those are `gm-hud__panel` and the information panel, which drew at 0.86 and 0.9 before. The
+dialog's scrim, its frame and the lightbox SHALL keep the alpha they hold, which is 0.78,
+0.97 and 0.88: they cover the map rather than sit beside it, and their alpha is a look
+decision this change does not make.
+
+The mockup in `.design/` draws the panels with `backdrop-filter`, and this rule departs
+from the mockup on purpose.
+
 The `@font-face` at-rules are the one exception, and they cannot be under a class: an
 at-rule takes no selector. They register the two bundled family names in the document and
 change no element, so a host element keeps the font it had.
@@ -99,6 +127,25 @@ every panel readable when the font does not load.
 - **WHEN** the browser test opens the built preview with the HUD on, with every request to
   a host other than the page's own origin blocked and recorded
 - **THEN** no request was blocked and the panels are laid out
+
+#### Scenario: No panel blurs its backdrop
+
+- **WHEN** the browser test opens the page with the HUD on, opens the information panel and
+  the dataset dialog, and reads the computed `backdrop-filter` of every element under the
+  HUD root
+- **THEN** every one reads `none`
+
+#### Scenario: The panels over the map hold their contrast
+
+- **WHEN** the browser test reads the computed background colour of the category panel,
+  the map options panel and the information panel
+- **THEN** each alpha is 0.92 or above
+
+#### Scenario: The covering elements keep the alpha they had
+
+- **WHEN** the browser test opens the dataset dialog and the lightbox and reads the
+  computed background colour of the scrim, the dialog frame and the lightbox
+- **THEN** the alphas are 0.78, 0.97 and 0.88, each within 0.01
 
 ### Requirement: The HUD does not take the map's input
 
@@ -469,7 +516,7 @@ SHALL carry the mockup's label `POSITION`. A field alone on its row SHALL take b
 so the grid shows no empty cell.
 
 **`POSITION` SHALL take both columns.** It holds the longest value of the panel, three
-coordinates of up to three decimal places each, and one column of two is too narrow for it:
+coordinates of up to five decimal places each, and one column of two is too narrow for it:
 the value wraps onto a second line, and the copy button beside the label crowds the label.
 
 `DISTANCE FROM SOL` and `RANGE` SHALL then share the row under it, one column each. Both
@@ -486,15 +533,16 @@ an **odd** count of those later fields leaves the last one alone on its row, and
 take both columns.
 
 **The position SHALL NOT be rounded to a whole light year.** Each of the three game
-coordinates SHALL be shown to at most **3 decimal places**, with the trailing zeros dropped
+coordinates SHALL be shown to at most **5 decimal places**, with the trailing zeros dropped
 and a thousands separator on the whole part. A coordinate that is a whole number SHALL show
 no decimal point.
 
-The game resolves a position to 1/32 of a light year, which is 0.03125. Three decimal places
-do not reproduce that value, which needs five, but they **separate** every position the game
-can give: the step is 0.03125 and the rounding is 0.001, so no two game positions round to
-the same three decimal places. The record carries the value the host's dump gave, in
-`float64`, and the panel SHALL show that value and not the whole number it rounds to.
+The game resolves a position to 1/32 of a light year, which is 0.03125. Five decimal places
+**reproduce** every such value exactly, because 1/32 is 5 places in base ten and every
+multiple of it is 5 places or fewer. The field was 3 places, which separated every game
+position but showed none of the odd steps as the game holds it: `-9530.9375` read
+`-9,530.938`. The record carries the value the host's dump gave, in `float64`, and the panel
+SHALL show that value and not the whole number it rounds to.
 
 `DISTANCE FROM SOL` and `RANGE` SHALL NOT change. They are distances the user reads to judge
 a journey, not the identity of a place, and a whole light year is the right resolution for
@@ -571,7 +619,7 @@ SHALL NOT let a failure in it stop the frame loop.
 
 - **WHEN** the browser test selects a record at `x = -9530.9375`, `y = -910.28125` and
   `z = 19808.125`, and reads the position field
-- **THEN** it reads `-9,530.938 / -910.281 / 19,808.125`
+- **THEN** it reads `-9,530.9375 / -910.28125 / 19,808.125`, which is each value exactly
 
 #### Scenario: A whole coordinate shows no decimal point
 
@@ -588,7 +636,7 @@ SHALL NOT let a failure in it stop the frame loop.
 
   The record sits 103 light years from Sol and the selection holds the camera within 500,
   so neither field passes 1,000 and neither shows a thousands separator. The separator is
-  what the scenario "The position keeps its fraction" reads, in `-9,530.938`
+  what the scenario "The position keeps its fraction" reads, in `-9,530.9375`
 
 #### Scenario: The position takes both columns and the two distances share a row
 
@@ -735,7 +783,6 @@ SHALL NOT let a failure in it stop the frame loop.
   system, clicks both copy buttons, and then draws 10 frames
 - **THEN** neither button shows a tick, the panel still shows the record, and the frames
   draw
-
 ### Requirement: The images open in a lightbox
 
 The panel SHALL show each image of the record as a thumbnail in a grid of two columns,

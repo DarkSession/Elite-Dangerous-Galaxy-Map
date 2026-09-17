@@ -936,9 +936,29 @@ the background. Over the core that gave text at 0.36 opacity in the core's own h
 user cannot read. The two changes together are what make the numbers readable over the
 galactic centre, which is the fault this change answers.
 
-The shadow SHALL be a soft dark glow and SHALL NOT be pure black: `0 0 10px` and `0 1px 2px`
-of `rgba(2, 12, 20, 0.75)` and `rgba(2, 12, 20, 0.55)`. The glow is cool rather than the warm
-`rgba(12, 6, 2, ...)` it replaces, so it sits under a cyan label rather than beside it.
+**The dark edge SHALL be a stroke and SHALL NOT be a blurred shadow.** A label SHALL carry
+a stroke of **2.5 CSS pixels** in `rgba(2, 12, 20, 0.9)`, drawn under the glyph, and SHALL
+carry no `text-shadow`. The colour is the same cool dark the blurred glow used, so the edge
+sits under a cyan label rather than beside it, and it SHALL NOT be pure black.
+
+The edge was `0 0 10px` and `0 1px 2px` of `rgba(2, 12, 20, 0.75)` and
+`rgba(2, 12, 20, 0.55)`. Firefox rasterises a blurred text shadow on the CPU, in
+`nsTextFrame::PaintOneShadow`. With the camera moving, the overlay's two blurred
+label shadows together cost **4.2 ms** of every frame, of a frame that cost 12.1 ms in
+all, which `browser-suite` states with the view and the reading they come from. The
+marker name label carries the other of the two, which `system-selection` states. A stroke
+in place of both costs under 1 ms. Chromium blurs on the GPU and shows about 1 ms for the
+same work, so the reading that moves is Firefox's.
+
+**2.5 pixels is the width the label is built at, not the width the user sees.** A
+coordinate label sits on the plane and takes the plane's transform, which scales it with
+the camera. The transform scales the stroke with the glyph, so the drawn edge reads about
+1.25 to 2.5 CSS pixels over the distances the grid labels are drawn at. The computed style
+answers `2.5px` at every distance, because it reads the built width, and that is the number
+the scenario below asserts.
+
+The edge is therefore hard rather than soft. That is a look change, and it is the price of
+the frame.
 
 **The plane label SHALL go.** The grid carried one more element, centred on the lower edge
 of the canvas and 22 CSS pixels above it, which read the `y` of the plane on its own. That
@@ -1085,7 +1105,7 @@ them from the picture alone.
 - **THEN** the opacity over the core is between 0.70 and 0.80 of 0.80, the opacity over the
   dark space is above 0.95 of 0.80, the colour over the core is within 8 of 255 on each
   channel of `rgb(20, 88, 140)`, the colour over the dark space is within 8 of 255 on each
-  channel of `rgb(140, 235, 240)`, and neither label carries a pure black shadow.
+  channel of `rgb(140, 235, 240)`, and neither label carries a pure black edge.
 
   The label nearest the cursor holds the reach fade at 1 and the line factor at 1 at a pitch
   of 89 degrees, so this scenario reads the background rule alone
@@ -1135,3 +1155,16 @@ them from the picture alone.
   gives with the band open, which is 0.45, and at the gate of 0.09
 - **THEN** the first factor is 1 and the second is 0.2
 
+#### Scenario: A label carries a stroke and no shadow
+
+- **WHEN** the browser test turns the grid on at a zoom of 1,000 light years and reads the
+  computed `text-shadow`, `-webkit-text-stroke-width`, `-webkit-text-stroke-color` and
+  `paint-order` of every coordinate label
+- **THEN** every label reads `none` for the shadow, `2.5px` for the stroke width, a stroke
+  colour within 2 on each channel of `rgba(2, 12, 20, 0.9)`, and `stroke` or `stroke fill`
+  for the paint order, which is what puts the stroke under the glyph.
+
+  The two paint order strings are one value. `stroke fill markers` is the full order, so a
+  browser may drop the keywords the order implies: Chromium serialises the computed value
+  as `stroke` and the style the element carries is `stroke fill`. The scenario reads the
+  computed property, so it takes either
