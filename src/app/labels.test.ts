@@ -2226,7 +2226,7 @@ describe('the sweep skip gate', () => {
     expect(labelSweepRuns(shallow, WIDE)).toBe(true);
   });
 
-  test('reads the two top corners and not the top centre', () => {
+  test('reads the corners and not the centre of a row', () => {
     // At the reported view the camera sits 1,542 light years above the plane at a pitch
     // of 58.6 degrees. The top centre reads about 3,223 light years and the corners
     // about 4,300, so a gate on the centre under-reads by about a third.
@@ -2248,6 +2248,25 @@ describe('the sweep skip gate', () => {
     // never meets the plane.
     expect(farthestPlaneRange(viewAt(4000, 5), WIDE)).toBe(Number.POSITIVE_INFINITY);
     expect(labelSweepRuns(viewAt(4000, 5), WIDE)).toBe(true);
+  });
+
+  // The scenario "The greatest plane range reads the same under the plane" of
+  // `galactic-regions`. Below the
+  // plane the picture is mirrored: the bottom row of the frame holds the plane that runs
+  // furthest away, and a gate that read the top row alone dropped every label of the
+  // frame. At a pitch of -45 and a distance of 4,000 the top row reads 3,918 light years
+  // and the bottom row 14,621.
+  test('answers the same way at a pitch and at its negative', () => {
+    for (const distance of [1000, 4000, 10000]) {
+      for (const pitch of [20, 45, 60, 80]) {
+        const above = farthestPlaneRange(viewAt(distance, pitch), WIDE);
+        const below = farthestPlaneRange(viewAt(distance, -pitch), WIDE);
+        expect(below).toBeCloseTo(above, 3);
+        expect(labelSweepRuns(viewAt(distance, -pitch), WIDE)).toBe(
+          labelSweepRuns(viewAt(distance, pitch), WIDE),
+        );
+      }
+    }
   });
 
   test('keeps the zoom half, which closes the default far view', () => {

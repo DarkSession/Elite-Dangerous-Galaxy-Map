@@ -30,6 +30,11 @@ Last updated: 2026-09-17.
 - **Data and rendering stay separate.** Data producers emit typed arrays and plain
   objects. The renderer knows nothing about where they came from. A lint rule enforces
   the import direction.
+- **Range is measured from the cursor.** The cursor is where the user looks, so the HUD's
+  `RANGE` field and the category draw range both read the distance from the cursor to the
+  system. The camera swings around the cursor, so a range read from the camera changed
+  with a turn that moved nothing the user cared about. A marker therefore holds its draw
+  range through a turn and through a zoom.
 - **Hardware rendering is asserted.** The browser suite fails on a software renderer,
   in Chromium and in Firefox.
 - **Look.** The target is the game's galaxy map background: a cream bulge, pink-brown
@@ -1121,6 +1126,60 @@ spheres and lines the host draws, and gives the camera two turn keys.
 - **The entry chunk reads 224,559 bytes** and its bound is 254,000. The bound was 210,000.
   The plan named 230,000, which would leave about 6 kB over the reading; that is the room
   that made the old 170,000 bound guard nothing.
+
+## Phase 5.8: the free camera and the host controls
+
+Change: `free-camera-and-host-controls`. Status: implemented.
+
+Opens the pitch below the disk, gives the host the browsable space, the start camera and
+the camera API, moves the flight to one smooth path, and holds the grid numbers to one
+size.
+
+- **The flight is one smooth zoom-and-pan path.** The camera flew a cursor ease and a
+  distance ease at once, which do not cancel: screen speed is world speed over distance,
+  so a long flight ran slow at the ends and fast in the middle. The path of Van Wijk and
+  Nuij (2003) holds the perceived speed of the picture even, and it pulls the camera back
+  over the middle of a long move and brings it in again, so the user sees the ground the
+  flight crosses. The constants are rho 1.42, the value the paper measured from people
+  driving the two by hand, and a speed of 1.6 path units a second. A flight runs
+  `1000 * path / 1.6` milliseconds, held between 400 and 2,000. There is no ease on top:
+  the path already holds the speed even, and an ease would put back the change of speed
+  the path removes. This replaces the fixed 600 ms of phase 5.7.
+
+- **A turn is a path length of its own.** A `flyTo` can change the yaw and the pitch, so
+  the duration reads the longer of the position path and the turn. A turn through the
+  field of view moves the picture by about its own width, which is a path length of about
+  1, so the turn in degrees is divided by the 60 degree field of view. A half turn is
+  therefore a path of 3, which runs 1,875 ms. The yaw and the pitch follow the time and
+  not the position path, so the camera turns at an even rate, and the yaw takes the short
+  way round.
+
+- **The pitch runs from -89 to 89 degrees, through 0.** It stopped at 5 degrees above the
+  plane. The camera now looks at the disk from below, and there is no dead band at the
+  plane: a drag through 0 passes through it. The grid numbers turn to face the reader
+  under the plane, so a label read from below is not mirrored.
+
+- **The browsable space has three modes, and it clamps the zoom as well as the cursor.**
+  `unrestricted` is the default and is the model bounds with a 120,000 light year far
+  limit. `auto` is the box that holds the host's systems, grown by 1,000 light years on
+  each axis. `sphere` is a centre and a radius. A cursor clamp alone leaves the user free
+  to pull the camera back and look at what the cursor may not reach, so the far zoom limit
+  falls with the bound: it is the radius over the sine of half the field of view, about
+  twice the radius, held between 10 and 120,000 light years. The three modes resolve to
+  two shapes, a box and a sphere, so no clamp knows which mode the host asked for.
+
+- **The host drives the camera through the handle.** `flyTo` takes a cursor or a system,
+  a distance, a yaw and a pitch, and settles `landed` or `interrupted`. `getBounds` and
+  `setBounds` move the space, `getInteraction` and `setInteraction` take each of the five
+  inputs off and on, and `encodeView`, `decodeView` and `decodeGrid` are exported from the
+  package root, so a host saves and restores a view with no map in hand.
+
+- **A grid level draws its numbers at one size.** A label took its cap height from its own
+  text, so `0 : 0 : 0` drew larger than `-25,000 : 0 : 50,000` on the same level. The size
+  now comes from the widest text the bounds allow, which is `-49,985 : -40,985 : -24,105`
+  at 27 characters, and every label of the frame takes it. The cap height is about a
+  thirty-eighth of the level's spacing. A narrower bound holds shorter numbers, so a
+  sphere of 900 light years draws them larger.
 
 ## Sources
 

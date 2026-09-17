@@ -103,7 +103,8 @@ describe('the marker rebase', () => {
     const positions = spreadPositions(7);
     const camera: [number, number, number] = [1234.5, -67.25, 25895.125];
     const out = new Float32Array(1000 * 3);
-    rebasePositions(positions, 1000, camera, out);
+    // No `styleRanges`, so the cut does not run and the cursor offset is not read.
+    rebasePositions(positions, 1000, camera, [0, 0, 0], out);
     for (let index = 0; index < 1000; index += 1) {
       const base = index * 3;
       expect(out[base]).toBe(Math.fround((positions[base] as number) - camera[0]));
@@ -130,7 +131,7 @@ describe('a drawn marker position', () => {
       for (const distance of [500, 20000, 120000]) {
         const view: View = { cursor, distance, yaw: 37, pitch: 35 };
         const camera = cameraPosition(view);
-        rebasePositions(positions, 1000, camera, out);
+        rebasePositions(positions, 1000, camera, [0, 0, 0], out);
         for (let index = 0; index < 1000; index += 1) {
           const base = index * 3;
           const exact = [
@@ -253,9 +254,22 @@ describe('the marker style and range buffer', () => {
 });
 
 describe('the drawn marker count', () => {
+  // The count measures from the cursor and not from the camera, so the reference below
+  // does too. The camera stands away from the cursor, which is what tells the two apart.
   test('matches a float64 reference over 1,000 spread positions', () => {
     const positions = spreadPositions(13);
-    const camera: [number, number, number] = [1234.5, -67.25, 25895.125];
+    const view: View = {
+      cursor: [1234.5, -67.25, 25895.125],
+      distance: 20000,
+      yaw: 37,
+      pitch: 35,
+    };
+    const camera = cameraPosition(view);
+    const cursorOffset: [number, number, number] = [
+      view.cursor[0] - camera[0],
+      view.cursor[1] - camera[1],
+      camera[2] - view.cursor[2],
+    ];
     const out = new Float32Array(1000 * 3);
     // Four ranges over the set, so every one of them cuts a different part of it.
     const ranges = [1000, 40000, 120000, 283500];
@@ -269,14 +283,14 @@ describe('the drawn marker count', () => {
       let reference = 0;
       for (let index = 0; index < 1000; index += 1) {
         const base = index * 3;
-        const x = (positions[base] as number) - camera[0];
-        const y = (positions[base + 1] as number) - camera[1];
-        const z = camera[2] - (positions[base + 2] as number);
+        const x = (positions[base] as number) - view.cursor[0];
+        const y = (positions[base + 1] as number) - view.cursor[1];
+        const z = view.cursor[2] - (positions[base + 2] as number);
         if (Math.hypot(x, y, z) <= range) reference += 1;
       }
-      expect(rebasePositions(positions, 1000, camera, out, styleRanges)).toBe(
-        reference,
-      );
+      expect(
+        rebasePositions(positions, 1000, camera, cursorOffset, out, styleRanges),
+      ).toBe(reference);
     }
   });
 
@@ -291,7 +305,35 @@ describe('the drawn marker count', () => {
       120000,
     ]);
     const out = new Float32Array(9);
-    expect(rebasePositions(positions, 3, [0, 0, 0], out, styleRanges)).toBe(2);
+    // The cursor sits at the camera here, so the cut reads the offsets themselves.
+    expect(rebasePositions(positions, 3, [0, 0, 0], [0, 0, 0], out, styleRanges)).toBe(
+      2,
+    );
+  });
+
+  // The reading item 5 rests on: an orbit moves the camera and leaves the cursor, so the
+  // count holds. The old rule measured from the camera and this count moved with it.
+  test('holds over an orbit around the same cursor', () => {
+    const positions = spreadPositions(17);
+    const styleRanges = new Float32Array(1000 * 2);
+    for (let index = 0; index < 1000; index += 1) {
+      styleRanges[index * 2] = STYLE_GLOW;
+      styleRanges[index * 2 + 1] = 40000;
+    }
+    const out = new Float32Array(1000 * 3);
+    const counts = [0, 90, 180, 270].map((yaw) => {
+      const view: View = { cursor: [0, 0, 25895], distance: 20000, yaw, pitch: 35 };
+      const camera = cameraPosition(view);
+      const cursorOffset: [number, number, number] = [
+        view.cursor[0] - camera[0],
+        view.cursor[1] - camera[1],
+        camera[2] - view.cursor[2],
+      ];
+      return rebasePositions(positions, 1000, camera, cursorOffset, out, styleRanges);
+    });
+    expect(counts[1]).toBe(counts[0]);
+    expect(counts[2]).toBe(counts[0]);
+    expect(counts[3]).toBe(counts[0]);
   });
 });
 
@@ -387,6 +429,7 @@ describe('the two styles', () => {
     const drawn = pass.draw({
       viewProjection: new Float32Array(16),
       camera: [0, 0, 0],
+      cursorOffset: [0, 0, 0],
       pixelRatio: 1,
       set,
     });

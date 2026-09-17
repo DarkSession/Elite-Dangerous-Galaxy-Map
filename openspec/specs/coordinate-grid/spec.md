@@ -12,10 +12,13 @@ The map SHALL draw a set of lines on a plane of constant `y` in game coordinates
 lines SHALL run along the `x` and the `z` axes of the game frame, so a line of the grid
 is a line of constant `x` or constant `z` and the user can read a coordinate from it.
 
-**The plane** SHALL be at the cursor's own `y`, and not at `y = 0`. The camera sits above
-the cursor at every pitch the map allows, because the pitch is held from 5 to 89 degrees,
-so the grid is always below the camera. A user who presses `R` or `F` takes the grid with
-them, and the plane they look at is the plane they measure on.
+**The plane** SHALL be at the cursor's own `y`, and not at `y = 0`. The camera SHALL be on
+either side of it: the pitch runs from -89 to 89 degrees, which `map-navigation` states, so
+the grid is below the camera at a positive pitch and above it at a negative one. The pass
+SHALL therefore take the meeting of its ray with the plane in both directions, which the
+requirement "The grid and its labels draw from under the plane" states. A user who presses
+`R` or `F` takes the grid with them, and the plane they look at is the plane they measure
+on.
 
 **A level** is a power of ten of light years, from 1 to 100,000. The grid SHALL draw every
 one of the six levels in the same frame. A line of a level lies at a whole multiple of
@@ -789,17 +792,46 @@ same share of a grid cell at every zoom, and it grows and shrinks with the cell 
 as everything else drawn on the plane does.
 
 **The label's whole width on the plane SHALL be at most 0.6 of a level spacing.** The text is
-`x : y : z`, which runs to about 20 characters, so its width is roughly 14 cap heights. A cap
-height of one tenth of the spacing would make the label about **1.4 spacings** wide: every
-label would then cross its neighbours, the overlap rule below would drop all but one, and the
-cap of 8 could never be reached.
+`x : y : z`, which runs to 27 characters at its widest, so its width is roughly 23 cap
+heights. A cap height of one tenth of the spacing would make the label about **2.3 spacings**
+wide: every label would then cross its neighbours, the overlap rule below would drop all but
+one, and the cap of 8 could never be reached.
+
+**Every label of a level SHALL take one cap height**, and that height SHALL come from the
+**widest text the active browsable bounds allow** and not from each label's own text. The
+map SHALL build that worst-case text once: for each of the game `x`, `y` and `z` it takes
+the bound endpoint whose written form is the longest, and it composes the three as
+`x : y : z`. Inside the model bounds that text is `-49,985 : -40,985 : -24,105`, which is 27
+characters and gives a cap height of about **0.026 of a spacing**.
+
+**A sphere bound has no endpoint on an axis**, so the map SHALL take the endpoints of the
+sphere's own axis-aligned box, which is the centre plus and minus the radius on each axis.
+A box bound gives its endpoints directly.
 
 The cap height SHALL therefore be **the lesser of one tenth of the level's spacing and the
-height that holds the label's own measured width to 0.6 of a spacing**. The width share is
+height that holds the worst-case text to 0.6 of a spacing**. The width share is
 0.6 and not 1: a label that ran the whole width of its own cell read as too large, and 0.6
 leaves the number clearly inside the cell it names. The placement SHALL
-measure the text once per level, as the region labels measure each name once, and SHALL set
-the height from that measurement rather than from a character count.
+measure the worst-case text once for each font, as the region labels measure each name once,
+and SHALL set the height from that measurement rather than from a character count.
+
+**Each label's own box SHALL still follow its own text**, so a short number sits in a short
+box and the overlap test stays honest. The cap height alone is shared.
+
+**The size came from each label's own text.** A monospaced font makes the width
+proportional to the character count, so `0 : 0 : 0` took three times the cap height of
+`-49,985 : -40,985 : -24,105`, and two labels beside each other differed by up to 1.6 times.
+The grid read as numbers at mixed sizes and not as one scale. Labels near the origin lose
+height under the new rule, and that is accepted.
+
+**The `y` term SHALL come from the bounds and not from the cursor.** The `y` a label carries
+is the `y` of the plane, which is the cursor's. Taking its written length would resize every
+label of the frame as the user moved the cursor up and down.
+
+**A restriction narrows the worst case.** Where the host sets browsable bounds, which
+`map-navigation` states, the three endpoints come from those bounds, so a map held to a
+small sphere carries larger numbers. A change of the bounds SHALL change the label size in
+the frame it happens.
 
 **A label SHALL stand clear of the two lines it names.** The label's rectangle on the plane
 SHALL sit so that the crossing is its **bottom right** corner, less a gap of **0.04** of a
@@ -828,9 +860,9 @@ A label was centred on its crossing, so both lines crossed the text through its 
 number is read against the lines it names, and a line through the middle of a row of digits
 is the one place a reader cannot tell one digit from another.
 
-The gap is 0.04 of a spacing, which is about one cap height: the cap height is the lesser of
-one tenth of the spacing and the height that holds `x : y : z` to 0.6 of a spacing, which is
-about a twenty-third of the spacing. At the 1,000 light year level the gap is 40 light years.
+The gap is 0.04 of a spacing, which is about 1.5 cap heights: the cap height is the lesser of
+one tenth of the spacing and the height that holds the worst-case text to 0.6 of a spacing,
+which is about 0.026 of the spacing. At the 1,000 light year level the gap is 40 light years.
 
 **The reported anchor SHALL stay the crossing.** The reading the page exposes names the
 place the label belongs to, and that place is the crossing and not the middle of the text.
@@ -996,8 +1028,12 @@ them from the picture alone.
   1,000 light years, draws a frame, and reads the four screen corners of the crossing label
   nearest the cursor
 - **THEN** the quad is not an upright rectangle: its top edge is shorter than its bottom
-  edge by at least 5 per cent, and both edges are within 2 degrees of the screen direction
-  of the grid line of constant `z` through the same crossing
+  edge by at least 2 per cent, and both edges are within 2 degrees of the screen direction
+  of the grid line of constant `z` through the same crossing.
+
+  The margin was 5 per cent while each label took its own size. The label at the origin
+  reads `0 : 0 : 0`, which the worst-case rule above now sizes at about a third of that
+  height, and the depth the quad spans shrinks with it. The reading is 3.0 per cent
 
 #### Scenario: A label follows the grid cell it sits in
 
@@ -1009,9 +1045,9 @@ them from the picture alone.
   below one tenth.
 
   The share is read against itself and not against one tenth, because the cap height is the
-  **lesser** of one tenth and the height that holds the measured text to 0.6 of a spacing.
-  For `x : y : z` the width bound is the lesser one, so the share is about a twenty-third.
-  What this scenario holds is that the share does not follow the zoom
+  **lesser** of one tenth and the height that holds the worst-case text to 0.6 of a spacing.
+  The width bound is the lesser one, so the share is about 0.026. What this scenario holds is
+  that the share does not follow the zoom
 
 #### Scenario: The label level follows the zoom
 
@@ -1037,12 +1073,46 @@ them from the picture alone.
 
 #### Scenario: A label is no wider than the cell it names
 
-- **WHEN** the browser test reads the screen width of every crossing label's transformed quad
-  and the level's own spacing on the screen at the same crossing, at zooms of 150 and 1,000
-  light years
+- **WHEN** the browser test puts the cursor at (40,000, -40,000, 70,000), where the labels
+  run to 25 characters, and reads the screen width of every crossing label's transformed
+  quad and the level's own spacing on the screen at the same crossing, at zooms of 150 and
+  1,000 light years
 - **THEN** every label's width is at or below **0.6** of its level's spacing, and at least
   one label is above **0.4** of it, so the rule bounds the label without making it
   unreadably small
+
+#### Scenario: Every label of a frame has one cap height
+
+- **WHEN** the browser test puts the cursor at (995, -600, 1,005) at a zoom of 150 light
+  years, draws a frame, and reads the text and the cap height of every crossing label
+- **THEN** at least two labels are present, their texts are not all the same length, and
+  every cap height is the same within 1 per cent.
+
+  The assertion reads the texts the frame actually placed and does not predict a length.
+  Which crossings survive the reach, the alpha gate and the cap of 8 follows the placement
+  rules, and two labels of the same length would make the reading say nothing
+
+#### Scenario: The cap height comes from the worst case and not from the frame
+
+- **WHEN** a unit test reads the cap height rule for the 1,000 light year level with the
+  model bounds active
+- **THEN** it is 0.026 of the spacing within 5 per cent, which is the height that holds
+  `-49,985 : -40,985 : -24,105` to 0.6 of a spacing, and it is below the one tenth the other
+  bound allows
+
+#### Scenario: A narrower bound gives larger numbers
+
+- **WHEN** the browser test reads the cap height of a crossing label at a zoom of 1,000
+  light years with no bounds set, then sets a sphere bound of radius 900 light years at the
+  origin, whose box endpoints are -900 and 900 and whose worst-case text is therefore
+  `-900 : -900 : -900` at 18 characters, and reads it again
+- **THEN** the second reading is larger than the first, in about the ratio 27 to 18
+
+#### Scenario: Moving the cursor does not resize the labels
+
+- **WHEN** the browser test reads the cap height of a crossing label with the cursor's `y`
+  at 0, then moves the cursor's `y` to -40,000 and reads it again
+- **THEN** the two readings are the same within 1 per cent
 
 #### Scenario: A number stands clear of the lines it names
 
@@ -1168,3 +1238,88 @@ them from the picture alone.
   browser may drop the keywords the order implies: Chromium serialises the computed value
   as `stroke` and the style the element carries is `stroke fill`. The scenario reads the
   computed property, so it takes either
+
+### Requirement: The grid and its labels draw from under the plane
+
+The camera pitch runs from -89 to 89 degrees, which `map-navigation` states. The coordinate
+grid, its crossing labels and the cursor marker SHALL draw at a **negative** pitch as they
+draw at the positive pitch of the same size.
+
+**The grid's ray SHALL meet the plane in both directions.** A fragment sends a ray from the
+camera through its own pixel. Above the plane the ray that meets it points down, and under
+the plane it points up. The pass SHALL take the meeting where the ray runs **toward** the
+plane, whichever side the camera is on, and SHALL treat a ray that runs away from the plane
+as a miss, as it does now.
+
+**A plane element SHALL be kept on either winding.** `plane-overlay` owns that rule and
+states it: the quad's signed area is compared against the side of the plane the camera is
+on, so an element seen from under the plane is not dropped for reading the other way round.
+This capability does not restate it.
+
+**At a pitch of 0** the camera lies in the plane. Every ray of the frame then meets the
+plane at the camera itself, so the grid covers no pixel, and a plane element whose projected
+area is 0 is dropped. That is the projection and not a rule of its own, and the map SHALL
+NOT hold a dead band around 0: half a degree off the plane the grid is back.
+
+**A label SHALL be turned to face the reader under the plane.** A label lies on the plane,
+so a reader under the disk would see its face from behind and its text would run backwards.
+`plane-overlay` owns the rule and states it: the element is painted on the other face of the
+plane. The label still lies flat on the plane and reads the same way round from either side.
+The label's own top left therefore takes the corner at the low `x` and the high `z` of its
+plane rectangle above the plane, and the corner at the low `x` and the low `z` under it. The
+corner is named by the axes and not by its distance from the camera, because which of the
+two is the far one follows the yaw. At a yaw of 0 the first is the far corner. The grid lines themselves carry no text and need no
+turn.
+
+The frame cost under the plane SHALL be the cost above it. The label sweep runs when the
+frame holds the horizon, and a frame at a pitch of -20 degrees holds as much of the plane as
+one at +20 degrees, so the pitch range adds no work.
+
+#### Scenario: The grid draws under the plane
+
+- **WHEN** the browser test turns the grid on at a pitch of **-45 degrees** at a zoom of
+  1,000 light years, draws a frame, and reads the grid vertex count and the drawn pixels
+- **THEN** the frame differs from the same frame drawn with the grid pass off, and the grid
+  spacing reading is the same as at a pitch of +45 degrees
+
+#### Scenario: Crossing labels draw under the plane
+
+- **WHEN** the browser test turns the grid on at a pitch of **-45 degrees** at a zoom of
+  1,000 light years, draws a frame and reads the crossing labels, then does the same at
+  **+45 degrees**
+- **THEN** both readings hold at least one label, and the two counts are equal
+
+#### Scenario: The cursor marker draws under the plane
+
+- **WHEN** the browser test reads the cursor marker's screen bounding box at a pitch of -30
+  degrees and at +30 degrees, at the same zoom and yaw
+- **THEN** both boxes are present, and their widths agree within 2 per cent
+
+#### Scenario: A coordinate label reads the same way round from either side
+
+- **WHEN** the browser test reads one crossing label's text and the screen position of its
+  own top left at a pitch of -45 degrees and at +45 degrees, at the same zoom and yaw
+- **THEN** the text is the same at both, and the top left lands on a different corner of the
+  label's plane rectangle, which is the turn that keeps the text the right way round
+
+  The screen alone cannot name the corner, because the turn is what keeps the label looking
+  the same from either side. `plane-overlay` names it in a unit test.
+
+#### Scenario: The grid is edge-on at a pitch of 0
+
+- **WHEN** the browser test sets a pitch of 0 degrees at a zoom of 1,000 light years with
+  the grid on, draws a frame, and then draws one at a pitch of 0.5 degrees
+- **THEN** the frame at 0 draws without error and its grid pixels lie inside a band 4 CSS
+  pixels tall, which an empty frame meets, and the frame at 0.5 degrees holds the grid on
+  more than 20 rows, which is the reading that says there is no dead band
+
+#### Scenario: The label sweep costs the same under the plane
+
+- **WHEN** the browser test resets the label sampling, draws **300** frames at a pitch of
+  -20 degrees at 1920x1080, reads the sampling, then does the same at +20 degrees
+- **THEN** the two mean sweep times agree within 20 per cent
+
+The count is 300 and not 60 because the sweep costs about 0.2 milliseconds a frame and the
+browser's clock steps by 0.1. Over 60 frames the run-to-run gap between the two pitches
+was measured at 0.8, 2.4, 8.1 and 20.1 per cent, which puts the bound on the noise floor.
+Over 300 frames the same four runs gave 0.9, 8.1, 0.9 and 1.7 per cent.

@@ -149,6 +149,30 @@ test('eight views stay under budget with 10,000 systems', async ({ page }) => {
   }
 });
 
+// The scenario "The cull holds the frame budget with a full set" of `real-systems`. The
+// cull now measures from the cursor, and at the default view that cuts nothing: the
+// furthest star of the disk is about 73,000 light years from Sol, inside the 120,000
+// light year default. The old camera rule cut a band of the outer disk here, so this view
+// draws more markers than it did and the budget must still hold.
+test('the default view holds the budget with every marker drawn', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page)).toBe(10000);
+
+  const mean = await measureView(page, SOL, 60000);
+  const drawn = await page.evaluate(
+    () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+  );
+  console.log(
+    `10,000 systems at the default view: ${mean.toFixed(3)} ms, ${drawn} markers drawn`,
+  );
+
+  expect(mean).toBeGreaterThan(0);
+  expect(mean).toBeLessThan(BUDGET_MS);
+  // Every marker of the set draws. Under the camera rule this view drew 8,322 of 10,000.
+  expect(drawn).toBe(10000);
+});
+
 // The 10 light year view is the most costly of the five for the marker pass: the disc
 // is at its 16 CSS pixel cap there and the glow sprite is 2.5 times that, so every
 // marker inside its category's range fills the 40 CSS pixel cap and the pass writes the

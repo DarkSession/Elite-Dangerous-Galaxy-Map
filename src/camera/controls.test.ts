@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { project } from './projection';
 import {
+  ALL_INTERACTION,
   applyKeyDown,
   applyKeyUp,
   beginDrag,
@@ -12,6 +13,7 @@ import {
   NO_TOUCH,
   TURN_DEGREES_PER_SECOND,
   orbit,
+  readInteraction,
   pinchDistance,
   pinchMiddle,
   touchGesture,
@@ -148,6 +150,31 @@ describe('the orbit', () => {
     expect(view.yaw).toBeCloseTo(30, 9);
     orbit(view, -200, 0);
     expect(view.yaw).toBeCloseTo(330, 9);
+  });
+
+  test('stops the pitch at -89 degrees after a long upward drag', () => {
+    const view = createDefaultView();
+    orbit(view, 0, -1000);
+    expect(view.pitch).toBe(-89);
+  });
+
+  // The scenario "A drag crosses the plane with no step" of `map-navigation`. There is
+  // no dead band at 0: every pixel of the drag is worth the same 0.3 degrees on both
+  // sides of the plane, so the crossing reads as one movement.
+  test('crosses 0 degrees in even steps of 0.3 a pixel', () => {
+    const view = createDefaultView();
+    view.pitch = 3;
+    const readings: number[] = [];
+    for (let pixel = 0; pixel < 20; pixel += 1) {
+      orbit(view, 0, -1);
+      readings.push(view.pitch);
+    }
+    expect(view.pitch).toBeCloseTo(-3, 9);
+    expect(readings.some((pitch) => Math.abs(pitch) < 1e-9)).toBe(true);
+    for (let index = 1; index < readings.length; index += 1) {
+      const step = (readings[index - 1] as number) - (readings[index] as number);
+      expect(step).toBeCloseTo(0.3, 9);
+    }
   });
 });
 
@@ -565,5 +592,44 @@ describe('the touch gesture', () => {
     });
     expect(result.action).toEqual({});
     expect(result.state).toBe(NO_TOUCH);
+  });
+});
+
+describe('the interaction switches', () => {
+  test('are all on by default', () => {
+    expect(ALL_INTERACTION).toEqual({
+      zoom: true,
+      orbit: true,
+      pan: true,
+      keys: true,
+      select: true,
+    });
+  });
+
+  test('read a partial setting over the one they hold', () => {
+    const held = readInteraction(ALL_INTERACTION, { zoom: false, select: false });
+    expect(held).toEqual({
+      zoom: false,
+      orbit: true,
+      pan: true,
+      keys: true,
+      select: false,
+    });
+    // A second setting names one switch and leaves the other four where they were.
+    expect(readInteraction(held, { orbit: false })).toEqual({
+      zoom: false,
+      orbit: false,
+      pan: true,
+      keys: true,
+      select: false,
+    });
+  });
+
+  test('keep what they hold for a setting they cannot read', () => {
+    const held = readInteraction(ALL_INTERACTION, { zoom: false });
+    expect(readInteraction(held, null)).toEqual(held);
+    expect(readInteraction(held, 'off')).toEqual(held);
+    // A field that is not a boolean is a field the setting does not name.
+    expect(readInteraction(held, { orbit: 'no', keys: 0 })).toEqual(held);
   });
 });

@@ -1569,11 +1569,21 @@ label.** The sweep SHALL run only when **both** of these hold:
   what draws.
 
 The greatest range SHALL be read from the camera alone in constant time, by unprojecting the
-frame's **two top corners**, intersecting each ray with `y = 0` and taking the greater. A ray
+frame's **four corners**, intersecting each ray with `y = 0` and taking the greatest. A ray
 that misses the plane SHALL count as beyond it, so a frame holding the horizon always sweeps.
-The corners and not the top centre: at a pitch of 58.6 degrees and a camera 1,542 light years
-up the top centre reads 3,223 light years and the corners about 4,300, so a gate on the
+The corners and not the centre of a row: at a pitch of 58.6 degrees and a camera 1,542 light
+years up the top centre reads 3,223 light years and the corners about 4,300, so a gate on the
 centre under-reads by about a third.
+
+**All four corners and not the top two.** The camera can look at the plane from under it,
+which `map-navigation` states. Above the plane the top row of the frame holds the plane that
+runs furthest away; under the plane the picture is mirrored and the bottom row does. At a
+pitch of -45 degrees and a distance of 4,000 light years the top row reads 3,918 light years
+and the bottom row 14,621, so a gate on the top row alone drops every region label of a
+frame that is full of plane. The reading SHALL therefore answer the same way at a pitch and
+at its negative. Above the plane the bottom corners always read shorter than the top ones, so
+the four-corner reading is the two-corner reading there and no figure in this capability
+moves.
 
 This is the same reading the gate replaced was reaching for. The sweep costs up to 2
 milliseconds of the main thread, and a frame in which every label would draw at opacity 0
@@ -1695,6 +1705,14 @@ user sees at those zooms.
 - **THEN** the sweep does not run at 89 degrees, where the whole frame is under the range
   floor, and does run at 20 degrees, where the frame holds the horizon and the plane runs
   past 8,000 light years. A gate on the zoom alone would skip both
+
+#### Scenario: The greatest plane range reads the same under the plane
+
+- **WHEN** a unit test reads the greatest plane range, and whether the sweep runs, at a pitch
+  and at its negative, over distances of 1,000, 4,000 and 10,000 light years and pitches of
+  20, 45, 60 and 80 degrees
+- **THEN** the two ranges agree to three decimal places at every pair, and the gate answers
+  the same way at both
 
 #### Scenario: A region with nothing on screen carries no label
 
@@ -2030,7 +2048,7 @@ user sees at those zooms.
   `worstMs` are 0, so the sweep ran in no frame of the sixty.
 
   The two views read the two halves of the gate. At a pitch of 89 degrees and a zoom of
-  4,000 the top corner ray meets the plane at 6,243 light years, under the floor, so the
+  4,000 the corner rays meet the plane at 6,243 light years, under the floor, so the
   range half closes. At 60,000 light years the plane runs out to about 395,000, so the range
   half is open and the **zoom** half closes it. A gate on either half alone lets one of these
 

@@ -70,8 +70,9 @@ helper, so a test that does not ask for a set opens an empty map. Open
 ## The entry point
 
 The package entry is [src/index.ts](src/index.ts), which `package.json` names in
-`exports`. It exports `createGalaxyMap` and the types the public calls name, so a host
-imports from the package root and reaches no module the list leaves out. `pnpm build`
+`exports`. It exports `createGalaxyMap`, the three fragment calls `encodeView`,
+`decodeView` and `decodeGrid`, and the types the public calls name, so a host imports
+from the package root and reaches no module the list leaves out. `pnpm build`
 writes the module to `dist/index.js` and its declarations to `dist/types/`.
 
 `createGalaxyMap(canvas, options)` in
@@ -88,7 +89,7 @@ the reader rejects a record whose category the table does not hold.
 
 `markerStyle` is `glow` or `disc`, and it is `glow` when the category names none. A glow
 is a soft halo with four spikes and no ring. A disc is a filled circle with a dark ring.
-`maxDrawRange` is how far the camera may be from a system and still draw its marker, in
+`maxDrawRange` is how far the cursor may be from a system and still draw its marker, in
 light years. It is 120,000 when the category names none, which is the far zoom limit, so
 such a marker draws at every zoom the map reaches.
 
@@ -144,7 +145,8 @@ map.addSystems([
 
 The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCount`,
 `getView`, `setView`, `onViewChange`, `areRegionsVisible`, `setRegionsVisible`, `dispose`
-and a `debug` member the browser tests read. For the system set it carries `getSystem`,
+and a `debug` member the browser tests read. For the camera it carries `getBounds`,
+`setBounds`, `flyTo`, `isFlying`, `onFlightEnd`, `getInteraction` and `setInteraction`. For the system set it carries `getSystem`,
 `categoryCount`, `getCategory`, `setCategoryVisible`, `isCategoryVisible`,
 `setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
@@ -301,7 +303,9 @@ The HUD is plain DOM in one `div.gm-hud`, and every one of its rules sits under 
 class. It shows the region name and the zoom distance in the top bar, a category browser
 with a search box, the map option switches, and an information panel for the selected
 system with its fields, description, thumbnails and a lightbox. The panel's fields start
-with `POSITION`, `DISTANCE FROM SOL`, `RANGE` and `REGION`. `REGION` names the codex
+with `POSITION`, `DISTANCE FROM SOL`, `RANGE` and `REGION`. `RANGE` is the distance
+from the cursor to the system, so it reads 0 light years after a flight lands on the
+system. `REGION` names the codex
 region of the system, resolved on the game's own 49.3494 light year grid through
 `regionNameAtExact`. It is empty until the promise settles, so the grid does not reflow,
 and it reads `Unknown` for a position the region map does not cover. It reads the map through
@@ -343,18 +347,82 @@ nothing and caches nothing: the host's `load()` reads the data.
 The HUD draws the dataset field in the top bar and the dataset library dialog behind it,
 and it draws neither when the catalog is empty.
 
+## The camera a host drives
+
+Three options set what the camera may do, and seven handle members drive it later.
+
+```ts
+const map = createGalaxyMap(canvas, {
+  bounds: { mode: 'sphere', centre: [0, 0, 0], radiusLy: 1000 },
+  startView: { system: 'Sol', distance: 300, pitch: -20 },
+  interaction: { select: false },
+});
+
+await map.flyTo({ system: 'Achenar', distance: 200 });
+```
+
+`bounds` is how much of the space the user may browse. It has three modes.
+`unrestricted` is the default: the cursor holds to the model bounds and the far zoom
+limit is 120,000 light years. `auto` is the box that holds every system of the set, grown
+by `marginLy` on each axis, which is 1,000 light years where the host names none. `sphere`
+is a ball, from a `centre` in game coordinates and a `radiusLy`. The bound clamps the
+cursor and the far zoom limit together, so the user cannot pull the camera back to look at
+what the cursor may not reach. The far limit is the radius over the sine of half the field
+of view, which is about twice the radius, and it stays between 10 and 120,000 light years.
+The bound changes nothing the map draws. `setBounds` moves it later and pulls the current
+view inside the new bound, and `getBounds` reads it. An `auto` bound with no system in the
+set reads as `unrestricted`, because an empty box would pin the camera to a point.
+
+`startView` is the camera the map opens at. It takes a `cursor` or a `system`, a
+`distance`, a `yaw` and a `pitch`, and a field the host leaves out takes the value of the
+default view. The map takes the start view in the frame it draws first and flies nowhere.
+A host adds its records after the map is built, so a `system` start waits for the set to
+hold that record, for up to 600 drawn frames. The library reads no URL. The demo page names no
+`startView`: it reads the fragment itself and calls `setView` after the map is built, so
+the fragment wins there. A host that wants `startView` to hold must not write the view
+after the build.
+
+`interaction` is which of the user's inputs the map acts on: `zoom`, `orbit`, `pan`,
+`keys` and `select`. Every switch is on where the host names none. A switch that is off
+stops the input and leaves the same move open to the host's own calls, so a map with
+`pan: false` still answers `setView`. `setInteraction` takes a partial setting over the
+one the map holds, so a call that writes one switch leaves the other four, and
+`getInteraction` reads all five.
+
+`flyTo(target, options)` flies the camera to a `cursor` or a `system`, a `distance`, a
+`yaw` and a `pitch`. A field the target leaves out keeps the value the view holds, so
+`flyTo({ distance: 100 })` is a zoom in place and `flyTo({ yaw: 180 })` is a turn in
+place. The promise settles with `landed` where the flight reached the target and
+`interrupted` where a user input, a selection or a second `flyTo` cut it short. A target
+outside the bound lands at the nearest view the bound allows, and a system the set does
+not hold flies nowhere and settles `landed`. `flyTo(target, { animate: false })` takes the
+target in this frame. The map does the same where the browser asks for less movement.
+`isFlying` reads whether a flight runs, and `onFlightEnd` reports each end with the same
+two words.
+
+The flight path is the smooth zoom-and-pan curve of Van Wijk and Nuij (2003), which holds
+the perceived speed of the picture even over the whole move. It pulls the camera back over
+the middle of a long flight and brings it in again, so the user sees the ground the flight
+crosses. A flight runs between 0.4 and 2 seconds, from the longer of the path and the
+turn. The camera turns the short way round, and a half turn turns forward.
+
+`encodeView(view, grid?)` and `decodeView(fragment)` write and read the URL fragment
+above, and `decodeGrid(fragment)` reads the grid field alone. The three are pure, so a
+host that saves a view in its own storage needs no map to write it and no map to read it
+back. A view round trips within 1e-5.
+
 ## Controls
 
-| Input           | What it does                                                                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Left click      | Selects the system under the pointer. A click that finds no system keeps the selection.                                                           |
-| Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at 5 and 89 degrees.                                                       |
-| Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.                                                               |
-| Wheel           | Divides the distance by 1.15 per notch, between 10 and 120,000 light years. The camera glides to the new distance and lands in about 0.2 seconds. |
-| `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second.                                                  |
-| `R` `F`         | Move the cursor up and down at the same speed.                                                                                                    |
-| `Q` `E`         | Turn the camera around the cursor at 60 degrees per second. `E` turns it the way a drag to the right turns it.                                    |
-| `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                                                                  |
+| Input           | What it does                                                                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Left click      | Selects the system under the pointer. A click that finds no system keeps the selection.                                                                              |
+| Left drag       | Turns the camera around the cursor. 0.3 degrees per pixel. Pitch stops at -89 and 89 degrees.                                                                        |
+| Right drag      | Moves the cursor in the galactic plane. The point under the pointer stays under it.                                                                                  |
+| Wheel           | Divides the distance by 1.15 per notch, between 10 light years and the far limit of the bound. The camera glides to the new distance and lands in about 0.2 seconds. |
+| `W` `A` `S` `D` | Move the cursor in the plane, relative to the camera, at one quarter of the distance per second.                                                                     |
+| `R` `F`         | Move the cursor up and down at the same speed.                                                                                                                       |
+| `Q` `E`         | Turn the camera around the cursor at 60 degrees per second. `E` turns it the way a drag to the right turns it.                                                       |
+| `Escape`        | Unwinds one step: the dataset dialog, then the HUD lightbox, then the selection.                                                                                     |
 
 The view lives in the URL fragment as
 `#c=<x>,<y>,<z>&d=<distance>&p=<pitch>&y=<yaw>&g=<grid>`, in light years and degrees.

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { cameraPosition, planePoint, viewProjectionMatrix } from '../camera/projection';
+import { resolveBounds, unrestrictedBounds } from '../camera/view';
 import type { View } from '../camera/view';
 import {
   GRID_LABEL_MERGE_FLOOR,
@@ -35,6 +36,7 @@ import {
   gridLabelReach,
   labelNumber,
   MAX_GRID_LABELS,
+  worstCaseLabelText,
 } from './grid-labels';
 import type { GridLabelMeasure, GridLabelReading } from './grid-labels';
 import { boxesOverlap } from './labels';
@@ -43,6 +45,9 @@ const VIEWPORT = { width: 1920, height: 1080 };
 
 /** The model bounds, which every frame below carries. */
 const BOUNDS = MODEL_BOUNDS;
+
+/** The browsable space, which the worst-case label text comes from. */
+const BROWSE = unrestrictedBounds();
 
 /**
  * A measurement of a monospace font: 0.6 em for each character and a cap height of
@@ -129,6 +134,7 @@ describe('the candidate set', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 0,
     };
@@ -164,6 +170,7 @@ describe('the crossing labels', () => {
       view: viewAt([1200, -600, 2400], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -186,6 +193,7 @@ describe('the crossing labels', () => {
       view,
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -224,6 +232,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -239,6 +248,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -258,6 +268,7 @@ describe('the crossing labels', () => {
       view: viewAt([0, 0, 0], 1000, 5),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -293,6 +304,7 @@ describe('the reach fade', () => {
       view: viewAt([0, 0, 0], 300),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 100,
     };
@@ -320,16 +332,12 @@ describe('the reach fade', () => {
 
 describe('the label size on the plane', () => {
   test('takes the lesser of one tenth of the spacing and the width bound', () => {
-    // `x : y : z` runs to about 20 characters, so its width is roughly 14 cap heights.
-    // At a width share of 0.6 the width bound is the lesser one for every text a
-    // crossing carries.
-    const wide = measure('-10,000 : -600 : -10,000');
+    // The worst case of the model bounds runs to 27 characters, so its width is about 23
+    // cap heights. At a width share of 0.6 the width bound is the lesser one.
+    const wide = measure(worstCaseLabelText(BROWSE));
     const byWidth = (1000 * GRID_LABEL_WIDTH_SHARE * wide.capPerEm) / wide.widthPerEm;
     expect(byWidth).toBeLessThan(1000 * GRID_LABEL_CAP_SHARE);
     expect(gridLabelCapHeightLy(1000, wide)).toBeCloseTo(byWidth, 9);
-
-    const short = measure('0 : 0 : 0');
-    expect(gridLabelCapHeightLy(1000, short)).toBeLessThan(1000 * GRID_LABEL_CAP_SHARE);
 
     // Only a text narrower than six cap heights reaches the one tenth ceiling, which no
     // crossing label is. The ceiling is a guard and not the rule that sets the size.
@@ -340,24 +348,71 @@ describe('the label size on the plane', () => {
     );
   });
 
-  test('holds every label to the width share of a spacing on the plane', () => {
+  // The scenario "The cap height comes from the worst case and not from the frame" of
+  // `coordinate-grid`.
+  test('reads 0.026 of the 1,000 light year spacing inside the model bounds', () => {
+    const capLy = gridLabelCapHeightLy(1000, measure(worstCaseLabelText(BROWSE)));
+    expect(capLy / 1000).toBeGreaterThan(0.026 * 0.95);
+    expect(capLy / 1000).toBeLessThan(0.026 * 1.05);
+    expect(capLy).toBeLessThan(1000 * GRID_LABEL_CAP_SHARE);
+  });
+
+  test('gives every label of a frame one cap height', () => {
     const frame = {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
 
     const placed = gridLabelPlacements(frame, measure);
     expect(placed.length).toBeGreaterThan(0);
+    // The texts of a frame are not all one length, so a per-label rule would give more
+    // than one reading here.
+    const lengths = new Set(placed.map((placement) => placement.text.length));
+    expect(lengths.size).toBeGreaterThan(1);
+
+    // The drawn cap height against the level's own spacing at the same crossing. The two
+    // readings take the same projection scale, so the share is the cap height on the
+    // plane. Under a per-label rule the 9 character text would read three times the 27
+    // character one.
+    const shares = placed.map(
+      (placement) => placement.capHeightScreenCss / placement.spacingCss,
+    );
+    const first = shares[0] as number;
+    for (const share of shares) expect(share / first).toBeCloseTo(1, 1);
+
+    const worst = gridLabelCapHeightLy(1000, measure(worstCaseLabelText(BROWSE)));
+    expect(first).toBeCloseTo(worst / 1000, 2);
     for (const placement of placed) {
-      const reading = measure(placement.text);
-      const capLy = gridLabelCapHeightLy(1000, reading);
-      const widthLy = (placement.widthCss * capLy) / placement.capHeightCss;
+      const widthLy = (placement.widthCss * worst) / placement.capHeightCss;
       expect(widthLy).toBeLessThanOrEqual(1000 * GRID_LABEL_WIDTH_SHARE + 1e-6);
-      expect(capLy).toBeLessThanOrEqual(1000 * GRID_LABEL_CAP_SHARE + 1e-9);
+      expect(worst).toBeLessThanOrEqual(1000 * GRID_LABEL_CAP_SHARE + 1e-9);
     }
+  });
+
+  test('gives a narrower space a larger cap height', () => {
+    const sphere = resolveBounds(
+      { mode: 'sphere', centre: [0, 0, 0], radiusLy: 900 },
+      { min: [0, 0, 0], max: [0, 0, 0], empty: true },
+    );
+    // `-900 : -900 : -900` is 18 characters against the model's 27.
+    expect(worstCaseLabelText(sphere)).toBe('-900 : -900 : -900');
+    expect(
+      gridLabelCapHeightLy(1000, measure(worstCaseLabelText(sphere))),
+    ).toBeGreaterThan(gridLabelCapHeightLy(1000, measure(worstCaseLabelText(BROWSE))));
+  });
+
+  test('reads the longer written endpoint of each axis', () => {
+    expect(worstCaseLabelText(BROWSE)).toBe('-49,985 : -40,985 : -24,105');
+    // A box whose upper endpoint writes longer than its lower one.
+    const box = resolveBounds(
+      { mode: 'auto', marginLy: 0 },
+      { min: [-5, -5, -5], max: [12345, 0, 0], empty: false },
+    );
+    expect(worstCaseLabelText(box)).toBe('12,345 : -5 : -5');
   });
 
   test('holds one share of the cell at every zoom', () => {
@@ -366,6 +421,7 @@ describe('the label size on the plane', () => {
         view: viewAt([0, 0, 0], distance),
         viewport: VIEWPORT,
         bounds: BOUNDS,
+        browse: BROWSE,
         background: null,
         spacingLy: 1000,
       };
@@ -400,6 +456,7 @@ describe('the model bounds', () => {
       view: viewAt([BOUNDS.x[1], 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -426,6 +483,7 @@ describe('the model bounds', () => {
       view: viewAt([0, 0, 75000], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };
@@ -478,6 +536,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 21,
     };
@@ -498,6 +557,7 @@ describe('the drawn alpha gate', () => {
         view: viewAt([0, 0, 0], 3000, pitch),
         viewport: VIEWPORT,
         bounds: BOUNDS,
+        browse: BROWSE,
         background: null,
         spacingLy: 10000,
       };
@@ -516,6 +576,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 11500),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 10000,
     };
@@ -523,6 +584,7 @@ describe('the drawn alpha gate', () => {
       view: viewAt([0, 0, 0], 3000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 10000,
     };
@@ -693,6 +755,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: flatReading(120, 68, [200, 190, 180]),
       spacingLy: 1000,
     };
@@ -723,6 +786,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: reading,
       spacingLy: 1000,
     });
@@ -741,6 +805,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     });
@@ -768,6 +833,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000, 30),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     });
@@ -789,6 +855,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     });
@@ -812,6 +879,7 @@ describe('the label overlay', () => {
       view: viewAt([0, 0, 0], 1000),
       viewport: VIEWPORT,
       bounds: BOUNDS,
+      browse: BROWSE,
       background: null,
       spacingLy: 1000,
     };

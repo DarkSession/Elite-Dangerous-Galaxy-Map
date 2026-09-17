@@ -235,9 +235,10 @@ export function planeMatrix3d(homography: Float64Array): string {
  *   sides of the camera does not project to one quadrilateral, and a homography solved
  *   through such a corner wraps the element across the frame;
  * - the projected quad is turned away from the camera, which its signed area on the
- *   screen reports. The camera sits above the cursor at every pitch the map allows, so a
- *   plane element is normally face-on; a quad that reads the other way is behind the
- *   horizon;
+ *   screen reports, compared against the side of the plane the camera is on. Seen from
+ *   above the plane a face-on element reads a positive area and seen from under it the
+ *   same element reads a negative one, so a fixed sign would drop every element under the
+ *   plane. A quad that reads the other way for its side is behind the horizon;
  * - the quad's screen bounding box lies wholly outside the viewport;
  * - the homography is singular, which three collinear projected corners give.
  */
@@ -281,16 +282,20 @@ export function planePlacement(placement: PlanePlacement): PlanePlaced | null {
     });
   }
 
-  // The signed area of the quad on the screen. A face-on plane element reads positive,
-  // because the screen's `y` grows downward and the element's own corners run clockwise
-  // in that frame.
+  // The signed area of the quad on the screen. Seen from above the plane a face-on
+  // element reads positive, because the screen's `y` grows downward and the element's own
+  // corners run clockwise in that frame. Seen from under the plane the same corners run
+  // the other way, so the test compares the area against the side the camera is on. The
+  // product is 0 where the camera lies on the plane, and the element is dropped: it is
+  // edge on and covers no pixels.
   let area = 0;
   for (let index = 0; index < 4; index += 1) {
     const one = corners[index] as AnchorPoint;
     const next = corners[(index + 1) % 4] as AnchorPoint;
     area += one.x * next.y - next.x * one.y;
   }
-  if (!(area > 0)) return null;
+  const side = camera[1] - placement.planeY;
+  if (!(area * side > 0)) return null;
 
   const left = Math.min(...corners.map((point) => point.x));
   const right = Math.max(...corners.map((point) => point.x));
@@ -300,7 +305,22 @@ export function planePlacement(placement: PlanePlacement): PlanePlaced | null {
     return null;
   }
 
-  const homography = planeHomography(placement.widthCss, placement.heightCss, corners);
+  // Under the plane the reader sees the element's face from behind, so its text would run
+  // backwards. The element is turned over to face them: the homography takes the element's
+  // own corners to the same four plane corners with the height axis reversed, which paints
+  // the element on the other face of the plane. It still lies flat on the plane, and it
+  // reads the same way round from either side. The turn happens as the pitch crosses 0,
+  // where every element is dropped anyway, so no frame shows it half way.
+  const facing =
+    side < 0
+      ? [
+          corners[3] as AnchorPoint,
+          corners[2] as AnchorPoint,
+          corners[1] as AnchorPoint,
+          corners[0] as AnchorPoint,
+        ]
+      : corners;
+  const homography = planeHomography(placement.widthCss, placement.heightCss, facing);
   if (homography === null) return null;
 
   return {

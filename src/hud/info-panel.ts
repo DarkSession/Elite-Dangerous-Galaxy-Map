@@ -12,7 +12,7 @@ import {
   setShown,
   setText,
 } from './dom';
-import { distanceFromSol, rangeFromCamera } from './geometry';
+import { distanceFromSol, rangeFromCursor } from './geometry';
 import type { Lightbox } from './lightbox';
 import type { HudAction } from './types';
 
@@ -312,7 +312,7 @@ export function createInfoPanel(
     const parts: HTMLElement[] = [];
 
     const grid = make(doc, 'div', 'gm-hud__field-grid');
-    const range = rangeFromCamera(map.getView(), system.position);
+    const range = rangeFromCursor(map.getView(), system.position);
     for (const field of fieldsOf(system, range)) {
       const box = make(doc, 'div', 'gm-hud__field');
       if (field.wide === true) box.classList.add('gm-hud__field--wide');
@@ -423,7 +423,7 @@ export function createInfoPanel(
       if (shown === null || rangeValue === null) return;
       setText(
         rangeValue,
-        formatLightYears(rangeFromCamera(map.getView(), shown.position)),
+        formatLightYears(rangeFromCursor(map.getView(), shown.position)),
       );
     },
     dispose(): void {

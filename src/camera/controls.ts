@@ -2,7 +2,15 @@
 // with the right button, zoom with the wheel and move with the keyboard.
 import { planePoint } from './projection';
 import type { Viewport } from './projection';
-import { clampCursor, clampDistance, clampPitch, copyView, wrapYaw } from './view';
+import {
+  clampCursor,
+  clampDistance,
+  clampPitch,
+  copyView,
+  unrestrictedBounds,
+  wrapYaw,
+} from './view';
+import type { ResolvedBounds } from './view';
 import type { View } from './view';
 
 /** Degrees of yaw or pitch per pixel of left drag. */
@@ -59,6 +67,62 @@ export const TAP_MOVE_CSS = 10;
 
 /** One of the keys that move the cursor. */
 export type MovementKey = (typeof MOVEMENT_KEYS)[number];
+
+/**
+ * Which of the user's inputs the map acts on. Each switch is on unless a host turns it
+ * off, and each one covers the mouse and the touch form of the same input.
+ *
+ * A switch that is off stops that input from changing the view or the selection. It does
+ * not stop the map from drawing, from reporting a hover or from answering `systemAt`, and
+ * it does not stop the canvas from holding off the browser's own default action: a canvas
+ * that let the page scroll under a disabled wheel would be worse than one that zooms.
+ *
+ * The switches are for the user's input. A `setView`, a `setSelection` and a `flyTo` from
+ * the host work whatever they say.
+ */
+export interface InteractionSwitches {
+  /** The wheel and the pinch. */
+  readonly zoom: boolean;
+  /** The left drag and the two finger turn. */
+  readonly orbit: boolean;
+  /** The right drag and the one finger drag. */
+  readonly pan: boolean;
+  /** The eight movement keys. */
+  readonly keys: boolean;
+  /** The click and the tap that select a system. */
+  readonly select: boolean;
+}
+
+/** Every input on, which is what a map takes where the host names none. */
+export const ALL_INTERACTION: InteractionSwitches = {
+  zoom: true,
+  orbit: true,
+  pan: true,
+  keys: true,
+  select: true,
+};
+
+/**
+ * Reads a host's partial setting over the one the map holds. A field the setting does not
+ * name, and a field that is not a boolean, keeps the value it had, so a host that writes
+ * one switch does not clear the other four.
+ */
+export function readInteraction(
+  held: InteractionSwitches,
+  next: unknown,
+): InteractionSwitches {
+  if (next === null || typeof next !== 'object') return held;
+  const given = next as Record<string, unknown>;
+  const read = (name: keyof InteractionSwitches): boolean =>
+    typeof given[name] === 'boolean' ? (given[name] as boolean) : held[name];
+  return {
+    zoom: read('zoom'),
+    orbit: read('orbit'),
+    pan: read('pan'),
+    keys: read('keys'),
+    select: read('select'),
+  };
+}
 
 /** What a right drag remembers from its first pixel. */
 export interface DragStart {
@@ -164,8 +228,15 @@ export function orbit(view: View, deltaX: number, deltaY: number): void {
  * The target distance wheel notches ask for, from the target the map already holds. A
  * positive count is a forward notch, which moves the camera toward the cursor.
  */
-export function zoomTarget(distance: number, notches: number): number {
-  return clampDistance(distance / Math.pow(ZOOM_PER_NOTCH, notches));
+export function zoomTarget(
+  distance: number,
+  notches: number,
+  bounds: ResolvedBounds = unrestrictedBounds(),
+): number {
+  return clampDistance(
+    distance / Math.pow(ZOOM_PER_NOTCH, notches),
+    bounds.maxDistanceLy,
+  );
 }
 
 /**
@@ -204,6 +275,7 @@ export function moveByKeys(
   view: View,
   keys: ReadonlySet<string>,
   seconds: number,
+  bounds: ResolvedBounds = unrestrictedBounds(),
 ): void {
   if (keys.size === 0 || seconds <= 0) return;
 
@@ -237,7 +309,7 @@ export function moveByKeys(
   if (keys.has('R')) y += speed;
   if (keys.has('F')) y -= speed;
 
-  view.cursor = clampCursor([x, y, z]);
+  view.cursor = clampCursor([x, y, z], bounds);
 }
 
 /** Remembers what a right drag needs, or null when the pixel misses the plane. */
@@ -261,14 +333,18 @@ export function dragCursor(
   start: DragStart,
   pixel: { readonly x: number; readonly y: number },
   viewport: Viewport,
+  bounds: ResolvedBounds = unrestrictedBounds(),
 ): void {
   const current = planePoint(start.view, pixel, viewport, start.view.cursor[1]);
   if (current === null) return;
-  view.cursor = clampCursor([
-    start.view.cursor[0] + (start.point[0] - current[0]),
-    start.view.cursor[1],
-    start.view.cursor[2] + (start.point[2] - current[2]),
-  ]);
+  view.cursor = clampCursor(
+    [
+      start.view.cursor[0] + (start.point[0] - current[0]),
+      start.view.cursor[1],
+      start.view.cursor[2] + (start.point[2] - current[2]),
+    ],
+    bounds,
+  );
 }
 
 /** The letter a keyboard event names, or null when it is not a movement key. */
@@ -307,9 +383,11 @@ export function pinchDistance(
   startDistance: number,
   startGap: number,
   gap: number,
+  bounds: ResolvedBounds = unrestrictedBounds(),
 ): number {
-  if (!(gap > 0) || !(startGap > 0)) return clampDistance(startDistance);
-  return clampDistance((startDistance * startGap) / gap);
+  const limit = bounds.maxDistanceLy;
+  if (!(gap > 0) || !(startGap > 0)) return clampDistance(startDistance, limit);
+  return clampDistance((startDistance * startGap) / gap, limit);
 }
 
 /**
@@ -453,7 +531,11 @@ function isTap(press: TouchPress, nowMs: number): boolean {
  * down. Without that a second finger landing, or one of two lifting, would move the view
  * by the whole difference between the old reading and the new one in one event.
  */
-export function touchGesture(state: TouchState, reading: TouchReading): TouchResult {
+export function touchGesture(
+  state: TouchState,
+  reading: TouchReading,
+  bounds: ResolvedBounds = unrestrictedBounds(),
+): TouchResult {
   if (reading.pointerType !== 'touch') return { state, action: {} };
   const held = state.pointers;
 
@@ -550,6 +632,7 @@ export function touchGesture(state: TouchState, reading: TouchReading): TouchRes
         state.startDistance,
         state.startGap,
         pinchGap(first, second),
+        bounds,
       ),
       input: true,
     },
@@ -616,6 +699,17 @@ export interface ControlsOptions {
    * is true, a wheel notch writes the distance at once and no glide runs.
    */
   readonly reducedMotion?: () => boolean;
+  /**
+   * The browsable space, read once for each input. It is a function and not a value,
+   * because a host can change the bounds at any time and the controls hold no listener.
+   */
+  readonly bounds?: () => ResolvedBounds;
+  /**
+   * The interaction switches, read once for each input, for the same reason the bounds
+   * are. A switch that goes off during a drag therefore stops that drag in the frame it
+   * changes.
+   */
+  readonly interaction?: () => InteractionSwitches;
 }
 
 /** Wires the control scheme to a canvas. */
@@ -639,6 +733,13 @@ export function attachControls(
   let target: number | null = null;
 
   const changed = (): void => options.onChange?.();
+
+  /** The browsable space as it stands. Every clamp inside the controls reads it. */
+  const boundsNow = (): ResolvedBounds => options.bounds?.() ?? unrestrictedBounds();
+
+  /** The interaction switches as they stand. Every handler below reads them. */
+  const switchesNow = (): InteractionSwitches =>
+    options.interaction?.() ?? ALL_INTERACTION;
 
   const viewportOf = (): Viewport => ({
     width: canvas.clientWidth,
@@ -669,10 +770,17 @@ export function attachControls(
         y: pixel.y,
         timeMs: performance.now(),
       },
+      boundsNow(),
     );
     touch = result.state;
     const action = result.action;
-    if (action.input === true) options.onInput?.();
+    const switches = switchesNow();
+    // The gesture rule runs whatever the switches say, so the state it keeps stays right,
+    // and each thing it asks for is gated here. The input hook fires only where one of
+    // the three camera inputs can act, so a gesture that can move nothing ends no flight.
+    if (action.input === true && (switches.zoom || switches.orbit || switches.pan)) {
+      options.onInput?.();
+    }
     if (action.endGlide === true) target = null;
     if (action.beginPlane !== undefined) {
       drag = beginDrag(view, action.beginPlane, viewportOf());
@@ -681,20 +789,21 @@ export function attachControls(
       drag = null;
     }
     let moved = false;
-    if (action.dragTo !== undefined && drag !== null) {
-      dragCursor(view, drag, action.dragTo, viewportOf());
+    if (action.dragTo !== undefined && drag !== null && switches.pan) {
+      dragCursor(view, drag, action.dragTo, viewportOf(), boundsNow());
       moved = true;
     }
-    if (action.orbit !== undefined) {
+    if (action.orbit !== undefined && switches.orbit) {
       orbit(view, action.orbit.deltaX, action.orbit.deltaY);
       moved = true;
     }
-    if (action.distance !== undefined) {
+    if (action.distance !== undefined && switches.zoom) {
       view.distance = action.distance;
       moved = true;
     }
     if (moved) changed();
-    if (action.select !== undefined) options.onClick?.(action.select);
+    if (action.select !== undefined && switches.select)
+      options.onClick?.(action.select);
   };
 
   const onPointerDown = (event: PointerEvent): void => {
@@ -706,7 +815,15 @@ export function attachControls(
       applyTouch(event, 'down');
       return;
     }
-    if (event.button === 0 || event.button === 2) options.onInput?.();
+    // The press begins its drag whatever the switch says, so a switch that goes on during
+    // the drag takes effect at once. The move handler is where the view is written.
+    const switches = switchesNow();
+    if (
+      (event.button === 0 && switches.orbit) ||
+      (event.button === 2 && switches.pan)
+    ) {
+      options.onInput?.();
+    }
     if (event.button === 2) {
       event.preventDefault();
       drag = beginDrag(view, pixelOf(event), viewportOf());
@@ -730,19 +847,30 @@ export function attachControls(
       applyTouch(event, 'move');
       return;
     }
+    // The press is tracked whatever the orbit switch says, so a left press that moves
+    // past the click limit with the orbit off is still not a click.
     if (press !== null && event.pointerId === orbitPointer) trackPress(press, pixel);
+    const switches = switchesNow();
     if (drag !== null && event.pointerId === dragPointer) {
       event.preventDefault();
-      dragCursor(view, drag, pixel, viewportOf());
-      changed();
+      if (switches.pan) {
+        dragCursor(view, drag, pixel, viewportOf(), boundsNow());
+        changed();
+      }
     } else if (orbitPointer !== null && event.pointerId === orbitPointer) {
       event.preventDefault();
       // The orbit is applied as the pointer moves, so a click does not undo the at most
       // 1.2 degrees the 4 pixels of its own movement turned the camera.
-      orbit(view, event.clientX - lastOrbitX, event.clientY - lastOrbitY);
+      //
+      // The two pixels are kept whatever the switch says, so an orbit that starts again
+      // reads the movement from where the pointer is and not from where it was when the
+      // switch went off.
+      if (switches.orbit) {
+        orbit(view, event.clientX - lastOrbitX, event.clientY - lastOrbitY);
+        changed();
+      }
       lastOrbitX = event.clientX;
       lastOrbitY = event.clientY;
-      changed();
     }
   };
 
@@ -767,7 +895,9 @@ export function attachControls(
       const pixel = pixelOf(event);
       if (press !== null) {
         trackPress(press, pixel);
-        if (isClick(press, performance.now())) options.onClick?.(pixel);
+        if (isClick(press, performance.now()) && switchesNow().select) {
+          options.onClick?.(pixel);
+        }
       }
       press = null;
     }
@@ -777,11 +907,14 @@ export function attachControls(
   };
 
   const onWheel = (event: WheelEvent): void => {
+    // The page must not scroll under a wheel the host turned off, so the default action is
+    // held off before the switch is read.
     event.preventDefault();
+    if (!switchesNow().zoom) return;
     options.onInput?.();
     const notches = notchesFromWheel(event.deltaY, event.deltaMode);
     if (options.reducedMotion?.() === true) {
-      view.distance = zoomTarget(view.distance, notches);
+      view.distance = zoomTarget(view.distance, notches, boundsNow());
       target = null;
       changed();
       return;
@@ -789,7 +922,7 @@ export function attachControls(
     // The notch divides the target the map already holds, so a held wheel keeps the
     // 1.15 step and loses nothing to the camera's own lag. The event moves no view, so
     // it raises no listener: the frame step raises them while it moves the distance.
-    target = zoomTarget(target ?? view.distance, notches);
+    target = zoomTarget(target ?? view.distance, notches, boundsNow());
   };
 
   const onContextMenu = (event: MouseEvent): void => {
@@ -801,7 +934,7 @@ export function attachControls(
     // The hook fires for a movement key the form-field guard let through, and not for a
     // key the user typed into a search box.
     if (fromFormField(event.target)) return;
-    if (movementKeyOf(event.code) !== null) options.onInput?.();
+    if (movementKeyOf(event.code) !== null && switchesNow().keys) options.onInput?.();
   };
 
   const onKeyUp = (event: KeyboardEvent): void => {
@@ -823,7 +956,10 @@ export function attachControls(
 
   // The set holds movement keys alone, so a key in it is a movement key the user holds
   // down. `update` and `isMoving` read the same test under one name.
-  const moving = (): boolean => keys.size > 0;
+  //
+  // A held key with the switch off is not movement. The map reads `isMoving` to end a
+  // flight, so a key that cannot move the camera must not end one either.
+  const moving = (): boolean => keys.size > 0 && switchesNow().keys;
 
   return {
     update(seconds: number): void {
@@ -842,7 +978,7 @@ export function attachControls(
         // `keydown` until the auto-repeat of the browser, so this call ends a flight
         // that starts later in the same frame.
         options.onInput?.();
-        moveByKeys(view, keys, seconds);
+        moveByKeys(view, keys, seconds, boundsNow());
         moved = true;
       }
       // The listeners are raised once at the end, so a user who holds a key during a

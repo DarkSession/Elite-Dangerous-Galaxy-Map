@@ -201,10 +201,18 @@ export function labelRangeFade(range: number): number {
 /**
  * The greatest range from the camera to a plane point the frame holds, in light years.
  *
- * The frame's two **top corners** carry it: the plane runs furthest away at the top of
- * the frame, and a corner reads further than the top centre. At a pitch of 58.6 degrees
- * and a camera 1,542 light years up the centre reads 3,223 light years and the corners
- * about 4,300, so a gate on the centre under-reads by about a third.
+ * The frame's **four corners** carry it, and a corner reads further than the centre of
+ * its own row. At a pitch of 58.6 degrees and a camera 1,542 light years up the centre
+ * reads 3,223 light years and the corners about 4,300, so a gate on the centre
+ * under-reads by about a third.
+ *
+ * Which row is the far one follows the side of the plane the camera is on. Above the
+ * plane the top row runs furthest away; below it the picture is mirrored and the bottom
+ * row does. At a pitch of -45 degrees and a distance of 4,000 light years the top row
+ * reads 3,918 light years and the bottom row 14,621, so a gate on the top row alone
+ * would drop every region label of a frame that holds plane out to 14,621. The function
+ * reads all four corners and takes the greatest, so it answers the same way at a pitch
+ * and at its negative.
  *
  * A ray that misses the plane, which is a frame holding the horizon, reads as beyond
  * every range.
@@ -214,16 +222,19 @@ export function farthestPlaneRange(view: View, viewport: Viewport): number {
   const origin = cameraPosition(view);
   const pixel = { x: 0, y: 0 };
   let farthest = 0;
-  for (const corner of [0, viewport.width]) {
-    pixel.x = corner;
-    const point = planePointFrom(inverse, origin, pixel, viewport, 0);
-    if (point === null) return Number.POSITIVE_INFINITY;
-    const range = Math.hypot(
-      point[0] - origin[0],
-      point[1] - origin[1],
-      point[2] - origin[2],
-    );
-    if (range > farthest) farthest = range;
+  for (const row of [0, viewport.height]) {
+    for (const column of [0, viewport.width]) {
+      pixel.x = column;
+      pixel.y = row;
+      const point = planePointFrom(inverse, origin, pixel, viewport, 0);
+      if (point === null) return Number.POSITIVE_INFINITY;
+      const range = Math.hypot(
+        point[0] - origin[0],
+        point[1] - origin[1],
+        point[2] - origin[2],
+      );
+      if (range > farthest) farthest = range;
+    }
   }
   return farthest;
 }
