@@ -318,6 +318,11 @@ running selection flight each write the distance themselves. Each SHALL end the 
 SHALL keep its own value, so a deep link, a host's call and a flight all land where they
 say and not where a stale target says.
 
+**A change of the browsable bounds SHALL also end the glide** where the target falls
+outside the new far limit, which the requirement "The host limits the browsable space"
+states. That case is not like the three above: it writes no distance of its own. It drops
+the target and leaves the camera where the glide had reached.
+
 **A notch during a flight** SHALL end the flight, which `system-selection` states, and
 SHALL take its target from the distance the flight had reached. `system-selection`'s scenario
 "A wheel notch ends the flight" reads the view at the notch and again after 500 ms, and its
@@ -884,9 +889,22 @@ rather than stops.
 the whole of the space they may browse and no more. The floor of 10 light years holds the
 limit at or above the close limit for a very small space.
 
+**`2 * R` is the exact value and not the value in doubles.** `sin(30 degrees)` reads
+0.49999999999999994 in a double, so `R / sin(30 degrees)` lands a few parts in 10^16 above
+`2 * R`: a radius of 1,000 gives 2000.0000000000002 and a radius of 3,000 gives
+6000.000000000001. A test SHALL read the limit with a tolerance, or against a value it
+worked out the same way. An exclusive bound on the round number fails on a value the limit
+is meant to reach.
+
 **A change of the bounds SHALL re-clamp the view in the frame it happens**, so a host that
 narrows the space while the camera is outside it does not leave the camera there. The view
 change listeners SHALL be raised where the clamp moves the view.
+
+**A change of the bounds SHALL also end a running wheel zoom glide whose target is outside
+the new far limit.** The glide holds a target the wheel clamped against the space of its
+own moment, and it writes the distance with no clamp of its own, so a space that narrows
+under it must drop it. The live distance is often still inside the new limit when the call
+lands, so the re-clamp above does not catch this on its own.
 
 A bounds setting the map cannot read SHALL leave the setting as it was. A `radiusLy` of 0
 or less, a `centre` that is not three finite numbers, and a `marginLy` below 0 are all
@@ -933,6 +951,21 @@ the bounds still draws where the frame holds it.
   view in the next frame
 - **THEN** the cursor is on the sphere's surface, the distance is 2,000, and the view
   change listener fired
+
+#### Scenario: Narrowing the bounds drops a running zoom glide
+
+- **WHEN** the browser test opens a view at 1,000 light years, sends ten backward wheel
+  notches, lets one frame of the glide run, and then reads the live distance and the glide
+  target and sets a sphere bound whose far zoom limit falls between the two, all in one
+  task
+- **THEN** the distance in that task is still the one the test read, because the re-clamp
+  had nothing to do, the glide target reads null, and one second later the distance is
+  still that one
+
+  The bound is worked out from the two readings rather than fixed, so the re-clamp cannot
+  be the rule that holds the camera. A test that fixed the bound would race the glide: on
+  a run where the glide passed the new limit first, the clamp pulls the camera back and
+  the reading says nothing about the target.
 
 #### Scenario: An unreadable bound changes nothing
 

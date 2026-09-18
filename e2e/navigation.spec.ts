@@ -705,10 +705,20 @@ test.describe('the browsable bounds', () => {
     expect(after.calls).toBeGreaterThan(0);
   });
 
-  // The same requirement, over a glide the wheel started. The glide holds a target the
-  // wheel clamped against the space of its own moment, so a space that narrows under it
-  // must drop it. The live distance is still inside the new limit when the call lands, so
-  // a rule that read the clamp alone would let the glide carry the camera past it.
+  // The scenario "Narrowing the bounds drops a running zoom glide".
+  //
+  // `reclampView` in `src/app/create-map.ts` ends the glide where the clamp moved the
+  // view **or** where the target is outside the new far limit. A test of the second one
+  // must make the first one impossible. This test therefore derives the bound from the
+  // readings it takes: it reads the live distance `d` and the target `t` in the same
+  // task as the call, and sets a sphere radius of `(d + t) / 4`. The far limit of that
+  // sphere is `(d + t) / 2`, which sits between `d` and `t` while the glide runs. The
+  // clamp then has nothing to do, and only the dropped target holds the camera.
+  //
+  // A fixed radius of 1,000 gave a far limit of 2,000 and a window of one frame. The
+  // glide passes 2,000 at 50 ms, which is frame 3, and it lands on its target at
+  // 383 ms. The test lets one frame run and then makes a round trip to the page, so the
+  // glide often passed the fixed limit first and the reading came from the clamp.
   test('narrowing the bounds drops a running zoom glide', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
     const started = await page.evaluate(() => {
@@ -720,27 +730,50 @@ test.describe('the browsable bounds', () => {
       }
       return window.__galaxyMap?.zoomTargetLy?.() ?? null;
     });
+    // One frame of the glide runs, so the camera is in flight when the bound lands.
     await nextFrame(page);
-    const midFlight = await page.evaluate(() => {
-      window.galaxyMap?.setBounds({
-        mode: 'sphere',
-        centre: [0, 0, 0],
-        radiusLy: 1000,
-      });
+    const reading = await page.evaluate(() => {
+      const before = window.__galaxyMap?.getView?.() ?? null;
+      const beforeDistance = before?.distance ?? -1;
+      const beforeTarget = window.__galaxyMap?.zoomTargetLy?.() ?? null;
+      // The centre is the origin, which is where this view opens. `reclampView` reads
+      // `moved` from the cursor as well as the distance, so another centre would move
+      // the cursor and the test would read the clamp again.
+      const radiusLy = (beforeDistance + (beforeTarget ?? 0)) / 4;
+      window.galaxyMap?.setBounds({ mode: 'sphere', centre: [0, 0, 0], radiusLy });
+      const after = window.__galaxyMap?.getView?.() ?? null;
       return {
-        distance: window.__galaxyMap?.getView?.().distance ?? -1,
-        target: window.__galaxyMap?.zoomTargetLy?.() ?? null,
+        beforeCursor: before?.cursor ?? null,
+        beforeDistance,
+        beforeTarget,
+        radiusLy,
+        afterCursor: after?.cursor ?? null,
+        afterDistance: after?.distance ?? -1,
+        afterTarget: window.__galaxyMap?.zoomTargetLy?.() ?? null,
       };
     });
     await page.waitForTimeout(1000);
     const after = await page.evaluate(() => window.__galaxyMap?.getView?.() ?? null);
-    console.log('the glide against the new bound', { started, midFlight, after });
+    console.log('the glide against the derived bound', { started, reading, after });
 
-    // The glide was running and had not reached the new far limit of 2,000 yet.
+    // The far limit of that sphere. `farZoomLimit` clamps its result between
+    // `MIN_DISTANCE` and `MAX_DISTANCE`, and this line does not. The two readings
+    // therefore agree only while the limit is inside that window.
+    //
+    // The two assertions on the readings after the call carry the proof whatever the
+    // clamp does. A real limit under the distance moves the distance. A real limit over
+    // the target leaves the target alone. Either one fails the test.
+    const farLimit = reading.radiusLy / Math.sin(Math.PI / 6);
+
     expect(started).toBeGreaterThan(3000);
-    expect(midFlight.distance).toBeLessThan(2000);
-    expect(midFlight.target).toBeNull();
-    expect(after?.distance).toBeLessThanOrEqual(2000);
+    expect(reading.beforeTarget).not.toBeNull();
+    expect(farLimit).toBeGreaterThan(reading.beforeDistance);
+    expect(farLimit).toBeLessThan(reading.beforeTarget as number);
+    // The cursor did not move, so `moved` was false and the clamp did nothing.
+    expect(reading.afterCursor).toEqual(reading.beforeCursor);
+    expect(reading.afterDistance).toBe(reading.beforeDistance);
+    expect(reading.afterTarget).toBeNull();
+    expect(after?.distance).toBe(reading.beforeDistance);
   });
 
   // The scenario "An unreadable bound changes nothing".

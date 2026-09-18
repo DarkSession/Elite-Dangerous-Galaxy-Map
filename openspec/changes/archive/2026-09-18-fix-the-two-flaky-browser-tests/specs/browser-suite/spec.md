@@ -111,10 +111,40 @@ blur cost follows the blurred area on the screen. A run SHALL record the panel b
 beside the rise, so a later reader can tell a reading of this HUD from a reading of
 another one.
 
-**The floor of 1.5 ms is the smallest of the 22 readings less 0.3 ms, rounded down.** That
-arithmetic gives 1.504. The reading comes from the single pair statistic and not from the
-median of four pairs the scenario below states, so 1.5 ms holds until a recorded run of 12
-medians replaces it under the rule above.
+**The median of four pairs, 24 readings.** Each is the median of the four rises of one
+run, in the order the scenario below states. Every reading comes from the tree this change
+leaves, and every one records the panel boxes `316x808` and `316x168`. The first 12 set the
+floor and the second 12 confirm it.
+
+| Where the run came from        | The medians, in milliseconds                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| The run that set the floor     | 2.202, 2.756, 2.916, 2.222, 2.252, 2.340, 2.183, 2.863, 2.139, 2.379, 2.201, 2.993 |
+| The run that confirmed it      | 2.923, 2.128, 2.113, 2.106, 2.947, 2.128, 2.201, 2.946, 2.577, 2.451, 2.876, 2.166 |
+
+The 24 medians span **2.106 to 2.993 ms**, with a mean of **2.459 ms** and a standard
+deviation of **0.341 ms**. The 96 single pair rises they are built from span 1.823 to
+3.303 ms, with a standard deviation of **0.389 ms**, and 7 of the 96 fall below 2 ms. The
+median of four therefore holds a spread **12 per cent** smaller than one pair, and none of
+the 24 falls below 2 ms.
+
+**The gain of the pairing is small, and a spread read from 12 runs is uncertain.** The 12
+runs that set the floor read a spread of 0.327 ms and the 12 that confirmed it read
+0.369 ms. Neither is below the 0.325 ms of the 22 single pair readings above, which come
+from three trees. The comparison that holds is the one against the 96 pairs of these same
+runs. The gain is small because the four pairs of one run share the state of the machine,
+so the drift between runs stays in the median. The two orders differ by 0.048 ms over the
+96 pairs, so neither order reads warm.
+
+One pair with a floor of 1.2 ms was weighed against the four pairs and rejected. The
+smaller gain of the pairing is the reason to weigh it. A floor of 1.2 ms passes a blur that
+costs 1.3 ms, where the recorded cost is 2.5 ms, so it holds less of what the scenario
+exists to show. A recorded run of 24 or more medians whose spread is not below the spread
+of the single pairs of the same runs SHALL reopen the question.
+
+**The floor stays at 1.5 ms.** The rule above sets it at the smallest reading of a recorded
+run less 0.3 ms. The smallest of the 24 is 2.106 ms, which gives 1.806 ms, and 1.5 ms sits
+under that. The smallest reading holds **0.606 ms** of margin over the floor, and all 24
+readings pass it.
 
 #### Scenario: The camera move holds the budget
 

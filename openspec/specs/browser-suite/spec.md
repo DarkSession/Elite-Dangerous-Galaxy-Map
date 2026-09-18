@@ -112,8 +112,9 @@ found the panel backdrop at about 2.5 ms rather than 3.5.** The label shadow rea
 not lower: 9.9 ms, on a frame that carried 62 labels. The label count follows the set and
 the overlap rule, and both readings are of the same view, so the two sessions disagree by
 more than the drift the design records. What holds in both is the ranking and the sign:
-the flat state reads 4.3 to 5.3 ms, each blur alone moves the reading by at least 2 ms,
-and the two together more than double it. The scenarios below are written to the reading
+the flat state reads 4.3 to 5.3 ms, each blur alone moves the reading by at least
+1.5 ms, and the two together more than double it. The scenarios below are written to the
+reading
 that reproduces.
 
 **The before and the after, from the same machine and the same session.** The old look
@@ -136,6 +137,78 @@ spread, and it sits below both single-blur readings.
 
 Chromium reads 0.8 ms for the same move. The budget SHALL NOT be read in Chromium: it
 would pass whatever the CPU paint cost, which is the fault it exists to catch.
+
+**A rise floor that sits within 2 ms of its rise comes from a recorded distribution.** A
+floor that sits inside the spread of the readings fails a correct tree. Such a floor SHALL
+be at most the smallest reading of a recorded run of at least **12** readings of the
+statistic its scenario states, less **0.3 ms**. It SHALL be lowered only with a recorded
+run that reads below it, and raised only with a recorded run that shows the rise is larger
+than the one recorded here.
+
+**The two constants.** The margin of 0.3 ms is one standard deviation of the recorded
+panel rise, which is 0.325 ms, so a floor set by the rule sits a further standard deviation
+under the smallest of 12. The band of 2 ms is the width at which a run stops being worth
+its cost: a floor further than 2 ms below its rise is more than six standard deviations of
+this instrument away from it, and a recorded run would only confirm what the gap already
+shows. The label shadow floor of 2 ms holds a rise of 9.9 ms, which is nearly five times
+it, and needs no run. The gap was 2.2 ms in the first session, which read the label rise at
+4.2 ms, so the band holds for that reading too.
+
+**The single pair rise of the panel blur, 22 readings.** Each is the mean of 180 blurred
+frames less the mean of 180 flat frames, over the view and the move this requirement
+states.
+
+| Where the run came from                        | The rises, in milliseconds                        |
+| ---------------------------------------------- | ------------------------------------------------- |
+| An earlier session, 5 runs, flat 4.33 to 5.29  | 2.25, 2.41, 2.45, 2.67, 2.86                      |
+| At the commit before the shape categories work | 2.441, 2.617, 1.984, 2.212, 2.081, 2.589, 2.047, 2.011 |
+| On the tree that carried that work             | 2.907, 2.105, 1.879, 2.729, 2.341, 2.535, 2.759, 2.167 |
+| One full suite run                             | 1.804                                             |
+
+The rise spans **1.804 to 2.907 ms**, with a mean of **2.36 ms** and a standard deviation
+of **0.325 ms**. Three of the 22 are below 2 ms. A floor of 2 ms therefore sits 1.1
+standard deviations under the mean and fails about one run in seven, which is why the
+scenario below reads a median of four pairs and holds a lower floor.
+
+**The readings come from three trees, and the panel geometry is part of the reading.** The
+blur cost follows the blurred area on the screen. A run SHALL record the panel boxes
+beside the rise, so a later reader can tell a reading of this HUD from a reading of
+another one.
+
+**The median of four pairs, 24 readings.** Each is the median of the four rises of one
+run, in the order the scenario below states. Every reading comes from the tree this change
+leaves, and every one records the panel boxes `316x808` and `316x168`. The first 12 set the
+floor and the second 12 confirm it.
+
+| Where the run came from        | The medians, in milliseconds                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| The run that set the floor     | 2.202, 2.756, 2.916, 2.222, 2.252, 2.340, 2.183, 2.863, 2.139, 2.379, 2.201, 2.993 |
+| The run that confirmed it      | 2.923, 2.128, 2.113, 2.106, 2.947, 2.128, 2.201, 2.946, 2.577, 2.451, 2.876, 2.166 |
+
+The 24 medians span **2.106 to 2.993 ms**, with a mean of **2.459 ms** and a standard
+deviation of **0.341 ms**. The 96 single pair rises they are built from span 1.823 to
+3.303 ms, with a standard deviation of **0.389 ms**, and 7 of the 96 fall below 2 ms. The
+median of four therefore holds a spread **12 per cent** smaller than one pair, and none of
+the 24 falls below 2 ms.
+
+**The gain of the pairing is small, and a spread read from 12 runs is uncertain.** The 12
+runs that set the floor read a spread of 0.327 ms and the 12 that confirmed it read
+0.369 ms. Neither is below the 0.325 ms of the 22 single pair readings above, which come
+from three trees. The comparison that holds is the one against the 96 pairs of these same
+runs. The gain is small because the four pairs of one run share the state of the machine,
+so the drift between runs stays in the median. The two orders differ by 0.048 ms over the
+96 pairs, so neither order reads warm.
+
+One pair with a floor of 1.2 ms was weighed against the four pairs and rejected. The
+smaller gain of the pairing is the reason to weigh it. A floor of 1.2 ms passes a blur that
+costs 1.3 ms, where the recorded cost is 2.5 ms, so it holds less of what the scenario
+exists to show. A recorded run of 24 or more medians whose spread is not below the spread
+of the single pairs of the same runs SHALL reopen the question.
+
+**The floor stays at 1.5 ms.** The rule above sets it at the smallest reading of a recorded
+run less 0.3 ms. The smallest of the 24 is 2.106 ms, which gives 1.806 ms, and 1.5 ms sits
+under that. The smallest reading holds **0.606 ms** of margin over the floor, and all 24
+readings pass it.
 
 #### Scenario: The camera move holds the budget
 
@@ -171,28 +244,43 @@ would pass whatever the CPU paint cost, which is the fault it exists to catch.
 #### Scenario: The blurred panel fails the budget
 
 - **WHEN** the same test adds a stylesheet rule that writes `backdrop-filter: blur(10px)`
-  back onto the HUD panels, and repeats the same move over the same view
-- **THEN** the mean is at least **2 ms** above the mean the same run read without the rule
+  back onto the HUD panels, and repeats the same move over the same view, and takes four
+  pairs of readings, each pair one flat move and one blurred move beside it, in the
+  order flat then blurred, blurred then flat, blurred then flat, flat then blurred
+- **THEN** the median of the four rises, which is the mean of the middle two of the sorted
+  readings, is at least the floor of **1.5 ms**, and the run records each rise, each flat
+  mean, each blurred mean, the order of the pair that gave each one, and the panel boxes
 
   The budget guards two properties, so each one gets a scenario that shows it alone moves
   the reading. **Each scenario reads a rise against its own run, not a number alone.**
 
   **This scenario reads the rise alone, and not a number the mean must pass.** The panel
-  blur costs about **2.5 ms** a frame over the flat reading, measured five times in the
-  container on the project's test card: rises of 2.25, 2.41, 2.45, 2.67 and 2.86 ms over
-  flat readings of 4.33 to 5.29 ms. The mean with the blur therefore lands between 6.8 and
-  7.3 ms, which passes 7 ms on some runs and not on others.
+  blur costs about **2.4 ms** a frame over the flat reading, on a flat reading of 4.3 to
+  5.3 ms. The mean with the blur therefore lands on both sides of 7 ms, and it passes the
+  budget on some runs and not on others.
 
-  **The floor of 2 ms carries 0.25 to 0.86 ms of margin, not four times the spread.** The
-  number that matters is the rise less the floor, and the smallest rise recorded is
-  2.25 ms. The instrument's own spread is 0.45 ms on each of the two means the rise
-  subtracts, so a busy machine can read the rise below the floor and fail a correct tree.
-  The floor is still the better of the two readings: the 7 ms clause failed four runs of
-  five and this one failed none of five. Raise the floor only with a reading that shows
-  the rise is larger than this one found.
+  **The reading is paired and the statistic is a median.** The rise is a difference of two
+  means, so it carries the noise of both, and a machine that gets slower between the flat
+  run and the blurred run adds that drift to the rise. A pair reads a blurred mean beside a
+  flat mean of the same moment, which holds the drift of the whole test out of the rise.
 
-  The label scenario keeps both clauses, because its rise is 9.9 ms and its mean is about
-  14.8 ms, which is twice the budget.
+  The drift inside a pair is left. It adds to the rise of a pair that reads flat first and
+  it takes away from the rise of a pair that reads blurred first, so the four pairs give
+  two rises of each kind. The median of the four is the mean of the middle two of the
+  sorted readings. Where the drift is larger than the noise of a single rise, the two
+  flat-first rises sort above the two blurred-first ones, the median holds one of each, and
+  the drift cancels. Where the drift is smaller than that noise, the sort order is the
+  noise and the median holds whichever two sit in the middle; the drift is then too small
+  to matter. The same median drops the largest and the smallest reading, so one outlier
+  does not move it. A single pair reads 1.80 to 2.91 ms for the same blur.
+
+  **A flat move that follows a blurred move may not read cold.** Firefox may hold the layer
+  it promoted for the backdrop, so the flat mean of a reversed pair can read high and its
+  rise low. The run records the order of each pair, so the reading shows whether the two
+  orders disagree.
+
+  The label scenario keeps both clauses and its single pair, because its rise is 9.9 ms
+  and its mean is about 14.8 ms, which is twice the budget.
 
 ### Requirement: The dev container carries both browsers
 

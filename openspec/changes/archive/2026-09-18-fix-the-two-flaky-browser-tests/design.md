@@ -139,6 +139,30 @@ HUD panels may differ. The measurement therefore runs after every other edit of 
 is in place, and it records the `panelBoxes` the reading already collects beside each rise,
 so a later reader can tell which HUD the distribution belongs to.
 
+### The fallback was weighed and rejected
+
+Apply measured the statistic 24 times. The floor rule held with room: the smallest median
+is 2.106 ms, the rule allows 1.806 ms, and 1.5 ms sits under that. All 24 readings pass.
+
+Task 5.4 set a second check, and that one fired. It asks for the spread of the 12 medians
+to fall below 0.325 ms, which is the spread of the 22 single pair readings above. The 12
+read **0.3270 ms**. By the letter of the task the change then drops to one pair with a
+floor of 1.2 ms, which is the fallback this section names.
+
+**The change keeps the four pairs.** The 0.325 ms comes from 22 readings of three other
+trees, so it does not measure what one pair reads on this one. The like-for-like comparison
+is the 96 single pairs of these same runs, which spread 0.389 ms, against the 24 medians,
+which spread 0.341 ms. The median of four is 12 per cent tighter by that reading. The
+second run of 12 read a spread of 0.369 ms where the first read 0.327 ms, so a spread from
+12 runs is too uncertain to turn a decision on a margin of 0.002 ms.
+
+The fallback also holds less. A floor of 1.2 ms passes a blur that costs 1.3 ms, where the
+recorded cost is 2.5 ms. The owner read these numbers and chose the paired path.
+
+**What would change this.** A recorded run of 24 or more medians whose spread is not below
+the spread of the single pairs of the same runs. The pairing would then be buying nothing,
+and one pair with a floor set by the rule would cost six fewer moves.
+
 ## Risks / Trade-offs
 
 - **Nobody has measured the distribution of the median of four yet.** → Task 5.2 measures

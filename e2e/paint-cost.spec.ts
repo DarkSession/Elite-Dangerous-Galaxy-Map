@@ -11,6 +11,14 @@
 //
 // `debug.measureFrames` is the wrong instrument here. It draws at a fixed view and sees
 // no CSS paint, so it would read none of this cost.
+//
+// The panel scenario reads the rise as a paired statistic. It takes four pairs, each pair
+// one flat move and one blurred move beside it, and the second and the third pair turn
+// the order around and read the blurred move first. A pair reads its blurred mean beside
+// a flat mean of the same moment. The pair therefore keeps the drift of the whole test
+// out of the rise. The drift inside a pair is left, and the order decides its sign, so
+// asserts on the median of the four rises: the median holds one rise of each order, and
+// it drops the largest and the smallest reading.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
@@ -20,11 +28,22 @@ import type { SystemRecordInput } from '../src/scene-data/real-systems';
 const BUDGET_MS = 7;
 
 /**
- * How far a blur must move the reading, in milliseconds. The measured rises are 9.9 ms
- * for the label shadow and 2.5 ms for the panel backdrop, and the widest spread between
- * runs of one state is 0.45 ms, so a floor of 2 ms holds four times that spread.
+ * How far the label blur must move the reading, in milliseconds. The label shadow rise
+ * reads 9.9 ms against this floor, which is nearly five times it, so one pair of readings
+ * carries it. `browser-suite` states the rule: a floor that sits within 2 ms of its rise
+ * comes from a recorded distribution, and this floor does not sit that close.
  */
 const RISE_MS = 2;
+
+/**
+ * How far the panel blur must move the reading, in milliseconds. The statistic is the
+ * median of four pairs, which `browser-suite` states. It records 24 medians of this blur,
+ * which span 2.106 to 2.993 ms with a standard deviation of 0.341 ms. The rule the spec
+ * states holds the floor at **at most** the smallest reading of a recorded run less
+ * 0.3 ms, which gives 1.806 ms. This floor sits under that, with 0.606 ms of margin below
+ * the smallest of the 24.
+ */
+const PANEL_RISE_MS = 1.5;
 
 /** How many frames the move runs, and how many of them the mean drops. */
 const FRAMES = 200;
@@ -133,19 +152,31 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
 }
 
 /**
- * Adds one rule to a style sheet of the page.
+ * Adds one rule to a style sheet of the page, under an id of the caller's choice. It
+ * removes an element of that id first, so a second call replaces the rule it wrote.
  *
  * A stylesheet rule and not a per-element style: the overlay builds labels while the
  * test runs, so a write to the elements that exist now reaches none of the labels the
  * next frame builds.
  */
-async function addRule(page: Page, rule: string): Promise<void> {
-  await page.evaluate((text) => {
-    const element = document.createElement('style');
-    element.id = 'paint-cost-rule';
-    element.textContent = text;
-    document.head.append(element);
-  }, rule);
+async function addRule(page: Page, id: string, rule: string): Promise<void> {
+  await page.evaluate(
+    (written) => {
+      document.getElementById(written.id)?.remove();
+      const element = document.createElement('style');
+      element.id = written.id;
+      element.textContent = written.rule;
+      document.head.append(element);
+    },
+    { id, rule },
+  );
+}
+
+/** Takes the rule of that id off the page, so the next move reads the flat state. */
+async function removeRule(page: Page, id: string): Promise<void> {
+  await page.evaluate((written) => {
+    document.getElementById(written)?.remove();
+  }, id);
 }
 
 /** Opens the page with the HUD on, the 10,000 systems, the names on and the grid on. */
@@ -163,6 +194,100 @@ async function openForMove(page: Page): Promise<void> {
     () => window.__galaxyMap?.drawingBufferSize?.() ?? [0, 0],
   );
   expect(size).toEqual([1920, 1080]);
+}
+
+/** The id and the rule that put the blurred backdrop back on the HUD panels. */
+const PANEL_BLUR_ID = 'paint-cost-panel-blur';
+const PANEL_BLUR_RULE =
+  '.gm-hud__panel { -webkit-backdrop-filter: blur(10px) !important;' +
+  ' backdrop-filter: blur(10px) !important; }';
+
+/** Which move of a pair runs first. */
+type PairOrder = 'flat first' | 'blurred first';
+
+/**
+ * The order of the four pairs. Two read the flat move first and two read the blurred
+ * move first, so the drift inside a pair reaches the four rises with both signs.
+ */
+const PAIR_ORDERS = [
+  'flat first',
+  'blurred first',
+  'blurred first',
+  'flat first',
+] as const;
+
+/** What one pair of moves read. */
+interface Pair {
+  readonly order: PairOrder;
+  readonly flatMs: number;
+  readonly blurredMs: number;
+  readonly riseMs: number;
+  /** The boxes of the HUD panels of the flat move, in CSS pixels. */
+  readonly panelBoxes: readonly string[];
+}
+
+/** The four pairs, and the flat reading of the first one. */
+interface PanelReading {
+  readonly pairs: readonly Pair[];
+  readonly flat: Reading;
+}
+
+/** Runs one pair of moves in the order the caller names. */
+async function movePair(
+  page: Page,
+  order: PairOrder,
+): Promise<{ flat: Reading; blurred: Reading }> {
+  if (order === 'flat first') {
+    const flat = await move(page);
+    await addRule(page, PANEL_BLUR_ID, PANEL_BLUR_RULE);
+    const blurred = await move(page);
+    await removeRule(page, PANEL_BLUR_ID);
+    return { flat, blurred };
+  }
+  await addRule(page, PANEL_BLUR_ID, PANEL_BLUR_RULE);
+  const blurred = await move(page);
+  await removeRule(page, PANEL_BLUR_ID);
+  const flat = await move(page);
+  return { flat, blurred };
+}
+
+/** Reads the rise of one pair. */
+function pairOf(order: PairOrder, flat: Reading, blurred: Reading): Pair {
+  return {
+    order,
+    flatMs: flat.meanMs,
+    blurredMs: blurred.meanMs,
+    riseMs: blurred.meanMs - flat.meanMs,
+    panelBoxes: flat.panelBoxes,
+  };
+}
+
+/**
+ * Runs the four pairs and gives back each rise with the reading it came from.
+ *
+ * Each pair reads its blurred mean beside a flat mean of the same moment, which holds
+ * the drift of the whole test out of the rise.
+ */
+async function panelPairs(page: Page): Promise<PanelReading> {
+  const first = await movePair(page, PAIR_ORDERS[0]);
+  const pairs: Pair[] = [pairOf(PAIR_ORDERS[0], first.flat, first.blurred)];
+  for (const order of PAIR_ORDERS.slice(1)) {
+    const next = await movePair(page, order);
+    pairs.push(pairOf(order, next.flat, next.blurred));
+  }
+  // The readings are the evidence `browser-suite` records, and the order of a pair tells
+  // a warm flat move from a cold one.
+  console.log('the four pairs of the panel backdrop', pairs);
+  return { pairs, flat: first.flat };
+}
+
+/** The median of four readings, which is the mean of the middle two when sorted. */
+function medianOfFour(values: readonly number[]): number {
+  // The mean of the middle two reads the middle of four readings alone. A caller that
+  // gives another count gets a number that is not the median of what it gave.
+  expect(values).toHaveLength(4);
+  const sorted = [...values].sort((one, other) => one - other);
+  return (sorted[1] + sorted[2]) / 2;
 }
 
 // The scenario "The camera move holds the budget".
@@ -194,6 +319,7 @@ test('the blurred label shadow fails the budget', async ({ page }) => {
   // the same shadow then costs 2.4 ms a frame rather than 9.9.
   await addRule(
     page,
+    'paint-cost-label-shadow',
     '.gm-grid-label { -webkit-text-stroke: 0 !important; text-shadow:' +
       ' 0 0 10px rgba(2, 12, 20, 0.75), 0 1px 2px rgba(2, 12, 20, 0.55) !important; }' +
       '.gm-system-label { -webkit-text-stroke: 0 !important;' +
@@ -212,19 +338,21 @@ test('the blurred panel backdrop fails the budget', async ({ page }) => {
   test.setTimeout(180000);
   await openForMove(page);
 
-  const flat = await move(page);
-  await addRule(
-    page,
-    '.gm-hud__panel { -webkit-backdrop-filter: blur(10px) !important;' +
-      ' backdrop-filter: blur(10px) !important; }',
-  );
-  const blurred = await move(page);
-  console.log('the panel backdrop against the flat reading', { flat, blurred });
+  const reading = await panelPairs(page);
+  const flat = reading.flat;
+  const median = medianOfFour(reading.pairs.map((pair) => pair.riseMs));
+  console.log('the median rise of the panel backdrop', median);
 
   // The rise alone, and not a number the mean must pass. The panel blur costs about
-  // 2.5 ms a frame over the flat reading, so the mean with it lands between 6.8 and
-  // 7.3 ms and passes 7 ms on some runs and not on others. `browser-suite` holds the
-  // five readings. The rise answers the same way on every run.
+  // 2.5 ms a frame over a flat reading of 3.8 to 4.7 ms. The mean with it reads 5.9 to
+  // 7.6 ms over 96 readings of this tree, and 29 of them reach 7 ms. It therefore passes
+  // the budget on some runs and not on others.
+  //
+  // The statistic is the median of the four rises, which is the mean of the middle two
+  // of the sorted readings. A single pair reads 1.82 to 3.30 ms for the same blur, so a
+  // floor inside that spread fails a correct tree. The median holds one rise of each
+  // order, which cancels the drift inside a pair, and it drops the largest and the
+  // smallest reading. `browser-suite` holds the readings the floor comes from.
   expect(flat.panels).toBeGreaterThanOrEqual(2);
-  expect(blurred.meanMs - flat.meanMs).toBeGreaterThanOrEqual(RISE_MS);
+  expect(median).toBeGreaterThanOrEqual(PANEL_RISE_MS);
 });
