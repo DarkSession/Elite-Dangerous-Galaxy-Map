@@ -58,6 +58,12 @@ export function pickSystem(
   const flags = set.markerFlags;
   const indices = set.categoryIndices;
   const camera = cameraPosition(view);
+  // The cursor in the same camera-relative frame as the offsets below.
+  const cursorOffset: [number, number, number] = [
+    view.cursor[0] - camera[0],
+    view.cursor[1] - camera[1],
+    camera[2] - view.cursor[2],
+  ];
   // The matrix is built once for the whole sweep. Building it per system, as `project`
   // does, would be 10,000 matrix builds for one call.
   const matrix = viewProjectionMatrix(view, viewport);
@@ -77,10 +83,16 @@ export function pickSystem(
     const y = (positions[base + 1] as number) - camera[1];
     const z = camera[2] - (positions[base + 2] as number);
 
+    // The range to the eye, which drives the size and the pick radius.
     const range = Math.sqrt(x * x + y * y + z * z);
     const category = set.category(indices[index] as number);
     const limit = category === null ? DEFAULT_MAX_DRAW_RANGE_LY : category.maxDrawRange;
-    if (range > limit) continue;
+    // The draw gate measures from the cursor, as `systems.vert` does, so the pick keeps
+    // every marker the frame drew and no other.
+    const cx = x - cursorOffset[0];
+    const cy = y - cursorOffset[1];
+    const cz = z - cursorOffset[2];
+    if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
 
     const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
     // A system behind the camera, or nearer than the near plane, is never picked.

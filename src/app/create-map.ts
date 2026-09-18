@@ -1,10 +1,19 @@
 // The library entry point. One call builds the map and gives back its handle.
-import { attachControls } from '../camera/controls';
-import type { Controls } from '../camera/controls';
-import { FLIGHT_MS, flightAt } from '../camera/flight';
+import { ALL_INTERACTION, attachControls, readInteraction } from '../camera/controls';
+import type { Controls, InteractionSwitches } from '../camera/controls';
+import { flightAt, planFlight } from '../camera/flight';
+import type { FlightPlan } from '../camera/flight';
 import { planePoint, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
-import { copyView, createDefaultView, normaliseView } from '../camera/view';
+import {
+  copyView,
+  createDefaultView,
+  normaliseView,
+  readBounds,
+  resolveBounds,
+  unrestrictedBounds,
+} from '../camera/view';
+import type { BrowseBounds, ResolvedBounds } from '../camera/view';
 import type { View } from '../camera/view';
 import { loadDetailGrid } from '../galaxy-model/detail';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
@@ -166,6 +175,139 @@ export interface GalaxyMapOptions {
    * does not hold, the map loads the first entry.
    */
   readonly dataset?: string;
+  /**
+   * How much of the space the user may browse. It clamps the cursor and the far zoom
+   * limit, and it changes nothing the map draws. The default is `unrestricted`, which is
+   * the model bounds and a 120,000 light year far limit. A setting the map cannot read
+   * takes the default.
+   */
+  readonly bounds?: BrowseBounds;
+  /**
+   * The camera the map opens at. The map takes it in the frame it draws first and does
+   * not fly to it. A field the host leaves out takes the value of the default view. A
+   * setting the map cannot read is ignored in whole.
+   */
+  readonly startView?: StartView;
+  /**
+   * Which of the user's inputs the map acts on. A field the host leaves out is on. A
+   * setting the map cannot read leaves every switch on.
+   */
+  readonly interaction?: Partial<InteractionSwitches>;
+}
+
+/**
+ * Where a host asks the camera to fly. `cursor` and `system` name the same field two
+ * ways, and `cursor` wins where the host gives both. A field the host leaves out keeps
+ * the value the view holds, so `flyTo({ distance: 100 })` is a zoom in place.
+ */
+export interface FlyToTarget {
+  /** The point the camera centres on, in game coordinates. */
+  readonly cursor?: readonly [number, number, number];
+  /**
+   * The identity of a system of the set, which is its `id64` where the record carries one
+   * and its name where it does not. An identity the set does not hold flies nowhere.
+   */
+  readonly system?: string;
+  /** The distance from the cursor to the camera, in light years. */
+  readonly distance?: number;
+  /** The camera's angle around the cursor, in degrees. */
+  readonly yaw?: number;
+  /** The camera's elevation above the galactic plane, in degrees. */
+  readonly pitch?: number;
+}
+
+/** How a host asks for the flight to run. */
+export interface FlyToOptions {
+  /**
+   * False takes the target in this frame and runs no flight. The default is true. The map
+   * does the same where the browser asks for less movement.
+   */
+  readonly animate?: boolean;
+}
+
+/** How a flight ended. */
+export type FlightOutcome = 'landed' | 'interrupted';
+
+/**
+ * The camera a host asks the map to open at. `cursor` and `system` name the same field
+ * two ways, and `cursor` wins where the host gives both.
+ */
+export interface StartView {
+  /** The point the camera centres on, in game coordinates. */
+  readonly cursor?: readonly [number, number, number];
+  /**
+   * The identity of a system to centre on: the `id64` where the record carries one, and
+   * the name where it does not. The host adds its records after the map is built, so the
+   * map holds the identity and applies it in the first frame the set holds the record.
+   */
+  readonly system?: string;
+  /** The distance from the cursor to the camera, in light years. */
+  readonly distance?: number;
+  /** The camera's angle around the cursor, in degrees. */
+  readonly yaw?: number;
+  /** The camera's elevation above the galactic plane, in degrees. */
+  readonly pitch?: number;
+}
+
+/** How many drawn frames a pending start view waits for its record. */
+const PENDING_START_FRAMES = 600;
+
+/** True where a field the host left out, or a finite number. */
+function readNumberField(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isFinite(value));
+}
+
+/** A finite number, or null. */
+function readNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** Three finite numbers, or null. */
+function readPoint(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 3) return null;
+  if (!(value as unknown[]).every((part) => Number.isFinite(part))) return null;
+  const point = value as number[];
+  return [point[0] as number, point[1] as number, point[2] as number];
+}
+
+/**
+ * Reads a host's start view, or null where it cannot be read. An unreadable field makes
+ * the whole setting unreadable, so a map never opens at half of what the host asked for.
+ */
+export function readStartView(value: unknown): StartView | null {
+  if (value === null || typeof value !== 'object') return null;
+  const source = value as {
+    cursor?: unknown;
+    system?: unknown;
+    distance?: unknown;
+    yaw?: unknown;
+    pitch?: unknown;
+  };
+  if (!readNumberField(source.distance)) return null;
+  if (!readNumberField(source.yaw)) return null;
+  if (!readNumberField(source.pitch)) return null;
+  const start: {
+    cursor?: [number, number, number];
+    system?: string;
+    distance?: number;
+    yaw?: number;
+    pitch?: number;
+  } = {};
+  if (source.cursor !== undefined) {
+    const cursor = source.cursor;
+    if (!Array.isArray(cursor) || cursor.length !== 3) return null;
+    if (!(cursor as unknown[]).every((part) => Number.isFinite(part))) return null;
+    const point = cursor as number[];
+    start.cursor = [point[0] as number, point[1] as number, point[2] as number];
+  }
+  if (source.system !== undefined) {
+    if (typeof source.system !== 'string' || source.system === '') return null;
+    start.system = source.system;
+  }
+  if (typeof source.distance === 'number') start.distance = source.distance;
+  if (typeof source.yaw === 'number') start.yaw = source.yaw;
+  if (typeof source.pitch === 'number') start.pitch = source.pitch;
+  return start;
 }
 
 /** A view as a host reads and writes it. */
@@ -318,6 +460,46 @@ export interface GalaxyMap {
   setView(view: Partial<MapView>): void;
   /** Calls `listener` after the view changes. Returns an unsubscribe. */
   onViewChange(listener: (view: MapView) => void): () => void;
+  /**
+   * Reads the browsable bounds back as the host gave them, and not the shape the map
+   * works out from them.
+   */
+  getBounds(): BrowseBounds;
+  /**
+   * Replaces the browsable bounds. The view is re-clamped in this frame, and the view
+   * change listeners fire where the clamp moved it. A setting the map cannot read leaves
+   * the one it holds in place, which `getBounds` then reports.
+   */
+  setBounds(bounds: BrowseBounds): void;
+  /**
+   * Flies the camera to a target, on the path a selection flight takes. It does not change
+   * the selection: a `system` in the target names a place and nothing more.
+   *
+   * The promise settles with `'landed'` where the flight reached the target and with
+   * `'interrupted'` where anything ended it early, which is a second `flyTo`, a selection,
+   * the user's own input, a `setView` or `dispose`. It never rejects.
+   *
+   * A target outside the browsable bounds is clamped, and the promise still settles with
+   * `'landed'`: the flight reached the target it was allowed to reach. A target that is
+   * already the view, and a `system` the set does not hold, settle with `'landed'` and run
+   * no flight. The call works with every interaction switch off.
+   */
+  flyTo(target: FlyToTarget, options?: FlyToOptions): Promise<FlightOutcome>;
+  /** True while a flight runs, whether a selection or a `flyTo` started it. */
+  isFlying(): boolean;
+  /**
+   * Calls `listener` each time a flight ends, with how it ended. It does not fire where no
+   * flight ran. Returns an unsubscribe.
+   */
+  onFlightEnd(listener: (how: FlightOutcome) => void): () => void;
+  /** Reads every interaction switch. */
+  getInteraction(): InteractionSwitches;
+  /**
+   * Replaces part of the interaction setting. A switch the setting does not name, and a
+   * switch that is not a boolean, keeps the value it had. The change takes effect in the
+   * frame it happens, so a drag in progress stops moving the view.
+   */
+  setInteraction(next: Partial<InteractionSwitches>): void;
   /** True while the region overlay draws its boundary lines and places its labels. */
   areRegionsVisible(): boolean;
   /**
@@ -547,6 +729,109 @@ export function createGalaxyMap(
     },
   );
   const view: View = createDefaultView();
+
+  // The browsable space, held twice: the setting as the host gave it, which `getBounds`
+  // reads back, and the shape every clamp reads. A host that asked for `auto` and read
+  // back a resolved box would have to guess which mode it is in.
+  let boundsSetting: BrowseBounds = readBounds(options.bounds) ?? {
+    mode: 'unrestricted',
+  };
+  let resolvedBounds: ResolvedBounds = unrestrictedBounds();
+  // The set version the resolved shape was worked out at. `auto` follows the set, so the
+  // frame loop re-resolves when the set changes and not on every frame.
+  let boundsSetVersion = -1;
+
+  /**
+   * Works the setting and the set's own box into the shape the clamps read. It is called
+   * where the setting changes and where the set changes, and not once a frame.
+   */
+  const resolveBoundsNow = (): void => {
+    resolvedBounds = resolveBounds(boundsSetting, set.systemBox);
+    boundsSetVersion = set.version;
+  };
+
+  /**
+   * Re-clamps the live view to the browsable space and raises the listeners where the
+   * clamp moved it. A host that narrows the space while the camera is outside it does not
+   * leave the camera there.
+   */
+  const reclampView = (): void => {
+    const before = copyView(view);
+    normaliseView(view, resolvedBounds);
+    const moved =
+      view.cursor[0] !== before.cursor[0] ||
+      view.cursor[1] !== before.cursor[1] ||
+      view.cursor[2] !== before.cursor[2] ||
+      view.distance !== before.distance;
+    // A glide holds a target the wheel clamped against the space of its own moment, and
+    // the glide writes the distance with no clamp of its own. A space that narrows under
+    // a running glide must drop it, or the glide carries the camera past the new far
+    // limit. The live distance is often still inside that limit when this happens, so the
+    // test reads the target and not the clamp above.
+    const glide = controls?.zoomTargetLy() ?? null;
+    const glideOutside = glide !== null && glide > resolvedBounds.maxDistanceLy;
+    if (moved || glideOutside) controls?.endZoom();
+    if (moved) announce();
+  };
+
+  // The shape is worked out once here, so a host that named `bounds` in the options gets
+  // it in the first frame and not in the second.
+  resolveBoundsNow();
+
+  /**
+   * The identity the start view named, held until the set holds the record. The host adds
+   * its systems after the map is built, so the identity is unknown in the first frame.
+   */
+  let pendingStart: string | null = null;
+  /** How many frames the map has drawn. A pending start expires at 600 of them. */
+  let framesDrawn = 0;
+
+  // The start view is taken here and not in the first frame, so the first frame the user
+  // sees is already the view the host asked for. The map does not fly to it.
+  const startView =
+    options.startView === undefined ? null : readStartView(options.startView);
+  if (startView !== null) {
+    if (startView.distance !== undefined) view.distance = startView.distance;
+    if (startView.yaw !== undefined) view.yaw = startView.yaw;
+    if (startView.pitch !== undefined) view.pitch = startView.pitch;
+    // `cursor` beats `system`: a host that gives both has already said where to look, and
+    // waiting for a record would move the camera off that point later.
+    if (startView.cursor !== undefined) {
+      view.cursor = [startView.cursor[0], startView.cursor[1], startView.cursor[2]];
+    } else if (startView.system !== undefined) {
+      pendingStart = startView.system;
+    }
+    normaliseView(view, resolvedBounds);
+  }
+
+  /** Drops the pending start. Every input and every host write of the view calls it. */
+  const dropPendingStart = (): void => {
+    pendingStart = null;
+  };
+
+  /**
+   * Centres a pending start on its record in the first frame the set holds it. The view
+   * change listeners hear the move. It does not select the system: a host that wants the
+   * panel open calls `setSelection`.
+   */
+  const applyPendingStart = (): void => {
+    if (pendingStart === null) return;
+    // A map whose host never adds that record does not hold the start for the life of
+    // the page.
+    if (framesDrawn >= PENDING_START_FRAMES) {
+      dropPendingStart();
+      return;
+    }
+    const index = set.indexOfIdentity(pendingStart);
+    if (index < 0) return;
+    const system = set.system(index);
+    dropPendingStart();
+    if (system === null) return;
+    view.cursor = [system.position[0], system.position[1], system.position[2]];
+    normaliseView(view, resolvedBounds);
+    announce();
+  };
+
   const listeners = new Set<(view: MapView) => void>();
   const selectionListeners = new Set<(system: RealSystem | null) => void>();
   const gridListeners = new Set<(on: boolean) => void>();
@@ -577,10 +862,21 @@ export function createGalaxyMap(
   // state and `src/camera/flight.ts` holds the arithmetic, so the flight has no timer:
   // the frame loop reads the clock once and writes the view.
   let flight: {
-    readonly from: View;
-    readonly to: View;
+    readonly plan: FlightPlan;
     readonly startMs: number;
+    /** Settles the promise a `flyTo` gave its caller, and null for a selection flight. */
+    readonly settle: ((how: FlightOutcome) => void) | null;
   } | null = null;
+
+  /** The listeners `onFlightEnd` holds. */
+  const flightEndListeners = new Set<(how: FlightOutcome) => void>();
+
+  // Which of the user's inputs act on the map. The controls read it once for each input,
+  // so a change takes effect in the frame it happens.
+  let interaction: InteractionSwitches = readInteraction(
+    ALL_INTERACTION,
+    options.interaction,
+  );
 
   // True where the view was written and not moved: `setView`, the landing of a selection
   // flight, and a view a host read from the URL fragment, which reaches the map through
@@ -678,7 +974,7 @@ export function createGalaxyMap(
     view.distance = next.distance;
     view.yaw = next.yaw;
     view.pitch = next.pitch;
-    normaliseView(view);
+    normaliseView(view, resolvedBounds);
     announce();
   };
 
@@ -688,7 +984,20 @@ export function createGalaxyMap(
    * the length of a flight.
    */
   const endFlight = (): void => {
+    finishFlight('interrupted');
+  };
+
+  /**
+   * Ends the running flight, settles the promise a `flyTo` gave its caller and raises the
+   * flight-end listeners. A call where no flight runs does nothing at all, so a listener
+   * hears one call for each flight that ran and none for anything else.
+   */
+  const finishFlight = (how: FlightOutcome): void => {
+    const running = flight;
     flight = null;
+    if (running === null) return;
+    running.settle?.(how);
+    for (const listener of [...flightEndListeners]) listener(how);
   };
 
   /**
@@ -703,7 +1012,8 @@ export function createGalaxyMap(
   /**
    * Flies the camera to the selected system: the cursor on the system, the distance at
    * `min(distance, 500)`, and the yaw and the pitch unchanged. Where the browser asks for
-   * less movement the view takes the end state in this frame and no flight runs.
+   * less movement, and where the path has no length, the view takes the end state in this
+   * frame and no flight runs.
    */
   const centreOn = (system: RealSystem): void => {
     const target: View = {
@@ -712,15 +1022,95 @@ export function createGalaxyMap(
       yaw: view.yaw,
       pitch: view.pitch,
     };
-    normaliseView(target);
+    // The end view is clamped to the browsable space before the path is worked out, so a
+    // system outside the bounds lands on the nearest cursor the bounds allow rather than
+    // moving the camera out or refusing the selection.
+    normaliseView(target, resolvedBounds);
     if (reducedMotion()) {
       endFlight();
       takeView(target);
       return;
     }
     // A selection during a flight flies from the view as it stands, which the loop has
-    // already written into `view`.
-    flight = { from: copyView(view), to: target, startMs: performance.now() };
+    // already written into `view`. The end view is normalised above, so the path is
+    // worked out against where the flight may land and not against where the system is.
+    const plan = planFlight(copyView(view), target);
+    // A path of no length is the view the map already holds. Taking the end state here
+    // keeps `selectionFlightMs` honest: no flight runs, so none is left to run.
+    if (plan.durationMs === 0) {
+      endFlight();
+      takeView(target);
+      return;
+    }
+    // A flight the selection replaces is an interrupted flight, so a `flyTo` a selection
+    // cuts off settles before the new plan takes its place.
+    endFlight();
+    flight = { plan, startMs: performance.now(), settle: null };
+  };
+
+  /**
+   * Flies the camera to a host's target. The promise it gives back settles once, with
+   * `'landed'` or `'interrupted'`, and never rejects.
+   */
+  const flyTo = (
+    target: FlyToTarget,
+    flightOptions?: FlyToOptions,
+  ): Promise<FlightOutcome> => {
+    let settle: (how: FlightOutcome) => void = () => undefined;
+    const promise = new Promise<FlightOutcome>((resolve) => {
+      settle = resolve;
+    });
+
+    const asked = target === null || typeof target !== 'object' ? {} : target;
+    // The host has taken the camera, so a pending start is dropped and a flight already
+    // running is interrupted, whatever this call goes on to do. A call that names a
+    // system the set does not hold ends both the same way: it is a `flyTo` like any
+    // other, and it is the host asking for the camera.
+    dropPendingStart();
+    endFlight();
+
+    const next = copyView(view);
+    let place: readonly [number, number, number] | null = null;
+    if (readPoint(asked.cursor) !== null) {
+      place = readPoint(asked.cursor);
+    } else if (typeof asked.system === 'string') {
+      const index = set.indexOfIdentity(asked.system);
+      const system = index < 0 ? null : set.system(index);
+      if (system === null) {
+        // An identity the set does not hold flies nowhere and leaves the view where the
+        // call found it. `flyTo` has no pending state, so the map does not wait for the
+        // record to arrive.
+        settle('landed');
+        return promise;
+      }
+      place = [system.position[0], system.position[1], system.position[2]];
+    }
+    if (place !== null) next.cursor = [place[0], place[1], place[2]];
+    // A field that is not a finite number keeps the value the view holds, as a field the
+    // host leaves out does.
+    if (readNumber(asked.distance) !== null) {
+      next.distance = readNumber(asked.distance) as number;
+    }
+    if (readNumber(asked.yaw) !== null) next.yaw = readNumber(asked.yaw) as number;
+    if (readNumber(asked.pitch) !== null)
+      next.pitch = readNumber(asked.pitch) as number;
+    // The end view takes the browsable bounds before the path is worked out, so a target
+    // outside them lands on the nearest view the bounds allow.
+    normaliseView(next, resolvedBounds);
+
+    if (flightOptions?.animate === false || reducedMotion()) {
+      takeView(next);
+      settle('landed');
+      return promise;
+    }
+    const plan = planFlight(copyView(view), next);
+    if (plan.durationMs === 0) {
+      takeView(next);
+      settle('landed');
+      return promise;
+    }
+    flight = { plan, startMs: performance.now(), settle };
+    return promise;
   };
 
   /**
@@ -729,8 +1119,7 @@ export function createGalaxyMap(
    *
    * A held movement key ends the flight here, before it advances. The loop advances the
    * flight before `controls.update` moves the view, so a flight that advanced first
-   * would take one frame of the ease from the user. The ease is steep at its start, so
-   * that one frame is a step the user sees.
+   * would take one frame of the path from the user.
    */
   const advanceFlight = (nowMs: number): void => {
     if (flight === null) return;
@@ -739,15 +1128,16 @@ export function createGalaxyMap(
       return;
     }
     const elapsed = nowMs - flight.startMs;
-    const next = flightAt(flight.from, flight.to, elapsed);
+    const next = flightAt(flight.plan, elapsed);
     // The landing is a jump and the frames before it are not. A flight in progress moves
     // the view, so the labels ride it; the landing writes the end view, and a label that
     // held its target across it would walk the width of the screen to catch up.
-    if (elapsed >= FLIGHT_MS) {
-      flight = null;
-      jumped = true;
-    }
+    const landed = elapsed >= flight.plan.durationMs;
+    if (landed) jumped = true;
     takeView(next);
+    // The view is written before the promise settles, so a host that awaits the flight
+    // reads the view it landed on.
+    if (landed) finishFlight('landed');
   };
 
   /**
@@ -756,6 +1146,7 @@ export function createGalaxyMap(
    * `null`, clear the selection and leave the view where it is.
    */
   const applySelection = (identity: string | null): void => {
+    dropPendingStart();
     const index = identity === null ? -1 : set.indexOfIdentity(identity);
     const system = index < 0 ? null : set.system(index);
     const next = system === null ? null : identityOf(system);
@@ -823,6 +1214,7 @@ export function createGalaxyMap(
    */
   const drawFrame = (timing: FrameTiming = STILL_FRAME): void => {
     if (renderer === null) return;
+    framesDrawn += 1;
     renderer.render(view);
     const size = renderer.viewport();
     // The hover pick and the overlay marks are one reading, because the two run together
@@ -859,6 +1251,7 @@ export function createGalaxyMap(
       viewport: size,
       spacingLy: renderer.gridSpacingLy(),
       bounds: MODEL_BOUNDS,
+      browse: resolvedBounds,
       // The read-back of an earlier frame. A label's opacity is one frame behind the
       // picture, which a person does not see, and a read that waits for the card costs
       // more than the pass it reads.
@@ -908,8 +1301,15 @@ export function createGalaxyMap(
 
     controls = attachControls(canvas, view, {
       onChange: announce,
-      onInput: endFlight,
+      onInput(): void {
+        // The user has taken the camera. The flight ends and a record that arrives later
+        // does not move the view back.
+        endFlight();
+        dropPendingStart();
+      },
       reducedMotion,
+      bounds: () => resolvedBounds,
+      interaction: () => interaction,
       onPointer(pixel: { x: number; y: number } | null): void {
         lastPointer = pixel;
       },
@@ -975,6 +1375,13 @@ export function createGalaxyMap(
       previous = now;
       // The flight moves the view before the draw, so the frame the user sees is the
       // frame the flight reached.
+      // `auto` follows the set, so the shape is worked out again where the set changed
+      // and not on every frame. The re-clamp then holds the camera inside the new space.
+      if (set.version !== boundsSetVersion) {
+        resolveBoundsNow();
+        reclampView();
+      }
+      applyPendingStart();
       advanceFlight(performance.now());
       controls?.update(seconds);
       refreshHud();
@@ -1153,7 +1560,7 @@ export function createGalaxyMap(
     },
     selectionFlightMs(): number {
       if (flight === null) return 0;
-      const left = FLIGHT_MS - (performance.now() - flight.startMs);
+      const left = flight.plan.durationMs - (performance.now() - flight.startMs);
       return left > 0 ? left : 0;
     },
     zoomTargetLy(): number | null {
@@ -1237,21 +1644,23 @@ export function createGalaxyMap(
       listeners.clear();
       selectionListeners.clear();
       gridListeners.clear();
+      flightEndListeners.clear();
       datasets.clear();
     },
     getView(): MapView {
       return readView();
     },
     setView(next: Partial<MapView>): void {
-      // A host that writes the view has taken the camera, so the flight and the zoom
-      // glide both end here.
+      // A host that writes the view has taken the camera, so the flight, the zoom glide
+      // and the pending start all end here.
       endFlight();
+      dropPendingStart();
       controls?.endZoom();
       if (next.cursor !== undefined) view.cursor = [...next.cursor];
       if (next.distance !== undefined) view.distance = next.distance;
       if (next.yaw !== undefined) view.yaw = next.yaw;
       if (next.pitch !== undefined) view.pitch = next.pitch;
-      normaliseView(view);
+      normaliseView(view, resolvedBounds);
       jumped = true;
       announce();
     },
@@ -1260,6 +1669,47 @@ export function createGalaxyMap(
       return () => {
         listeners.delete(listener);
       };
+    },
+    getBounds(): BrowseBounds {
+      return boundsSetting.mode === 'sphere'
+        ? {
+            mode: 'sphere',
+            centre: [
+              boundsSetting.centre[0],
+              boundsSetting.centre[1],
+              boundsSetting.centre[2],
+            ],
+            radiusLy: boundsSetting.radiusLy,
+          }
+        : { ...boundsSetting };
+    },
+    flyTo(target: FlyToTarget, flightOptions?: FlyToOptions): Promise<FlightOutcome> {
+      return flyTo(target, flightOptions);
+    },
+    isFlying(): boolean {
+      return flight !== null;
+    },
+    onFlightEnd(listener: (how: FlightOutcome) => void): () => void {
+      flightEndListeners.add(listener);
+      return () => {
+        flightEndListeners.delete(listener);
+      };
+    },
+    getInteraction(): InteractionSwitches {
+      return { ...interaction };
+    },
+    setInteraction(next: Partial<InteractionSwitches>): void {
+      interaction = readInteraction(interaction, next);
+    },
+    setBounds(next: BrowseBounds): void {
+      const read = readBounds(next);
+      // An unreadable setting leaves the one the map holds in place, as a bad view field
+      // does. The host reads `getBounds` to see what took effect.
+      if (read === null) return;
+      boundsSetting = read;
+      resolveBoundsNow();
+      reclampView();
+      drawFrame();
     },
     areRegionsVisible(): boolean {
       return regionsVisible;

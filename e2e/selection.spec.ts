@@ -790,7 +790,7 @@ test.describe('the selection flight', () => {
     await waitFrames(page);
     const during = await readView(page);
     const left = await flightMs(page);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     const ended = await flightMs(page);
     console.log('the flight', { before, during, left, after, ended });
@@ -821,7 +821,7 @@ test.describe('the selection flight', () => {
     await page.mouse.up({ button: 'left' });
     await waitFrames(page);
     const during = await readView(page);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     const name = await selectionName(page);
     console.log('the click flight', { during, after, name });
@@ -858,7 +858,7 @@ test.describe('the selection flight', () => {
     });
     await waitFrames(page);
     const during = await readView(page);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     console.log('the second flight', { reached, during, after });
 
@@ -927,7 +927,7 @@ test.describe('the selection flight', () => {
     await page.waitForTimeout(100);
     // The wheel event goes to the canvas in one task with the two readings, so no frame
     // runs between them. The wheel sets a target and moves no view, so the two readings
-    // are the same. The frames of the 800 ms wait carry the camera to the target.
+    // are the same. The frames of the 2,500 ms wait carry the camera to the target.
     const notch = await page.evaluate(() => {
       const map = window.galaxyMap;
       const canvas = document.getElementById('map');
@@ -939,7 +939,7 @@ test.describe('the selection flight', () => {
       return { before, after: map.getView() };
     });
     const left = await flightMs(page);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const rested = await readView(page);
     console.log('the wheel notch', { notch, left, rested });
 
@@ -969,7 +969,7 @@ test.describe('the selection flight', () => {
     await page.mouse.down({ button: 'left' });
     await page.mouse.move(700, 360, { steps: 6 });
     await page.mouse.up({ button: 'left' });
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     console.log('the orbit that ends the flight', after);
 
@@ -1001,7 +1001,7 @@ test.describe('the selection flight', () => {
     });
     await waitFrames(page);
     const left = await flightMs(page);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     await page.keyboard.up('KeyW');
     console.log('the held key against the flight', { left, after });
@@ -1035,7 +1035,7 @@ test.describe('the selection flight', () => {
     await page.keyboard.down('KeyE');
     await waitFrames(page);
     await page.keyboard.up('KeyE');
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(2500);
     const after = await readView(page);
     const left = await flightMs(page);
     console.log('the turn key against the flight', { reached, after, left });
@@ -1402,4 +1402,150 @@ test.describe('the overlay marks', () => {
       expect(['stroke', 'stroke fill']).toContain(label.order);
     }
   });
+});
+
+// The scenario "A selection outside the bounds lands on the nearest allowed cursor".
+test('a selection outside the bounds lands on the nearest allowed cursor', async ({
+  page,
+}) => {
+  await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
+  await addCategory(page, 'Alpha');
+  await addSystems(page, [record('Far', [5000, 0, 0], 'Alpha')]);
+  await page.evaluate(() => {
+    window.galaxyMap?.setBounds({ mode: 'sphere', centre: [0, 0, 0], radiusLy: 100 });
+    window.galaxyMap?.setSelection('Far');
+  });
+  await waitForFlightEnd(page);
+
+  const landed = await page.evaluate(() => ({
+    name: window.galaxyMap?.getSelection()?.name ?? null,
+    view: window.__galaxyMap?.getView?.() ?? null,
+  }));
+  const where = await projectOf(page, [5000, 0, 0]);
+  console.log('the landed selection outside the bounds', landed, where);
+
+  // The selection holds. The camera goes as near as the bounds allow and no nearer, so
+  // the system itself is off the middle of the canvas.
+  expect(landed.name).toBe('Far');
+  expect(landed.view?.cursor).toEqual([100, 0, 0]);
+  expect(Math.hypot(where.x - 640, where.y - 360)).toBeGreaterThan(50);
+});
+
+// The scenario "A restricted zoom limit caps the path". Task 1.7 waited for item 3,
+// because the cap it reads is the far zoom limit of a bound.
+test('a restricted zoom limit caps the path', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+  await addCategory(page, 'Alpha');
+  await addSystems(page, [record('Across', [2000, 0, 0], 'Alpha')]);
+
+  const peak = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        window.galaxyMap?.setBounds({
+          mode: 'sphere',
+          centre: [0, 0, 0],
+          radiusLy: 2000,
+        });
+        window.galaxyMap?.setView({ cursor: [-2000, 0, 0], distance: 4000 });
+        window.galaxyMap?.setSelection('Across');
+        let largest = 0;
+        const step = (): void => {
+          largest = Math.max(largest, window.__galaxyMap?.getView?.().distance ?? 0);
+          if ((window.__galaxyMap?.selectionFlightMs?.() ?? 0) === 0) {
+            resolve(largest);
+            return;
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+  console.log('the largest distance the capped flight reached', peak);
+
+  // The path asks for 4,647 light years at its top: a 4,000 light year move from 4,000
+  // out to the 500 light year end distance. The bound caps the frame at 4,000, so the
+  // flight holds there over the middle of the path and never writes more.
+  //
+  // The cap is `R / sin(30 degrees)` and not the round 4,000: `Math.sin(Math.PI / 6)` is
+  // 0.49999999999999994, so the limit the map holds is 4,000.0000000000005.
+  const cap = 2000 / Math.sin(Math.PI / 6);
+  expect(peak).toBeLessThanOrEqual(cap);
+  expect(peak).toBeCloseTo(4000, 6);
+});
+
+/** A point at an exact range from the cursor, on the view axis toward the camera. */
+function atCursorRange(
+  cursor: readonly [number, number, number],
+  range: number,
+): [number, number, number] {
+  const pitch = (PITCH * Math.PI) / 180;
+  return [
+    cursor[0],
+    cursor[1] + Math.sin(pitch) * range,
+    cursor[2] - Math.cos(pitch) * range,
+  ];
+}
+
+// The scenario "A drawn marker is pickable however far the camera stands off".
+test('a drawn marker is pickable however far the camera stands off', async ({
+  page,
+}) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  const where = atCursorRange(cursor, 1500);
+  await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
+  await page.evaluate(() => {
+    window.galaxyMap?.addCategories([
+      { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 2000 },
+    ]);
+  });
+  await addSystems(page, [record('One', where, 'Alpha')]);
+
+  // The camera stands 20,000 light years off. The cursor stays 1,500 light years from the
+  // system, which is inside the category's range, so the marker draws.
+  await setView(page, cursor, 20000);
+  const spot = await projectOf(page, where);
+  const reading = await page.evaluate(
+    (pixel) => ({
+      count: window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+      name: window.galaxyMap?.systemAt(pixel.x, pixel.y)?.name ?? null,
+    }),
+    spot,
+  );
+  console.log('the far camera reading', { spot, reading });
+
+  expect(reading.count).toBe(1);
+  expect(reading.name).toBe('One');
+});
+
+// The scenario "The ring, the pin and the name follow the same gate".
+test('the ring, the pin and the name follow the same gate', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  const where = atCursorRange(cursor, 1500);
+  await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
+  await page.evaluate(() => {
+    window.galaxyMap?.addCategories([
+      { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 2000 },
+    ]);
+    window.galaxyMap?.setSystemNamesVisible(true);
+  });
+  await addSystems(page, [record('One', where, 'Alpha')]);
+  await page.evaluate(() => {
+    window.galaxyMap?.setSelection('One');
+  });
+  await waitForFlightEnd(page);
+
+  // The selection brought the cursor onto the system, so the view goes back out to hold
+  // the system 1,500 light years from the cursor with the camera 20,000 light years off.
+  await setView(page, cursor, 20000);
+  const spot = await projectOf(page, where);
+  // The ring follows the hover and not the selection, so the pointer moves onto the
+  // marker before the frame that is read.
+  await page.mouse.move(spot.x, spot.y);
+  await drawFrame(page);
+  const marks = await markCounts(page);
+  console.log('the marks at a 20,000 light year stand-off', { spot, marks });
+
+  expect(marks.pins).toBe(1);
+  expect(marks.rings).toBe(1);
+  expect(marks.labels).toBeGreaterThan(0);
 });

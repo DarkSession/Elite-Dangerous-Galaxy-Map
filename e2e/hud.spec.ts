@@ -1503,6 +1503,72 @@ test.describe('the information panel', () => {
     expect(range).toMatch(/^\d+ LY$/);
   });
 
+  /** Waits until no selection flight runs on the HUD's map. */
+  async function waitForFlightEnd(page: Page): Promise<void> {
+    await expect
+      .poll(() => page.evaluate(() => window.__hudMap?.debug.selectionFlightMs() ?? -1))
+      .toBe(0);
+  }
+
+  /** The range field as a number of light years, after the panel's 10 Hz rewrite. */
+  async function rangeLy(page: Page): Promise<number> {
+    await page.waitForTimeout(200);
+    const text = (await fieldValue(page, 'RANGE').textContent()) ?? '';
+    return Number(text.replace(/[^\d.-]/g, ''));
+  }
+
+  // The scenario "A landed selection reads a range of zero". The owner chose this
+  // reading: a selection puts the cursor on the system, so nothing is left to measure.
+  test('a landed selection reads a range of zero', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Far', [3000, 0, 0], 'Alpha')]);
+    await select(page, 'Far');
+    await waitForFlightEnd(page);
+
+    const range = await fieldValue(page, 'RANGE').textContent();
+    console.log('the range of a landed selection', range);
+
+    expect(range).toBe('0 LY');
+  });
+
+  // The scenario "An orbit does not change the range".
+  test('an orbit does not change the range', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Far', [3000, 0, 0], 'Alpha')]);
+    await select(page, 'Far');
+    await waitForFlightEnd(page);
+    // A pan of 400 light years, written as a cursor move, so the reading is a known one.
+    await setView(page, { cursor: [3400, 0, 0] });
+    const before = await rangeLy(page);
+
+    await setView(page, { yaw: 120, pitch: 75 });
+    const after = await rangeLy(page);
+    console.log('the range across an orbit', { before, after });
+
+    expect(Math.abs(before - 400)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after - 400)).toBeLessThanOrEqual(1);
+  });
+
+  // The scenario "A zoom does not change the range".
+  test('a zoom does not change the range', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Far', [3000, 0, 0], 'Alpha')]);
+    await select(page, 'Far');
+    await waitForFlightEnd(page);
+    await setView(page, { cursor: [3400, 0, 0], distance: 500 });
+    const before = await rangeLy(page);
+
+    await setView(page, { distance: 20000 });
+    const after = await rangeLy(page);
+    console.log('the range across a zoom', { before, after });
+
+    expect(Math.abs(before - 400)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after - 400)).toBeLessThanOrEqual(1);
+  });
+
   /** The box of the grid and of each field, in CSS pixels. */
   async function fieldBoxes(page: Page): Promise<{
     grid: number;

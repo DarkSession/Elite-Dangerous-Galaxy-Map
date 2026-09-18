@@ -288,7 +288,21 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
       const halfWidth = viewport.width / 2;
       const halfHeight = viewport.height / 2;
 
-      /** The range of one system from the camera, or -1 when its marker does not draw. */
+      // The cursor in the same camera-relative frame as the offsets below.
+      const cursorOffset: [number, number, number] = [
+        view.cursor[0] - camera[0],
+        view.cursor[1] - camera[1],
+        camera[2] - view.cursor[2],
+      ];
+
+      /**
+       * The range of one system from the **camera**, or -1 when its marker does not draw.
+       *
+       * The gate and the reading are two different ranges. The gate measures from the
+       * cursor, as `systems.vert` does, so this overlay keeps every marker the frame drew
+       * and no other. The reading is the camera range, because `markerCssSize` and
+       * `offerNearest` both need the distance to the eye.
+       */
       const rangeOf = (index: number): number => {
         if (index < 0 || index >= count) return -1;
         if (flags[index] !== 1) return -1;
@@ -297,11 +311,14 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         const y = (positions[base + 1] as number) - camera[1];
         // The renderer's world frame runs its third axis the other way to the game's.
         const z = camera[2] - (positions[base + 2] as number);
-        const range = Math.sqrt(x * x + y * y + z * z);
         const category = set.category(categoryIndices[index] as number);
         const limit =
           category === null ? DEFAULT_MAX_DRAW_RANGE_LY : category.maxDrawRange;
-        return range > limit ? -1 : range;
+        const cx = x - cursorOffset[0];
+        const cy = y - cursorOffset[1];
+        const cz = z - cursorOffset[2];
+        if (cx * cx + cy * cy + cz * cz > limit * limit) return -1;
+        return Math.sqrt(x * x + y * y + z * z);
       };
 
       /** Where one system's marker draws, or null when it does not draw. */

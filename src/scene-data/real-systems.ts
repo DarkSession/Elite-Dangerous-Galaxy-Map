@@ -4,6 +4,7 @@
 import { loadGalaxyModel } from '../galaxy-model/load';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import type { Range } from '../galaxy-model/types';
+import type { SystemBox } from '../camera/view';
 
 /** The largest number of systems the set holds. */
 export const MAX_SYSTEMS = 10000;
@@ -232,6 +233,16 @@ export interface RealSystemSet {
    * it through the handle to hold the sweep to its budget.
    */
   readonly lastSweepMs: number;
+  /**
+   * The smallest axis-aligned box that holds every system the set has been given, in game
+   * coordinates. The `auto` browsable bound reads it.
+   *
+   * It is kept as records arrive and nothing sweeps the set for it: `addSystems` widens
+   * six numbers as it writes each record, and the two clears reset them. A record that
+   * **replaces** another widens the box and never shrinks it, because a shrink would need
+   * the sweep this rule exists to avoid. `empty` is true until the first record lands.
+   */
+  readonly systemBox: SystemBox;
   /** True when the marker of one system draws. False outside the set. */
   drawsMarker(index: number): boolean;
   /** Turns the markers of a category on or off. An unknown name changes nothing. */
@@ -418,6 +429,11 @@ export function createSystemSet(): RealSystemSet {
   const positions = new Float64Array(MAX_SYSTEMS * 3);
   const categoryIndices = new Uint16Array(MAX_SYSTEMS);
   const systems: RealSystem[] = [];
+  // The running box of every system the set has been given. `boxEmpty` is the flag, so a
+  // reader never meets the numbers the box holds before the first record.
+  let boxEmpty = true;
+  const boxMin: [number, number, number] = [0, 0, 0];
+  const boxMax: [number, number, number] = [0, 0, 0];
   // The identity of each system, so a call of 10,000 records costs 10,000 map lookups
   // rather than a scan of the set for each record.
   const slotOf = new Map<string, number>();
@@ -483,8 +499,28 @@ export function createSystemSet(): RealSystemSet {
     lastSweepMs = performance.now() - startMs;
   };
 
+  /** Widens the running box to hold one position. */
+  const widenBox = (position: readonly [number, number, number]): void => {
+    if (boxEmpty) {
+      boxMin[0] = position[0];
+      boxMin[1] = position[1];
+      boxMin[2] = position[2];
+      boxMax[0] = position[0];
+      boxMax[1] = position[1];
+      boxMax[2] = position[2];
+      boxEmpty = false;
+      return;
+    }
+    for (let axis = 0; axis < 3; axis += 1) {
+      const value = position[axis] as number;
+      if (value < (boxMin[axis] as number)) boxMin[axis] = value;
+      if (value > (boxMax[axis] as number)) boxMax[axis] = value;
+    }
+  };
+
   const writeSystem = (slot: number, system: RealSystem): void => {
     systems[slot] = system;
+    widenBox(system.position);
     positions[slot * 3] = system.position[0];
     positions[slot * 3 + 1] = system.position[1];
     positions[slot * 3 + 2] = system.position[2];
@@ -671,12 +707,14 @@ export function createSystemSet(): RealSystemSet {
     clearSystems(): void {
       systems.length = 0;
       slotOf.clear();
+      boxEmpty = true;
       version += 1;
     },
 
     clearSystemsAndCategories(): void {
       systems.length = 0;
       slotOf.clear();
+      boxEmpty = true;
       categories.length = 0;
       categoryOf.clear();
       categoryVisible.clear();
@@ -686,6 +724,13 @@ export function createSystemSet(): RealSystemSet {
 
     get count(): number {
       return systems.length;
+    },
+    get systemBox(): SystemBox {
+      return {
+        min: [boxMin[0], boxMin[1], boxMin[2]],
+        max: [boxMax[0], boxMax[1], boxMax[2]],
+        empty: boxEmpty,
+      };
     },
     get categoryCount(): number {
       return categories.length;

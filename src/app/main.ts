@@ -5,7 +5,7 @@ import type { CategoryInput, SystemRecordInput } from '../scene-data/real-system
 import type { LineInput, SphereInput } from '../scene-data/shapes';
 import { createGalaxyMap } from './create-map';
 import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
-import { createFragmentWriter, parseGridFragment, parseViewFragment } from './url-view';
+import { createFragmentWriter, decodeGrid, decodeView } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
 export const READY_EVENT = 'galaxy-map-ready';
@@ -185,7 +185,7 @@ function start(target: HTMLCanvasElement): void {
     dataset: 'guardian-ruins',
     // The demo site starts with the coordinate grid on, unless the fragment says `g=0`.
     // That is this page's own option: a host that gives no `grid` still gets no grid.
-    grid: parseGridFragment(window.location.hash) !== false,
+    grid: decodeGrid(window.location.hash) !== false,
     // The demo page is a host application, so it turns the HUD on the way any other
     // host does, and it adds one footer action to show what `actions` gives a host.
     hud: {
@@ -218,7 +218,12 @@ function start(target: HTMLCanvasElement): void {
   window.galaxyMapFactory = createGalaxyMap;
 
   // The page parses the fragment, gives the view to the handle, and writes it back.
-  map.setView(parseViewFragment(window.location.hash));
+  //
+  // This write beats the `startView` option, because it comes after the map is built. The
+  // demo page names no `startView` and owns its view through the URL, so a reader who
+  // expects the option to win here finds the fragment instead. A host that wants the
+  // option to hold must not write the view after the build.
+  map.setView(decodeView(window.location.hash));
   // The writer formats the object it was given at every write, so the page keeps this
   // one current from the handle's own view changes.
   const pageView: View = map.getView();
@@ -286,8 +291,8 @@ function start(target: HTMLCanvasElement): void {
     // old state back in the URL, and the next fragment the user gives could then match
     // the address the page already holds and raise no event at all.
     const fragment = window.location.hash;
-    const grid = parseGridFragment(fragment);
-    const next = parseViewFragment(fragment);
+    const grid = decodeGrid(fragment);
+    const next = decodeView(fragment);
     pageView.cursor = next.cursor;
     pageView.distance = next.distance;
     pageView.yaw = next.yaw;

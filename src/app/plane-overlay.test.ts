@@ -235,6 +235,67 @@ describe('a plane element', () => {
     expect(writes).toEqual([]);
   });
 
+  // The scenario "An element is kept from under the plane" of `plane-overlay`. The pitch
+  // runs from -89 to 89 degrees, so the camera reaches either side of the plane and the
+  // winding of a face-on quad turns over with it.
+  test('an element is kept from under the plane', () => {
+    const above = planePlacement(placementOf(viewAt(1000, 45), 200, 200));
+    const below = planePlacement(placementOf(viewAt(1000, -45), 200, 200));
+    expect(above).not.toBeNull();
+    expect(below).not.toBeNull();
+    const one = (above as NonNullable<typeof above>).box.width;
+    const other = (below as NonNullable<typeof below>).box.width;
+    expect(Math.abs(one - other) / one).toBeLessThan(0.02);
+  });
+
+  // The scenario "An element is turned to face the reader under the plane". A reader under
+  // the plane sees the element's face from behind, so the element is painted on the other
+  // face and its text stays the right way round.
+  test('an element is turned to face the reader under the plane', () => {
+    /** Where the element's own top left corner lands on the screen. */
+    const topLeftOf = (pitch: number): { x: number; y: number; corners: number } => {
+      const placed = planePlacement(placementOf(viewAt(1000, pitch), 200, 200));
+      expect(placed).not.toBeNull();
+      const kept = placed as NonNullable<typeof placed>;
+      // `matrix3d` holds the homography's third column at 12, 13 and 15, which is where
+      // the element's own (0, 0) goes.
+      const values = kept.transform
+        .replace('matrix3d(', '')
+        .replace(')', '')
+        .split(',')
+        .map((part) => Number(part));
+      const w = values[15] as number;
+      const point = { x: (values[12] as number) / w, y: (values[13] as number) / w };
+      // Which of the four plane corners it is nearest.
+      let nearest = -1;
+      let best = Number.POSITIVE_INFINITY;
+      kept.corners.forEach((corner, index) => {
+        const gap = Math.hypot(corner.x - point.x, corner.y - point.y);
+        if (gap < best) {
+          best = gap;
+          nearest = index;
+        }
+      });
+      return { ...point, corners: nearest };
+    };
+
+    const above = topLeftOf(45);
+    const below = topLeftOf(-45);
+    console.log('the top left corner lands at', { above, below });
+
+    // Above the plane the element's top left takes plane corner 0; under it, corner 3.
+    // That is the reversed height axis, which is the turn.
+    expect(above.corners).toBe(0);
+    expect(below.corners).toBe(3);
+  });
+
+  // The scenario "An element is dropped in the plane". The camera lies in the element's
+  // own plane, so every element is edge on and covers no pixels.
+  test('an element is dropped in the plane', () => {
+    expect(() => planePlacement(placementOf(viewAt(1000, 0), 200, 200))).not.toThrow();
+    expect(planePlacement(placementOf(viewAt(1000, 0), 200, 200))).toBeNull();
+  });
+
   test('the ring of a square element is square at a steep pitch', () => {
     // At 89 degrees the camera looks straight down, so a square of the plane projects to
     // a square on the screen.

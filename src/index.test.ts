@@ -8,6 +8,7 @@ import * as library from './index';
 /** The types the requirement "The library build emits a package and no page" lists. */
 const PUBLIC_TYPES = [
   'AddReport',
+  'BrowseBounds',
   'Category',
   'CategoryInput',
   'CategoryReject',
@@ -16,11 +17,15 @@ const PUBLIC_TYPES = [
   'DatasetEntry',
   'DatasetInfo',
   'DatasetLoadResult',
+  'FlightOutcome',
+  'FlyToOptions',
+  'FlyToTarget',
   'GalaxyMap',
   'GalaxyMapOptions',
   'HudAction',
   'HudHandle',
   'HudOptions',
+  'InteractionSwitches',
   'Line',
   'LineInput',
   'LinePoint',
@@ -31,6 +36,7 @@ const PUBLIC_TYPES = [
   'ShapeReport',
   'Sphere',
   'SphereInput',
+  'StartView',
   'SystemImage',
   'SystemRecordInput',
 ];
@@ -55,15 +61,21 @@ function exportedNames(text: string): string[] {
   return names;
 }
 
+/** The calls the barrel exports as values, which the requirement names. */
+const PUBLIC_CALLS = ['createGalaxyMap', 'decodeGrid', 'decodeView', 'encodeView'];
+
 describe('the library entry point', () => {
-  test('exports one value, which is the entry call', () => {
-    expect(Object.keys(library)).toEqual(['createGalaxyMap']);
+  test('exports the four calls and no other value', () => {
+    expect(Object.keys(library).sort()).toEqual([...PUBLIC_CALLS].sort());
     expect(typeof library.createGalaxyMap).toBe('function');
+    expect(typeof library.encodeView).toBe('function');
+    expect(typeof library.decodeView).toBe('function');
+    expect(typeof library.decodeGrid).toBe('function');
   });
 
-  test('exports the entry call and the listed types, and nothing else', () => {
+  test('exports the calls and the listed types, and nothing else', () => {
     const names = exportedNames(source);
-    expect(names.sort()).toEqual(['createGalaxyMap', ...PUBLIC_TYPES].sort());
+    expect(names.sort()).toEqual([...PUBLIC_CALLS, ...PUBLIC_TYPES].sort());
   });
 
   test('does not export the debug hook type', () => {

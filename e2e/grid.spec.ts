@@ -1268,7 +1268,11 @@ test.describe('the grid labels', () => {
 
     // The top edge is the far one: the element's local `y` runs along the game `-z`
     // axis and the camera sits on the `-z` side at a yaw of 0.
-    expect(read.far).toBeLessThan(read.near * 0.95);
+    //
+    // The margin is 2 per cent and was 5. The label at the origin reads `0 : 0 : 0`, and
+    // the worst-case size rule gives it about a third of the height it took from its own
+    // text, so the quad spans a third of the depth it did. The reading is 3.0 per cent.
+    expect(read.far).toBeLessThan(read.near * 0.98);
     const away = (angle: number): number => {
       const gap = Math.abs(angle - read.lineAngle) % (2 * Math.PI);
       return Math.min(gap, 2 * Math.PI - gap) * (180 / Math.PI);
@@ -1305,6 +1309,88 @@ test.describe('the grid labels', () => {
       expect(Math.abs(share / first - 1)).toBeLessThan(0.02);
       expect(share).toBeLessThanOrEqual(0.1 + 1e-6);
     }
+  });
+
+  // The scenario "Every label of a frame has one cap height".
+  test('give every label of a frame one cap height', async ({ page }) => {
+    // The cursor sits 5 light years off a crossing of the 100 light year level, so the
+    // frame carries crossings on both sides of 1,000 and the texts are not all one
+    // length: `900 : -600 : 1,000` beside `1,000 : -600 : 1,100`.
+    await openMap(page, '#c=995,-600,1005&d=150&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [995, -600, 1005], 150);
+
+    const labels = await page.evaluate(() =>
+      (window.galaxyMap?.debug.gridLabelReadings() ?? []).map((label) => ({
+        text: label.text,
+        capHeightCss: label.capHeightCss,
+      })),
+    );
+    console.log('the cap height of every label', labels);
+
+    expect(labels.length).toBeGreaterThan(1);
+    // A reading of labels that all carry the same text would say nothing.
+    const lengths = new Set(labels.map((label) => label.text.length));
+    expect(lengths.size).toBeGreaterThan(1);
+    const first = labels[0]?.capHeightCss ?? 0;
+    expect(first).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(Math.abs(label.capHeightCss / first - 1), label.text).toBeLessThan(0.01);
+    }
+  });
+
+  // The scenario "A narrower bound gives larger numbers".
+  test('give a narrower bound larger numbers', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 1000);
+
+    /** The cap height of the first crossing label of the frame, in CSS pixels. */
+    const capHeight = async (): Promise<number> =>
+      page.evaluate(
+        () =>
+          (window.galaxyMap?.debug.gridLabelReadings() ?? [])[0]?.capHeightCss ?? -1,
+      );
+
+    const wide = await capHeight();
+    // The box of the sphere runs from -900 to 900 on each axis, so the worst-case text is
+    // `-900 : -900 : -900` at 18 characters against the model's 27.
+    await page.evaluate(() => {
+      window.galaxyMap?.setBounds({ mode: 'sphere', centre: [0, 0, 0], radiusLy: 900 });
+    });
+    await setView(page, [0, 0, 0], 1000);
+    const narrow = await capHeight();
+    console.log('the cap height with and without the sphere bound', { wide, narrow });
+
+    expect(wide).toBeGreaterThan(0);
+    expect(narrow).toBeGreaterThan(wide);
+    // The ratio of the two character counts. The font is not monospaced, so the reading
+    // is near the count ratio and not equal to it.
+    expect(narrow / wide).toBeGreaterThan((27 / 18) * 0.85);
+    expect(narrow / wide).toBeLessThan((27 / 18) * 1.15);
+  });
+
+  // The scenario "Moving the cursor does not resize the labels". The `y` of the worst
+  // case comes from the bounds and not from the cursor, so a move off the plane does not
+  // resize the frame.
+  test('hold the reading when the cursor moves off the plane', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    await setGrid(page, true);
+
+    const capHeight = async (): Promise<number> =>
+      page.evaluate(
+        () =>
+          (window.galaxyMap?.debug.gridLabelReadings() ?? [])[0]?.capHeightCss ?? -1,
+      );
+
+    await setView(page, [0, 0, 0], 1000);
+    const level = await capHeight();
+    await setView(page, [0, -40000, 0], 1000);
+    const under = await capHeight();
+    console.log('the cap height at two cursor heights', { level, under });
+
+    expect(level).toBeGreaterThan(0);
+    expect(Math.abs(under / level - 1)).toBeLessThan(0.01);
   });
 
   // The scenario "A label fades with its distance from the cursor".
@@ -1381,12 +1467,16 @@ test.describe('the grid labels', () => {
 
   // The scenario "A label is no wider than the cell it names".
   test('draw no label wider than the cell it names', async ({ page }) => {
-    await openMap(page, '#c=0,0,0&d=1000&p=89&y=0');
+    // The far cursor, where a label runs to 25 characters against the worst case's 27.
+    // The width bound is read where the numbers are long: at the origin the same rule
+    // gives a much narrower label, because the size now comes from the worst case of the
+    // space and not from each label's own text.
+    await openMap(page, '#c=40000,-40000,70000&d=1000&p=89&y=0');
     await setGrid(page, true);
 
     let widest = 0;
     for (const distance of [150, 1000]) {
-      await setView(page, [0, 0, 0], distance);
+      await setView(page, [40000, -40000, 70000], distance);
       const labels = await page.evaluate(() =>
         (window.galaxyMap?.debug.gridLabelReadings() ?? []).map((label) => {
           const corners = label.corners;
@@ -2369,5 +2459,222 @@ test.describe('the lattice reach', () => {
     expect(reading.middleAway).toBeLessThan(2250);
     expect(reading.spacingCss).toBeGreaterThan(25);
     expect(reading.lines).toBeGreaterThan(0);
+  });
+});
+
+// The requirement "The grid and its labels draw from under the plane" of
+// `coordinate-grid`. The pitch runs from -89 to 89 degrees, so the camera reaches the
+// other side of the galactic disk and looks up at it.
+test.describe('under the plane', () => {
+  /** The grid light a whole frame holds, as one reading for each row of pixels. */
+  async function gridRows(page: Page): Promise<number[]> {
+    return page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return [];
+      const width = 1920;
+      const height = 1080;
+      map.setGridVisible(false);
+      map.debug.drawNow();
+      const without = map.debug.readRect(0, 0, width, height);
+      map.setGridVisible(true);
+      map.debug.drawNow();
+      const withGrid = map.debug.readRect(0, 0, width, height);
+      const rows: number[] = [];
+      for (let row = 0; row < height; row += 1) {
+        let sum = 0;
+        for (let column = 0; column < width; column += 1) {
+          const index = (row * width + column) * 4;
+          const gap = (withGrid[index] as number) - (without[index] as number);
+          if (gap > 8) sum += gap;
+        }
+        rows.push(sum);
+      }
+      return rows;
+    });
+  }
+
+  // The scenario "The grid draws under the plane".
+  test('the grid draws at a pitch of -45 degrees', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=-45&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+
+    await setView(page, [0, 0, 0], 1000, -45, 0);
+    const below = { spacing: await spacingOf(page), vertices: await vertexCount(page) };
+    const light = await gridLight(page, 0, 0, 1920, 1080);
+    const lit = light.filter((value) => value > 0.03).length;
+
+    await setView(page, [0, 0, 0], 1000, 45, 0);
+    const above = { spacing: await spacingOf(page), vertices: await vertexCount(page) };
+
+    console.log('the grid under the plane', { below, above, lit });
+
+    expect(below.vertices).toBeGreaterThan(0);
+    // The frame differs from the same frame with the grid pass off.
+    expect(lit).toBeGreaterThan(1000);
+    expect(below.spacing).toBe(above.spacing);
+  });
+
+  // The scenario "Crossing labels draw under the plane".
+  test('the crossing label count matches at -45 and +45 degrees', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=-45&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+
+    const countLabels = async (pitch: number): Promise<number> => {
+      await setView(page, [0, 0, 0], 1000, pitch, 0);
+      await page.waitForTimeout(100);
+      return page.evaluate(() => document.querySelectorAll('.gm-grid-label').length);
+    };
+
+    const below = await countLabels(-45);
+    const above = await countLabels(45);
+    console.log('the crossing labels under and over the plane', { below, above });
+
+    expect(below).toBeGreaterThan(0);
+    expect(above).toBeGreaterThan(0);
+    expect(below).toBe(above);
+  });
+
+  // The scenario "The cursor marker draws under the plane".
+  test('the cursor marker box matches at -30 and +30 degrees', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=2000&p=-30&y=0');
+    await setPasses(page, SCENE_OFF);
+
+    const boxOf = async (pitch: number): Promise<{ width: number } | null> => {
+      await setView(page, [0, 0, 0], 2000, pitch, 0);
+      await page.waitForTimeout(100);
+      return page.evaluate(() => {
+        const marker = document.querySelector('.gm-cursor-marker');
+        if (marker === null) return null;
+        const box = marker.getBoundingClientRect();
+        return { width: box.width };
+      });
+    };
+
+    const below = await boxOf(-30);
+    const above = await boxOf(30);
+    console.log('the cursor marker under and over the plane', { below, above });
+
+    expect(below).not.toBeNull();
+    expect(above).not.toBeNull();
+    const one = (below as { width: number }).width;
+    const other = (above as { width: number }).width;
+    expect(Math.abs(one - other) / other).toBeLessThan(0.02);
+  });
+
+  // The scenario "A coordinate label reads the same way round from either side". A label
+  // lies on the plane, so a reader under the disk would see its face from behind. The
+  // element is turned over, which moves where its own top left corner lands.
+  test('a coordinate label reads the same way round from either side', async ({
+    page,
+  }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=-45&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+
+    const labelAt = async (
+      pitch: number,
+    ): Promise<{ text: string; topLeft: [number, number] } | null> => {
+      await setView(page, [0, 0, 0], 1000, pitch, 0);
+      await page.waitForTimeout(150);
+      return page.evaluate(() => {
+        const label = document.querySelector('.gm-grid-label') as HTMLElement | null;
+        if (label === null) return null;
+        const style = getComputedStyle(label).transform;
+        const values = style
+          .replace('matrix3d(', '')
+          .replace('matrix(', '')
+          .replace(')', '')
+          .split(',')
+          .map((part) => Number(part));
+        // A `matrix3d` holds the element's own (0, 0) in its third column, at 12, 13
+        // and 15.
+        const w = (values[15] as number) || 1;
+        return {
+          text: label.textContent ?? '',
+          topLeft: [(values[12] as number) / w, (values[13] as number) / w] as [
+            number,
+            number,
+          ],
+        };
+      });
+    };
+
+    const below = await labelAt(-45);
+    const above = await labelAt(45);
+    console.log('the label from either side', { below, above });
+
+    expect(below).not.toBeNull();
+    expect(above).not.toBeNull();
+    const one = below as NonNullable<typeof below>;
+    const other = above as NonNullable<typeof above>;
+    // The same crossing carries the same text at both pitches.
+    expect(one.text).toBe(other.text);
+    // The element's own top left lands on the other side of its rectangle, which is the
+    // turn. Above the plane it is the far edge and under it the near one, which
+    // `src/app/plane-overlay.test.ts` names by corner: the screen alone cannot, because
+    // the turn is what keeps the label looking the same from either side.
+    expect(Math.abs(one.topLeft[1] - other.topLeft[1])).toBeGreaterThan(4);
+  });
+
+  // The scenario "The grid is edge-on at a pitch of 0".
+  test('the grid is edge on at a pitch of 0', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=0&y=0');
+    await setPasses(page, SCENE_OFF);
+    await setGrid(page, true);
+    await setView(page, [0, 0, 0], 1000, 0, 0);
+
+    const rows = await gridRows(page);
+    const lit = rows
+      .map((sum, row) => ({ sum, row }))
+      .filter((entry) => entry.sum > 0)
+      .map((entry) => entry.row);
+    const band =
+      lit.length === 0 ? 0 : (lit[lit.length - 1] as number) - (lit[0] as number) + 1;
+    // Half a degree off the plane, so the reading below says the map holds no dead band
+    // around 0 and the empty frame above is the degenerate point alone.
+    await setView(page, [0, 0, 0], 1000, 0.5, 0);
+    const justOff = await gridRows(page);
+    const offLit = justOff.filter((sum) => sum > 0).length;
+
+    console.log('the grid at a pitch of 0', { rows: lit.length, band, offLit });
+
+    // The camera lies in the plane. Every ray meets it at the camera itself, so the grid
+    // covers no pixel and the frame draws without error. The band bound holds either way.
+    expect(band).toBeLessThanOrEqual(4);
+    // No dead band: half a degree off the plane the grid is back.
+    expect(offLit).toBeGreaterThan(20);
+  });
+
+  // The scenario "The label sweep costs the same under the plane". The sweep is the
+  // region label one, which runs only where the frame can carry a label, so the view is
+  // the galactic centre at 20,000 light years and not the close grid view above.
+  test('the label sweep costs the same under the plane', async ({ page }) => {
+    test.setTimeout(120000);
+    await openMap(page, '#c=15,0,25895&d=20000&p=-20&y=0');
+
+    const sweepAt = async (pitch: number): Promise<number> => {
+      await setView(page, GALACTIC_CENTRE, 20000, pitch, 0);
+      await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
+      await page.waitForFunction(
+        // 300 frames and not 60: the sweep costs about 0.2 milliseconds and the clock
+        // steps by 0.1, so 60 frames leaves the 20 per cent bound on the noise floor.
+        () => (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300,
+        undefined,
+        { timeout: 60000 },
+      );
+      return page.evaluate(() => window.__galaxyMap?.labelSampling?.().meanMs ?? -1);
+    };
+
+    const below = await sweepAt(-20);
+    const above = await sweepAt(20);
+    console.log('the label sweep under and over the plane', { below, above });
+
+    expect(below).toBeGreaterThan(0);
+    expect(above).toBeGreaterThan(0);
+    const larger = Math.max(below, above);
+    const smaller = Math.min(below, above);
+    expect((larger - smaller) / larger).toBeLessThan(0.2);
   });
 });

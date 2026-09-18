@@ -29,6 +29,8 @@ declare global {
     __selectionLog?: (string | null)[];
     /** The second map the HUD tests build, with the HUD on. */
     __hudMap?: GalaxyMap;
+    /** The second map the start-view tests build, with a `startView` of their own. */
+    __startMap?: GalaxyMap;
     /** The map the touch tests build, over a canvas that states no `touch-action`. */
     __touchMap?: GalaxyMap;
     /** The second map the dataset tests build, with a catalog of their own. */
@@ -41,6 +43,8 @@ declare global {
     __filterCalls?: number;
     /** How many times the map asked the HUD to rebuild its panels. */
     __hudRefreshCalls?: number;
+    /** How each flight ended, for the flight-end listener test. */
+    __flightEnds?: ('landed' | 'interrupted')[];
   }
 }
 

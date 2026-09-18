@@ -16,7 +16,7 @@
 // distance from the frame it is given.
 import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
-import type { View } from '../camera/view';
+import type { ResolvedBounds, View } from '../camera/view';
 import type { Range } from '../galaxy-model/types';
 import {
   gridBackgroundColour,
@@ -70,8 +70,9 @@ export const GRID_LABEL_REACH = 2;
  * middle. A line through the middle of a row of digits is the one place a reader cannot
  * tell one digit from another.
  *
- * The gap is about one cap height: the cap height is about a twenty-third of the
- * spacing. At the 1,000 light year level the gap is 40 light years.
+ * The gap is about one and a half cap heights: inside the model bounds the cap height is
+ * about a thirty-eighth of the spacing. At the 1,000 light year level the gap is 40 light
+ * years.
  */
 export const GRID_LABEL_GAP_SHARE = 0.04;
 
@@ -81,10 +82,15 @@ export const GRID_LABEL_CAP_SHARE = 0.1;
 /**
  * The largest share of a level's spacing a label's whole width takes.
  *
- * This is the bound that sets the size, not `GRID_LABEL_CAP_SHARE`: `x : y : z` runs to
- * about 14 cap heights, so a share of 0.6 gives a cap height of about a twenty-third of
- * the spacing, well under the one tenth the other constant allows. The share was 1, which
- * let a label run the whole width of its own cell and read as too large.
+ * This is the bound that sets the size, not `GRID_LABEL_CAP_SHARE`: the worst-case text
+ * of the model bounds, `-49,985 : -40,985 : -24,105`, runs to about 23 cap heights, so a
+ * share of 0.6 gives a cap height of about a thirty-eighth of the spacing, well under the
+ * one tenth the other constant allows. The share was 1, which let a label run the whole
+ * width of its own cell and read as too large.
+ *
+ * The width the share holds is the worst case of the browsable space and not each label's
+ * own, so every label of a level takes one size. A narrower space carries shorter numbers,
+ * which gives larger text.
  */
 export const GRID_LABEL_WIDTH_SHARE = 0.6;
 
@@ -182,6 +188,66 @@ export function crossingLabelText(x: number, y: number, z: number): string {
 }
 
 /**
+ * The widest text a crossing label of the browsable space can carry.
+ *
+ * Every label of a level takes one cap height, and this is the text that height comes
+ * from. For each of the game `x`, `y` and `z` it takes the bound endpoint whose written
+ * form is the longer, and composes the three as `x : y : z`. Inside the model bounds that
+ * is `-49,985 : -40,985 : -24,105`, which is 27 characters.
+ *
+ * A sphere has no endpoint on an axis, so it gives the endpoints of its own axis-aligned
+ * box, which is the centre plus and minus the radius.
+ *
+ * The `y` term comes from the bounds and not from the cursor, although the `y` a label
+ * carries is the cursor's. Taking the cursor's written length would resize every label of
+ * the frame as the user moved up and down.
+ */
+export function worstCaseLabelText(bounds: ResolvedBounds): string {
+  const low =
+    bounds.kind === 'sphere'
+      ? ([
+          bounds.centre[0] - bounds.radiusLy,
+          bounds.centre[1] - bounds.radiusLy,
+          bounds.centre[2] - bounds.radiusLy,
+        ] as const)
+      : bounds.min;
+  const high =
+    bounds.kind === 'sphere'
+      ? ([
+          bounds.centre[0] + bounds.radiusLy,
+          bounds.centre[1] + bounds.radiusLy,
+          bounds.centre[2] + bounds.radiusLy,
+        ] as const)
+      : bounds.max;
+  const longer = (axis: number): string => {
+    const first = labelNumber(low[axis] as number);
+    const second = labelNumber(high[axis] as number);
+    return second.length > first.length ? second : first;
+  };
+  return `${longer(0)} : ${longer(1)} : ${longer(2)}`;
+}
+
+/**
+ * The worst-case text of each bounds the page has seen.
+ *
+ * `resolveBounds` gives a new object when the browsable space or the system set changes,
+ * and the same object on every other frame, so identity is the right key. A `WeakMap`
+ * lets a bounds the map no longer holds go. The font side of the measurement is already
+ * cached: `createGridLabelMeasure` holds each text it reads, against the one font it
+ * measures with.
+ */
+const worstCaseTexts = new WeakMap<object, string>();
+
+/** `worstCaseLabelText`, with the string held against the bounds it came from. */
+function heldWorstCaseLabelText(bounds: ResolvedBounds): string {
+  const known = worstCaseTexts.get(bounds);
+  if (known !== undefined) return known;
+  const text = worstCaseLabelText(bounds);
+  worstCaseTexts.set(bounds, text);
+  return text;
+}
+
+/**
  * The font size an element is built at for a wanted cap height on the screen, in CSS
  * pixels.
  *
@@ -220,19 +286,24 @@ export interface GridLabelMeasure {
 /**
  * The cap height of a label on the plane, in light years.
  *
- * It is the lesser of one tenth of the level's spacing and the height that holds the
- * label's own measured width to `GRID_LABEL_WIDTH_SHARE` of a spacing. `x : y : z` runs
- * to about 20 characters, so its width is roughly 14 cap heights: at one tenth of the
- * spacing the label would be about 1.4 spacings wide, every label would cross its
+ * The measurement is of the **worst-case text** of the browsable bounds, which
+ * `worstCaseLabelText` builds, and not of the label's own text. Every label of a level
+ * therefore takes one cap height, and the grid reads as one scale rather than as numbers
+ * at mixed sizes. Each label's own box still follows its own text.
+ *
+ * The height is the lesser of one tenth of the level's spacing and the height that holds
+ * that worst-case width to `GRID_LABEL_WIDTH_SHARE` of a spacing. `-49,985 : -40,985 :
+ * -24,105` runs to 27 characters, so its width is about 23 cap heights: at one tenth of
+ * the spacing the label would be about 2.3 spacings wide, every label would cross its
  * neighbours, and the overlap rule would drop all but one. The width bound is therefore
- * the binding one for every text a crossing carries.
+ * the binding one.
  */
 export function gridLabelCapHeightLy(
   spacingLy: number,
-  measure: GridLabelMeasure,
+  worst: GridLabelMeasure,
 ): number {
   const byWidth =
-    (spacingLy * GRID_LABEL_WIDTH_SHARE * measure.capPerEm) / measure.widthPerEm;
+    (spacingLy * GRID_LABEL_WIDTH_SHARE * worst.capPerEm) / worst.widthPerEm;
   return Math.min(spacingLy * GRID_LABEL_CAP_SHARE, byWidth);
 }
 
@@ -255,6 +326,11 @@ export interface GridLabelFrame {
   readonly spacingLy: number;
   /** The galaxy model bounds, which the grid lines stop at. */
   readonly bounds: Range;
+  /**
+   * The browsable space, which the worst-case label text comes from. A narrower space
+   * carries shorter numbers and therefore larger ones on the screen.
+   */
+  readonly browse: ResolvedBounds;
   /** The background reading, or null while the map has none. */
   readonly background: GridLabelReading | null;
 }
@@ -435,6 +511,12 @@ export function gridLabelPlacements(
   const { view, viewport, spacingLy, bounds } = frame;
   if (spacingLy <= 0) return [];
 
+  // One measurement for the whole frame, of the widest text the bounds allow. The measure
+  // holds each text it reads, so this is one map lookup a frame after the first one.
+  const worst = measure(heldWorstCaseLabelText(frame.browse));
+  if (!(worst.widthPerEm > 0) || !(worst.capPerEm > 0)) return [];
+  const capHeightLy = gridLabelCapHeightLy(spacingLy, worst);
+
   const matrix = viewProjectionMatrix(view, viewport);
   const near = nearPlane(view.distance);
   const halfWidth = viewport.width / 2;
@@ -503,9 +585,9 @@ export function gridLabelPlacements(
       if (alpha < GRID_LABEL_MIN_ALPHA) continue;
 
       const text = crossingLabelText(gameX, view.cursor[1], gameZ);
+      // The label's own reading places its own box. The cap height is the frame's one.
       const reading = measure(text);
       if (!(reading.widthPerEm > 0) || !(reading.capPerEm > 0)) continue;
-      const capHeightLy = gridLabelCapHeightLy(spacingLy, reading);
       // The cap height the label draws at on the screen, which chooses the font size the
       // element is built at. The cap height runs along the game `z` axis.
       const capHeightScreenCss = capHeightLy / Math.max(perPixelZ, 1e-9);

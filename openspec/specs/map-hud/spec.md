@@ -516,7 +516,7 @@ selection. It SHALL hold, in this order:
 
 1. A header with the system's name, a copy button beside the name, and a close button.
 2. A grid of fields: the position in game coordinates with a copy button, the distance
-   from Sol, the range from the camera, the **galactic region**, and then `primaryStar`,
+   from Sol, the range from the cursor, the **galactic region**, and then `primaryStar`,
    `allegiance`, `government`, `primaryEconomy`, `security`, `population` and `bodyCount`. A
    field the record does not carry SHALL be left out, not shown empty. The first four
    fields are worked out from the position and are always shown.
@@ -525,6 +525,9 @@ selection. It SHALL hold, in this order:
 4. The description, when the record carries one.
 5. The images, when the record carries any.
 6. A footer with a **centre view** button and one button per entry of the `actions` option.
+   The button moves the cursor to the system and takes the same bounds clamp a selection
+   takes, which `system-selection` states, so it lands on the nearest allowed cursor where
+   the system lies outside the browsable bounds.
 
 The field grid SHALL hold **two columns**, as the mockup draws it, and the position field
 SHALL carry the mockup's label `POSITION`. A field alone on its row SHALL take both columns,
@@ -563,7 +566,19 @@ SHALL show that value and not the whole number it rounds to.
 a journey, not the identity of a place, and a whole light year is the right resolution for
 them.
 
-The **range from the camera** follows the view, so the panel SHALL rewrite it at most 10
+**`RANGE` SHALL be the distance from the cursor to the system**, and not the distance from
+the camera. The cursor is the point the user aims at; the camera is a point behind them that
+an orbit moves. Under the camera rule the field changed while the user turned the view and
+moved nothing, which read as the system drifting.
+
+**A landed selection therefore reads `0 LY`**, unless browsable bounds hold the cursor
+short of the system. A selection puts the cursor on the system, which `system-selection`
+states, so once the flight ends the range is 0 until the user pans away. Where the system
+lies outside the active bounds the flight lands on the nearest allowed cursor, and the field
+reads what is left of the distance. The field then reports how far the user has moved from the system they selected. The
+owner chose this reading over the camera one with that consequence in front of them.
+
+The **range from the cursor** follows the view, so the panel SHALL rewrite it at most 10
 times a second, by the same rule as the top bar. Every other field changes only with the
 selection.
 
@@ -627,7 +642,7 @@ SHALL NOT let a failure in it stop the frame loop.
 - **WHEN** the browser test adds a record with a name, coordinates, an allegiance, a
   population and a description but no `primaryStar`, selects it, and reads the panel
 - **THEN** the panel is shown, the header holds the name, the grid holds the position, the
-  distance from Sol, the range from the camera, the allegiance and the population, there
+  distance from Sol, the range from the cursor, the allegiance and the population, there
   is no primary star field, and the description is shown
 
 #### Scenario: The position keeps its fraction
@@ -649,9 +664,30 @@ SHALL NOT let a failure in it stop the frame loop.
 - **THEN** both hold a whole number of light years and the unit `LY`, and neither holds a
   decimal point.
 
-  The record sits 103 light years from Sol and the selection holds the camera within 500,
-  so neither field passes 1,000 and neither shows a thousands separator. The separator is
-  what the scenario "The position keeps its fraction" reads, in `-9,530.9375`
+  The record sits 103 light years from Sol, and the flight has not run, so `RANGE` holds the
+  distance from the cursor as it stands. Neither field passes 1,000 and neither shows a
+  thousands separator. The separator is what the scenario "The position keeps its fraction"
+  reads, in `-9,530.9375`
+
+#### Scenario: A landed selection reads a range of zero
+
+- **WHEN** the browser test selects a system, with no browsable bounds set, waits for the
+  selection flight to end, and reads `RANGE`
+- **THEN** it reads `0 LY`
+
+#### Scenario: An orbit does not change the range
+
+- **WHEN** the browser test selects a system, waits for the flight to end, pans the cursor
+  400 light years away, reads `RANGE`, then orbits the camera by 120 degrees of yaw and 40
+  degrees of pitch and reads `RANGE` again
+- **THEN** both readings are `400 LY` within 1 light year
+
+#### Scenario: A zoom does not change the range
+
+- **WHEN** the browser test selects a system, waits for the flight to end, pans the cursor
+  400 light years away, reads `RANGE`, then zooms from 500 to 20,000 light years and reads
+  it again
+- **THEN** both readings are `400 LY` within 1 light year
 
 #### Scenario: The position takes both columns and the two distances share a row
 

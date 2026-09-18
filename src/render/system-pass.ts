@@ -122,11 +122,16 @@ export function glowAlpha(x: number, y: number, radiusCss: number): number {
  * Subtracts the camera position from every system position in `float64` and writes the
  * offset as a `float32`. The third axis runs the other way, because the world frame the
  * shaders draw in has its third axis opposite to the game's.
+ *
+ * With `styleRanges` it also counts the markers the frame draws, against the cursor
+ * offset in that same world frame. The count is the page's reading of the shader's cut,
+ * so the two measure from the same point.
  */
 export function rebasePositions(
   positions: Float64Array,
   count: number,
   camera: readonly [number, number, number],
+  cursorOffset: readonly [number, number, number],
   out: Float32Array,
   styleRanges?: Float32Array,
 ): number {
@@ -156,9 +161,11 @@ export function rebasePositions(
     // which a squared compare against 0 would let in.
     const limit = styleRanges[index * 2 + 1] as number;
     if (limit <= 0) continue;
-    const fx = out[base] as number;
-    const fy = out[base + 1] as number;
-    const fz = out[base + 2] as number;
+    // The cut measures from the cursor, as the shader does. The size still measures from
+    // the camera, and that reading is the offset itself.
+    const fx = (out[base] as number) - cursorOffset[0];
+    const fy = (out[base + 1] as number) - cursorOffset[1];
+    const fz = (out[base + 2] as number) - cursorOffset[2];
     if (fx * fx + fy * fy + fz * fz <= limit * limit) drawn += 1;
   }
   return drawn;
@@ -209,6 +216,13 @@ export interface SystemPassFrame {
   readonly viewProjection: Float32Array;
   /** The camera position in game coordinates. */
   readonly camera: readonly [number, number, number];
+  /**
+   * The cursor in the camera-relative world frame the offsets use, in light years. The
+   * draw-range cut measures from it. `grid-pass.ts` works out an offset of its own from
+   * the cursor and the camera, but that is a different pass and a different frame: this
+   * one runs its third axis the other way, as `rebasePositions` does.
+   */
+  readonly cursorOffset: readonly [number, number, number];
   /** Device pixels per CSS pixel. */
   readonly pixelRatio: number;
   /** The set to draw. */
@@ -226,6 +240,7 @@ export interface SystemPass {
 export function createSystemProgram(gl: WebGL2RenderingContext): Program {
   return createProgram(gl, 'systems', vertexSource, fragmentSource, [
     'uViewProjection',
+    'uCursorOffset',
     'uSizeRanges',
     'uSizeValues',
     'uPixelRatio',
@@ -318,6 +333,7 @@ export function createSystemPass(
         frame.set.positions,
         count,
         frame.camera,
+        frame.cursorOffset,
         offsets,
         styleRanges,
       );
@@ -347,6 +363,12 @@ export function createSystemPass(
         MARKER_SIZE_VALUES[1],
         MARKER_SIZE_VALUES[2],
         MARKER_SIZE_VALUES[3],
+      );
+      gl.uniform3f(
+        program.uniforms['uCursorOffset'] ?? null,
+        frame.cursorOffset[0],
+        frame.cursorOffset[1],
+        frame.cursorOffset[2],
       );
       gl.uniform1f(program.uniforms['uPixelRatio'] ?? null, frame.pixelRatio);
       gl.uniform1f(program.uniforms['uRingCss'] ?? null, RING_CSS_PIXELS);

@@ -14,8 +14,9 @@ precision highp float;
 in vec2 vNdc;
 
 uniform mat4 uInverseViewProjection;
-// The height of the plane above the camera, in the world frame. It is never positive,
-// because the camera sits above the cursor at every pitch the map allows.
+// The height of the plane above the camera, in the world frame. It is negative while the
+// camera is above the plane and positive while the camera is under it, because the pitch
+// runs from -89 to 89 degrees.
 uniform float uPlaneY;
 // The cursor on the plane, minus the camera, in game coordinates.
 uniform vec2 uCursorOffset;
@@ -71,12 +72,17 @@ void main() {
   vec4 nearPoint = uInverseViewProjection * vec4(vNdc, -1.0, 1.0);
   vec3 dir = nearPoint.xyz / nearPoint.w;
 
-  // A ray that does not point down misses the plane. The floor holds the divide finite
-  // and the reach clamp puts the miss outside the model bounds, where the test below
-  // drops it.
-  float denom = min(dir.y, -1e-6);
+  // The ray meets the plane where `dir.y * t` is `uPlaneY`. A camera above the plane is
+  // met by a downward ray and a camera under it by an upward one, so the divide takes
+  // either sign. The floor holds it finite; it is written out rather than taken from
+  // `sign`, because GLSL `sign(0.0)` is 0 and would divide by zero. A negative `t` is a
+  // ray pointing away from the plane, which misses it: the reach clamp puts that miss
+  // outside the model bounds, where the test below drops it.
+  float denom = dir.y;
+  float safe = abs(denom) < 1e-6 ? (denom < 0.0 ? -1e-6 : 1e-6) : denom;
   float reach = MAX_REACH / max(length(dir), 1e-6);
-  float along = min(uPlaneY / denom, reach);
+  float t = uPlaneY / safe;
+  float along = t > 0.0 ? min(t, reach) : reach;
   vec3 hit = dir * along;
 
   // The world frame negates z against the game frame, so the plane point in game

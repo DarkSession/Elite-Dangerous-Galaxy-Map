@@ -54,6 +54,24 @@ describe('the projection', () => {
     }
   });
 
+  // The scenario "The camera under the plane looks at the cursor" of `map-navigation`.
+  test('looks at the cursor from under the plane', () => {
+    const view: View = {
+      cursor: [1000, 0, -2000],
+      distance: 4000,
+      yaw: 30,
+      pitch: -45,
+    };
+    const camera = cameraPosition(view);
+    console.log('the camera under the plane sits at', camera);
+
+    expect(camera[1]).toBeLessThan(view.cursor[1]);
+    const screen = project(view, view.cursor, viewport);
+    expect(Math.abs(screen.x - viewport.width / 2)).toBeLessThan(1);
+    expect(Math.abs(screen.y - viewport.height / 2)).toBeLessThan(1);
+    expect(screen.inFront).toBe(true);
+  });
+
   test('draws the galactic centre above Sol at the default view', () => {
     const view = createDefaultView();
     const sol = project(view, [0, 0, 0], viewport);
@@ -138,7 +156,8 @@ describe('the near plane', () => {
   // 10 light years would clip it at the closest zoom.
   test('never clips the cursor, at any zoom distance and either pitch limit', () => {
     const viewport = { width: 1920, height: 1080 };
-    for (const pitch of [5, 89]) {
+    // The limits are -89 and 89 degrees, and 0 is the plane the camera passes through.
+    for (const pitch of [-89, 0, 89]) {
       let distance = MAX_DISTANCE;
       let steps = 0;
       for (;;) {

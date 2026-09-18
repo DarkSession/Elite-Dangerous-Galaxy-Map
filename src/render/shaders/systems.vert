@@ -11,6 +11,9 @@ layout(location = 1) in vec3 aCore;
 layout(location = 2) in vec2 aStyleRange;
 
 uniform mat4 uViewProjection;
+// The cursor in the same camera-relative frame as `aOffset`, in light years. The draw
+// range is measured from it and not from the camera.
+uniform vec3 uCursorOffset;
 // The four ranges of the size stop table, in light years, in rising order.
 uniform vec4 uSizeRanges;
 // The CSS diameter of the marker at each of those four ranges.
@@ -48,12 +51,18 @@ float discCssSize(float range) {
 }
 
 void main() {
+  // The two ranges are different readings and the code below must not confuse them.
+  // `range` is the distance to the eye and drives the size, because perspective is a
+  // fact about the eye. `cursorRange` is the distance to the point the user looks at and
+  // drives the cut, because an orbit moves the camera and not the cursor: a marker must
+  // not appear or vanish while the user turns around the same point.
   float range = length(aOffset);
-  // A marker draws only while the camera is inside the draw range of its own category.
+  float cursorRange = length(aOffset - uCursorOffset);
+  // A marker draws only while the cursor is inside the draw range of its own category.
   // A range of 0 is the marker the category switch or the name filter took off.
   // A clip-space z over w of 2 is behind the far plane, so the point is clipped and no
   // fragment is written. The cut does not fade: a marker draws in full or not at all.
-  if (aStyleRange.y <= 0.0 || range > aStyleRange.y) {
+  if (aStyleRange.y <= 0.0 || cursorRange > aStyleRange.y) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     return;

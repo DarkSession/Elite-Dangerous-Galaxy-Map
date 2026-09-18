@@ -650,6 +650,13 @@ export function createRenderer(
       systemMarkers = systemPass.draw({
         viewProjection: viewProjection as Float32Array,
         camera,
+        // The cursor in the camera-relative world frame, whose third axis runs the other
+        // way to the game's. The draw-range cut measures from this point.
+        cursorOffset: [
+          view.cursor[0] - camera[0],
+          view.cursor[1] - camera[1],
+          camera[2] - view.cursor[2],
+        ],
         pixelRatio,
         set: systemSet,
       });

@@ -55,6 +55,10 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * the room the 200,000 bound gave when it was set. The guard still holds: a chunk that
  * pulled the region cell table in reads over 370,000 bytes, which is far above any of
  * these figures.
+ *
+ * The free camera and the host controls take the reading to 236,815 bytes and leave the
+ * bound where it is, with 17.2 kB of room. A bound that follows every reading upward
+ * guards less each time, and 17.2 kB still fails on the one fault the guard is for.
  */
 const ENTRY_CHUNK_LIMIT = 254_000;
 
@@ -114,6 +118,12 @@ const PUBLIC_TYPES = [
   'Line',
   'ShapeReport',
   'ShapeReject',
+  'StartView',
+  'FlyToTarget',
+  'FlyToOptions',
+  'FlightOutcome',
+  'BrowseBounds',
+  'InteractionSwitches',
 ];
 
 /**
@@ -389,8 +399,18 @@ describe('the library build', () => {
       pathToFileURL(entry).href
     )) as Record<string, unknown>;
     expect(typeof library['createGalaxyMap']).toBe('function');
-    // The barrel exports one value and the rest are types, which carry no run-time name.
-    expect(Object.keys(library).sort()).toEqual(['createGalaxyMap']);
+    // The barrel exports four values and the rest are types, which carry no run-time name.
+    expect(Object.keys(library).sort()).toEqual([
+      'createGalaxyMap',
+      'decodeGrid',
+      'decodeView',
+      'encodeView',
+    ]);
+    // The three view calls are pure, so the test reads one through the built module.
+    const encode = library['encodeView'] as (view: unknown) => string;
+    expect(encode({ cursor: [1, 2, 3], distance: 400, yaw: 10, pitch: 20 })).toBe(
+      'c=1,2,3&d=400&p=20&y=10',
+    );
   });
 
   // The test runs `tsc` once for the file that reads every public type and once for each

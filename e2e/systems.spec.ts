@@ -49,6 +49,27 @@ function atRange(
   ];
 }
 
+/**
+ * A point at an exact range from the **cursor**, near the middle of the screen.
+ *
+ * The draw-range cut measures from the cursor, so a test of the cut places its systems
+ * with this and not with `atRange`. The point sits between the cursor and the camera, so
+ * a view whose distance is above `range` holds it in front of the near plane.
+ */
+function atCursorRange(
+  cursor: readonly [number, number, number],
+  range: number,
+  lateral = 0,
+): [number, number, number] {
+  const pitch = (PITCH * Math.PI) / 180;
+  const along = Math.sqrt(Math.max(0, range * range - lateral * lateral));
+  return [
+    cursor[0] + lateral,
+    cursor[1] + Math.sin(pitch) * along,
+    cursor[2] - Math.cos(pitch) * along,
+  ];
+}
+
 /** A record the reader accepts. */
 function record(
   name: string,
@@ -101,18 +122,20 @@ async function setView(
   page: Page,
   cursor: readonly [number, number, number],
   distance: number,
+  yaw = 0,
+  pitch = PITCH,
 ): Promise<void> {
   await page.evaluate(
     (next) => {
       window.galaxyMap?.setView({
         cursor: next.cursor as [number, number, number],
         distance: next.distance,
-        yaw: 0,
-        pitch: 35,
+        yaw: next.yaw,
+        pitch: next.pitch,
       });
       window.galaxyMap?.debug.drawNow();
     },
-    { cursor, distance },
+    { cursor, distance, yaw, pitch },
   );
 }
 
@@ -1261,18 +1284,20 @@ test.describe('the glow', () => {
 
 test('a marker outside its range does not draw', async ({ page }) => {
   const where: [number, number, number] = [0, 0, 0];
-  await openMap(page, '#c=0,0,0&d=1500&p=35&y=0');
+  await openMap(page, '#c=0,0,0&d=6000&p=35&y=0');
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 2000 }]);
   await addSystems(page, [record('Sol', where, 'Empire')]);
 
+  // The cursor moves and the zoom holds, because the cut measures from the cursor. The
+  // 6,000 light year view holds the system on the screen at both cursor ranges.
   const readings: Record<string, [number, number, number, number][]> = {};
-  for (const distance of [1500, 2500]) {
-    await setView(page, where, distance);
+  for (const range of [1500, 2500]) {
+    await setView(page, [range, 0, 0], 6000);
     await setPasses(page, { systems: true });
     const on = await pixelAt(page, where);
     await setPasses(page, { systems: false });
     const off = await pixelAt(page, where);
-    readings[String(distance)] = [on, off];
+    readings[String(range)] = [on, off];
   }
   console.log('the range cut', readings);
 
@@ -1282,15 +1307,16 @@ test('a marker outside its range does not draw', async ({ page }) => {
 
 test('the range follows each system and not the zoom', async ({ page }) => {
   const cursor: [number, number, number] = [0, 0, 0];
-  const near = atRange(cursor, 1000, 1000);
-  const far = atRange(cursor, 1000, 5000, 800);
-  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  const near = atCursorRange(cursor, 1000);
+  const far = atCursorRange(cursor, 5000, 800);
+  await openMap(page, '#c=0,0,0&d=6000&p=35&y=0');
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 3000 }]);
   await addSystems(page, [
     record('Near', near, 'Empire'),
     record('Far', far, 'Empire'),
   ]);
-  await setView(page, cursor, 1000);
+  // One frame, two cursor ranges: 1,000 and 5,000 against a cut of 3,000.
+  await setView(page, cursor, 6000);
 
   await setPasses(page, { systems: true });
   const nearOn = await pixelAt(page, near);
@@ -1317,11 +1343,19 @@ test('the cut does not fade', async ({ page }) => {
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 5000 }]);
   await addSystems(page, [record('Sol', where, 'Empire')]);
 
-  // The system sits at the cursor, so the zoom distance is the camera range and the
-  // marker stays at the middle of the screen at every one of the three readings.
+  // The three readings hold the camera range at 1,000 light years and move the cursor
+  // range alone, so the marker keeps one size at the middle of the screen while the cut
+  // comes nearer. The cursor rides the view axis, which is where a point projects to the
+  // middle of the frame.
+  const pitch = (PITCH * Math.PI) / 180;
   const readings: [number, number, number, number][] = [];
   for (const range of [1000, 3000, 4900]) {
-    await setView(page, where, range);
+    const cursor: [number, number, number] = [
+      0,
+      -Math.sin(pitch) * range,
+      Math.cos(pitch) * range,
+    ];
+    await setView(page, cursor, range + 1000);
     readings.push(await pixelAt(page, where));
   }
   console.log('the readings up to the cut', readings);
@@ -1341,8 +1375,10 @@ test('a changed range changes what draws', async ({ page }) => {
   await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 1000 }]);
   const records: SystemRecordInput[] = [];
   for (let index = 0; index < 100; index += 1) {
+    // The spread is in cursor range, which is what the cut reads. The count comes from
+    // the draw loop and not from the screen, so a system off the frame still counts.
     const range = 500 + (index * 4500) / 99;
-    records.push(record(`S${index}`, atRange(cursor, 1000, range), 'Empire'));
+    records.push(record(`S${index}`, [range, 0, 0], 'Empire'));
   }
   expect((await addSystems(page, records)).added).toBe(100);
 
@@ -1363,11 +1399,101 @@ test('a changed range changes what draws', async ({ page }) => {
   expect(all).toBe(100);
 });
 
+// The scenario "An orbit does not change what draws".
+test('an orbit does not change what draws', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 2000 }]);
+  const records: SystemRecordInput[] = [];
+  for (let index = 0; index < 200; index += 1) {
+    const range = 500 + (index * 4500) / 199;
+    records.push(record(`S${index}`, [range, 0, 0], 'Empire'));
+  }
+  expect((await addSystems(page, records)).added).toBe(200);
+
+  const countAt = async (yaw: number, pitch: number): Promise<number> => {
+    await setView(page, cursor, 1000, yaw, pitch);
+    return page.evaluate(() => window.galaxyMap?.debug.systemMarkerCount() ?? -1);
+  };
+  const before = await countAt(0, 35);
+  const after = await countAt(120, 75);
+  console.log('the count across an orbit', { before, after });
+
+  // The orbit moves the camera and leaves the cursor, so the frame draws the same set.
+  expect(before).toBeGreaterThan(0);
+  expect(before).toBeLessThan(200);
+  expect(after).toBe(before);
+});
+
+// The scenario "A zoom does not change what draws".
+test('a zoom does not change what draws', async ({ page }) => {
+  const cursor: [number, number, number] = [0, 0, 0];
+  await openMap(page, '#c=0,0,0&d=100&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE, maxDrawRange: 2000 }]);
+  const records: SystemRecordInput[] = [];
+  for (let index = 0; index < 200; index += 1) {
+    const range = 500 + (index * 4500) / 199;
+    records.push(record(`S${index}`, [range, 0, 0], 'Empire'));
+  }
+  expect((await addSystems(page, records)).added).toBe(200);
+
+  const countAt = async (distance: number): Promise<number> => {
+    await setView(page, cursor, distance);
+    return page.evaluate(() => window.galaxyMap?.debug.systemMarkerCount() ?? -1);
+  };
+  const close = await countAt(100);
+  const far = await countAt(20000);
+  console.log('the count across a zoom', { close, far });
+
+  expect(close).toBeGreaterThan(0);
+  expect(close).toBeLessThan(200);
+  expect(far).toBe(close);
+});
+
+// The scenario "The default view draws every marker". The old camera rule cut a band of
+// the outer disk at this view.
+test('the default view draws every marker', async ({ page }) => {
+  await openMap(page, '#c=0,0,0&d=60000&p=35&y=0');
+  await addCategories(page, [{ name: 'Empire', color: CORE }]);
+  const records: SystemRecordInput[] = [];
+  const random = (seed: number): number => {
+    const value = Math.sin(seed * 12.9898) * 43758.5453;
+    return value - Math.floor(value);
+  };
+  for (let index = 0; index < 1000; index += 1) {
+    const angle = random(index + 1) * Math.PI * 2;
+    const radius = 1000 + random(index + 501) * 40000;
+    records.push(
+      record(
+        `S${index}`,
+        [
+          Math.cos(angle) * radius,
+          (random(index + 1001) - 0.5) * 400,
+          25895 + Math.sin(angle) * radius,
+        ],
+        'Empire',
+      ),
+    );
+  }
+  expect((await addSystems(page, records)).added).toBe(1000);
+  await setView(page, [0, 0, 0], 60000);
+  const count = await page.evaluate(
+    () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+  );
+  console.log('the default view count', count);
+
+  // The furthest of these systems is about 67,000 light years from Sol, well inside the
+  // 120,000 light year default.
+  expect(count).toBe(1000);
+});
+
 test('two categories cut at their own ranges in one frame', async ({ page }) => {
   const cursor: [number, number, number] = [0, 0, 0];
-  const nearRange = atRange(cursor, 1000, 2000, -400);
-  const farRange = atRange(cursor, 1000, 2000, 400);
-  await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+  // Both systems sit 2,000 light years from the cursor, so only the category range tells
+  // them apart. The 3,000 light year view holds both on the screen.
+  const nearRange = atCursorRange(cursor, 2000, -400);
+  const farRange = atCursorRange(cursor, 2000, 400);
+  await openMap(page, '#c=0,0,0&d=3000&p=35&y=0');
   await addCategories(page, [
     { name: 'Short', color: CORE, maxDrawRange: 1000 },
     { name: 'Long', color: CORE, maxDrawRange: 120000 },
@@ -1376,7 +1502,7 @@ test('two categories cut at their own ranges in one frame', async ({ page }) => 
     record('Short', nearRange, 'Short'),
     record('Long', farRange, 'Long'),
   ]);
-  await setView(page, cursor, 1000);
+  await setView(page, cursor, 3000);
 
   await setPasses(page, { systems: true });
   const shortOn = await pixelAt(page, nearRange);
@@ -1595,10 +1721,11 @@ test.describe('the category switch and the name filter', () => {
   });
 
   test('the style and the range follow the drawn category', async ({ page }) => {
-    // The system sits 1,000 light years from the camera. `Alpha` cuts a marker at 200, so
-    // nothing draws while `Alpha` is the drawn category, and `Beta` reaches 20,000.
-    const where = atRange(DARK_SPACE, 1000, 1000);
-    await openMap(page, '#c=40015,20000,25895&d=1000&p=35&y=0');
+    // The system sits 1,000 light years from the cursor and 1,000 from the camera, at the
+    // middle of a 2,000 light year view. `Alpha` cuts a marker at 200, so nothing draws
+    // while `Alpha` is the drawn category, and `Beta` reaches 20,000.
+    const where = atCursorRange(DARK_SPACE, 1000);
+    await openMap(page, '#c=40015,20000,25895&d=2000&p=35&y=0');
     await setPasses(page, {
       volume: false,
       clouds: false,
@@ -1615,7 +1742,7 @@ test.describe('the category switch and the name filter', () => {
     await addSystems(page, [
       { ...record('Both', where, 'Alpha'), secondaryCategories: ['Beta'] },
     ]);
-    await setView(page, DARK_SPACE, 1000);
+    await setView(page, DARK_SPACE, 2000);
 
     const markerCount = async (): Promise<number> =>
       page.evaluate(() => window.galaxyMap?.debug.systemMarkerCount() ?? -1);

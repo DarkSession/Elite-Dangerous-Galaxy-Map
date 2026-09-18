@@ -58,13 +58,32 @@ projects, as every pass of the renderer does.
   sides of the camera does not project to one quadrilateral, and a homography solved
   through such a corner wraps the element across the frame;
 - the projected quad is turned away from the camera, which its signed area on the screen
-  reports. The camera sits above the cursor at every pitch the map allows, so a plane
-  element is normally face-on; a quad that reads the other way is behind the horizon;
+  reports **compared against the side of the plane the camera is on**. Let `side` be the
+  camera's `y` less the element's plane `y`. The element SHALL be dropped where
+  `area * side` is not above 0. Seen from above the plane a face-on element reads a
+  positive area, and seen from under it the same element reads a negative one, so a fixed
+  sign would drop every element under the plane. A quad that reads the other way for its
+  side is behind the horizon.
+
+  **The camera no longer sits above the cursor at every pitch.** The pitch runs from -89
+  to 89 degrees, which `map-navigation` states, so the camera reaches either side of the
+  plane. At a `side` of exactly 0 the camera lies in the plane, every element is edge-on,
+  `area * side` is 0, and every element is dropped. That is right and needs no rule of its
+  own;
 - the projected quad's screen bounding box lies wholly outside the viewport;
 - the homography is singular, which three collinear projected corners give. The element
   then has no area on the screen and nothing to draw.
 
 A drop SHALL leave the element out of the overlay and SHALL NOT throw.
+
+**A plane element SHALL be turned to face the reader under the plane.** An element lies on
+the plane, so a reader under it sees its face from behind and any text on it runs backwards.
+Where the camera's `side` is below 0 the placement SHALL solve the homography with the
+element's own corners taken to the same four plane corners with the **height axis reversed**,
+which paints the element on the other face of the plane. The element still lies flat on the
+plane, its screen bounding box does not change, and it reads the same way round from either
+side. The turn happens as the pitch crosses 0, where every element is dropped, so no frame
+shows it part way through.
 
 **The overlap test of a plane element SHALL use its screen bounding box**, the axis-aligned
 box of its four projected corners. A plane element is not an upright rectangle on the
@@ -125,3 +144,24 @@ and a write of a value an element already carries is a DOM change the browser re
 - **WHEN** a unit test places the same element twice with an unchanged view, counting the
   style writes
 - **THEN** the second placement writes no style property
+
+#### Scenario: An element is kept from under the plane
+
+- **WHEN** a unit test places the same plane element at a pitch of **-45 degrees** and at
+  **+45 degrees**, at the same zoom and yaw
+- **THEN** both placements are returned, and the two screen bounding boxes agree in width
+  within 2 per cent
+
+#### Scenario: An element is turned to face the reader under the plane
+
+- **WHEN** a unit test places the same plane element at -45 degrees and at +45 degrees and
+  reads which projected plane corner the element's own top left maps to
+- **THEN** the two are different corners of the same rectangle, and the screen bounding
+  boxes still agree in width within 2 per cent
+
+#### Scenario: An element is dropped in the plane
+
+- **WHEN** a unit test places a plane element at a pitch of **0 degrees**, where the camera
+  lies in the element's own plane
+- **THEN** the placement returns null and does not throw
+
