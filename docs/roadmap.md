@@ -1008,6 +1008,22 @@ with a budget on the paint cost, and shows a system position to the exact game s
   derive from the map's internals, and which would still blur in every frame of every
   move.
 
+- **The panel blur rise spans 1.804 to 2.907 ms over 22 readings.** Each reading is the
+  mean of 180 blurred frames less the mean of 180 flat frames, over the view and the move
+  the budget states. The mean of the 22 is 2.36 ms, the standard deviation is 0.325 ms,
+  and three of them are below 2 ms, so a floor of 2 ms fails about one run in seven. The
+  rise is a difference of two noisy means, and a machine that gets slower between the flat
+  run and the blurred run adds its drift on top. The test therefore takes four pairs, each
+  pair one flat move and one blurred move beside it, two of them in each order, and reads
+  the median of the four rises. The blur cost follows the blurred area on the screen, so a
+  run records the panel boxes beside each rise.
+
+- **The median of four pairs reads 2.106 to 2.993 ms over 24 runs.** Its spread is
+  0.341 ms, against 0.389 ms for the 96 single pairs those runs are built from, so the
+  pairing buys about 12 per cent. 7 of the 96 single pairs fall below 2 ms, and none of the
+  24 medians does. The floor is 1.5 ms, which the rule sets at the smallest reading less
+  0.3 ms. The readings come from the HUD whose panel boxes are 316x808 and 316x168.
+
 - **The position shows five decimal places.** The game resolves a position to 1/32 of a
   light year, which is 0.03125. Five places in base ten reproduce every such value
   exactly; four still round the odd steps, and the three places the panel had read
@@ -1167,6 +1183,13 @@ size.
   falls with the bound: it is the radius over the sine of half the field of view, about
   twice the radius, held between 10 and 120,000 light years. The three modes resolve to
   two shapes, a box and a sphere, so no clamp knows which mode the host asked for.
+
+- **The far zoom limit is `2 * R` in exact arithmetic and a little over it in doubles.**
+  `sin(30 degrees)` reads 0.49999999999999994 in a double, so `R / sin(30 degrees)` lands
+  a few parts in 10^16 above `2 * R`: a radius of 1,000 gives 2000.0000000000002 and a
+  radius of 3,000 gives 6000.000000000001. A test reads the limit with a tolerance, or
+  against a value it works out the same way. An exclusive bound on the round number fails
+  on a value the limit is meant to reach.
 
 - **The host drives the camera through the handle.** `flyTo` takes a cursor or a system,
   a distance, a yaw and a pitch, and settles `landed` or `interrupted`. `getBounds` and
