@@ -237,7 +237,11 @@ fall back to **SYSTEMS** where the shown tab is **SHAPES** and the last shape go
 a dataset switch does.
 
 One table holds the categories of the systems and of the shapes, which `map-shapes`
-states, so the two tabs are two readings of one table and not two tables. The **SYSTEMS**
+states, so the two tabs are two readings of one table and not two tables. A category holds
+**two** visibility flags, one for its systems and one for its shapes, which `map-shapes`
+also states. **Each tab reads and writes the flag of its own kind alone.** The same
+category can therefore read on in one tab and off in the other, and a user who clears the
+shapes of a category keeps its markers. The **SYSTEMS**
 tab SHALL hold one row per category that holds at least one system, and the **SHAPES** tab
 one row per category that holds at least one shape, each in the order the table holds them.
 A category that holds neither SHALL have no row in either tab: a row that counts nothing
@@ -249,16 +253,22 @@ category **or** any secondary category. A system or a shape that belongs to thre
 categories is counted in all three rows.
 
 **The dot switches the category and the rest of the row opens the list.** A click on the
-dot SHALL call `setCategoryVisible` with the opposite of what the row holds. A click
+dot SHALL call the setter of the shown tab's kind with the opposite of what the row holds:
+`setCategoryVisible` in the **SYSTEMS** tab and `setShapeCategoryVisible` in the **SHAPES**
+tab. A click
 anywhere else on the row SHALL open the row's list, or fold it when it is open. The two
 jobs took one button and a second small button before, and a user who wanted the list
 switched the category off instead.
 
-A row of a category that is off SHALL show it: its dot is hollow and its name is dimmed.
+A row of a category that is off **for the kind of the shown tab** SHALL show it: its dot is
+hollow and its name is dimmed. A row reads the flag of its own tab, so the row of a
+category in the other tab is unmoved.
 
 The panel SHALL hold an **ALL** button and a **NONE** button, which turn every category
-**the shown tab lists** on and off together. A category the tab does not list SHALL NOT
-move: the buttons act on what the user can see.
+**the shown tab lists** on and off together, **for the kind of that tab alone**. A category
+the tab does not list SHALL NOT move: the buttons act on what the user can see. A category
+that holds both kinds SHALL keep the flag of the kind the tab does not show, so **NONE** in
+the **SHAPES** tab leaves every marker on the screen.
 
 A category's `description`, which `real-systems` already carries, SHALL be the row's
 `title`, so the browser shows it as a tooltip.
@@ -333,6 +343,22 @@ changed. The table holds at most 256 categories, so the panel holds at most 256 
   sphere in `B`, clicks **NONE** in the **SYSTEMS** tab, and reads `isCategoryVisible` of
   both
 - **THEN** `A` reads `false` and `B` reads `true`
+
+#### Scenario: NONE in the shapes tab leaves the systems
+
+- **WHEN** the browser test adds one category holding one system and one sphere, clicks
+  **SHAPES**, clicks **NONE**, draws a frame, and reads the marker count,
+  `isCategoryVisible` and `isShapeCategoryVisible` of that category
+- **THEN** the marker count is 1, `isCategoryVisible` is `true` and
+  `isShapeCategoryVisible` is `false`
+
+#### Scenario: A row reads the flag of its own tab
+
+- **WHEN** the browser test adds one category holding one system and one sphere, clicks the
+  dot of its row in the **SYSTEMS** tab, clicks **SHAPES** and reads the row, then clicks
+  the dot there, clicks **SYSTEMS** and reads the row again
+- **THEN** the **SHAPES** row reads on while the **SYSTEMS** row is off, and the
+  **SYSTEMS** row still reads off after the shape dot moved
 
 ### Requirement: The search box filters the systems by name
 
@@ -494,12 +520,13 @@ The list was capped at 210 CSS pixels, which is a quarter of the 807 pixel panel
 the list alone. Where the reader asks for reduced motion, through `prefers-reduced-motion`,
 the list SHALL take its open state and its folded state at once, with no movement.
 
-A click on a **system** row SHALL select that system and turn the row's category on if it
-is off. The selection centres the camera on it and caps the distance at 500 light years,
-which `system-selection` states, so the row needs no move of its own.
+A click on a **system** row SHALL select that system and turn the row's category on **for
+systems** if it is off. The selection centres the camera on it and caps the distance at
+500 light years, which `system-selection` states, so the row needs no move of its own.
 
-A click on a **shape** row SHALL turn the row's category on if it is off and SHALL fly the
-camera to the shape: the cursor to the shape's `centre` and the distance to **twice its
+A click on a **shape** row SHALL turn the row's category on **for shapes** if it is off,
+and SHALL leave the systems of that category where they are. It SHALL fly the camera to
+the shape: the cursor to the shape's `centre` and the distance to **twice its
 `reach`**, which `map-shapes` defines, with the yaw and the pitch unchanged. Half the field
 of view is 30 degrees, so twice the reach is the distance at which the shape fills the
 frame. The distance SHALL take the zoom limits and the browsable bounds a flight already
@@ -571,8 +598,8 @@ never selected.
 
 #### Scenario: A shape row turns its category back on
 
-- **WHEN** the browser test clicks the dot of a shape category, reads
-  `isCategoryVisible`, clicks the row to open the list, clicks the first shape row and
+- **WHEN** the browser test clicks the dot of a shape category in the **SHAPES** tab, reads
+  `isShapeCategoryVisible`, clicks the row to open the list, clicks the first shape row and
   reads it again
 - **THEN** the readings are `false` and `true`
 

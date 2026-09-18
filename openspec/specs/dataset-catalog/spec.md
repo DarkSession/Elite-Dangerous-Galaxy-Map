@@ -269,7 +269,7 @@ carry a `systemCount` and their `load` SHALL import one JSON file the build wrot
 | `guardian-ruins`      | `guardian_ruins.json`      | 600 sites in 212 systems, 3 categories by layout    |
 | `guardian-structures` | `guardian_structures.json` | 209 sites in 163 systems, 10 categories by site type |
 | `notable-systems`     | `notable_systems.json`     | 16 systems, 4 categories by subject                 |
-| `uia`                 | `MapData-UIA.js` and two more | 1,116 systems, 18 categories, **54 spheres**, **983 lines** of 2,214 points |
+| `uia`                 | `MapData-UIA.js` and two more | 1,116 systems, 19 categories, **54 spheres**, **983 lines** of 2,214 points |
 | `adamastor`           | `MapData-Adamastor.js`     | 8 systems, 10 categories, **8 lines** of 38 points |
 | `multifaction`        | the Spansh factions dump and `MapData-multifaction.js` | fetched live, 6 categories, **48 spheres** |
 
@@ -303,19 +303,28 @@ category the set does not hold, so a converter that wrote only the record catego
 lose every shape that names a route category. The Adamastor set shows it: its 8 routes name
 7 categories, 6 of which no record names, so the set reads **10** categories where it read
 4. Its SYSTEMS tab still lists 4, because the other 6 hold no record, and its SHAPES tab
-lists 7. The UIA set is unchanged at 18, because every category its shapes name is already
-one its records name.
+lists 7. The UIA set reads **19** categories where it read 18. Every category its shapes
+name is one its records name, except the one the converter adds for the `g_soi` sphere,
+which no record names.
 
 **Every shape SHALL name the category its source gives it**, so the **SHAPES** tab of the
 category browser switches it, which `map-hud` states. The rules are:
 
 - A **sphere** SHALL take the marker category of its own list, which `formatHDs` gives the
   record it pushes at the centre of the sphere: `Permit Locked Centers` for `pls`,
-  `Permit Unlocked Centers` for `puls` and `Thargoid Systems` for `hd_soi`. The `g_soi`
-  sphere SHALL name no category, because the source pushes no record for it and there is
-  no category to name. A sphere SHALL keep its own `color`, which is its material's
+  `Permit Unlocked Centers` for `puls` and `Thargoid Systems` for `hd_soi`. A sphere SHALL
+  keep its own `color`, which is its material's
   colour, so the shell keeps the reading the source gives it and the row's dot keeps the
   marker colour of that category.
+- **The `g_soi` sphere SHALL name the category `Gamma Velorum Zone`**, which the converter
+  adds to the table it writes, in the colour `000099` of that list's material. The source
+  pushes no marker record for `g_soi`, so its list has no marker category to take, and a
+  sphere that names no category always draws and has no row, which `map-shapes` states. The
+  converter therefore adds one category the source table does not hold, as it already adds
+  the eight `UIA#N` categories. The category holds one shape and no record, so it has a row
+  in the **SHAPES** tab and none in the **SYSTEMS** tab, and the user can turn the shell
+  off. The name is the label the source gives the list. The sphere keeps the name
+  `Gamma Velorum`, which is the name of the star and not of the zone.
 - A **line** SHALL take the category its `routes` entry names as its `primaryCategory` and
   the rest of that entry's categories as its `secondaryCategories`. A line SHALL then
   carry **no `color`**, because the colour it took was that category's colour and
@@ -343,6 +352,9 @@ the `systems` list:
   | `puls`   | Permit-unlocked sectors | 20    | shader tint (1.0,0.75,0.1)| (255,191,26)  |
   | `hd_soi` | Hyperdiction zones      | 5     | `0x336600`                | (51,102,0)    |
   | `g_soi`  | The Gamma Velorum zone  | 1     | `0x000099`                | (0,0,153)     |
+
+  The `g_soi` row is the only list whose colour reaches a category as well as a sphere,
+  because it is the only one whose category the converter writes itself.
 
   **The opacity does not come across.** The source draws a lit surface at an opacity of
   0.75, 0.75, 0.3 and 0.15. This map draws a limb-brightened shell, whose alpha is the
@@ -477,7 +489,7 @@ already published in the Canonn repository under the MIT licence, and
 `hd_soi` into the systems list, in the categories `Permit Locked Centers`,
 `Permit Unlocked Centers` and `Thargoid Systems`. The converter SHALL do the same, so a
 sphere carries a marker at its centre as the live map does. `g_soi` gets no record, as the
-source gives it none.
+source gives it none. Its category therefore holds one shape and no system.
 
 **One name SHALL give one record.** A waypoint is also an end of a hyperdiction, two
 hyperdictions share an end, and a sphere sits on a waypoint, so the same name reaches the
@@ -528,7 +540,7 @@ shapes, so an entry that carries none leaves the map with none.
 - **WHEN** the browser test loads each of the five committed entries in turn and reads
   `systemCount`, `categoryCount()`, `sphereCount()` and `lineCount()` after each
 - **THEN** the readings are 212, 3, 0, 0; then 163, 10, 0, 0; then 16, 4, 0, 0; then
-  1,116, 18, 54, 983; then 8, 10, 0, 8
+  1,116, 19, 54, 983; then 8, 10, 0, 8
 
 #### Scenario: A switch away from a shape set clears the shapes
 
@@ -574,8 +586,9 @@ shapes, so an entry that carries none leaves the map with none.
 
 - **WHEN** the browser test loads `uia` and reads `getShapeInfo` for every sphere and every
   line
-- **THEN** 53 of the 54 spheres name a primary category, the `Gamma Velorum` sphere names
-  none, every line names a primary category, and no line carries a colour of its own
+- **THEN** every one of the 54 spheres names a primary category, the `Gamma Velorum` sphere
+  names `Gamma Velorum Zone`, every line names a primary category, and no line carries a
+  colour of its own
 
 #### Scenario: A line names itself and not its category
 
@@ -583,6 +596,13 @@ shapes, so an entry that carries none leaves the map with none.
   hyperdiction line and one waypoint line
 - **THEN** the first reads `<system> to <destination>` and the second names the category
   and the table, and neither is the bare category name
+
+#### Scenario: The Gamma Velorum category holds a shape and no system
+
+- **WHEN** the browser test loads `uia`, reads the rows of the **SYSTEMS** tab and the rows
+  of the **SHAPES** tab, and reads the count of the `Gamma Velorum Zone` row
+- **THEN** the **SYSTEMS** tab has no row for that category, the **SHAPES** tab has one,
+  and the count is 1
 
 ### Requirement: The multifaction set fetches its records when the user loads it
 

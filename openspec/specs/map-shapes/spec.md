@@ -26,9 +26,10 @@ The handle SHALL carry these members:
 
 A shape MAY carry **categories**, which name entries of the table `addCategories` fills.
 One table holds the categories of the systems and of the shapes, so a category may hold
-systems, shapes or both, and `setCategoryVisible` reaches every one of them. A shape that
-names no category draws always and is in no row of the category browser, which is the map
-every host has today.
+systems, shapes or both. A category holds **two** visibility flags, one for its systems and
+one for its shapes. `setCategoryVisible` reaches the systems of a category and
+`setShapeCategoryVisible` reaches its shapes. A shape that names no category draws always
+and is in no row of the category browser, which is the map every host has today.
 
 **A sphere** SHALL carry:
 
@@ -56,8 +57,8 @@ every host has today.
 
 **`color` is required for a shape that names no category.** A shape that names a category
 MAY leave it out, and SHALL then draw in the colour of the first category it names that is
-on, by the order and the rule the requirement "A shape draws when a category it names is
-on" states. A shape that carries a `color` SHALL draw in that colour whatever its
+on **for shapes**, by the order and the rule the requirement "A shape draws when a category
+it names is on" states. A shape that carries a `color` SHALL draw in that colour whatever its
 categories hold, because the colour of a shape is a look decision of the host's data and
 the colour of a category is a look decision of the host's table.
 
@@ -569,24 +570,49 @@ no range shader, because no frame of that context can draw one.
 
 ### Requirement: A shape draws when a category it names is on
 
-A shape SHALL draw when **any** category it names is on, and SHALL NOT draw when every one
-of them is off. The rule reads the primary category and every secondary category together,
-and it is the rule a marker follows, which `real-systems` states.
+A shape SHALL draw when **any** category it names is on **for shapes**, and SHALL NOT draw
+when every one of them is off for shapes. The rule reads the primary category and every
+secondary category together.
+
+**A category holds two visibility flags.** One flag holds the markers of its systems and
+one holds its shapes. Both SHALL be on when the table takes the category. The shape rule
+reads the shape flag alone, and the marker rule `real-systems` states reads the system flag
+alone. A category that is off for its shapes SHALL keep drawing its markers, and a category
+that is off for its systems SHALL keep drawing its shapes.
+
+The handle SHALL carry `setShapeCategoryVisible(name, visible)`, which writes the shape
+flag, and `isShapeCategoryVisible(name)`, which reads it. `setCategoryVisible` and
+`isCategoryVisible` do the same for the system flag and SHALL reach no shape. A call that
+names a category the table does not hold SHALL change nothing and SHALL NOT throw, and
+`isShapeCategoryVisible` SHALL return `false` for such a name, which is the rule the system
+pair already follows.
+
+The two kinds have one table, one set of names and one colour for each name. Only the flag
+splits. `addCategories` SHALL NOT change, so a host fills one table as it does today.
+
+**The shape flags clear with the shapes.** `clearShapes` SHALL turn every shape flag back
+on, as it already clears the shape name filter, and `clearSystems` and
+`clearSystemsAndCategories` SHALL do the same, because each of them clears the shapes as
+well. A dataset load therefore opens its set with every category on for both kinds. A flag
+held over a clear would hide the shapes of a name the next set also holds, while the row's
+dot reads on, and `real-systems` already holds the same rule for the system flag.
 
 A shape that names **no** category SHALL always draw. Such a shape is in no row of the
 category browser and no switch reaches it.
 
 **A shape that carries no `color` SHALL take the colour of the first category it names that
-is on.** The order SHALL be the primary category first, then the secondary categories in
-the order the shape gave them, without a repeat. A shape that carries a `color` SHALL keep
-that colour whatever its categories hold.
+is on for shapes.** The order SHALL be the primary category first, then the secondary
+categories in the order the shape gave them, without a repeat. A shape that carries a
+`color` SHALL keep that colour whatever its categories hold.
 
 The map SHALL work out which shapes draw when the shape set, the category table, the
-category visibility or the shape name filter changes, and SHALL NOT work it out per frame.
-With 1,024 spheres and 4,096 lines each naming 4 categories, and every category turned off
-in one call, that work SHALL cost less than **2 milliseconds** on the main thread for the
-first switch that follows the arrival of the set, and less than **1 millisecond** for every
-switch after it. The page SHALL expose the reading so a test can read it.
+**shape** category visibility or the shape name filter changes, and SHALL NOT work it out
+per frame. A change of the **system** flag alone SHALL NOT sweep the shapes, because no
+shape reads that flag. With 1,024 spheres and 4,096 lines each naming 4 categories, and
+every category turned off for shapes in one call, that work SHALL cost less than **2
+milliseconds** on the main thread for the first switch that follows the arrival of the set,
+and less than **1 millisecond** for every switch after it. The page SHALL expose the
+reading so a test can read it.
 
 The two bounds are one measurement and not two budgets. The set arrives with a sweep of its
 own, and the switch that follows it still runs code the engine has not compiled, so it
@@ -595,38 +621,67 @@ reads 0.4 to 1.1 milliseconds in the browser gate. Every switch after that one r
 frame; the bounds hold the sweep to the shape of a linear pass over the set and catch a
 rule that reads the table per shape.
 
+The split adds one map read for each category in the sweep and not one for each shape, so
+the sweep keeps the shape of a linear pass and the bounds do not move.
+
 The change SHALL reach the next frame with no rebuild of the scene data.
 
-A category replaced under the same name SHALL keep the visibility it had, and every shape
-that names it SHALL take the new colour in the next frame, by the rule a marker follows.
+A category replaced under the same name SHALL keep **both** the flags it had, and every
+shape that names it SHALL take the new colour in the next frame, by the rule a marker
+follows.
 
 #### Scenario: A category that is off removes its shapes
 
 - **WHEN** the browser test adds the categories `A` and `B`, one sphere in `A` and one in
-  `B` at a view that draws both, takes a screenshot, calls `setCategoryVisible('A', false)`,
-  draws a frame and takes a second screenshot
+  `B` at a view that draws both, takes a screenshot, calls
+  `setShapeCategoryVisible('A', false)`, draws a frame and takes a second screenshot
 - **THEN** the two screenshots differ, and the second is byte-identical to the frame the
   same view draws with the sphere of `A` never added
+
+#### Scenario: A shape switch leaves the markers of its category
+
+- **WHEN** a unit test adds the category `A`, one system naming `A` and one sphere naming
+  `A`, calls `setShapeCategoryVisible('A', false)` and reads the marker count and the
+  sphere, then calls `setShapeCategoryVisible('A', true)` and `setCategoryVisible('A',
+  false)` and reads both again
+- **THEN** the first reading holds the marker and no drawn sphere, and the second holds the
+  sphere and no drawn marker
+
+#### Scenario: Clearing the shapes turns the shape flags back on
+
+- **WHEN** a unit test adds one category and one sphere naming it, calls
+  `setShapeCategoryVisible` with `false`, calls `clearShapes()`, adds the same sphere
+  again, and reads `isShapeCategoryVisible` of that category and the sphere
+- **THEN** the reading is `true` and the sphere is drawn
+
+#### Scenario: An unknown name moves no shape
+
+- **WHEN** a unit test calls `setShapeCategoryVisible('nothing', false)` on a map whose
+  table holds one other category and one sphere naming it, then reads
+  `isShapeCategoryVisible('nothing')`, `isShapeCategoryVisible` of the category it does
+  hold, and the sphere
+- **THEN** the first is `false`, the second is `true`, the sphere is drawn, and no call
+  threw
 
 #### Scenario: A secondary category keeps a shape on the screen
 
 - **WHEN** a unit test adds the categories `A` and `B`, one line whose primary category is
-  `A` and whose secondary categories hold `B`, turns `A` off and reads
-  `getShapeInfo('line', 0)`, then turns `B` off as well and reads it again
+  `A` and whose secondary categories hold `B`, turns `A` off for shapes and reads
+  `getShapeInfo('line', 0)`, then turns `B` off for shapes as well and reads it again
 - **THEN** the first reading is drawn and the second is not
 
 #### Scenario: A shape with no category is not reached by a switch
 
 - **WHEN** a unit test adds one category, one sphere naming it and one sphere naming none,
-  calls `setCategoryVisible` with `false` for that category, and reads both shapes
+  calls `setShapeCategoryVisible` with `false` for that category, and reads both shapes
 - **THEN** the first is not drawn and the second is drawn
 
 #### Scenario: A shape with no colour follows the first category that is on
 
 - **WHEN** the browser test adds the categories `A` in (255, 0, 0) and `B` in (0, 255, 0),
   one line carrying no `color` whose primary category is `A` and whose secondary categories
-  hold `B`, draws a frame and reads a pixel on the line, turns `A` off, draws and reads
-  again
+  hold `B`, draws a frame and reads a pixel on the line, turns `A` off for shapes, draws
+  and reads again
 - **THEN** the first reading is red and the second is green, each within 8 of each channel
 
 #### Scenario: A shape with a colour keeps it
@@ -638,8 +693,9 @@ that names it SHALL take the new colour in the next frame, by the rule a marker 
 #### Scenario: The sweep holds its budget
 
 - **WHEN** the browser test adds 256 categories, 1,024 spheres and 4,096 lines each naming
-  4 of them, calls **NONE** on every category in one call, reads the sweep measurement the
-  page exposes, then switches every category on and off three more times and reads it again
+  4 of them, turns every category off for shapes in one call, reads the sweep measurement
+  the page exposes, then switches every category on and off for shapes three more times and
+  reads it again
 - **THEN** the first reading is under 2 milliseconds and the last reading is under 1
   millisecond
 

@@ -386,14 +386,14 @@ describe('a shape that names a category', () => {
   }
 
   test('writes no instance while every category it names is off', () => {
-    const { set, table } = categorySet();
+    const { set } = categorySet();
     const spheres = new Float32Array(8 * 2);
     const segments = new Float32Array(10 * 2);
 
     expect(buildSphereInstances(set, spheres)).toBe(2);
     expect(buildSegmentInstances(set, segments)).toBe(2);
 
-    table.setCategoryVisible('A', false);
+    set.setCategoryVisible('A', false);
 
     expect(buildSphereInstances(set, spheres)).toBe(1);
     expect(buildSegmentInstances(set, segments)).toBe(1);
@@ -409,14 +409,14 @@ describe('a shape that names a category', () => {
       fakePrograms(),
       {} as WebGLVertexArrayObject,
     );
-    const { set, table } = categorySet();
+    const { set } = categorySet();
 
     expect(pass.draw(frameOf(set))).toBe(3);
     const instanced = context.of('drawArraysInstanced');
     expect(instanced[0]?.args[3]).toBe(2);
     expect(instanced[1]?.args[3]).toBe(2);
 
-    table.setCategoryVisible('A', false);
+    set.setCategoryVisible('A', false);
 
     expect(pass.draw(frameOf(set))).toBe(3);
     const after = context.of('drawArraysInstanced');

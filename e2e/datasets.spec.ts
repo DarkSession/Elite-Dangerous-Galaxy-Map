@@ -763,7 +763,7 @@ test('the demo page carries the six Canonn sets', async ({ page }) => {
     { systems: 212, categories: 3, spheres: 0, lines: 0 },
     { systems: 163, categories: 10, spheres: 0, lines: 0 },
     { systems: 16, categories: 4, spheres: 0, lines: 0 },
-    { systems: 1116, categories: 18, spheres: 54, lines: 983 },
+    { systems: 1116, categories: 19, spheres: 54, lines: 983 },
     { systems: 8, categories: 10, spheres: 0, lines: 8 },
   ]);
 });
@@ -777,9 +777,11 @@ test('every shape of the two shape sets names a category', async ({ page }) => {
     await map.loadDataset('uia');
     const named: string[] = [];
     const unnamed: string[] = [];
+    let gammaVelorum: string | null = null;
     for (let index = 0; index < map.sphereCount(); index += 1) {
       const info = map.getShapeInfo('sphere', index);
       if (info === null) continue;
+      if (info.name === 'Gamma Velorum') gammaVelorum = info.primaryCategory ?? null;
       if (info.primaryCategory === undefined) unnamed.push(info.name ?? '');
       else named.push(info.primaryCategory);
     }
@@ -799,6 +801,7 @@ test('every shape of the two shape sets names a category', async ({ page }) => {
       spheres: map.sphereCount(),
       named: named.length,
       unnamed,
+      gammaVelorum,
       categories: [...new Set(named)].sort(),
       lines,
       linesWithoutCategory,
@@ -809,15 +812,20 @@ test('every shape of the two shape sets names a category', async ({ page }) => {
   console.log('the shapes of the UIA set', reading);
 
   // 53 of the 54 spheres carry the marker category of their list. The Gamma Velorum
-  // sphere carries none, because the source pushes no marker at its centre.
+  // sphere carries the category the converter adds for its list, because the source
+  // pushes no marker at its centre and so gives that list no marker category.
   expect(reading.spheres).toBe(54);
-  expect(reading.named).toBe(53);
-  expect(reading.unnamed).toEqual(['Gamma Velorum']);
+  expect(reading.named).toBe(54);
+  expect(reading.unnamed).toEqual([]);
   expect(reading.categories).toEqual([
+    'Gamma Velorum Zone',
     'Permit Locked Centers',
     'Permit Unlocked Centers',
     'Thargoid Systems',
   ]);
+  // The category list is a set, so it says that one sphere names the added category and
+  // not which one. This reading names the sphere the scenario names.
+  expect(reading.gammaVelorum).toBe('Gamma Velorum Zone');
   // Every line names a category and takes that category's colour, so it carries none of
   // its own.
   expect(reading.lines).toBe(983);
@@ -1132,4 +1140,28 @@ test('the dialog reads FETCHED ON LOAD for the entry that fetches', async ({
 
   await page.keyboard.press('Escape');
   await expect(demoDialog).toBeHidden();
+});
+
+// The scenario "The Gamma Velorum category holds a shape and no system". The converter
+// adds the category for the one `g_soi` sphere, and the source pushes no marker for that
+// list, so the category holds one shape and no record. The test reads the rows of the
+// panel, because the scenario is about which tab lists the category.
+test('the Gamma Velorum category holds a shape and no system', async ({ page }) => {
+  await openMap(page, '', { demoData: true, hud: true });
+  await page.evaluate(async () => {
+    await window.galaxyMap?.loadDataset('uia');
+  });
+
+  const demoHud = page.locator('.gm-hud');
+  const name = 'Gamma Velorum Zone';
+  const row = demoHud.locator(`.gm-hud__category-row[data-name="${name}"]`);
+  await expect(demoHud.locator('.gm-hud__tab[data-name="shapes"]')).toBeEnabled();
+  await expect(row).toBeHidden();
+
+  await demoHud.locator('.gm-hud__tab[data-name="shapes"]').click();
+  await expect(row).toBeVisible();
+  const count = await row.locator('.gm-hud__category-count').textContent();
+  console.log('the Gamma Velorum row of the shapes tab reads', count);
+
+  expect(count).toBe('1');
 });

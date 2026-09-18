@@ -138,7 +138,7 @@ project's own.
 
 ## The UIA Map records, spheres and lines of the demo page
 
-`demo-data/uia.json` holds 18 categories, 1,116 systems, 54 spheres and 983 lines of 2,214
+`demo-data/uia.json` holds 19 categories, 1,116 systems, 54 spheres and 983 lines of 2,214
 points. The records come from the Canonn Research Group's
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map) project, under the
 **MIT** licence above, and the file is a conversion of three files of that project:

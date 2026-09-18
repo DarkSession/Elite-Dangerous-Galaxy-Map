@@ -81,6 +81,58 @@ describe('the entry point with no WebGL2 context', () => {
     expect(map.lineCount()).toBe(0);
   });
 
+  test('holds one category flag for the markers and one for the shapes', async () => {
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+
+    map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
+    map.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+    ]);
+    map.addSpheres([
+      { position: [100, 0, 200], radius: 50, primaryCategory: 'Empire' },
+    ]);
+
+    map.setCategoryVisible('Empire', false);
+    expect(map.isCategoryVisible('Empire')).toBe(false);
+    expect(map.isShapeCategoryVisible('Empire')).toBe(true);
+
+    map.setCategoryVisible('Empire', true);
+    map.setShapeCategoryVisible('Empire', false);
+    expect(map.isCategoryVisible('Empire')).toBe(true);
+    expect(map.isShapeCategoryVisible('Empire')).toBe(false);
+
+    // A name the table does not hold moves nothing and throws nothing.
+    map.setShapeCategoryVisible('Nowhere', false);
+    expect(map.isShapeCategoryVisible('Nowhere')).toBe(false);
+  });
+
+  test('turns every shape flag back on when a clear takes the shapes', async () => {
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+
+    const sphere = { position: [100, 0, 200] as const, radius: 50 };
+    map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
+    map.addSpheres([{ ...sphere, primaryCategory: 'Empire' }]);
+    map.setShapeCategoryVisible('Empire', false);
+
+    // Each of the three clears empties the shape set, so each one drops the flags with
+    // it. A flag held over a clear would hide the shapes of a name the next set holds.
+    map.clearShapes();
+    expect(map.isShapeCategoryVisible('Empire')).toBe(true);
+
+    map.setShapeCategoryVisible('Empire', false);
+    map.clearSystems();
+    expect(map.isShapeCategoryVisible('Empire')).toBe(true);
+
+    map.setShapeCategoryVisible('Empire', false);
+    map.clearSystemsAndCategories();
+    map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
+    map.addSpheres([{ ...sphere, primaryCategory: 'Empire' }]);
+    expect(map.isShapeCategoryVisible('Empire')).toBe(true);
+    expect(map.getShapeInfo('sphere', 0)?.drawn).toBe(true);
+  });
+
   test('resolves a line point against a system name without case', async () => {
     const map = createGalaxyMap(refusingCanvas());
     await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);

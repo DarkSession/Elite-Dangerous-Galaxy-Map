@@ -1523,6 +1523,61 @@ test.describe('the two tabs of the category panel', () => {
     expect(reading.b).toBe(true);
   });
 
+  test('NONE in the shapes tab leaves the systems', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+
+    await hud(page).locator('.gm-hud__bulk-button[data-name="none"]').click();
+    const count = await markerCount(page);
+    const reading = await page.evaluate(() => ({
+      systems: window.__hudMap?.isCategoryVisible('A') ?? false,
+      shapes: window.__hudMap?.isShapeCategoryVisible('A') ?? true,
+    }));
+    console.log('the category after NONE on the shapes tab', { count, ...reading });
+
+    // The two buttons act on the kind of the shown tab alone, so the marker stays.
+    expect(count).toBe(1);
+    expect(reading.systems).toBe(true);
+    expect(reading.shapes).toBe(false);
+  });
+
+  test('a row reads the flag of its own tab', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+
+    // The dot of the systems tab takes the markers off. The row of the same category in
+    // the shapes tab reads its own flag, which nothing moved.
+    await categoryDot(page, 'A').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+    await panelTab(page, 'shapes').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'true');
+
+    await categoryDot(page, 'A').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+    await panelTab(page, 'systems').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+
+    const reading = await page.evaluate(() => ({
+      systems: window.__hudMap?.isCategoryVisible('A') ?? true,
+      shapes: window.__hudMap?.isShapeCategoryVisible('A') ?? true,
+    }));
+    console.log('the two flags of the one category', reading);
+
+    expect(reading.systems).toBe(false);
+    expect(reading.shapes).toBe(false);
+  });
+
   test('each tab keeps the list the user opened', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -1680,15 +1735,21 @@ test.describe('the two tabs of the category panel', () => {
     await expect(panelTab(page, 'shapes')).toBeEnabled();
     await panelTab(page, 'shapes').click();
 
+    // The dot of a shapes row writes the shape flag, and the row click turns that same
+    // flag back on. The markers of the category are unmoved by either click.
     await categoryDot(page, 'Alpha').click();
     expect(
-      await page.evaluate(() => window.__hudMap?.isCategoryVisible('Alpha') ?? true),
+      await page.evaluate(
+        () => window.__hudMap?.isShapeCategoryVisible('Alpha') ?? true,
+      ),
     ).toBe(false);
 
     await categoryRow(page, 'Alpha').click();
     await systemRows(page).first().click();
     expect(
-      await page.evaluate(() => window.__hudMap?.isCategoryVisible('Alpha') ?? false),
+      await page.evaluate(
+        () => window.__hudMap?.isShapeCategoryVisible('Alpha') ?? false,
+      ),
     ).toBe(true);
   });
 

@@ -89,6 +89,14 @@
         153,
         0
       ]
+    },
+    {
+      "name": "Gamma Velorum Zone",
+      "color": [
+        0,
+        0,
+        153
+      ]
     }
   ],
   "systems": [
@@ -499,7 +507,8 @@
         0,
         153
       ],
-      "name": "Gamma Velorum"
+      "name": "Gamma Velorum",
+      "primaryCategory": "Gamma Velorum Zone"
     }
   ],
   "lines": [

@@ -593,15 +593,15 @@ describe('the shape sweep', () => {
   }
 
   test('hides the shapes of a category that goes off and no others', () => {
-    const { shapes, table } = threeSpheres();
+    const { shapes } = threeSpheres();
     expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
 
     // The second sphere names `B` as well, and the third names no category.
     expect(drawnFlags(shapes)).toEqual([0, 1, 1]);
 
-    table.setCategoryVisible('B', false);
+    shapes.setCategoryVisible('B', false);
 
     expect(drawnFlags(shapes)).toEqual([0, 0, 1]);
     expect(shapes.getShapeInfo('sphere', 1)?.drawn).toBe(false);
@@ -609,23 +609,23 @@ describe('the shape sweep', () => {
   });
 
   test('takes the colour of the first category that is on', () => {
-    const { shapes, table } = threeSpheres();
+    const { shapes } = threeSpheres();
     expect(colorAt(shapes, 1)).toEqual([255, 0, 0]);
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
 
     expect(colorAt(shapes, 1)).toEqual([0, 255, 0]);
   });
 
   test('keeps the colour a shape carries of its own', () => {
-    const { shapes, table } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     shapes.addSpheres([
       { position: [0, 0, 0], radius: 1, color: [0, 0, 255], primaryCategory: 'A' },
     ]);
 
     expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
 
     expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
     expect(drawnFlags(shapes)).toEqual([0]);
@@ -642,7 +642,7 @@ describe('the shape sweep', () => {
   });
 
   test('reads a line as it reads a sphere', () => {
-    const { shapes, table } = setOver([
+    const { shapes } = setOver([
       { name: 'A', color: [255, 0, 0] },
       { name: 'B', color: [0, 255, 0] },
     ]);
@@ -660,30 +660,30 @@ describe('the shape sweep', () => {
     expect(Array.from(shapes.lineFlags)).toEqual([1]);
     expect(Array.from(shapes.lineColors)).toEqual([255, 0, 0]);
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
 
     expect(shapes.getShapeInfo('line', 0)?.drawn).toBe(true);
     expect(Array.from(shapes.lineColors)).toEqual([0, 255, 0]);
 
-    table.setCategoryVisible('B', false);
+    shapes.setCategoryVisible('B', false);
 
     expect(shapes.getShapeInfo('line', 0)?.drawn).toBe(false);
   });
 
   test('raises the version on a switch that moves a flag', () => {
-    const { shapes, table } = threeSpheres();
+    const { shapes } = threeSpheres();
     const start = shapes.version;
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
     const hidden = shapes.version;
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
 
     expect(hidden).toBeGreaterThan(start);
     expect(shapes.version).toBe(hidden);
   });
 
   test('runs on a change and not on a frame', () => {
-    const { shapes, table } = threeSpheres();
+    const { shapes } = threeSpheres();
     // The first reading sweeps the shapes the call above added.
     const start = shapes.sweepCount;
     expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
@@ -698,10 +698,112 @@ describe('the shape sweep', () => {
     expect(shapes.sweepCount - swept).toBe(0);
     expect(swept).toBeGreaterThan(start);
 
-    table.setCategoryVisible('A', false);
+    shapes.setCategoryVisible('A', false);
     expect(drawnFlags(shapes)).toEqual([0, 1, 1]);
 
     expect(shapes.sweepCount - swept).toBe(1);
+  });
+
+  test('runs on a shape switch and not on a switch of the markers', () => {
+    const { shapes, table } = threeSpheres();
+    expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
+    const swept = shapes.sweepCount;
+
+    // The system set holds the marker flag of the same category. No shape reads it, so
+    // the sweep must not run: the table version the set watches does not move.
+    table.setCategoryVisible('A', false);
+    expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
+    expect(shapes.sweepCount).toBe(swept);
+
+    shapes.setCategoryVisible('A', false);
+    expect(drawnFlags(shapes)).toEqual([0, 1, 1]);
+    expect(shapes.sweepCount).toBe(swept + 1);
+  });
+});
+
+describe('the shape category switch', () => {
+  /** A table of one category, one system in it and one sphere in it. */
+  function oneOfEach(): { shapes: ShapeSet; table: RealSystemSet } {
+    const built = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    built.table.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'A' },
+    ]);
+    built.shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    return built;
+  }
+
+  test('turns the shapes of a category off and reads the flag back', () => {
+    const { shapes } = oneOfEach();
+    expect(shapes.isCategoryVisible('A')).toBe(true);
+
+    shapes.setCategoryVisible('A', false);
+
+    expect(shapes.isCategoryVisible('A')).toBe(false);
+    expect(drawnFlags(shapes)).toEqual([0]);
+  });
+
+  test('leaves the markers of its category', () => {
+    const { shapes, table } = oneOfEach();
+
+    shapes.setCategoryVisible('A', false);
+
+    expect(table.drawsMarker(0)).toBe(true);
+    expect(table.isCategoryVisible('A')).toBe(true);
+    expect(drawnFlags(shapes)).toEqual([0]);
+
+    shapes.setCategoryVisible('A', true);
+    table.setCategoryVisible('A', false);
+
+    expect(table.drawsMarker(0)).toBe(false);
+    expect(drawnFlags(shapes)).toEqual([1]);
+  });
+
+  test('moves no shape for a name the table does not hold', () => {
+    const { shapes } = oneOfEach();
+
+    shapes.setCategoryVisible('nothing', false);
+
+    expect(shapes.isCategoryVisible('nothing')).toBe(false);
+    expect(shapes.isCategoryVisible('A')).toBe(true);
+    expect(drawnFlags(shapes)).toEqual([1]);
+  });
+
+  test('keeps the flag when the table replaces the category', () => {
+    const { shapes, table } = oneOfEach();
+    shapes.setCategoryVisible('A', false);
+
+    table.addCategories([{ name: 'A', color: [0, 0, 255] }]);
+
+    // The replacement changes the table entry and not what the user asked to see, so the
+    // shape flag stands and the marker flag of the same name is unmoved.
+    expect(shapes.isCategoryVisible('A')).toBe(false);
+    expect(table.isCategoryVisible('A')).toBe(true);
+    expect(drawnFlags(shapes)).toEqual([0]);
+  });
+
+  test('turns the shape flags back on when the shapes are cleared', () => {
+    const { shapes } = oneOfEach();
+    shapes.setCategoryVisible('A', false);
+
+    shapes.clearShapes();
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+
+    expect(shapes.isCategoryVisible('A')).toBe(true);
+    expect(drawnFlags(shapes)).toEqual([1]);
+  });
+
+  test('turns the shape flags back on when the empty set is cleared', () => {
+    const { shapes } = oneOfEach();
+    shapes.clearShapes();
+    shapes.setCategoryVisible('A', false);
+
+    // The set holds nothing, so the clear leaves early. The flags are reset above that
+    // return, or the next set would open with this name hidden.
+    shapes.clearShapes();
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+
+    expect(shapes.isCategoryVisible('A')).toBe(true);
+    expect(drawnFlags(shapes)).toEqual([1]);
   });
 });
 
@@ -836,7 +938,7 @@ describe('the sweep budget', () => {
       name: `C${index}`,
       color: [index * 8, 128, 255 - index * 8],
     }));
-    const { shapes, table } = setOver(categories);
+    const { shapes } = setOver(categories);
     /** The four category names one shape carries, from its place in the set. */
     const namesOf = (index: number): [string, string[]] => [
       `C${index % 8}`,
@@ -876,7 +978,7 @@ describe('the sweep budget', () => {
     // leaves each one drawn and the sweep reads every name of every shape.
     const readings: number[] = [];
     for (let run = 0; run < 5; run += 1) {
-      table.setCategoryVisible('C0', run % 2 === 1);
+      shapes.setCategoryVisible('C0', run % 2 === 1);
       expect(shapes.sphereFlags[0]).toBe(1);
       readings.push(shapes.lastSweepMs);
     }

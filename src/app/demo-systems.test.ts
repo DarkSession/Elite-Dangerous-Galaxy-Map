@@ -153,7 +153,7 @@ describe('the committed UIA set', () => {
   // set carries the whole map: the 16 systems of the source, the markers of its three
   // sphere lists, the waypoints of the eight tables and the ends of every hyperdiction
   // report the tables own.
-  test('holds 18 categories, 1,116 systems, 54 spheres and 983 lines', () => {
+  test('holds 19 categories, 1,116 systems, 54 spheres and 983 lines', () => {
     expect(uia.categories.map((category) => category.name)).toEqual([
       'Populated Systems',
       'Thargoid Systems',
@@ -173,6 +173,7 @@ describe('the committed UIA set', () => {
       'UIA#6 Thor',
       'UIA#7 Raijin',
       'UIA#8 Hadad',
+      'Gamma Velorum Zone',
     ]);
     expect(uia.systems).toHaveLength(1116);
     expect(uia.spheres).toHaveLength(54);
@@ -199,20 +200,21 @@ describe('the committed UIA set', () => {
     ]);
   });
 
-  // A sphere carries the marker category of its own list, and the Gamma Velorum list has
-  // no marker and no category. A line carries the categories of its route and no colour,
+  // A sphere carries the category of its own list. The Gamma Velorum list has no marker,
+  // so the converter adds the category `Gamma Velorum Zone` for its one sphere and that
+  // category holds no record. A line carries the categories of its route and no colour,
   // because the category gives it one, and a name that names the line itself.
   test('gives its shapes the categories of the source', () => {
     const named = uia.spheres.filter(
       (sphere) =>
         (sphere as { primaryCategory?: string }).primaryCategory !== undefined,
     );
-    expect(named).toHaveLength(53);
+    expect(named).toHaveLength(54);
     const unnamed = uia.spheres.filter(
       (sphere) =>
         (sphere as { primaryCategory?: string }).primaryCategory === undefined,
     );
-    expect(unnamed.map((sphere) => sphere.name)).toEqual(['Gamma Velorum']);
+    expect(unnamed.map((sphere) => sphere.name)).toEqual([]);
     const categories = new Set(uia.categories.map((category) => category.name));
     for (const line of uia.lines) {
       const held = line as { primaryCategory?: string; color?: unknown; name?: string };

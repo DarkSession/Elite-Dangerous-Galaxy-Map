@@ -866,11 +866,15 @@ async function addCategorisedShapeSet(page: Page): Promise<{
   });
 }
 
-/** Switches all 256 categories on or off, draws a frame, and reads the sweep. */
+/**
+ * Switches the shapes of all 256 categories on or off, draws a frame, and reads the
+ * sweep. It calls `setShapeCategoryVisible`, because `setCategoryVisible` reaches the
+ * markers alone and sweeps no shape: the reading would then be 0 for every switch.
+ */
 async function switchEveryCategory(page: Page, visible: boolean): Promise<number> {
   await page.evaluate((on) => {
     for (let index = 0; index < 256; index += 1) {
-      window.galaxyMap?.setCategoryVisible(`Sweep ${index}`, on);
+      window.galaxyMap?.setShapeCategoryVisible(`Sweep ${index}`, on);
     }
   }, visible);
   await waitFrames(page, 2);

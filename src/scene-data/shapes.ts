@@ -4,9 +4,10 @@
 //
 // A shape may name categories of the table `real-systems` holds, and it then follows the
 // rule a marker follows: it draws while any category it names is on, and it takes the
-// colour of the first category it names that is on. The set works that out in a sweep
-// that runs on a change of the set, the table, a category's visibility or the name
-// filter, and never per frame.
+// colour of the first category it names that is on. A category holds one visibility flag
+// for its markers, which the system set owns, and one for its shapes, which this set
+// owns. The set works out what draws in a sweep that runs on a change of the set, the
+// table, a category's shape visibility or the name filter, and never per frame.
 
 /** The largest number of spheres the set holds. */
 export const MAX_SPHERES = 1024;
@@ -174,12 +175,17 @@ export type SystemLookup = (
  * What the shape set reads of the category table. The system set holds the one table, and
  * these are the members the sweep needs, so the set takes the table as it is and the two
  * never hold two tables between them.
+ *
+ * The table carries the names, the order and the colours. It carries no visibility: a
+ * category holds one flag for its markers and one for its shapes, and the shape set owns
+ * the shape flag itself. The set therefore watches `categoryTableVersion`, which rises
+ * only where the table itself changes, and a switch of the markers sweeps no shape.
  */
 export interface ShapeCategoryTable {
   /** How many categories the table holds. */
   readonly categoryCount: number;
-  /** Rises on every change to the table, and on a change of a category's visibility. */
-  readonly categoryVersion: number;
+  /** Rises on every change to the table itself, and on no change of a visibility. */
+  readonly categoryTableVersion: number;
   /** One category of the table, or null outside it. */
   category(index: number): {
     readonly name: string;
@@ -187,17 +193,14 @@ export interface ShapeCategoryTable {
   } | null;
   /** The table index of a category name, or -1 when the table does not hold it. */
   categoryIndex(name: string): number;
-  /** True when the category is on. False for a name the table lacks. */
-  isCategoryVisible(name: string): boolean;
 }
 
 /** The table a set built with no table reads. It holds no category. */
 const NO_CATEGORIES: ShapeCategoryTable = {
   categoryCount: 0,
-  categoryVersion: 0,
+  categoryTableVersion: 0,
   category: () => null,
   categoryIndex: () => -1,
-  isCategoryVisible: () => false,
 };
 
 /** The spheres and the lines, which the host fills through the handle. */
@@ -248,6 +251,14 @@ export interface ShapeSet {
   getLine(index: number): Line | null;
   /** One shape without its geometry, or null outside the set. */
   getShapeInfo(kind: ShapeKind, index: number): ShapeInfo | null;
+  /**
+   * Turns the shapes of a category on or off. It reaches no marker: the system set holds
+   * the marker flag of the same category. A name the table does not hold changes nothing
+   * and does not throw.
+   */
+  setCategoryVisible(name: string, visible: boolean): void;
+  /** True when the shapes of a category draw. False for a name the table lacks. */
+  isCategoryVisible(name: string): boolean;
   /** Keeps the shapes whose name holds the text, compared without case. */
   setShapeNameFilter(text: string): void;
   /** Reads the filter text. */
@@ -532,14 +543,22 @@ export function createShapeSet(
   let nameFilter = '';
   let nameFilterFold = '';
 
+  // What the user chose to see of the shapes, by category name. A category is on for its
+  // shapes when the table takes it, and a replacement under the same name keeps the
+  // choice, as the marker flag of the system set does. The version rises with the map, so
+  // the sweep reads one number rather than walking the map.
+  let shapeVisible = new Map<string, boolean>();
+  let shapeVisibleVersion = 0;
+
   // One byte per shape: 1 when it draws. Three numbers per shape: the colour it draws in.
   // The sweep writes them and the pass reads them, so the pass holds no rule of its own.
   const sphereStore = createShapeStore(MAX_SPHERES);
   const lineStore = createShapeStore(MAX_LINES);
-  // What the last sweep read: the content, the table and the filter. The sweep runs when
-  // one of the three has moved and not once per frame.
+  // What the last sweep read: the content, the table, the shape visibility and the
+  // filter. The sweep runs when one of the four has moved and not once per frame.
   let sweptContentVersion = -1;
-  let sweptCategoryVersion = -1;
+  let sweptTableVersion = -1;
+  let sweptVisibleVersion = -1;
   let sweptFilter: string | null = null;
   let lastSweepMs = 0;
   let sweepCount = 0;
@@ -681,14 +700,16 @@ export function createShapeSet(
 
   /**
    * Works out which shapes draw and in which colour. It runs on a change of the set, the
-   * category table, a category's visibility or the name filter, and never per frame: the
-   * three readings below say when an input moved.
+   * category table, a category's shape visibility or the name filter, and never per
+   * frame: the four readings below say when an input moved. A switch of the marker flag
+   * of a category moves none of the four, so it sweeps no shape.
    */
   const refreshFlags = (): void => {
-    const categoryVersion = table.categoryVersion;
+    const tableVersion = table.categoryTableVersion;
     if (
       sweptContentVersion === contentVersion &&
-      sweptCategoryVersion === categoryVersion &&
+      sweptTableVersion === tableVersion &&
+      sweptVisibleVersion === shapeVisibleVersion &&
       sweptFilter === nameFilterFold
     ) {
       return;
@@ -702,7 +723,7 @@ export function createShapeSet(
     for (let index = 0; index < count; index += 1) {
       const category = table.category(index);
       if (category === null) continue;
-      categoryVisible[index] = table.isCategoryVisible(category.name) ? 1 : 0;
+      categoryVisible[index] = shapeVisible.get(category.name) === false ? 0 : 1;
       categoryColors[index * 3] = category.color[0];
       categoryColors[index * 3 + 1] = category.color[1];
       categoryColors[index * 3 + 2] = category.color[2];
@@ -714,7 +735,8 @@ export function createShapeSet(
     );
     const movedLines = lineStore.sweep(categoryVisible, categoryColors, nameFilterFold);
     sweptContentVersion = contentVersion;
-    sweptCategoryVersion = categoryVersion;
+    sweptTableVersion = tableVersion;
+    sweptVisibleVersion = shapeVisibleVersion;
     sweptFilter = nameFilterFold;
     sweepCount += 1;
     lastSweepMs = performance.now() - startMs;
@@ -840,6 +862,13 @@ export function createShapeSet(
       // watches the filter of its own, so the clear needs no counter to carry it.
       nameFilter = '';
       nameFilterFold = '';
+      // A shape flag names a category of the set being cleared, so it goes the same way.
+      // Both sit above the return below, or a clear of an empty set would keep them and
+      // the next set would open with a name hidden and its row's dot reading on.
+      if (shapeVisible.size > 0) {
+        shapeVisible = new Map<string, boolean>();
+        shapeVisibleVersion += 1;
+      }
       if (spheres.length === 0 && lines.length === 0) return;
       spheres = [];
       lines = [];
@@ -950,6 +979,20 @@ export function createShapeSet(
       return found === undefined ? null : infoOf(found, lineStore.flags[index] === 1);
     },
 
+    setCategoryVisible(name: string, visible: boolean): void {
+      // A name the table does not hold changes nothing and does not throw, so a host
+      // that lists categories from its own data cannot break the map with a typo.
+      if (table.categoryIndex(name) < 0) return;
+      if ((shapeVisible.get(name) !== false) === visible) return;
+      shapeVisible.set(name, visible);
+      shapeVisibleVersion += 1;
+    },
+
+    isCategoryVisible(name: string): boolean {
+      if (table.categoryIndex(name) < 0) return false;
+      return shapeVisible.get(name) !== false;
+    },
+
     setShapeNameFilter(text: string): void {
       const next = typeof text === 'string' ? text : '';
       if (next === nameFilter) return;
@@ -969,6 +1012,8 @@ export function createShapeSet(
       linePointCount = 0;
       nameFilter = '';
       nameFilterFold = '';
+      shapeVisible = new Map<string, boolean>();
+      shapeVisibleVersion += 1;
       version += 1;
       contentVersion += 1;
     },

@@ -1086,7 +1086,7 @@ spheres and lines the host draws, and gives the camera two turn keys.
   markers.** A marker is what the user clicks, so nothing draws over one.
 
 - **The demo site carries two more sets, and the converters parse their sources.** The
-  UIA set gives 1,116 systems, 18 categories, 54 spheres and 983 lines of 2,214 points;
+  UIA set gives 1,116 systems, 19 categories, 54 spheres and 983 lines of 2,214 points;
   `MapData-Adamastor.js` gives 8 systems, 4 categories and 8 lines of 38 points. Both
   sources are JavaScript, so the converter holds a tolerant parser for the `systemsData`
   literal and **runs no statement of the file**. A route point names a system, and a name
@@ -1270,6 +1270,31 @@ records.
   ones its records name, which left the Adamastor routes with a colour and no category and a
   SHAPES tab that switched nothing. Adamastor now reads 10 categories where it read 4: the 4
   its records name and the 7 its routes name, with one in both.
+
+## Phase 5.10: the two category switches
+
+Change: `split-the-shape-and-system-category-switches`. Status: implemented.
+
+Gives a category one visibility flag for its systems and one for its shapes, so each tab of
+the category browser switches the kind it lists.
+
+- **The shape set owns the shape flag, and the handle says which kind it moves.** The shape
+  set keeps its own map of flags and stops reading the visibility of the system set, which
+  now carries `categoryTableVersion` beside `categoryVersion`: the first rises where the
+  table itself changes and the second where a marker switch or a name filter moves. The
+  shape sweep watches the first, so a switch in the SYSTEMS tab sweeps no shape. The handle
+  gains `setShapeCategoryVisible` and `isShapeCategoryVisible`, and `setCategoryVisible` and
+  `isCategoryVisible` reach the markers alone. **The package moves to 0.4.0**, because a
+  host that called `setCategoryVisible` to clear both kinds keeps its shapes on the screen.
+  A pair that moved both kinds was rejected: the reader has no answer a caller can use for a
+  category whose markers are on and whose shapes are off.
+
+- **The UIA `g_soi` sphere gets a category the source does not hold.** The converter adds
+  `Gamma Velorum Zone` in the shell's own colour of (0, 0, 153), as it already adds the
+  eight `UIA#N` categories, so the UIA set reads 19 categories where it read 18. The list
+  gets no marker, so the category holds one shape and no record: it has a row in the SHAPES
+  tab and none in the SYSTEMS tab. `UIA_SPHERE_LISTS` carries a `record` field for that,
+  because its `category` field carried both meanings before.
 
 ## Sources
 

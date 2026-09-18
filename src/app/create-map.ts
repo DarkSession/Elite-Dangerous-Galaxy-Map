@@ -575,6 +575,13 @@ export interface GalaxyMap {
   setCategoryVisible(name: string, visible: boolean): void;
   /** True when the markers of a category draw. False for a name the table lacks. */
   isCategoryVisible(name: string): boolean;
+  /**
+   * Turns the shapes of a category on or off. It reaches no marker: a category holds one
+   * flag for its markers and one for its shapes. An unknown name changes nothing.
+   */
+  setShapeCategoryVisible(name: string, visible: boolean): void;
+  /** True when the shapes of a category draw. False for a name the table lacks. */
+  isShapeCategoryVisible(name: string): boolean;
   /** Keeps the markers whose name holds the text, compared without case. */
   setNameFilter(text: string): void;
   /** Reads the filter text. */
@@ -764,7 +771,10 @@ export function createGalaxyMap(
       return index < 0 ? null : (set.system(index)?.position ?? null);
     },
     // One table holds the categories of the systems and of the shapes, so the shape set
-    // reads the table the system set holds rather than keeping a second one.
+    // reads the table the system set holds rather than keeping a second one. It reads the
+    // names, the order and the colours alone: a category holds one visibility flag for
+    // its markers, which the system set owns, and one for its shapes, which the shape set
+    // owns.
     set,
   );
   const view: View = createDefaultView();
@@ -1841,6 +1851,12 @@ export function createGalaxyMap(
     },
     isCategoryVisible(name: string): boolean {
       return set.isCategoryVisible(name);
+    },
+    setShapeCategoryVisible(name: string, visible: boolean): void {
+      shapes.setCategoryVisible(name, visible);
+    },
+    isShapeCategoryVisible(name: string): boolean {
+      return shapes.isCategoryVisible(name);
     },
     setNameFilter(text: string): void {
       set.setNameFilter(text);

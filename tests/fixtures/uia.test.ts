@@ -117,7 +117,7 @@ describe('the conversion of the UIA source', () => {
     expect(written).toEqual(expected);
   });
 
-  test('reads 23 systems and 11 categories', () => {
+  test('reads 23 systems and 12 categories', () => {
     const set = convertUia(extract(), extras());
     expect(set.systems).toHaveLength(23);
     expect(set.categories.map((category) => category.name)).toEqual([
@@ -132,6 +132,7 @@ describe('the conversion of the UIA source', () => {
       'All Hyperdictions',
       'Hostile',
       'UIA#1 Taranis',
+      'Gamma Velorum Zone',
     ]);
     // `init()` of the source adds `UIA#1` to `UIA#8`, so the source's own table holds
     // none of them. Only the one the fixture's reports name reaches the set, as the
@@ -177,8 +178,10 @@ describe('the conversion of the UIA source', () => {
   });
 
   // `formatHDs` gives the marker at the centre of a sphere the category of its list, and
-  // the sphere takes that same category. The `g_soi` list gets no marker and no category.
-  test('gives each sphere the marker category of its own list', () => {
+  // the sphere takes that same category. The `g_soi` list gets no marker, so it has no
+  // marker category to take, and the converter adds the category `Gamma Velorum Zone`
+  // for it.
+  test('gives each sphere the category of its own list', () => {
     const set = convertUia(extract(), extras());
     const byCategory = new Map<string, number>();
     for (const sphere of set.spheres) {
@@ -189,7 +192,7 @@ describe('the conversion of the UIA source', () => {
       ['Permit Locked Centers', 4],
       ['Permit Unlocked Centers', 3],
       ['Thargoid Systems', 2],
-      ['none', 1],
+      ['Gamma Velorum Zone', 1],
     ]);
     // The sphere keeps its own colour and the category keeps the other. The two differ
     // on purpose: the source draws the shell with a material of its own and colours the

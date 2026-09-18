@@ -468,6 +468,27 @@ describe('the set', () => {
     expect(afterClear).toBeGreaterThan(afterReplace);
   });
 
+  test('raises the category table version on a table change alone', () => {
+    // The shape set watches this number. It reads the names and the colours of the
+    // table and no visibility of it, so a switch of the markers must sweep no shape.
+    const set = createSystemSet();
+    const start = set.categoryTableVersion;
+    set.addCategories([{ name: 'A', color: [1, 2, 3] }]);
+    const afterAdd = set.categoryTableVersion;
+    set.addSystems([record('One', 'A')]);
+    set.setCategoryVisible('A', false);
+    const afterSwitch = set.categoryTableVersion;
+    set.setNameFilter('one');
+    const afterFilter = set.categoryTableVersion;
+    set.clearSystemsAndCategories();
+    const afterClear = set.categoryTableVersion;
+
+    expect(afterAdd).toBeGreaterThan(start);
+    expect(afterSwitch).toBe(afterAdd);
+    expect(afterFilter).toBe(afterAdd);
+    expect(afterClear).toBeGreaterThan(afterAdd);
+  });
+
   test('adds 10,000 records and replaces them in under 50 ms each', () => {
     const set = setWith('A');
     const records = Array.from({ length: MAX_SYSTEMS }, (_ignored, index) => ({

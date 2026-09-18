@@ -245,6 +245,23 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   }
 
   /**
+   * True when a category is on for the kind of the shown tab. A category holds one
+   * visibility flag for its systems and one for its shapes, so each tab reads its own and
+   * the same category can read on in one tab and off in the other.
+   */
+  function categoryOn(name: string): boolean {
+    return tab === 'systems'
+      ? map.isCategoryVisible(name)
+      : map.isShapeCategoryVisible(name);
+  }
+
+  /** Turns a category on or off for the kind of the shown tab. */
+  function setCategoryOn(name: string, on: boolean): void {
+    if (tab === 'systems') map.setCategoryVisible(name, on);
+    else map.setShapeCategoryVisible(name, on);
+  }
+
+  /**
    * Clears the filter of one tab. The panel clears the filter of the tab it leaves, so
    * no filter is in force on a kind whose box the user cannot see.
    */
@@ -292,9 +309,13 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     filterTimer = window.setTimeout(applyFilter, FILTER_DELAY_MS);
   });
 
-  /** ALL and NONE act on the rows of the shown tab, which is what the user can see. */
+  /**
+   * ALL and NONE act on the rows of the shown tab, which is what the user can see, and on
+   * the kind of that tab alone. NONE in the shapes tab therefore leaves every marker on
+   * the screen.
+   */
   const setEveryCategory = (visible: boolean): void => {
-    for (const group of groups) map.setCategoryVisible(group.name, visible);
+    for (const group of groups) setCategoryOn(group.name, visible);
     update();
   };
   allButton.addEventListener('click', () => setEveryCategory(true));
@@ -438,8 +459,9 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     row.append(name);
     row.addEventListener('click', () => {
       // The row turns its category on, because a row of a category the user closed
-      // must still reach the thing it names.
-      map.setCategoryVisible(group.name, true);
+      // must still reach the thing it names. It turns on the kind of the shown tab
+      // alone, so a shape row leaves the systems of that category where they are.
+      setCategoryOn(group.name, true);
       const flight = entry.flight;
       if (flight === null) {
         map.setSelection(entry.identity);
@@ -541,7 +563,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       swatch.style.border = `1px solid ${cssColor(category.color)}`;
       dot.append(swatch);
       dot.addEventListener('click', () => {
-        map.setCategoryVisible(category.name, !map.isCategoryVisible(category.name));
+        setCategoryOn(category.name, !categoryOn(category.name));
         update();
       });
 
@@ -621,7 +643,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     const selection = map.getSelection();
     const selected = selection === null ? null : (selection.id64 ?? selection.name);
     for (const group of groups) {
-      const on = map.isCategoryVisible(group.name);
+      const on = categoryOn(group.name);
       setPressed(group.dot, on);
       // A row of a category that is off shows it: the dot is hollow and the name dims.
       setAttribute(group.line, 'data-on', on ? 'true' : 'false');

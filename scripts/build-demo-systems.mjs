@@ -650,19 +650,45 @@ export function ed3dSetCategories(table, ...readers) {
 }
 
 /**
- * The sphere lists of the UIA source, with the colour and the marker category each one
- * takes. The source draws a sphere with a material of its own in `finishMap`, and the
+ * The category the converter adds for the `g_soi` sphere list, and which the source table
+ * does not hold. The source pushes no marker for that list, so the list has no marker
+ * category to take, and a sphere that names no category always draws and has no row in
+ * the category browser.
+ *
+ * The id is the list's own key. The source writes its own ids as numbers in strings, so
+ * `g_soi` collides with none of them. The name is the label the source gives the list,
+ * and the sphere keeps the name `Gamma Velorum`, which is the star at the centre. The
+ * colour is the shell's own material colour, which is the only colour the source offers
+ * for this category and the one the user sees on the screen.
+ */
+export const UIA_GAMMA_VELORUM_ID = 'g_soi';
+export const UIA_GAMMA_VELORUM_NAME = 'Gamma Velorum Zone';
+export const UIA_GAMMA_VELORUM_COLOUR = [0, 0, 153];
+
+/**
+ * The sphere lists of the UIA source, with the colour, the category and the marker each
+ * one takes. The source draws a sphere with a material of its own in `finishMap`, and the
  * colour below is that material's colour: `vec3(0.2, 0.7, 1.0)` for the permit-locked
  * shells, `vec3(1.0, 0.75, 0.1)` for the permit-unlocked ones, `0x336600` for the
- * hyperdiction shells and `0x000099` for the Gamma Velorum shell. The marker category is
- * the one `formatHDs` gives the record it pushes at the centre of the sphere. `g_soi` gets
- * no record, because the source pushes none.
+ * hyperdiction shells and `0x000099` for the Gamma Velorum shell.
+ *
+ * The two fields say two things, because two readers read this list. `category` is the id
+ * of the category the spheres of the list name, which `ed3dSpheres` resolves against the
+ * table. `record` says whether the list gets a marker at the centre of each sphere, which
+ * `ed3dSphereRecords` writes. The first three take the marker category `formatHDs` gives
+ * the record it pushes. The source pushes no record for `g_soi`, so that list carries
+ * `record: false` and names the category `convertUia` adds for it.
  */
 export const UIA_SPHERE_LISTS = [
-  { key: 'pls', color: [51, 179, 255], category: '1007' },
-  { key: 'puls', color: [255, 191, 26], category: '1008' },
-  { key: 'hd_soi', color: [51, 102, 0], category: '1002' },
-  { key: 'g_soi', color: [0, 0, 153], category: null },
+  { key: 'pls', color: [51, 179, 255], category: '1007', record: true },
+  { key: 'puls', color: [255, 191, 26], category: '1008', record: true },
+  { key: 'hd_soi', color: [51, 102, 0], category: '1002', record: true },
+  {
+    key: 'g_soi',
+    color: UIA_GAMMA_VELORUM_COLOUR,
+    category: UIA_GAMMA_VELORUM_ID,
+    record: false,
+  },
 ];
 
 /** The colour a route takes when its category is not in the source's own table. */
@@ -671,11 +697,12 @@ export const LINE_COLOUR_FALLBACK = [160, 160, 160];
 /**
  * Turns the four sphere lists of an ED3D source into the shapes the map draws.
  *
- * A sphere takes the marker category of its own list, which `formatHDs` gives the record
- * it pushes at the centre of the sphere, and `table` gives that category its name. The
- * `g_soi` list names no category, because the source pushes no record for it. A sphere
- * keeps its own colour, which is its material's colour, so the shell keeps the reading the
- * source gives it and the category gives the row's dot its own colour.
+ * A sphere takes the category of its own list, and `table` gives that category its name.
+ * For the first three lists that is the marker category `formatHDs` gives the record it
+ * pushes at the centre of the sphere. The `g_soi` list names the category `convertUia`
+ * adds for it, because the source pushes no record for that list. A sphere keeps its own
+ * colour, which is its material's colour, so the shell keeps the reading the source gives
+ * it and the category gives the row's dot its own colour.
  */
 export function ed3dSpheres(data, lists, table = new Map()) {
   const spheres = [];
@@ -723,6 +750,15 @@ export function convertUia(data, extras = {}) {
       color: UIA_CATEGORY_COLOUR,
     });
   }
+  // The `g_soi` sphere takes a category the source holds for no list, because the source
+  // pushes no marker for that list and its category table colours the markers. The name
+  // is the label the source gives the list and the colour is the shell's own. It goes in
+  // last, so it is the last category of the set. The category holds one shape and no
+  // record, so it has a row in the shapes tab of the panel and none in the systems tab.
+  table.set(UIA_GAMMA_VELORUM_ID, {
+    name: UIA_GAMMA_VELORUM_NAME,
+    color: UIA_GAMMA_VELORUM_COLOUR,
+  });
 
   const tables = (extras.waypointTables ?? [])
     .map((one) => uiaWaypointRows(one))
@@ -1404,12 +1440,13 @@ export function uiaHyperdictionSet(rows, tables) {
 /**
  * The records the sphere lists carry at their centres. `formatHDs` pushes one marker for
  * each entry of `pls`, `puls` and `hd_soi`, in the category the list names. `g_soi` gets
- * none.
+ * none, because the source pushes none: its list carries `record: false`. The skip reads
+ * that field and not `category`, which the `g_soi` list now carries for its spheres.
  */
 export function ed3dSphereRecords(data, lists) {
   const systems = [];
-  for (const { key, category } of lists) {
-    if (category === null) continue;
+  for (const { key, category, record } of lists) {
+    if (category === null || record === false) continue;
     for (const entry of data?.[key] ?? []) {
       const name = String(entry?.['name'] ?? '').trim();
       const coords = Array.isArray(entry?.['coords']) ? entry['coords'] : [];

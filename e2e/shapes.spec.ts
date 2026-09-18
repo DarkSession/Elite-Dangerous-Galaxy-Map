@@ -1398,11 +1398,11 @@ test.describe('a shape and its categories', () => {
     });
   }
 
-  /** Switches one category and draws a frame. */
+  /** Switches the shapes of one category and draws a frame. */
   async function switchCategory(page: Page, name: string, on: boolean): Promise<void> {
     await page.evaluate(
       (which) => {
-        window.galaxyMap?.setCategoryVisible(which.name, which.on);
+        window.galaxyMap?.setShapeCategoryVisible(which.name, which.on);
       },
       { name, on },
     );
@@ -1427,7 +1427,7 @@ test.describe('a shape and its categories', () => {
     // again so the switch itself cannot be what the hash reads.
     await page.evaluate(() => {
       window.galaxyMap?.clearShapes();
-      window.galaxyMap?.setCategoryVisible('A', true);
+      window.galaxyMap?.setShapeCategoryVisible('A', true);
     });
     await addSpheres(page, [
       { position: [800, 0, 0], radius: 500, primaryCategory: 'B' },

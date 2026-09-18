@@ -48,7 +48,7 @@ reaches it.
 The demo page carries six data sets, which
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names: Guardian Ruins, 212 systems in 3
 categories; Guardian Structures, 163 systems in 10 categories; Notable Systems, 16
-systems in 4 categories; UIA Map, 1,116 systems in 18 categories with 54 spheres and 983
+systems in 4 categories; UIA Map, 1,116 systems in 19 categories with 54 spheres and 983
 lines;
 Adamastor Routes, 8 systems in 10 categories with 8 lines; and Canonn Factions, which
 fetches its records when the user loads it. It names them in the `datasets`
@@ -159,7 +159,10 @@ The handle also carries `clearSystems`, `clearSystemsAndCategories`, `systemCoun
 and a `debug` member the browser tests read. For the camera it carries `getBounds`,
 `setBounds`, `flyTo`, `isFlying`, `onFlightEnd`, `getInteraction` and `setInteraction`. For the system set it carries `getSystem`,
 `categoryCount`, `getCategory`, `setCategoryVisible`, `isCategoryVisible`,
-`setNameFilter` and `getNameFilter`. For the selection it carries `systemAt`,
+`setShapeCategoryVisible`, `isShapeCategoryVisible`, `setNameFilter` and
+`getNameFilter`. A category holds two visibility flags: `setCategoryVisible` and
+`isCategoryVisible` reach its markers alone, and `setShapeCategoryVisible` and
+`isShapeCategoryVisible` reach its shapes alone. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
 carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
 `isGridVisible`, `onGridChange`, `setCursorMarkerVisible`, `getCursorMarkerVisible`,
@@ -183,10 +186,12 @@ added. The set holds up to 1,024 spheres, 4,096 lines and 65,536 line points tog
 **A shape can name categories.** A sphere and a line each take a `primaryCategory` and a
 list of `secondaryCategories`, and both name a category of the same table the records use,
 so add the categories first: the reader rejects a shape that names a category the table
-does not hold. A shape that names a category draws in that category's colour and hides with
-it, and `color` is then not needed. A shape that names none keeps a `color` of its own and
-no category switch moves it. `setShapeNameFilter` hides the shapes whose name does not hold
-the text, beside the `setNameFilter` that does the same for the records, and
+does not hold. A shape that names a category draws in that category's colour, and `color`
+is then not needed. `setShapeCategoryVisible(name, false)` hides every shape of a category
+and leaves its markers on the screen, because a category holds one flag for each kind. A
+shape that names none keeps a `color` of its own and no category switch moves it.
+`setShapeNameFilter` hides the shapes whose name does not hold the text, beside the
+`setNameFilter` that does the same for the records, and
 `getShapeInfo('sphere', 0)` answers the name, the categories, the centre, the reach and
 whether the shape draws in the next frame.
 
@@ -333,9 +338,12 @@ with a search box, the map option switches, and an information panel for the sel
 system with its fields, description, thumbnails and a lightbox.
 
 **The category browser has two tabs.** SYSTEMS lists the categories that hold records and
-SHAPES lists the ones that hold shapes, each with its own search box, and ALL and NONE act
-on the tab in front of the user. A category row carries two buttons: the dot takes the
-category off and on, and the rest of the row opens the row and closes it. One click did both
+SHAPES lists the ones that hold shapes, each with its own search box. ALL and NONE act on
+the rows of the tab in front of the user, and on the kind of that tab alone, so NONE in the
+SHAPES tab leaves every marker on the screen. A category row carries two buttons: the dot
+takes the category off and on for the kind of its own tab, and the rest of the row opens
+the row and closes it. The same category can therefore read on in one tab and off in the
+other. One click did both
 before, so a host that drove the row by a click must now name the part it wants. The dot
 carries `aria-pressed` and the row carries `aria-expanded`. An open shape row lists the
 shapes of that category and a click on one flies the camera to it. The panel's fields start
