@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap, startState, waitForReady } from './helpers';
+import { putMarkerAlpha } from '../src/render/shader-include';
 import type { CategoryInput, SystemRecordInput } from '../src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -340,18 +341,32 @@ function shaderSource(name: string): string {
   );
 }
 
-test('the marker shaders compile', async ({ page }) => {
-  await openMap(page);
-  const error = await page.evaluate(
-    (sources) => {
-      const map = window.galaxyMap;
-      if (map === undefined) return 'the page has no handle';
-      return map.debug.compileTestProgram(sources.vertex, sources.fragment);
-    },
-    { vertex: shaderSource('systems.vert'), fragment: shaderSource('systems.frag') },
-  );
-  expect(error).toBeNull();
-});
+/**
+ * A marker fragment shader as the pass compiles it. Both marker shaders carry a line in
+ * place of the shared alpha rule, and the pass puts the rule there before it compiles, so
+ * a probe that compiled the raw file would compile a source the map never uses.
+ */
+function markerFragment(name: string): string {
+  return putMarkerAlpha(shaderSource(name), shaderSource('marker-alpha.glsl'));
+}
+
+// Both marker programs share the vertex shader, and nothing else compiles the range
+// shader before a browser does: the colour shader draws in every frame of this suite, and
+// the range shader draws only while a shape that draws is in the set.
+for (const fragment of ['systems.frag', 'marker-range.frag']) {
+  test(`the marker shaders compile: ${fragment}`, async ({ page }) => {
+    await openMap(page);
+    const error = await page.evaluate(
+      (sources) => {
+        const map = window.galaxyMap;
+        if (map === undefined) return 'the page has no handle';
+        return map.debug.compileTestProgram(sources.vertex, sources.fragment);
+      },
+      { vertex: shaderSource('systems.vert'), fragment: markerFragment(fragment) },
+    );
+    expect(error).toBeNull();
+  });
+}
 
 test('a marker shows at every zoom distance', async ({ page }) => {
   const where: [number, number, number] = [0, 0, 6000];

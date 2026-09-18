@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import { createShapeSet } from '../scene-data/shapes';
 import type { ShapeSet } from '../scene-data/shapes';
+import { createSystemSet } from '../scene-data/real-systems';
+import type { RealSystemSet } from '../scene-data/real-systems';
 import {
   buildSegmentInstances,
   buildSphereInstances,
   createShapePass,
+  depthShare,
+  MARKER_CAP_ALPHA,
   SPHERE_MIN_RADIUS_CSS,
   sphereAlpha,
 } from './shape-pass';
 import type { ShapePassFrame, ShapePrograms } from './shape-pass';
 import type { Program } from './program';
+import { RANGE_EMPTY } from './buffers';
 import sphereVertexSource from './shaders/spheres.vert?raw';
 import sphereFragmentSource from './shaders/spheres.frag?raw';
 import lineVertexSource from './shaders/shape-lines.vert?raw';
@@ -87,6 +92,9 @@ function fakePrograms(): ShapePrograms {
       'uTargetSize',
       'uFocal',
       'uMinRadius',
+      'uRange',
+      'uHasRange',
+      'uRangeEmpty',
     ]),
     lines: fakeProgram([
       'uViewProjection',
@@ -94,18 +102,19 @@ function fakePrograms(): ShapePrograms {
       'uTargetSize',
       'uPixelRatio',
     ]),
-    composite: fakeProgram(['uLines']),
+    composite: fakeProgram(['uLines', 'uRange', 'uHasRange', 'uRangeEmpty']),
   };
 }
 
-/** A frame over a set, with the camera at the origin. */
-function frameOf(set: ShapeSet): ShapePassFrame {
+/** A frame over a set, with the camera at the origin and no range buffer. */
+function frameOf(set: ShapeSet, range: WebGLTexture | null = null): ShapePassFrame {
   return {
     viewProjection: new Float32Array(16),
     camera: [0, 0, 0] as const,
     pixelRatio: 1,
     focal: 800,
     set,
+    range,
   };
 }
 
@@ -346,5 +355,234 @@ describe('the shape pass draw', () => {
     expect(first).toBeGreaterThan(0);
     expect(second).toBe(first);
     expect(third).toBeGreaterThan(second);
+  });
+});
+
+describe('a shape that names a category', () => {
+  /**
+   * A set over a table of two categories, with one sphere and one line in each. The
+   * shapes carry no colour of their own, so each one draws in its category's colour.
+   */
+  function categorySet(): { set: ShapeSet; table: RealSystemSet } {
+    const table = createSystemSet();
+    table.addCategories([
+      { name: 'A', color: [255, 0, 0] },
+      { name: 'B', color: [0, 255, 0] },
+    ]);
+    const set = createShapeSet(() => null, table);
+    for (const name of ['A', 'B']) {
+      set.addSpheres([{ position: [0, 0, 0], radius: 100, primaryCategory: name }]);
+      set.addLines([
+        {
+          points: [
+            [0, 0, 0],
+            [100, 0, 0],
+          ],
+          primaryCategory: name,
+        },
+      ]);
+    }
+    return { set, table };
+  }
+
+  test('writes no instance while every category it names is off', () => {
+    const { set, table } = categorySet();
+    const spheres = new Float32Array(8 * 2);
+    const segments = new Float32Array(10 * 2);
+
+    expect(buildSphereInstances(set, spheres)).toBe(2);
+    expect(buildSegmentInstances(set, segments)).toBe(2);
+
+    table.setCategoryVisible('A', false);
+
+    expect(buildSphereInstances(set, spheres)).toBe(1);
+    expect(buildSegmentInstances(set, segments)).toBe(1);
+    // The sphere of `B` moves into the first place, and it takes its category's colour.
+    expect([spheres[4], spheres[5], spheres[6]]).toEqual([0, 1, 0]);
+    expect([segments[6], segments[7], segments[8]]).toEqual([0, 1, 0]);
+  });
+
+  test('still costs three draw calls with a category off', () => {
+    const context = fakeContext(1920, 1080);
+    const pass = createShapePass(
+      context.gl,
+      fakePrograms(),
+      {} as WebGLVertexArrayObject,
+    );
+    const { set, table } = categorySet();
+
+    expect(pass.draw(frameOf(set))).toBe(3);
+    const instanced = context.of('drawArraysInstanced');
+    expect(instanced[0]?.args[3]).toBe(2);
+    expect(instanced[1]?.args[3]).toBe(2);
+
+    table.setCategoryVisible('A', false);
+
+    expect(pass.draw(frameOf(set))).toBe(3);
+    const after = context.of('drawArraysInstanced');
+    expect(after[2]?.args[3]).toBe(1);
+    expect(after[3]?.args[3]).toBe(1);
+  });
+
+  test('takes the colour of the category the table replaced', () => {
+    const { set, table } = categorySet();
+    const spheres = new Float32Array(8 * 2);
+
+    expect(buildSphereInstances(set, spheres)).toBe(2);
+    expect([spheres[4], spheres[5], spheres[6]]).toEqual([1, 0, 0]);
+
+    table.addCategories([{ name: 'A', color: [0, 0, 255] }]);
+
+    expect(buildSphereInstances(set, spheres)).toBe(2);
+    expect([spheres[4], spheres[5], spheres[6]]).toEqual([0, 0, 1]);
+  });
+});
+
+describe('the depth share rule', () => {
+  test('runs from the near crossing of the shell to the far one', () => {
+    // A sphere of radius 100 whose centre is 1,000 light years away. The ray through the
+    // middle of the sprite enters the shell at 900 and leaves it at 1,100.
+    const readings = [850, 900, 1000, 1100, 1150].map((range) =>
+      depthShare(range, 1000, 100, 0),
+    );
+    expect(readings[0]).toBeCloseTo(0, 3);
+    expect(readings[1]).toBeCloseTo(0, 3);
+    expect(readings[2]).toBeCloseTo(0.5, 3);
+    expect(readings[3]).toBeCloseTo(1, 3);
+    expect(readings[4]).toBeCloseTo(1, 3);
+  });
+
+  test('cuts a shorter chord away from the middle of the sprite', () => {
+    // At 0.6 of the drawn radius the half chord is 80 light years, so the shell runs from
+    // 920 to 1,080 and the crossings move in.
+    expect(depthShare(920, 1000, 100, 0.6)).toBeCloseTo(0, 6);
+    expect(depthShare(1000, 1000, 100, 0.6)).toBeCloseTo(0.5, 6);
+    expect(depthShare(1080, 1000, 100, 0.6)).toBeCloseTo(1, 6);
+    // A marker behind the centre covers more of the shorter chord than of the longer one,
+    // because the shorter chord ends nearer the camera.
+    expect(depthShare(1040, 1000, 100, 0.6)).toBeGreaterThan(
+      depthShare(1040, 1000, 100, 0),
+    );
+  });
+
+  test('reads the side of the centre at the limb, where the chord is a point', () => {
+    expect(depthShare(999, 1000, 100, 1)).toBe(0);
+    expect(depthShare(1000, 1000, 100, 1)).toBe(1);
+    expect(depthShare(1001, 1000, 100, 1)).toBe(1);
+  });
+
+  test('gives the whole wash at a pixel with no marker', () => {
+    expect(depthShare(RANGE_EMPTY, 1000, 100, 0)).toBe(1);
+    expect(depthShare(RANGE_EMPTY, 120000, 20000, 0.9)).toBe(1);
+  });
+
+  test('is the rule the sphere shader carries', () => {
+    expect(sphereFragmentSource).toContain(
+      'clamp((t - (vCentreRange - d)) / (2.0 * d), 0.0, 1.0)',
+    );
+    expect(sphereFragmentSource).toContain(
+      `const float MARKER_CAP = ${MARKER_CAP_ALPHA.toFixed(1)};`,
+    );
+    // The line step takes the same cap, because the lines now draw over the markers.
+    expect(compositeSource).toContain(
+      `const float MARKER_CAP = ${MARKER_CAP_ALPHA.toFixed(1)};`,
+    );
+  });
+});
+
+describe('the range buffer the shape pass reads', () => {
+  /** The calls the pass made, in order, of the two names a texture binding needs. */
+  function bindings(context: ReturnType<typeof fakeContext>): unknown[] {
+    return context
+      .of('uniform1f')
+      .filter((call) => call.args[0] === 'uHasRange')
+      .map((call) => call.args[1]);
+  }
+
+  test('tells both steps it holds one, and what an empty pixel reads', () => {
+    const context = fakeContext(1920, 1080);
+    const pass = createShapePass(
+      context.gl,
+      fakePrograms(),
+      {} as WebGLVertexArrayObject,
+    );
+    const set = shapeSet();
+    set.addSpheres([{ position: [0, 0, 0], radius: 100, color: [255, 0, 0] }]);
+    set.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [100, 0, 0],
+        ],
+        color: [0, 255, 0],
+      },
+    ]);
+    const range = { name: 'range' } as unknown as WebGLTexture;
+
+    pass.draw(frameOf(set, range));
+
+    // The sphere step and the line step both read it.
+    expect(bindings(context)).toEqual([1, 1]);
+    const empty = context
+      .of('uniform1f')
+      .filter((call) => call.args[0] === 'uRangeEmpty');
+    expect(empty.map((call) => call.args[1])).toEqual([RANGE_EMPTY, RANGE_EMPTY]);
+    expect(
+      context.of('bindTexture').filter((call) => call.args[1] === range),
+    ).toHaveLength(2);
+  });
+
+  test('takes the share of 1 and caps nothing with no buffer', () => {
+    const context = fakeContext(1920, 1080);
+    const pass = createShapePass(
+      context.gl,
+      fakePrograms(),
+      {} as WebGLVertexArrayObject,
+    );
+    const set = shapeSet();
+    set.addSpheres([{ position: [0, 0, 0], radius: 100, color: [255, 0, 0] }]);
+    set.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [100, 0, 0],
+        ],
+        color: [0, 255, 0],
+      },
+    ]);
+
+    pass.draw(frameOf(set));
+
+    expect(bindings(context)).toEqual([0, 0]);
+  });
+
+  test('reads the counts of a set before it draws it', () => {
+    const context = fakeContext(1920, 1080);
+    const pass = createShapePass(
+      context.gl,
+      fakePrograms(),
+      {} as WebGLVertexArrayObject,
+    );
+    const set = shapeSet();
+    expect(pass.prepare(set)).toEqual({ spheres: 0, segments: 0 });
+
+    set.addSpheres([{ position: [0, 0, 0], radius: 100, color: [255, 0, 0] }]);
+    set.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [100, 0, 0],
+          [200, 0, 0],
+        ],
+        color: [0, 255, 0],
+      },
+    ]);
+    expect(pass.prepare(set)).toEqual({ spheres: 1, segments: 2 });
+
+    // The counts came from the buffers the draw reads, so the draw writes them no second
+    // time.
+    const written = context.of('bufferSubData').length;
+    expect(pass.draw(frameOf(set))).toBe(3);
+    expect(context.of('bufferSubData')).toHaveLength(written);
   });
 });

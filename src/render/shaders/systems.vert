@@ -31,6 +31,10 @@ out vec3 vCore;
 out float vRadius;
 out float vRing;
 out float vStyle;
+// The distance from the camera to the system, in light years. The colour shader does not
+// read it; the range shader writes it into the range buffer, and both programs are built
+// from this one vertex shader.
+out float vRange;
 
 // The disc diameter in CSS pixels at a range in light years. The rule reads the range
 // alone and not the viewport. It walks the stop table: between two stops the size is
@@ -76,5 +80,6 @@ void main() {
   vRadius = size * 0.5;
   vRing = uRingCss * uPixelRatio;
   vStyle = aStyleRange.x;
+  vRange = range;
   gl_Position = uViewProjection * vec4(aOffset, 1.0);
 }

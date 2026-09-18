@@ -30,39 +30,50 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 
 ## Scripts
 
-| Script                 | What it does                                            |
-| ---------------------- | ------------------------------------------------------- |
-| `pnpm dev`             | Starts the Vite dev server on port 5173                 |
-| `pnpm build`           | Checks the types, then builds the library into `dist/`  |
-| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                  |
-| `pnpm build:demo-data` | Writes the five demo data files from the Canonn sources |
-| `pnpm preview`         | Serves `dist-demo/` on port 4173                        |
-| `pnpm test`            | Runs the Vitest unit tests                              |
-| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests    |
-| `pnpm lint`            | Runs ESLint                                             |
-| `pnpm format`          | Runs Prettier over the repository                       |
+| Script                 | What it does                                           |
+| ---------------------- | ------------------------------------------------------ |
+| `pnpm dev`             | Starts the Vite dev server on port 5173                |
+| `pnpm build`           | Checks the types, then builds the library into `dist/` |
+| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                 |
+| `pnpm build:demo-data` | Writes the six demo data files from the Canonn sources |
+| `pnpm preview`         | Serves `dist-demo/` on port 4173                       |
+| `pnpm test`            | Runs the Vitest unit tests                             |
+| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests   |
+| `pnpm lint`            | Runs ESLint                                            |
+| `pnpm format`          | Runs Prettier over the repository                      |
 
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
-The demo page carries five data sets in [demo-data/](demo-data/), which
+The demo page carries six data sets, which
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names: Guardian Ruins, 212 systems in 3
 categories; Guardian Structures, 163 systems in 10 categories; Notable Systems, 16
 systems in 4 categories; UIA Map, 1,116 systems in 18 categories with 54 spheres and 983
-lines; and
-Adamastor Routes, 8 systems in 4 categories with 8 lines. It names them in the `datasets`
+lines;
+Adamastor Routes, 8 systems in 10 categories with 8 lines; and Canonn Factions, which
+fetches its records when the user loads it. It names them in the `datasets`
 option any host uses, and it loads Guardian Ruins at start. The HUD's dataset field
-switches between them. `pnpm build:demo-data` writes the five files again from the Canonn
-sources.
+switches between them. `pnpm build:demo-data` writes the files of
+[demo-data/](demo-data/) again from the Canonn sources.
 
-The last two sets carry shapes. `DatasetContent` carries records and no shape, so the
+**Canonn Factions is the one entry that fetches.** Its `load()` fetches the 16.9 MB Spansh
+factions dump and moves the body to a worker, which decompresses it with the browser's own
+`DecompressionStream` and reads the two Canonn factions out of the stream a line at a time.
+It cancels the stream once it has both, so it reads about an eighth of the file. The page
+keeps the fetch, so the request comes from the page; the worker keeps the map drawing,
+because Chromium inflates a body it already holds in one burst. The reader is the demo
+page's own [src/app/multifaction.ts](src/app/multifaction.ts): the library fetches nothing
+itself, and a failed fetch leaves the map with the set it had. The 48 permit spheres of that set are
+committed, because they are a static literal and not a live dump.
+
+The last three sets carry shapes. `DatasetContent` carries records and no shape, so the
 page holds the shapes of each file by entry id and adds them from its own
 `onDatasetChange` listener with `addSpheres` and `addLines`.
 
 A Guardian Ruins record names its thumbnails at
 `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
-repository holds no picture of them. The other four sets name no picture. The dev server
-and the demo site build both carry the five files, and the library build carries no
+repository holds no picture of them. The other five sets name no picture. The dev server
+and the demo site build both carry the six files, and the library build carries no
 record of them. The browser suite serves the demo site and clears the set in its own
 helper, so a test that does not ask for a set opens an empty map. Open
 `#c=1500,0,-500&d=3000&p=35&y=0&g=1` to see the markers.
@@ -154,20 +165,37 @@ carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
 `isGridVisible`, `onGridChange`, `setCursorMarkerVisible`, `getCursorMarkerVisible`,
 `regionNameAt` and `regionNameAtExact`. For the shapes it carries `addSpheres`,
 `addLines`, `clearShapes`, `sphereCount`, `lineCount`, `getSphere`, `getLine`,
-`areShapesVisible` and `setShapesVisible`. For the dataset catalog it carries
+`getShapeInfo`, `setShapeNameFilter`, `getShapeNameFilter`, `areShapesVisible` and
+`setShapesVisible`. For the dataset catalog it carries
 `getDatasets`, `getLoadedDataset`, `loadDataset` and `onDatasetChange`. The `hud`
 member is the HUD handle, or null when the options do not ask for the HUD.
 
 The map also draws **spheres and lines**, which the host adds with `addSpheres` and
 `addLines`. A shape is drawn and is never picked: no shape hovers, none is selected, and
-`systemAt` reads none. A shape carries its own colour and belongs to no category, so a
-category switch never moves it. A sphere takes a centre, a radius in light years, a colour
-and an opacity, and it draws as a shell and not as a solid. A line takes at least two
-points, a colour and a width in CSS pixels, and a point is a game coordinate or
+`systemAt` reads none. A sphere takes a centre, a radius in light years and an opacity, and
+it draws as a shell and not as a solid. A line takes at least two points and a width in CSS
+pixels, and a point is a game coordinate or
 `{ system: 'Sol' }`, which the map resolves against the systems it holds when the line is
 added. The set holds up to 1,024 spheres, 4,096 lines and 65,536 line points together.
 `setShapesVisible` takes both parts off at once, and the shapes are on unless the
 `shapes` option says otherwise.
+
+**A shape can name categories.** A sphere and a line each take a `primaryCategory` and a
+list of `secondaryCategories`, and both name a category of the same table the records use,
+so add the categories first: the reader rejects a shape that names a category the table
+does not hold. A shape that names a category draws in that category's colour and hides with
+it, and `color` is then not needed. A shape that names none keeps a `color` of its own and
+no category switch moves it. `setShapeNameFilter` hides the shapes whose name does not hold
+the text, beside the `setNameFilter` that does the same for the records, and
+`getShapeInfo('sphere', 0)` answers the name, the categories, the centre, the reach and
+whether the shape draws in the next frame.
+
+**A sphere washes the markers inside it and behind it**, and not the ones in front of it.
+The marker pass writes each marker's camera range into a float buffer, and a sphere draws
+the part of its shell that lies behind the nearest marker at that pixel. The wash over a
+marker is capped at half, so one decoration leaves a marker half its colour, and the caps
+of a sphere and of a line compound. A browser with no `EXT_float_blend` draws every sphere
+whole, as the map did before.
 
 The region overlay is one switch, and it is on unless the `regions` option says
 otherwise. It draws the traced set, a line through the midpoints of the edges the 49.3494
@@ -302,7 +330,15 @@ before the call. `hud.refresh()` rebuilds them at once.
 The HUD is plain DOM in one `div.gm-hud`, and every one of its rules sits under that
 class. It shows the region name and the zoom distance in the top bar, a category browser
 with a search box, the map option switches, and an information panel for the selected
-system with its fields, description, thumbnails and a lightbox. The panel's fields start
+system with its fields, description, thumbnails and a lightbox.
+
+**The category browser has two tabs.** SYSTEMS lists the categories that hold records and
+SHAPES lists the ones that hold shapes, each with its own search box, and ALL and NONE act
+on the tab in front of the user. A category row carries two buttons: the dot takes the
+category off and on, and the rest of the row opens the row and closes it. One click did both
+before, so a host that drove the row by a click must now name the part it wants. The dot
+carries `aria-pressed` and the row carries `aria-expanded`. An open shape row lists the
+shapes of that category and a click on one flies the camera to it. The panel's fields start
 with `POSITION`, `DISTANCE FROM SOL`, `RANGE` and `REGION`. `RANGE` is the distance
 from the cursor to the system, so it reads 0 light years after a flight lands on the
 system. `REGION` names the codex

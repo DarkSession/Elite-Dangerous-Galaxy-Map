@@ -1,6 +1,11 @@
-// The category panel: the search box, one row per category, and the list a row expands
-// into.
-import type { GalaxyMap } from '../app/create-map';
+// The category panel: the two tabs, the search box, one row per category, and the list a
+// row expands into.
+//
+// One table holds the categories of the systems and of the shapes, so the two tabs are
+// two readings of one table and not two tables. Each tab holds its own open set, and the
+// panel builds the rows of the shown tab alone, so the rows of the other tab are never
+// in the document.
+import type { GalaxyMap, ShapeKind } from '../app/create-map';
 import {
   cssColor,
   focusMark,
@@ -11,46 +16,60 @@ import {
   restoreFocus,
   setAttribute,
   setPressed,
-  setShown,
   setStyle,
 } from './dom';
 
 /** How long the box waits before it gives the text to the filter, in milliseconds. */
 export const FILTER_DELAY_MS = 150;
 
+/** How long a list takes to open and to close, in milliseconds. */
+export const LIST_MOVE_MS = 140;
+
 /**
- * The most system rows the open lists hold together. The open lists share it, so the
- * HUD's node count follows neither the size of the set nor the count of open lists.
+ * The most rows the open lists hold together. The open lists share it, so the HUD's node
+ * count follows neither the size of the set nor the count of open lists.
  */
 export const MAX_SYSTEM_ROWS = 200;
 
-/** What the panel keeps about one system, so it does not read the set again. */
+/** Which kind of thing the panel lists. */
+export type CategoryTab = 'systems' | 'shapes';
+
+/** Where a shape row sends the camera. A system row carries none. */
+interface Flight {
+  readonly centre: readonly [number, number, number];
+  readonly reach: number;
+}
+
+/** What the panel keeps about one system or one shape, so it reads the map once. */
 interface Entry {
   readonly name: string;
   readonly identity: string;
+  /** The flight of a shape row, and null for a system row. */
+  readonly flight: Flight | null;
 }
 
-/** One category and the names of the systems it holds, as `matchingCategories` reads it. */
-export interface CategorySystems {
+/** One category and the names it holds, as `matchingCategories` reads them. */
+export interface CategoryNames {
   readonly name: string;
-  readonly systems: readonly string[];
+  /** The names of the systems, or of the shapes, the category holds. */
+  readonly names: readonly string[];
 }
 
 /**
- * The categories that hold at least one system the filter keeps. A search opens every
- * one of them, so the answer to a search is never inside a folded row.
+ * The categories that hold at least one name the filter keeps. A search opens every one
+ * of them, so the answer to a search is never inside a folded row.
  *
  * The comparison is the one the map itself makes: the text is not trimmed and the match
  * is not case sensitive. A trim here would open a row whose marker the map does not draw.
  */
 export function matchingCategories(
   filter: string,
-  groups: readonly CategorySystems[],
+  groups: readonly CategoryNames[],
 ): Set<string> {
   const text = filter.toLowerCase();
   const open = new Set<string>();
   for (const group of groups) {
-    const holds = group.systems.some((name) => name.toLowerCase().includes(text));
+    const holds = group.names.some((name) => name.toLowerCase().includes(text));
     if (holds) open.add(group.name);
   }
   return open;
@@ -71,31 +90,66 @@ export function rowShare(openCount: number, index: number): number {
   return index < MAX_SYSTEM_ROWS ? 1 : 0;
 }
 
+/**
+ * The height cap of one open list, in CSS pixels, and 0 for no cap. `area` is the height
+ * of the list area, `rows` is the height of the category rows in it, and `openCount` is
+ * the count of open lists.
+ *
+ * The open lists take the space the rows leave, and half the area where the rows leave
+ * less than that. Each open list takes an even share of the result.
+ *
+ * The share is a cap and not a height. The panel writes it into `--gm-list-cap`, and the
+ * rule `max-height: var(--gm-list-cap)` takes the smaller of the cap and the rows the
+ * list holds, so a list of two systems stays two rows high. A list that needs less than
+ * its share passes no remainder to another list.
+ */
+export function listCap(area: number, rows: number, openCount: number): number {
+  if (openCount <= 0 || area <= 0) return 0;
+  return Math.max(area - rows, area * 0.5) / openCount;
+}
+
+/**
+ * What a shape row reads. A shape that carries a name reads it, and a shape that carries
+ * none reads its kind and its place in the set, for example `SPHERE 12` or `LINE 7`.
+ */
+export function shapeLabel(kind: ShapeKind, index: number, name?: string): string {
+  if (name !== undefined && name !== '') return name;
+  return `${kind === 'sphere' ? 'SPHERE' : 'LINE'} ${index}`;
+}
+
 /** The elements of one category row. */
 interface Group {
   readonly name: string;
-  readonly row: HTMLButtonElement;
+  /** The row and its list together, which the panel measures to find the row height. */
+  readonly element: HTMLElement;
+  readonly line: HTMLElement;
+  readonly dot: HTMLButtonElement;
   readonly swatch: HTMLElement;
-  readonly expand: HTMLButtonElement;
+  readonly row: HTMLButtonElement;
+  /** The wrapper that moves from no height to the height of the rows. */
   readonly list: HTMLElement;
+  /** The box the rows sit in, which carries the cap and scrolls. */
+  readonly rows: HTMLElement;
   readonly color: readonly [number, number, number];
+  /** The timer that empties a folded list after it closed. */
+  clearTimer: number | null;
 }
 
 /** The category panel of the HUD. */
 export interface CategoryPanel {
   readonly element: HTMLElement;
-  /** Rebuilds every row from the category table and the system set. */
+  /** Rebuilds every row from the category table and the set of the shown tab. */
   rebuild(): void;
   /** Writes the state each control shows, and writes only what changed. */
   update(): void;
-  /** Rebuilds the rows when the table or the set changed since the last call. */
+  /** Rebuilds the rows when the table or a set changed since the last call. */
   poll(): void;
-  /** Drops the timer the search box holds. */
+  /** Drops the timers and the observer the panel holds. */
   dispose(): void;
 }
 
-/** Draws the three lines of the expand button. */
-function makeExpandIcon(doc: Document): SVGSVGElement {
+/** Draws the three lines that mark the rest of the row as the one that opens the list. */
+function makeListIcon(doc: Document): SVGSVGElement {
   const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 12 12');
   svg.setAttribute('width', '11');
@@ -120,8 +174,17 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   const element = make(doc, 'section', 'gm-hud__panel gm-hud__category-panel');
 
   const header = make(doc, 'div', 'gm-hud__panel-header');
-  const title = make(doc, 'h2', 'gm-hud__panel-title');
-  title.textContent = 'SYSTEM CATEGORIES';
+  const tabs = make(doc, 'div', 'gm-hud__tabs');
+  tabs.setAttribute('role', 'tablist');
+  const systemsTab = makeButton(doc, 'gm-hud__tab');
+  systemsTab.textContent = 'SYSTEMS';
+  systemsTab.dataset['name'] = 'systems';
+  systemsTab.setAttribute('role', 'tab');
+  const shapesTab = makeButton(doc, 'gm-hud__tab');
+  shapesTab.textContent = 'SHAPES';
+  shapesTab.dataset['name'] = 'shapes';
+  shapesTab.setAttribute('role', 'tab');
+  tabs.append(systemsTab, shapesTab);
   const bulk = make(doc, 'div', 'gm-hud__bulk');
   const allButton = makeButton(doc, 'gm-hud__bulk-button');
   allButton.textContent = 'ALL';
@@ -130,13 +193,11 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   noneButton.textContent = 'NONE';
   noneButton.dataset['name'] = 'none';
   bulk.append(allButton, noneButton);
-  header.append(title, bulk);
+  header.append(tabs, bulk);
 
   const searchWrap = make(doc, 'div', 'gm-hud__search-wrap');
   const search = make(doc, 'input', 'gm-hud__search');
   search.type = 'text';
-  search.placeholder = 'SEARCH SYSTEMS';
-  search.setAttribute('aria-label', 'Search systems');
   searchWrap.appendChild(search);
 
   const list = make(doc, 'div', 'gm-hud__category-list');
@@ -144,33 +205,74 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
 
   const groups: Group[] = [];
   const byCategory = new Map<string, Entry[]>();
-  // The categories whose lists are open. It is state and not a reading of the filter
-  // text: a change of the text writes it, the expand button writes it, and a rebuild of
-  // the panel only reads it. The panel is rebuilt on every camera move, so a set worked
-  // out from the text on each rebuild would undo the user's fold on the next frame.
-  const open = new Set<string>();
-  // The category the user last expanded by hand. Clearing the box gives the panel back
-  // to that one, and to none where the user expanded none.
-  let handExpanded: string | null = null;
+  // The categories whose lists are open, one set per tab, so a tab the user comes back
+  // to reads as they left it. The set is state and not a reading of the filter text: a
+  // change of the text writes it, a click on a row writes it, and a rebuild of the panel
+  // only reads it. The panel is rebuilt on every camera move, so a set worked out from
+  // the text on each rebuild would undo the user's fold on the next frame.
+  const openOf: Record<CategoryTab, Set<string>> = {
+    systems: new Set<string>(),
+    shapes: new Set<string>(),
+  };
+  // The category the user last opened by hand, per tab. Clearing the box gives the panel
+  // back to that one, and to none where the user opened none.
+  const handOpenedOf: Record<CategoryTab, string | null> = {
+    systems: null,
+    shapes: null,
+  };
+  let tab: CategoryTab = 'systems';
   let dataSignature = '';
   let filterSignature = '';
   let filterTimer: number | null = null;
+  // The count of open lists, which the observer needs and does not measure.
+  let openCount = 0;
+  let lastCap = '';
+
+  /** How many shapes the map holds, of both kinds. */
+  function shapeCount(): number {
+    return map.sphereCount() + map.lineCount();
+  }
+
+  /** The filter text of the shown tab. */
+  function filterText(): string {
+    return tab === 'systems' ? map.getNameFilter() : map.getShapeNameFilter();
+  }
+
+  /** Gives a text to the filter of the shown tab. */
+  function writeFilter(text: string): void {
+    if (tab === 'systems') map.setNameFilter(text);
+    else map.setShapeNameFilter(text);
+  }
+
+  /**
+   * Clears the filter of one tab. The panel clears the filter of the tab it leaves, so
+   * no filter is in force on a kind whose box the user cannot see.
+   */
+  function clearFilter(which: CategoryTab): void {
+    if (which === 'systems') {
+      if (map.getNameFilter() !== '') map.setNameFilter('');
+      return;
+    }
+    if (map.getShapeNameFilter() !== '') map.setShapeNameFilter('');
+  }
 
   /**
    * Writes the open set from the filter text. A text that is not empty opens every
    * category that holds a match, including one the user turned off, because a click on
-   * one of its rows turns it back on. An empty text gives the panel back to the one
-   * category the user last expanded by hand.
+   * the dot of one of its rows turns it back on. An empty text gives the panel back to
+   * the one category the user last opened by hand.
    */
   function seedOpen(filter: string): void {
+    const open = openOf[tab];
     open.clear();
     if (filter === '') {
-      if (handExpanded !== null) open.add(handExpanded);
+      const held = handOpenedOf[tab];
+      if (held !== null) open.add(held);
       return;
     }
-    const held: CategorySystems[] = groups.map((group) => ({
+    const held: CategoryNames[] = groups.map((group) => ({
       name: group.name,
-      systems: (byCategory.get(group.name) ?? []).map((entry) => entry.name),
+      names: (byCategory.get(group.name) ?? []).map((entry) => entry.name),
     }));
     for (const name of matchingCategories(filter, held)) open.add(name);
   }
@@ -178,8 +280,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   /** Gives the box's text to the filter and renders the lists again. */
   const applyFilter = (): void => {
     filterTimer = null;
-    map.setNameFilter(search.value);
-    seedOpen(map.getNameFilter());
+    writeFilter(search.value);
+    seedOpen(filterText());
     renderOpenLists();
   };
 
@@ -190,6 +292,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     filterTimer = window.setTimeout(applyFilter, FILTER_DELAY_MS);
   });
 
+  /** ALL and NONE act on the rows of the shown tab, which is what the user can see. */
   const setEveryCategory = (visible: boolean): void => {
     for (const group of groups) map.setCategoryVisible(group.name, visible);
     update();
@@ -197,7 +300,23 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   allButton.addEventListener('click', () => setEveryCategory(true));
   noneButton.addEventListener('click', () => setEveryCategory(false));
 
-  /** Puts one system in the list of one category. */
+  /** Shows the other tab. The panel keeps the open set of each one. */
+  function showTab(next: CategoryTab): void {
+    if (next === tab) return;
+    if (filterTimer !== null) {
+      clearTimeout(filterTimer);
+      filterTimer = null;
+    }
+    clearFilter(tab);
+    tab = next;
+    clearFilter(tab);
+    search.value = '';
+    rebuild();
+  }
+  systemsTab.addEventListener('click', () => showTab('systems'));
+  shapesTab.addEventListener('click', () => showTab('shapes'));
+
+  /** Puts one system or one shape in the list of one category. */
   function addEntry(name: string, entry: Entry): void {
     const held = byCategory.get(name);
     if (held === undefined) byCategory.set(name, [entry]);
@@ -206,7 +325,6 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
 
   /** Reads every system once, so the counts and the lists need no second sweep. */
   function readSystems(): void {
-    byCategory.clear();
     const count = map.systemCount();
     for (let index = 0; index < count; index += 1) {
       const system = map.getSystem(index);
@@ -214,20 +332,50 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       const entry: Entry = {
         name: system.name,
         identity: system.id64 ?? system.name,
+        flight: null,
       };
-      // The system goes in every category it names. The row's switch brings the
-      // system back through any of them, so the row's count and its list say so.
+      // The system goes in every category it names. The row's dot brings the system
+      // back through any of them, so the row's count and its list say so.
       addEntry(system.primaryCategory, entry);
       for (const name of system.secondaryCategories) addEntry(name, entry);
     }
   }
 
-  /** The systems of one category the filter keeps, in order of name. */
+  /**
+   * Reads the shapes of one kind. `getShapeInfo` copies no line point, so a set of 4,096
+   * lines of 65,536 points costs no copy of the geometry.
+   */
+  function readShapes(kind: ShapeKind, count: number): void {
+    for (let index = 0; index < count; index += 1) {
+      const info = map.getShapeInfo(kind, index);
+      if (info === null) continue;
+      const entry: Entry = {
+        name: shapeLabel(kind, index, info.name),
+        identity: `${kind} ${index}`,
+        flight: { centre: info.centre, reach: info.reach },
+      };
+      if (info.primaryCategory !== undefined) addEntry(info.primaryCategory, entry);
+      for (const name of info.secondaryCategories) addEntry(name, entry);
+    }
+  }
+
+  /** Reads the things of the shown tab. */
+  function readEntries(): void {
+    byCategory.clear();
+    if (tab === 'systems') {
+      readSystems();
+      return;
+    }
+    readShapes('sphere', map.sphereCount());
+    readShapes('line', map.lineCount());
+  }
+
+  /** The things of one category the filter keeps, in order of name. */
   function entriesOf(name: string): Entry[] {
     const held = byCategory.get(name) ?? [];
     // The text is not trimmed, because the map compares the filter text as the host
     // gave it. A trim here would show a row whose marker the map does not draw.
-    const text = map.getNameFilter().toLowerCase();
+    const text = filterText().toLowerCase();
     const kept =
       text === ''
         ? held.slice()
@@ -237,35 +385,104 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   }
 
   /**
+   * Writes the height cap of one open list into `--gm-list-cap` on the list area.
+   *
+   * The cap is `max(area - rows, 0.5 * area) / openCount`, which only the layout knows,
+   * so the panel measures. `rows` is the height of one group less the height of its
+   * list, added up: that difference is the row alone and it holds while a list moves.
+   *
+   * The write happens on a change of the value alone. The observer calls this on every
+   * resize of the list area, and the HUD makes no DOM write in a still frame.
+   */
+  function writeCap(): void {
+    const area = list.clientHeight;
+    let rows = 0;
+    for (const group of groups) {
+      rows +=
+        group.element.getBoundingClientRect().height -
+        group.list.getBoundingClientRect().height;
+    }
+    const cap = listCap(area, rows, openCount);
+    // A cap of 0 reads as `none`: the panel is not laid out yet, and a list that is
+    // capped at no height would read as a fold the user did not ask for.
+    const text = cap <= 0 ? 'none' : `${(Math.round(cap * 10) / 10).toString()}px`;
+    if (text === lastCap) return;
+    lastCap = text;
+    setStyle(list, '--gm-list-cap', text);
+  }
+
+  const observer =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          writeCap();
+        });
+  observer?.observe(list);
+
+  /** Empties a list that closed, and holds the rows while it closes. */
+  function clearLater(group: Group): void {
+    if (group.rows.childElementCount === 0 || group.clearTimer !== null) return;
+    group.clearTimer = window.setTimeout(() => {
+      group.clearTimer = null;
+      group.rows.replaceChildren();
+    }, LIST_MOVE_MS + 20);
+  }
+
+  /** Makes one row of an open list. */
+  function makeEntryRow(group: Group, entry: Entry): HTMLButtonElement {
+    const row = makeButton(doc, 'gm-hud__system-row');
+    row.dataset['name'] = entry.name;
+    row.dataset['identity'] = entry.identity;
+    const name = make(doc, 'span', 'gm-hud__system-name');
+    name.textContent = entry.name;
+    row.append(name);
+    row.addEventListener('click', () => {
+      // The row turns its category on, because a row of a category the user closed
+      // must still reach the thing it names.
+      map.setCategoryVisible(group.name, true);
+      const flight = entry.flight;
+      if (flight === null) {
+        map.setSelection(entry.identity);
+      } else {
+        // Half the field of view is 30 degrees, so twice the reach is the distance at
+        // which the shape fills the frame. A shape is never selected, so the flight
+        // leaves the selection where it is.
+        void map.flyTo({ cursor: flight.centre, distance: flight.reach * 2 });
+      }
+      update();
+    });
+    return row;
+  }
+
+  /**
    * Fills the list of every open category and empties every other list.
    *
    * The open lists share the row budget, at `floor(200 / open)` rows each, so the HUD's
    * node count does not follow the count of open lists. Where that share is 0, which a
    * filter matching in more than 200 categories reaches, the first 200 open lists in the
    * panel's own order hold one row each and the rest hold none. A list that holds no row
-   * still says how many systems it has, so the user narrows the filter to read it.
+   * still says how many things it has, so the user narrows the filter to read it.
    */
   function renderOpenLists(): void {
-    const openCount = groups.reduce(
+    const open = openOf[tab];
+    openCount = groups.reduce(
       (count, group) => (open.has(group.name) ? count + 1 : count),
       0,
     );
     let openIndex = 0;
     for (const group of groups) {
       const isOpen = open.has(group.name);
-      setAttribute(group.expand, 'aria-expanded', isOpen ? 'true' : 'false');
-      setAttribute(
-        group.expand,
-        'aria-label',
-        isOpen ? 'Hide systems' : 'List systems',
-      );
-      setAttribute(group.expand, 'title', isOpen ? 'Hide systems' : 'List systems');
-      setShown(group.list, isOpen);
+      setAttribute(group.row, 'aria-expanded', isOpen ? 'true' : 'false');
+      setAttribute(group.list, 'data-open', isOpen ? 'true' : 'false');
       if (!isOpen) {
-        if (group.list.childElementCount > 0) {
-          replaceChildrenKeepingFocus(group.list, []);
-        }
+        // The rows stay while the list closes and go after it, so the close moves over
+        // the rows the user saw.
+        clearLater(group);
         continue;
+      }
+      if (group.clearTimer !== null) {
+        clearTimeout(group.clearTimer);
+        group.clearTimer = null;
       }
       const cap = rowShare(openCount, openIndex);
       openIndex += 1;
@@ -273,116 +490,141 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       const shown = Math.min(entries.length, cap);
       const children: HTMLElement[] = [];
       for (let index = 0; index < shown; index += 1) {
-        const entry = entries[index] as Entry;
-        const row = makeButton(doc, 'gm-hud__system-row');
-        row.dataset['name'] = entry.name;
-        row.dataset['identity'] = entry.identity;
-        const name = make(doc, 'span', 'gm-hud__system-name');
-        name.textContent = entry.name;
-        row.append(name);
-        row.addEventListener('click', () => {
-          // The row turns its category on, because a row of a category the user closed
-          // must still reach the system it names.
-          map.setCategoryVisible(group.name, true);
-          map.setSelection(entry.identity);
-          update();
-        });
-        children.push(row);
+        children.push(makeEntryRow(group, entries[index] as Entry));
       }
       if (entries.length > shown) {
         const cut = make(doc, 'div', 'gm-hud__system-cut');
         cut.textContent = `${formatWhole(shown)} of ${formatWhole(entries.length)}`;
         children.push(cut);
       }
-      replaceChildrenKeepingFocus(group.list, children);
+      replaceChildrenKeepingFocus(group.rows, children);
     }
-    filterSignature = map.getNameFilter();
+    filterSignature = filterText();
+    writeCap();
     update();
   }
 
-  /** Builds one row per category and reads the systems again. */
+  /** Builds one row per category of the shown tab and reads its things again. */
   function rebuild(): void {
+    // The panel falls back to the systems tab where the last shape goes, which a dataset
+    // switch does, because the shapes tab is disabled with no shape.
+    if (tab === 'shapes' && shapeCount() === 0) tab = 'systems';
     // The mark is read before the first replace and restored after the last one. The new
-    // groups hold empty system lists, so a focused system row finds its place only after
+    // groups hold empty lists, so a focused row finds its place only after
     // `renderOpenLists` fills them.
     const mark = focusMark(element);
-    readSystems();
+    for (const group of groups) {
+      if (group.clearTimer !== null) clearTimeout(group.clearTimer);
+    }
+    readEntries();
     groups.length = 0;
     const children: HTMLElement[] = [];
     const count = map.categoryCount();
     for (let index = 0; index < count; index += 1) {
       const category = map.getCategory(index);
       if (category === null) continue;
-      const group = make(doc, 'div', 'gm-hud__category-group');
-      group.dataset['name'] = category.name;
+      const held = byCategory.get(category.name);
+      // A category that holds nothing of the shown tab has no row: a row that counts
+      // nothing switches nothing the user can see.
+      if (held === undefined || held.length === 0) continue;
+      const groupElement = make(doc, 'div', 'gm-hud__category-group');
+      groupElement.dataset['name'] = category.name;
       const line = make(doc, 'div', 'gm-hud__category-line');
 
-      const row = makeButton(doc, 'gm-hud__category-row');
-      row.dataset['name'] = category.name;
-      if (category.description !== undefined) row.title = category.description;
+      // The dot switches the category and the rest of the row opens the list. The two
+      // jobs took one button and a second small button before, and a user who wanted the
+      // list switched the category off instead.
+      const dot = makeButton(doc, 'gm-hud__category-dot');
+      dot.dataset['name'] = category.name;
+      dot.setAttribute('aria-label', category.name);
       const swatch = make(doc, 'span', 'gm-hud__category-swatch');
       swatch.style.border = `1px solid ${cssColor(category.color)}`;
-      const name = make(doc, 'span', 'gm-hud__category-name');
-      name.textContent = category.name;
-      const countText = make(doc, 'span', 'gm-hud__category-count');
-      // The count reads the primary category and every secondary one, because the
-      // row's switch brings a system back through any category it belongs to.
-      countText.textContent = formatWhole(byCategory.get(category.name)?.length ?? 0);
-      row.append(swatch, name, countText);
-      row.addEventListener('click', () => {
+      dot.append(swatch);
+      dot.addEventListener('click', () => {
         map.setCategoryVisible(category.name, !map.isCategoryVisible(category.name));
         update();
       });
 
-      const expand = makeButton(doc, 'gm-hud__category-expand');
-      expand.dataset['name'] = category.name;
-      expand.appendChild(makeExpandIcon(doc));
-      expand.addEventListener('click', () => {
-        const name = category.name;
-        if (open.has(name)) {
-          open.delete(name);
-          if (handExpanded === name) handExpanded = null;
+      const row = makeButton(doc, 'gm-hud__category-row');
+      row.dataset['name'] = category.name;
+      if (category.description !== undefined) row.title = category.description;
+      const name = make(doc, 'span', 'gm-hud__category-name');
+      name.textContent = category.name;
+      const countText = make(doc, 'span', 'gm-hud__category-count');
+      // The count reads the primary category and every secondary one, because the
+      // row's dot brings a thing back through any category it belongs to.
+      countText.textContent = formatWhole(held.length);
+      const icon = make(doc, 'span', 'gm-hud__category-chevron');
+      icon.appendChild(makeListIcon(doc));
+      row.append(name, countText, icon);
+      row.addEventListener('click', () => {
+        const open = openOf[tab];
+        if (open.has(category.name)) {
+          open.delete(category.name);
+          if (handOpenedOf[tab] === category.name) handOpenedOf[tab] = null;
         } else {
           // At most one category is open while the box is empty. While it holds text
-          // the button adds or removes one name, so a list the user folds during a
-          // search stays folded until the text changes again.
-          if (map.getNameFilter() === '') open.clear();
-          open.add(name);
-          handExpanded = name;
+          // the row adds or removes one name, so a list the user folds during a search
+          // stays folded until the text changes again.
+          if (filterText() === '') open.clear();
+          open.add(category.name);
+          handOpenedOf[tab] = category.name;
         }
         renderOpenLists();
       });
 
-      line.append(row, expand);
-      const systemList = make(doc, 'div', 'gm-hud__system-list');
-      systemList.hidden = true;
-      group.append(line, systemList);
-      children.push(group);
+      line.append(dot, row);
+      const listWrap = make(doc, 'div', 'gm-hud__system-list');
+      listWrap.dataset['open'] = 'false';
+      const rows = make(doc, 'div', 'gm-hud__system-rows');
+      listWrap.append(rows);
+      groupElement.append(line, listWrap);
+      children.push(groupElement);
       groups.push({
         name: category.name,
-        row,
+        element: groupElement,
+        line,
+        dot,
         swatch,
-        expand,
-        list: systemList,
+        row,
+        list: listWrap,
+        rows,
         color: category.color,
+        clearTimer: null,
       });
     }
     replaceChildrenKeepingFocus(list, children);
-    dataSignature = `${map.categoryCount()}:${map.systemCount()}`;
-    filterSignature = map.getNameFilter();
+    dataSignature = signature();
+    filterSignature = filterText();
     // The rebuild reads the open set and never writes it. A name of a category that is
     // gone opens no list, because the render reads the groups the panel holds.
     renderOpenLists();
     restoreFocus(element, mark);
   }
 
+  /** What the panel rebuilds on: the table, the system set and the shape set. */
+  function signature(): string {
+    return `${map.categoryCount()}:${map.systemCount()}:${map.sphereCount()}:${map.lineCount()}`;
+  }
+
   /** Writes the state of every control. Each write happens only on a change. */
   function update(): void {
+    const noShape = shapeCount() === 0;
+    if (shapesTab.disabled !== noShape) shapesTab.disabled = noShape;
+    setPressed(systemsTab, tab === 'systems');
+    setPressed(shapesTab, tab === 'shapes');
+    setAttribute(systemsTab, 'aria-selected', tab === 'systems' ? 'true' : 'false');
+    setAttribute(shapesTab, 'aria-selected', tab === 'shapes' ? 'true' : 'false');
+    const searchLabel = tab === 'systems' ? 'Search systems' : 'Search shapes';
+    setAttribute(search, 'placeholder', searchLabel.toUpperCase());
+    setAttribute(search, 'aria-label', searchLabel);
     const selection = map.getSelection();
     const selected = selection === null ? null : (selection.id64 ?? selection.name);
     for (const group of groups) {
       const on = map.isCategoryVisible(group.name);
-      setPressed(group.row, on);
+      setPressed(group.dot, on);
+      // A row of a category that is off shows it: the dot is hollow and the name dims.
+      setAttribute(group.line, 'data-on', on ? 'true' : 'false');
       setStyle(group.swatch, 'background', on ? cssColor(group.color) : 'transparent');
       setStyle(
         group.swatch,
@@ -390,7 +632,9 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         on ? `0 0 10px ${cssColor(group.color)}` : 'none',
       );
       setStyle(group.swatch, 'opacity', on ? '1' : '0.5');
-      for (const row of group.list.children) {
+      // A shape is never selected, so the shapes tab marks no row as the current one.
+      if (tab !== 'systems') continue;
+      for (const row of group.rows.children) {
         if (!(row instanceof HTMLElement)) continue;
         const identity = row.dataset['identity'];
         if (identity === undefined) continue;
@@ -404,12 +648,12 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     rebuild,
     update,
     poll(): void {
-      const nextData = `${map.categoryCount()}:${map.systemCount()}`;
+      const nextData = signature();
       if (nextData !== dataSignature) {
         rebuild();
         return;
       }
-      const nextFilter = map.getNameFilter();
+      const nextFilter = filterText();
       if (nextFilter !== filterSignature) {
         filterSignature = nextFilter;
         // A host that writes the filter changes the text, so the open set follows it as
@@ -425,6 +669,11 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         clearTimeout(filterTimer);
         filterTimer = null;
       }
+      for (const group of groups) {
+        if (group.clearTimer !== null) clearTimeout(group.clearTimer);
+        group.clearTimer = null;
+      }
+      observer?.disconnect();
     },
   };
 }

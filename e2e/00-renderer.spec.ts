@@ -31,3 +31,27 @@ test('the page draws on the hardware renderer', async ({ page, browserName }) =>
   }
   console.log('renderer:', renderer);
 });
+
+// A context that cannot blend into a 32-bit float target draws every sphere at a share of
+// 1 and caps no line, which is the frame this change replaces. Both browsers of the gate
+// give both extensions, so a run that reads the fallback measures the wrong frame. This
+// test runs in every project, and the shape tests read the buffer itself in Chromium.
+test('the context blends into a float target', async ({ page }) => {
+  await page.goto('./');
+  // This file navigates by itself, so it takes the start state the helper gives.
+  await startState(page);
+  const extensions = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (gl === null) return null;
+    return {
+      colour: gl.getExtension('EXT_color_buffer_float') !== null,
+      blend: gl.getExtension('EXT_float_blend') !== null,
+    };
+  });
+  console.log('the float extensions', extensions);
+
+  expect(extensions, 'the browser gives no WebGL2 context').not.toBeNull();
+  expect(extensions?.colour, 'the context gives no EXT_color_buffer_float').toBe(true);
+  expect(extensions?.blend, 'the context gives no EXT_float_blend').toBe(true);
+});

@@ -166,18 +166,22 @@ file.
 The source is JavaScript. The converter **parses** the `systemsData` literal and runs no
 statement of the file, so a later source cannot run code in this repository.
 
-The sphere colours are the colours of the source's own materials in `finishMap`. The
-category descriptions in that file are this project's own.
+Each sphere names the category of the list it comes from, and each line names the
+categories of the route it traces, so the map draws and hides a shape with its category.
+A sphere keeps the colour of its own material in `finishMap`, which is the source's
+colour. The category descriptions in that file are this project's own.
 
 ## The Adamastor Routes records and lines of the demo page
 
-`demo-data/adamastor.json` holds 4 categories, 8 systems and 8 lines of 38 points. The
+`demo-data/adamastor.json` holds 10 categories, 8 systems and 8 lines of 38 points. The
 records come from the same CanonnED3D-Map project, under the same **MIT** licence, and the
 file is a conversion of that project's `Source/data/MapData-Adamastor.js` source. The
 conversion keeps each system's name, its coordinates and its categories, turns the `infos`
-field into a plain-text description, and reads the `routes` list as lines. A line takes the
-colour of the category the route names, which is the source's own colour. A route that
-names a category the source's table does not hold takes a grey of this project's own.
+field into a plain-text description, and reads the `routes` list as lines. A line names the
+categories of its route and carries no colour of its own, so it draws in the colour of its
+category, which is the source's own colour. A route that names a category the source's
+table does not hold takes a grey of this project's own. The 10 categories are the 4 the
+records name and the 7 the routes name, with one category in both lists.
 
 The routes name their points by system name, and the source holds no position for a name
 its own `systems` list does not carry. The converter reads those names from
@@ -186,13 +190,54 @@ its own `systems` list does not carry. The converter reads those names from
 and the answers are committed in the JSON, so the map itself calls EDSM at no point. The
 converter drops a name EDSM does not hold, and it reports every drop.
 
-## The committed extracts of the two CanonnED3D-Map sources
+## The Canonn Factions records and spheres of the demo page
 
-`tests/fixtures/uia-extract.js` and `tests/fixtures/adamastor-extract.js` are extracts of
-`MapData-UIA.js` and `MapData-Adamastor.js`, cut to about 20 records each. They are the
-**Canonn Research Group's own JavaScript**, carried under the **MIT** licence above, and
-they keep the style of the source: its comments, its quote styles and its commented-out
-blocks. The unit tests read them, so the conversion rules are checked with no network and
+The `multifaction` set of the demo page is the one entry that fetches its records when the
+user loads it. The library itself still fetches nothing: the fetch is in the demo host's
+own `load()`, in `src/app/multifaction.ts`.
+
+**The records come from the Spansh factions dump**, at
+`https://downloads.spansh.co.uk/factions.json.gz`, which is 16.9 MB of gzip and 101 MB of
+JSON. The same file is the source the Canonn Research Group's `MapData-multifaction.js`
+map reads. [Spansh](https://spansh.co.uk/dumps) lists the dump on its public dumps page.
+On 2026-09-18 a `curl -sI` of the URL answered `200`, `content-length: 16872832` and
+`access-control-allow-origin: *`. The file carries no licence notice of its own, and this
+project found no statement of terms on it. This notice records where the data came from,
+as the notices of the two ED Assets files below do.
+
+**The entry depends on that CORS header.** Spansh sets it and this project does not, so a
+later change of the header stops the entry in the browser. The map then shows the fetch
+error of the dataset, and the other five entries are untouched.
+
+This repository **holds no copy of the dump**, and no test fetches it. The browser reads it
+at run time, and the browser tests serve a fixture of a few faction lines that this project
+wrote. The build script fetches into `data/`, which the repository ignores.
+
+The two factions the entry names, **Canonn** and **Canonn Deep Space Research**, are
+players' own in-game groups. The set holds each system's name, its `id64` and its
+coordinates, and the state of each faction in it. It holds no commander name.
+
+**The spheres come from Canonn.** `demo-data/multifaction-spheres.json` holds 2 categories
+and 48 spheres, converted from the `permitSpheres` literal of
+`Source/data/MapData-multifaction.js` of
+[CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), under the **MIT**
+licence above. The conversion keeps each sphere's centre, its radius and its name, and
+gives it the category of the list it comes from. The colours of the two sphere categories
+are the colours of the source's own materials, and the colours of the four record
+categories are the first two pairs of the source's own `factionColorPairs`. The category
+names and the descriptions in that file are this project's own.
+
+The systems and the factions are of the game's galaxy, so the Frontier Developments terms
+above also apply to them.
+
+## The committed extracts of the three CanonnED3D-Map sources
+
+`tests/fixtures/uia-extract.js`, `tests/fixtures/adamastor-extract.js` and
+`tests/fixtures/multifaction-extract.js` are extracts of `MapData-UIA.js`,
+`MapData-Adamastor.js` and `MapData-multifaction.js`, cut to about 20 records each. They
+are the **Canonn Research Group's own JavaScript**, carried under the **MIT** licence
+above, and they keep the style of the source: its comments, its quote styles and its
+commented-out blocks. The unit tests read them, so the conversion rules are checked with no network and
 on a clean checkout. Neither build carries them, and the lint of this project does not
 read them.
 

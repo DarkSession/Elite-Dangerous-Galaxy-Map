@@ -3,6 +3,54 @@
   "licence": "MIT. The site records come from the Canonn Research Group.",
   "categories": [
     {
+      "name": "Adamastor Initial Route",
+      "color": [
+        255,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Adamastor Diversion Route",
+      "color": [
+        102,
+        255,
+        102
+      ]
+    },
+    {
+      "name": "Intersection of Routes",
+      "color": [
+        102,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Line Through Waypoints",
+      "color": [
+        102,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Adamastor's Return Journey",
+      "color": [
+        68,
+        102,
+        68
+      ]
+    },
+    {
+      "name": "Hesperus 17 Beacon Route",
+      "color": [
+        102,
+        102,
+        255
+      ]
+    },
+    {
       "name": "Aegis' Alexandria Disappeared",
       "color": [
         102,
@@ -147,13 +195,9 @@
           40.34375
         ]
       ],
-      "color": [
-        255,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Adamastor Initial Route"
+      "name": "Adamastor Initial Route",
+      "primaryCategory": "Adamastor Initial Route"
     },
     {
       "points": [
@@ -168,13 +212,9 @@
           -63.1875
         ]
       ],
-      "color": [
-        102,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Line Through Waypoints"
+      "name": "Line Through Waypoints",
+      "primaryCategory": "Line Through Waypoints"
     },
     {
       "points": [
@@ -199,13 +239,9 @@
           207.15625
         ]
       ],
-      "color": [
-        102,
-        255,
-        102
-      ],
       "width": 2,
-      "name": "Adamastor Diversion Route"
+      "name": "Adamastor Diversion Route",
+      "primaryCategory": "Adamastor Diversion Route"
     },
     {
       "points": [
@@ -220,13 +256,9 @@
           207.15625
         ]
       ],
-      "color": [
-        68,
-        102,
-        68
-      ],
       "width": 2,
-      "name": "Adamastor's Return Journey"
+      "name": "Adamastor's Return Journey",
+      "primaryCategory": "Adamastor's Return Journey"
     },
     {
       "points": [
@@ -261,13 +293,9 @@
           207.15625
         ]
       ],
-      "color": [
-        102,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Intersection of Routes"
+      "name": "Intersection of Routes",
+      "primaryCategory": "Intersection of Routes"
     },
     {
       "points": [
@@ -362,13 +390,9 @@
           -1185.3125
         ]
       ],
-      "color": [
-        102,
-        102,
-        255
-      ],
       "width": 2,
-      "name": "Hesperus 17 Beacon Route"
+      "name": "Hesperus 17 Beacon Route",
+      "primaryCategory": "Hesperus 17 Beacon Route"
     },
     {
       "points": [
@@ -388,13 +412,9 @@
           "system": "HIP 22460"
         }
       ],
-      "color": [
-        255,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Hyford's Cache & D-2's LPs"
+      "name": "Hyford's Cache & D-2's LPs",
+      "primaryCategory": "Hyford's Cache & D-2's LPs"
     }
   ]
 }

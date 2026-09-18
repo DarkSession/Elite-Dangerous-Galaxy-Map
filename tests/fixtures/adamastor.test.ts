@@ -62,13 +62,24 @@ describe('the conversion of the Adamastor source', () => {
     ]);
   });
 
-  test('reads 4 systems and 2 categories', () => {
+  // The set carries every category of the source table that a record or a shape names,
+  // in the table's order. Two of these four name a record and two name a route alone.
+  test('reads 4 systems and 4 categories', () => {
     const set = convertAdamastor(extract(), findPosition);
     expect(set.systems).toHaveLength(4);
     expect(set.categories.map((category) => category.name)).toEqual([
+      'Adamastor Initial Route',
+      'Line Through Waypoints',
       "Hyford's Cache & D-2's LPs",
       'Project Seraph Settlements',
     ]);
+    const records = new Set(
+      set.systems.flatMap((system) => [
+        system.primaryCategory,
+        ...system.secondaryCategories,
+      ]),
+    );
+    expect(records.has('Adamastor Initial Route')).toBe(false);
   });
 
   test('names only the points the source does not hold itself', () => {
@@ -111,12 +122,29 @@ describe('the conversion of the Adamastor source', () => {
     expect(drops).toContainEqual({ route: 3, point: null, reason: 'too-few-points' });
   });
 
-  test('takes the line colour from the source table, with the grey fallback', () => {
+  // A line that names a category takes that category's colour on the map, so it carries
+  // no colour of its own. Only a line that names none keeps a colour.
+  test('gives a line its route categories and the grey fallback where it has none', () => {
     const lines = convertAdamastor(extract(), findPosition).lines;
-    expect(lines[0]?.color).toEqual([255, 102, 102]);
+    expect(lines[0]?.primaryCategory).toBe('Adamastor Initial Route');
+    expect(lines[0]?.secondaryCategories).toBeUndefined();
+    expect(lines[0]?.color).toBeUndefined();
     // The route naming category `50` is the one the table does not hold.
+    expect(lines[2]?.primaryCategory).toBeUndefined();
     expect(lines[2]?.color).toEqual(LINE_COLOUR_FALLBACK);
     expect(LINE_COLOUR_FALLBACK).toEqual([160, 160, 160]);
+  });
+
+  // The Adamastor source gives a route no name of its own, and one route names one
+  // category, so the name of that category names the line.
+  test('names a line with the name its source gives it', () => {
+    const lines = convertAdamastor(extract(), findPosition).lines;
+    expect(lines.map((line) => line.name)).toEqual([
+      'Adamastor Initial Route',
+      'Line Through Waypoints',
+      undefined,
+      "Hyford's Cache & D-2's LPs",
+    ]);
   });
 
   test('writes a point of its own record set as a system reference', () => {
@@ -179,11 +207,13 @@ describe('the readers over the converted fixture', () => {
       converted.categories as unknown as readonly CategoryInput[],
     );
     const added = systems.addSystems(converted.systems);
+    // One table holds the categories of the records and of the shapes, as the map holds
+    // them, so a line that names a route category resolves it.
     const shapes = createShapeSet((identity: string) => {
       const index = systems.indexOfIdentity(identity);
       const system: RealSystem | null = index < 0 ? null : systems.system(index);
       return system?.position ?? null;
-    });
+    }, systems);
     const lines = shapes.addLines(converted.lines as unknown as readonly LineInput[]);
 
     expect(categories.rejected).toEqual([]);

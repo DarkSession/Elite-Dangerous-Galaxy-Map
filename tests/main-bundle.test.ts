@@ -59,6 +59,11 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * The free camera and the host controls take the reading to 236,815 bytes and leave the
  * bound where it is, with 17.2 kB of room. A bound that follows every reading upward
  * guards less each time, and 17.2 kB still fails on the one fault the guard is for.
+ *
+ * The shape categories, the shape name filter, `getShapeInfo` and the range buffer take
+ * the reading to **252,975 bytes**, which leaves 1,025 bytes of room. The bound stays at
+ * 254,000: no room under it absorbs the 199 KiB region cell table, so the guard holds.
+ * The next change that touches this chunk must move the bound and say why.
  */
 const ENTRY_CHUNK_LIMIT = 254_000;
 
@@ -118,6 +123,8 @@ const PUBLIC_TYPES = [
   'Line',
   'ShapeReport',
   'ShapeReject',
+  'ShapeInfo',
+  'ShapeKind',
   'StartView',
   'FlyToTarget',
   'FlyToOptions',
@@ -372,11 +379,16 @@ describe('the library build', () => {
       private?: boolean;
       types?: string;
       files?: string[];
+      version?: string;
       exports?: Record<string, Record<string, string>>;
     } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as never;
 
     expect(manifest.private).toBeUndefined();
     expect(manifest.files).toEqual(['dist']);
+    // `Sphere.color` and `Line.color` are optional now, and a sphere washes the markers
+    // inside it and behind it rather than every marker it covers. Both change what a host
+    // gets with no change of its own, so the minor number moves.
+    expect(manifest.version).toBe('0.3.0');
     const named = [
       manifest.types as string,
       manifest.exports?.['.']?.['types'] as string,
@@ -445,6 +457,28 @@ describe('the library build', () => {
       expect(typeCheck(bad)).not.toBe('');
     }
   }, 120_000);
+
+  // `getShapeInfo` is a handle member, so a host that lists the shapes needs both types in
+  // a type position: `ShapeInfo` for the answer and `ShapeKind` for the argument. The test
+  // above declares each type on its own, which a type alias satisfies. This one reads the
+  // two through the handle, which fails if `getShapeInfo` ever stops naming them.
+  test('the shape types are declared', () => {
+    const host = join(outDir, 'reads-the-shapes.ts');
+    writeFileSync(
+      host,
+      "import type { GalaxyMap, ShapeInfo, ShapeKind } from './types/index';\n" +
+        'declare const map: GalaxyMap;\n' +
+        "const kind: ShapeKind = 'sphere';\n" +
+        'const info: ShapeInfo | null = map.getShapeInfo(kind, 0);\n' +
+        'void info?.primaryCategory;\n' +
+        'void info?.secondaryCategories.length;\n' +
+        'void info?.centre[0];\n' +
+        'void info?.reach;\n' +
+        'void info?.drawn;\n',
+      'utf8',
+    );
+    expect(typeCheck(host)).toBe('');
+  }, 60_000);
 });
 
 /**

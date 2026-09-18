@@ -31,6 +31,11 @@ uniform float uMinRadius;
 out vec2 vCorner;
 out vec3 vColour;
 out float vOpacity;
+// The range from the camera to the centre, and the radius, both in light years. The
+// fragment reads the range buffer against them to find how much of its shell path lies
+// behind the nearest marker body.
+out float vCentreRange;
+out float vRadiusLy;
 
 void main() {
   vec3 centre = uChunkOffset + aCentre;
@@ -56,6 +61,8 @@ void main() {
     vCorner = vec2(0.0);
     vColour = aColour;
     vOpacity = aOpacity;
+    vCentreRange = range;
+    vRadiusLy = aRadius;
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -67,5 +74,7 @@ void main() {
   vCorner = aCorner;
   vColour = aColour;
   vOpacity = aOpacity;
+  vCentreRange = range;
+  vRadiusLy = aRadius;
   gl_Position = clip;
 }

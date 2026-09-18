@@ -396,24 +396,31 @@ export const UIA_SOURCE_URL =
   'https://raw.githubusercontent.com/canonn-science/CanonnED3D-Map/master/Source/data/MapData-UIA.js';
 export const ADAMASTOR_SOURCE_URL =
   'https://raw.githubusercontent.com/canonn-science/CanonnED3D-Map/master/Source/data/MapData-Adamastor.js';
+export const MULTIFACTION_SOURCE_URL =
+  'https://raw.githubusercontent.com/canonn-science/CanonnED3D-Map/master/Source/data/MapData-multifaction.js';
 
 /** Where the converter asks for the position of a route point it cannot resolve itself. */
 export const EDSM_SYSTEM_URL = 'https://www.edsm.net/api-v1/system';
 
 /**
- * Reads the `systemsData` object literal of an ED3D map source.
+ * Reads one object literal of an ED3D map source, `systemsData` by default.
  *
  * The source is JavaScript and not JSON: it holds comments, single-quoted strings,
  * unquoted keys and trailing commas. The reader below is a parser and not an evaluator,
  * so a source that gains a statement cannot run it. It reads objects, arrays, strings,
- * numbers, `true`, `false` and `null`, which is everything the two sources hold.
+ * numbers, `true`, `false` and `null`, which is everything the three sources hold.
+ *
+ * `key` names the literal. The multifaction source holds its permit spheres in a
+ * `permitSpheres` literal of its own, beside an empty `systemsData`.
  */
-export function parseEd3dData(text) {
+export function parseEd3dData(text, key = 'systemsData') {
   const source = String(text ?? '');
-  const start = source.indexOf('systemsData');
-  if (start < 0) throw new Error('the source holds no systemsData');
-  let at = source.indexOf('{', start);
-  if (at < 0) throw new Error('the systemsData literal has no opening brace');
+  // The reader looks for the key as a property and not as a word, so a comment that names
+  // the key does not send it to the wrong literal.
+  const head = new RegExp(`(^|[^A-Za-z0-9_$])${key}\\s*:`).exec(source);
+  if (head === null) throw new Error(`the source holds no ${key}`);
+  let at = source.indexOf('{', head.index + head[0].length - 1);
+  if (at < 0) throw new Error(`the ${key} literal has no opening brace`);
 
   /** Steps over whitespace and over a line or a block comment. */
   const skip = () => {
@@ -555,7 +562,7 @@ export function ed3dCategories(data) {
 }
 
 /**
- * The records and the categories of an ED3D source. One entry of the `systems` list is
+ * The records of an ED3D source. One entry of the `systems` list is
  * one record. It carries the first category its `cat` names as its primary category and
  * the rest as secondary ones, which is the rule the Guardian Ruins converter holds. The
  * `infos` field is HTML, so it becomes the plain-text description.
@@ -569,7 +576,6 @@ export function ed3dCategories(data) {
  */
 export function ed3dRecords(data, table) {
   const systems = [];
-  const used = [];
   const held = new Map();
   for (const entry of data?.['systems'] ?? []) {
     const name = String(entry?.['name'] ?? '').trim();
@@ -585,7 +591,6 @@ export function ed3dRecords(data, table) {
       const category = table.get(String(id));
       if (category === undefined || names.includes(category.name)) continue;
       names.push(category.name);
-      if (!used.includes(category.name)) used.push(category.name);
     }
     if (names.length === 0) continue;
 
@@ -614,16 +619,34 @@ export function ed3dRecords(data, table) {
     systems.push(record);
   }
 
-  const categories = [];
-  for (const category of table.values()) {
-    if (
-      used.includes(category.name) &&
-      !categories.some((c) => c.name === category.name)
-    ) {
-      categories.push({ name: category.name, color: category.color });
+  return { systems };
+}
+
+/**
+ * The categories a set carries: every category of the source table that a record or a
+ * shape names, in the table's order. Each reader gives its entries, and an entry names a
+ * category in `primaryCategory` and in `secondaryCategories`.
+ *
+ * `map-shapes` rejects a shape that names a category the set does not hold, so a list of
+ * the record categories alone would lose every line that names a route category. A
+ * category nothing names is left out, as the Guardian Ruins conversion leaves an unused
+ * row out.
+ */
+export function ed3dSetCategories(table, ...readers) {
+  const named = new Set();
+  for (const entries of readers) {
+    for (const entry of entries) {
+      if (entry.primaryCategory !== undefined) named.add(entry.primaryCategory);
+      for (const name of entry.secondaryCategories ?? []) named.add(name);
     }
   }
-  return { categories, systems };
+  const categories = [];
+  for (const category of table.values()) {
+    if (!named.has(category.name)) continue;
+    if (categories.some((held) => held.name === category.name)) continue;
+    categories.push({ name: category.name, color: category.color });
+  }
+  return categories;
 }
 
 /**
@@ -645,10 +668,19 @@ export const UIA_SPHERE_LISTS = [
 /** The colour a route takes when its category is not in the source's own table. */
 export const LINE_COLOUR_FALLBACK = [160, 160, 160];
 
-/** Turns the four sphere lists of an ED3D source into the shapes the map draws. */
-export function ed3dSpheres(data, lists) {
+/**
+ * Turns the four sphere lists of an ED3D source into the shapes the map draws.
+ *
+ * A sphere takes the marker category of its own list, which `formatHDs` gives the record
+ * it pushes at the centre of the sphere, and `table` gives that category its name. The
+ * `g_soi` list names no category, because the source pushes no record for it. A sphere
+ * keeps its own colour, which is its material's colour, so the shell keeps the reading the
+ * source gives it and the category gives the row's dot its own colour.
+ */
+export function ed3dSpheres(data, lists, table = new Map()) {
   const spheres = [];
-  for (const { key, color } of lists) {
+  for (const { key, color, category } of lists) {
+    const primaryCategory = category === null ? undefined : table.get(category)?.name;
     for (const entry of data?.[key] ?? []) {
       const radius = numberOf(entry?.['radius']);
       const coords = Array.isArray(entry?.['coords']) ? entry['coords'] : [];
@@ -661,6 +693,7 @@ export function ed3dSpheres(data, lists) {
         radius,
         color,
         ...(name.length > 0 ? { name } : {}),
+        ...(primaryCategory === undefined ? {} : { primaryCategory }),
       });
     }
   }
@@ -696,7 +729,7 @@ export function convertUia(data, extras = {}) {
     .filter((rows) => rows.length > 0);
   const added = { systems: [], routes: [] };
   for (const [index, rows] of tables.entries()) {
-    const built = uiaWaypointSet(rows, index);
+    const built = uiaWaypointSet(rows, index, table);
     added.systems.push(...built.systems);
     added.routes.push(...built.routes);
   }
@@ -713,13 +746,13 @@ export function convertUia(data, extras = {}) {
     routes: [...(data?.['routes'] ?? []), ...added.routes, ...hyperdictions.routes],
   };
 
-  const { categories, systems } = ed3dRecords(whole, table);
-  const spheres = ed3dSpheres(data, UIA_SPHERE_LISTS);
+  const { systems } = ed3dRecords(whole, table);
+  const spheres = ed3dSpheres(data, UIA_SPHERE_LISTS, table);
   const { lines, drops } = ed3dLines(whole, table, systems, () => null);
   return {
     source: SOURCE_URL,
     licence: LICENCE,
-    categories,
+    categories: ed3dSetCategories(table, systems, spheres, lines),
     systems,
     spheres,
     lines,
@@ -739,6 +772,16 @@ export function convertUia(data, extras = {}) {
  * A point whose system is in the set's own records is written as a system reference and
  * every other point as a coordinate, so a line that connects two markers says so in the
  * data.
+ *
+ * A line takes the categories of its route: the first category the table holds is its
+ * primary one and the rest are its secondary ones. It then carries no colour of its own,
+ * because `map-shapes` gives it the colour of the first category it names that is on. A
+ * route naming no category the table holds keeps the grey fallback.
+ *
+ * The `name` of a line names the line and not its category. A route that carries a name
+ * of its own gives it, which the UIA waypoint lines and the hyperdiction lines do, and
+ * every other line takes the name of its primary category, which is the name the
+ * Adamastor source gives its routes.
  */
 export function ed3dLines(data, table, records, findPosition) {
   const ownPosition = new Map();
@@ -759,7 +802,14 @@ export function ed3dLines(data, table, records, findPosition) {
   const drops = [];
   for (const [index, route] of (data?.['routes'] ?? []).entries()) {
     const ids = Array.isArray(route?.['cat']) ? route['cat'] : [];
-    const category = table.get(String(ids[0] ?? ''));
+    const names = [];
+    for (const id of ids) {
+      const category = table.get(String(id));
+      if (category === undefined || names.includes(category.name)) continue;
+      names.push(category.name);
+    }
+    const own = String(route?.['name'] ?? '').trim();
+    const name = own.length > 0 ? own : names[0];
     const points = [];
     for (const point of Array.isArray(route?.['points']) ? route['points'] : []) {
       const name = String(point?.['s'] ?? '').trim();
@@ -782,9 +832,11 @@ export function ed3dLines(data, table, records, findPosition) {
     }
     lines.push({
       points,
-      color: category?.color ?? LINE_COLOUR_FALLBACK,
+      ...(names.length === 0 ? { color: LINE_COLOUR_FALLBACK } : {}),
       width: 2,
-      ...(category === undefined ? {} : { name: category.name }),
+      ...(name === undefined ? {} : { name }),
+      ...(names.length === 0 ? {} : { primaryCategory: names[0] }),
+      ...(names.length > 1 ? { secondaryCategories: names.slice(1) } : {}),
     });
   }
   return { lines, drops };
@@ -820,17 +872,64 @@ export function ed3dRouteNames(data) {
  */
 export function convertAdamastor(data, findPosition) {
   const table = ed3dCategories(data);
-  const { categories, systems } = ed3dRecords(data, table);
+  const { systems } = ed3dRecords(data, table);
   const { lines, drops } = ed3dLines(data, table, systems, findPosition);
   return {
     source: SOURCE_URL,
     licence: LICENCE,
-    categories,
+    categories: ed3dSetCategories(table, systems, lines),
     systems,
     spheres: [],
     lines,
     drops,
   };
+}
+
+/**
+ * The two sphere lists of the multifaction source, with the category each one names and
+ * the colour of that category. The source draws the shells with the same two material
+ * tints the UIA source draws its permit shells with: `vec3(0.2, 0.7, 1.0)` for the
+ * permit-locked list and `vec3(1.0, 0.75, 0.1)` for the permit-unlocked one. Here the
+ * colour belongs to the category, and the sphere carries none of its own.
+ */
+export const MULTIFACTION_SPHERE_LISTS = [
+  { key: 'pls', category: 'Permit Locked Sector', color: [51, 179, 255] },
+  { key: 'puls', category: 'Permit Unlocked Sector', color: [255, 191, 26] },
+];
+
+/**
+ * Turns the `permitSpheres` literal of the multifaction source into the sphere file the
+ * demo entry imports.
+ *
+ * The records of that entry come from the Spansh dump at run time, and these spheres are a
+ * static list in the source, so the build writes them and the page fetches only the
+ * records. Each sphere names its category and carries no colour of its own, so it takes
+ * the colour of that category.
+ */
+export function convertMultifactionSpheres(data) {
+  const spheres = [];
+  const used = [];
+  for (const { key, category } of MULTIFACTION_SPHERE_LISTS) {
+    for (const entry of data?.[key] ?? []) {
+      const radius = numberOf(entry?.['radius']);
+      const coords = Array.isArray(entry?.['coords']) ? entry['coords'] : [];
+      if (radius === null || radius <= 0 || coords.length !== 3) continue;
+      const position = coords.map((part) => numberOf(part));
+      if (position.some((part) => part === null)) continue;
+      const name = String(entry?.['name'] ?? '').trim();
+      spheres.push({
+        position,
+        radius,
+        ...(name.length > 0 ? { name } : {}),
+        primaryCategory: category,
+      });
+      if (!used.includes(category)) used.push(category);
+    }
+  }
+  const categories = MULTIFACTION_SPHERE_LISTS.filter((list) =>
+    used.includes(list.category),
+  ).map((list) => ({ name: list.category, color: list.color }));
+  return { source: SOURCE_URL, licence: LICENCE, categories, spheres };
 }
 
 /**
@@ -968,8 +1067,13 @@ function uiaNamedRows(rows) {
  * The source also places one marker at the point the anomaly has reached, worked out from
  * the clock at the moment the page opens. A committed file cannot hold a value that follows
  * the clock, so this reader leaves that marker out.
+ *
+ * Each line takes a name of its own, which is the name of its category and the number of
+ * its table, for example `UIA#3 Recorded Route`. `table` gives the category its name. The
+ * eight tables give four line categories between them, so the category alone names no one
+ * line.
  */
-export function uiaWaypointSet(rows, index) {
+export function uiaWaypointSet(rows, index, table = new Map()) {
   const named = uiaNamedRows(rows);
   const systems = [];
   const routes = [];
@@ -1076,6 +1180,12 @@ export function uiaWaypointSet(rows, index) {
       circle: false,
       points: [{ s: first.name }, { s: extension.name }],
     });
+  }
+
+  for (const built of routes) {
+    const category = table.get(String(built.cat[0]));
+    if (category === undefined) continue;
+    built.name = `UIA#${index + 1} ${category.name}`;
   }
 
   return { systems, routes };
@@ -1282,6 +1392,9 @@ export function uiaHyperdictionSet(rows, tables) {
     routes.push({
       cat: [...cat],
       circle: false,
+      // The line names the pair it draws. Its category names the UIA it was matched
+      // against, which 983 lines share, so the category names no one line.
+      name: `${system} to ${destination}`,
       points: [{ s: system }, { s: destination }],
     });
   }
@@ -1509,6 +1622,29 @@ async function main() {
         `${written.lines.length} lines of ${points} points, digest ${digest}.\n`,
     );
   }
+
+  // The sixth set fetches its records in the page, and its spheres are a static list in
+  // the source, so the build writes the spheres alone.
+  const multifaction = convertMultifactionSpheres(
+    parseEd3dData(
+      await readSource(
+        join(root, 'data'),
+        'MapData-multifaction.js',
+        MULTIFACTION_SOURCE_URL,
+      ),
+      'permitSpheres',
+    ),
+  );
+  const sphereText = `${JSON.stringify(multifaction, null, 2)}\n`;
+  await writeFile(join(root, 'demo-data', 'multifaction-spheres.json'), sphereText);
+  const sphereDigest = createHash('sha256')
+    .update(sphereText)
+    .digest('hex')
+    .slice(0, 12);
+  process.stdout.write(
+    `multifaction-spheres.json holds ${multifaction.categories.length} categories and ` +
+      `${multifaction.spheres.length} spheres, digest ${sphereDigest}.\n`,
+  );
 }
 
 // The entry part runs only when node starts this file. A test that imports a conversion

@@ -20,6 +20,7 @@ demo-data/guardian-structures.json
 demo-data/notable-systems.json
 demo-data/uia.json
 demo-data/adamastor.json
+demo-data/multifaction-spheres.json
 tests/fixtures/guardian-ruins-demo-set.json
 tests/fixtures/guardian-structures-demo-set.json
 tests/fixtures/notable-systems-demo-set.json
@@ -31,10 +32,11 @@ tests/fixtures/adamastor-demo-set.json
 tests/fixtures/uia-waypoints.json
 tests/fixtures/uia-waypoints-placeholder.json
 
-# The two extracts of the CanonnED3D-Map sources. They are the Canonn Research Group's own
-# JavaScript, and the parser test reads their quote styles and their comments.
+# The three extracts of the CanonnED3D-Map sources. They are the Canonn Research Group's
+# own JavaScript, and the parser test reads their quote styles and their comments.
 tests/fixtures/uia-extract.js
 tests/fixtures/adamastor-extract.js
+tests/fixtures/multifaction-extract.js
 
 # Baseline images and other snapshots.
 e2e/**/*-snapshots/**

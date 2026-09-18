@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import type { Page } from '@playwright/test';
 
 /** The event the page sends once it has drawn the scene data for the first time. */
@@ -577,5 +578,48 @@ export async function readRegionLabelRanges(page: Page): Promise<RegionLabelRang
       });
     }
     return out;
+  });
+}
+
+/** Where the `multifaction` entry reads its records. The tests serve it from a fixture. */
+export const FACTIONS_DUMP_URL = 'https://downloads.spansh.co.uk/factions.json.gz';
+
+/** One system of a faction line of a dump fixture. */
+export function dumpSystem(
+  name: string,
+  id: number,
+  controls: boolean,
+): Record<string, unknown> {
+  return {
+    systemName: name,
+    systemId64: id,
+    ...(controls ? { isControllingFaction: true } : {}),
+    coords: { x: id, y: id / 2, z: -id },
+  };
+}
+
+/** One faction line of a dump fixture, as the file writes one. */
+export function dumpFaction(
+  name: string,
+  systems: readonly Record<string, unknown>[],
+): string {
+  return `\t${JSON.stringify({ name, allegiance: 'Independent', systems })},`;
+}
+
+/**
+ * Serves the factions dump from a fixture, as gzip.
+ *
+ * The file is gzip on the network and the page opens it with `DecompressionStream`, so
+ * the route carries the gzip bytes and names no `content-encoding`: a route that named
+ * one would have the browser open them first and leave the page nothing to open.
+ */
+export async function serveFactionsDump(page: Page, text: string): Promise<void> {
+  const body = gzipSync(Buffer.from(text, 'utf8'));
+  await page.route(FACTIONS_DUMP_URL, async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+      body,
+    });
   });
 }

@@ -85,6 +85,29 @@ describe('the demo site build', () => {
     expect(libraryFiles.some((path) => path.endsWith('EDLoader1.svg'))).toBe(false);
   });
 
+  // The catalog holds six entries. Five import a committed file and the sixth fetches its
+  // records, so the built site names the dump URL as well as the five files.
+  test('carries the six catalog entries', () => {
+    const text = demoFiles
+      .filter((path) => path.endsWith('.js'))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
+    for (const id of [
+      'guardian-ruins',
+      'guardian-structures',
+      'notable-systems',
+      'uia',
+      'adamastor',
+      'multifaction',
+    ]) {
+      expect(text).toContain(id);
+    }
+    expect(text).toContain('Canonn Factions');
+    expect(text).toContain('https://downloads.spansh.co.uk/factions.json.gz');
+    // The spheres of the sixth entry are a committed file, as the other five sets are.
+    expect(text).toContain('Permit Unlocked Sector');
+  });
+
   test('holds the demo data, which the library build does not', () => {
     const name = firstDemoName();
     const demoCarriers = demoFiles.filter(

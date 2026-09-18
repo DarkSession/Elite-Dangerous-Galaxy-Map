@@ -3,6 +3,22 @@
   "licence": "MIT. The site records come from the Canonn Research Group.",
   "categories": [
     {
+      "name": "Adamastor Initial Route",
+      "color": [
+        255,
+        102,
+        102
+      ]
+    },
+    {
+      "name": "Line Through Waypoints",
+      "color": [
+        102,
+        102,
+        102
+      ]
+    },
+    {
       "name": "Hyford's Cache & D-2's LPs",
       "color": [
         255,
@@ -84,13 +100,9 @@
           23.3
         ]
       ],
-      "color": [
-        255,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Adamastor Initial Route"
+      "name": "Adamastor Initial Route",
+      "primaryCategory": "Adamastor Initial Route"
     },
     {
       "points": [
@@ -105,13 +117,9 @@
           21.9
         ]
       ],
-      "color": [
-        102,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Line Through Waypoints"
+      "name": "Line Through Waypoints",
+      "primaryCategory": "Line Through Waypoints"
     },
     {
       "points": [
@@ -145,13 +153,9 @@
           "system": "HIP 22460"
         }
       ],
-      "color": [
-        255,
-        102,
-        102
-      ],
       "width": 2,
-      "name": "Hyford's Cache & D-2's LPs"
+      "name": "Hyford's Cache & D-2's LPs",
+      "primaryCategory": "Hyford's Cache & D-2's LPs"
     }
   ]
 }

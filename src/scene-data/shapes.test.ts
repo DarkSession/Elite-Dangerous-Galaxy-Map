@@ -8,6 +8,8 @@ import {
   MAX_SPHERES,
 } from './shapes';
 import type { LineInput, ShapeSet, SphereInput, SystemLookup } from './shapes';
+import { createSystemSet } from './real-systems';
+import type { CategoryInput, RealSystemSet } from './real-systems';
 
 /**
  * Casts a hand-made array to the input type. The reader checks every field at run time,
@@ -42,6 +44,29 @@ function emptySet(): ShapeSet {
 /** The reasons of a report, in the order the reader gave them. */
 function reasons(rejected: readonly { index: number; reason: string }[]): string[] {
   return rejected.map((entry) => `${entry.index}:${entry.reason}`);
+}
+
+/**
+ * A shape set over a category table, and the table itself. The table is the one the
+ * system set holds, which is the table the map gives the shapes.
+ */
+function setOver(categories: readonly CategoryInput[]): {
+  shapes: ShapeSet;
+  table: RealSystemSet;
+} {
+  const table = createSystemSet();
+  table.addCategories(categories);
+  return { shapes: createShapeSet(() => null, table), table };
+}
+
+/** The drawn flag of every sphere of a set. */
+function drawnFlags(set: ShapeSet): number[] {
+  return Array.from(set.sphereFlags);
+}
+
+/** The colour one sphere draws in. */
+function colorAt(set: ShapeSet, index: number): number[] {
+  return Array.from(set.sphereColors.subarray(index * 3, index * 3 + 3));
 }
 
 describe('the shape set', () => {
@@ -427,5 +452,449 @@ describe('the read budget', () => {
     // magnitude slower.
     const budgetMs = process.env['CI'] ? 250 : 40;
     expect(readMs).toBeLessThan(budgetMs);
+  });
+});
+
+describe('the categories of a shape', () => {
+  test('gives each category fault its own reason', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    const report = shapes.addSpheres(
+      asSpheres([
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 'A' },
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 'B' },
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 7 },
+        {
+          position: [0, 0, 0],
+          radius: 1,
+          color: [1, 2, 3],
+          primaryCategory: 'A',
+          secondaryCategories: ['B'],
+        },
+        {
+          position: [0, 0, 0],
+          radius: 1,
+          color: [1, 2, 3],
+          secondaryCategories: ['A'],
+        },
+      ]),
+    );
+
+    expect(report.added).toBe(1);
+    expect(reasons(report.rejected)).toEqual([
+      '1:unknown-category',
+      '2:bad-category',
+      '3:unknown-category',
+      '4:no-category',
+    ]);
+  });
+
+  test('gives a line the same reasons', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    const points = [
+      [0, 0, 0],
+      [1, 0, 0],
+    ];
+    const report = shapes.addLines(
+      asLines([
+        { points, color: [1, 2, 3], primaryCategory: 'A' },
+        { points, color: [1, 2, 3], primaryCategory: 'B' },
+        { points, color: [1, 2, 3], primaryCategory: '' },
+        {
+          points,
+          color: [1, 2, 3],
+          primaryCategory: 'A',
+          secondaryCategories: ['A', 7],
+        },
+        { points, color: [1, 2, 3], secondaryCategories: [] },
+      ]),
+    );
+
+    expect(report.added).toBe(1);
+    expect(reasons(report.rejected)).toEqual([
+      '1:unknown-category',
+      '2:bad-category',
+      '3:unknown-category',
+      '4:no-category',
+    ]);
+  });
+
+  test('keeps a shape that names no category', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    const report = shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3] },
+    ]);
+
+    expect(report).toEqual({ added: 1, rejected: [] });
+    expect(shapes.getSphere(0)?.primaryCategory).toBeUndefined();
+    expect(shapes.getShapeInfo('sphere', 0)?.secondaryCategories).toEqual([]);
+  });
+
+  test('drops a repeat, the primary itself and a list that is not an array', () => {
+    const { shapes } = setOver([
+      { name: 'A', color: [255, 0, 0] },
+      { name: 'B', color: [0, 255, 0] },
+    ]);
+    shapes.addSpheres(
+      asSpheres([
+        {
+          position: [0, 0, 0],
+          radius: 1,
+          color: [1, 2, 3],
+          primaryCategory: 'A',
+          secondaryCategories: ['B', 'A', 'B'],
+        },
+        {
+          position: [0, 0, 0],
+          radius: 1,
+          color: [1, 2, 3],
+          primaryCategory: 'A',
+          secondaryCategories: 'B',
+        },
+      ]),
+    );
+
+    expect(shapes.getSphere(0)?.secondaryCategories).toEqual(['B']);
+    expect(shapes.getSphere(1)?.secondaryCategories).toBeUndefined();
+  });
+
+  test('needs a colour of its own where the shape names no category', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    const report = shapes.addSpheres(
+      asSpheres([
+        { position: [0, 0, 0], radius: 1, primaryCategory: 'A' },
+        { position: [0, 0, 0], radius: 1 },
+      ]),
+    );
+
+    expect(report.added).toBe(1);
+    expect(reasons(report.rejected)).toEqual(['1:bad-color']);
+    expect(shapes.getSphere(0)?.color).toBeUndefined();
+  });
+});
+
+describe('the shape sweep', () => {
+  /** A set of three spheres: one in `A`, one in `A` and `B`, and one in no category. */
+  function threeSpheres(): { shapes: ShapeSet; table: RealSystemSet } {
+    const built = setOver([
+      { name: 'A', color: [255, 0, 0] },
+      { name: 'B', color: [0, 255, 0] },
+    ]);
+    built.shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, primaryCategory: 'A' },
+      {
+        position: [0, 0, 0],
+        radius: 1,
+        primaryCategory: 'A',
+        secondaryCategories: ['B'],
+      },
+      { position: [0, 0, 0], radius: 1, color: [0, 0, 255] },
+    ]);
+    return built;
+  }
+
+  test('hides the shapes of a category that goes off and no others', () => {
+    const { shapes, table } = threeSpheres();
+    expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
+
+    table.setCategoryVisible('A', false);
+
+    // The second sphere names `B` as well, and the third names no category.
+    expect(drawnFlags(shapes)).toEqual([0, 1, 1]);
+
+    table.setCategoryVisible('B', false);
+
+    expect(drawnFlags(shapes)).toEqual([0, 0, 1]);
+    expect(shapes.getShapeInfo('sphere', 1)?.drawn).toBe(false);
+    expect(shapes.getShapeInfo('sphere', 2)?.drawn).toBe(true);
+  });
+
+  test('takes the colour of the first category that is on', () => {
+    const { shapes, table } = threeSpheres();
+    expect(colorAt(shapes, 1)).toEqual([255, 0, 0]);
+
+    table.setCategoryVisible('A', false);
+
+    expect(colorAt(shapes, 1)).toEqual([0, 255, 0]);
+  });
+
+  test('keeps the colour a shape carries of its own', () => {
+    const { shapes, table } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, color: [0, 0, 255], primaryCategory: 'A' },
+    ]);
+
+    expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
+
+    table.setCategoryVisible('A', false);
+
+    expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
+    expect(drawnFlags(shapes)).toEqual([0]);
+  });
+
+  test('takes the new colour of a category the table replaced', () => {
+    const { shapes, table } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    expect(colorAt(shapes, 0)).toEqual([255, 0, 0]);
+
+    table.addCategories([{ name: 'A', color: [0, 0, 255] }]);
+
+    expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
+  });
+
+  test('reads a line as it reads a sphere', () => {
+    const { shapes, table } = setOver([
+      { name: 'A', color: [255, 0, 0] },
+      { name: 'B', color: [0, 255, 0] },
+    ]);
+    shapes.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [1, 0, 0],
+        ],
+        primaryCategory: 'A',
+        secondaryCategories: ['B'],
+      },
+    ]);
+
+    expect(Array.from(shapes.lineFlags)).toEqual([1]);
+    expect(Array.from(shapes.lineColors)).toEqual([255, 0, 0]);
+
+    table.setCategoryVisible('A', false);
+
+    expect(shapes.getShapeInfo('line', 0)?.drawn).toBe(true);
+    expect(Array.from(shapes.lineColors)).toEqual([0, 255, 0]);
+
+    table.setCategoryVisible('B', false);
+
+    expect(shapes.getShapeInfo('line', 0)?.drawn).toBe(false);
+  });
+
+  test('raises the version on a switch that moves a flag', () => {
+    const { shapes, table } = threeSpheres();
+    const start = shapes.version;
+
+    table.setCategoryVisible('A', false);
+    const hidden = shapes.version;
+    table.setCategoryVisible('A', false);
+
+    expect(hidden).toBeGreaterThan(start);
+    expect(shapes.version).toBe(hidden);
+  });
+
+  test('runs on a change and not on a frame', () => {
+    const { shapes, table } = threeSpheres();
+    // The first reading sweeps the shapes the call above added.
+    const start = shapes.sweepCount;
+    expect(drawnFlags(shapes)).toEqual([1, 1, 1]);
+    const swept = shapes.sweepCount;
+
+    // Ten frames, each one the reading the shape pass makes to decide on a rebuild.
+    const held = shapes.version;
+    for (let frame = 0; frame < 10; frame += 1) {
+      expect(shapes.version).toBe(held);
+    }
+
+    expect(shapes.sweepCount - swept).toBe(0);
+    expect(swept).toBeGreaterThan(start);
+
+    table.setCategoryVisible('A', false);
+    expect(drawnFlags(shapes)).toEqual([0, 1, 1]);
+
+    expect(shapes.sweepCount - swept).toBe(1);
+  });
+});
+
+describe('the shape name filter', () => {
+  /** A set of three spheres, the third with no name. */
+  function namedSpheres(): ShapeSet {
+    const { shapes } = setOver([]);
+    shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3], name: 'Sol Zone' },
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3], name: 'Solati Zone' },
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3], name: 'Achenar Zone' },
+    ]);
+    return shapes;
+  }
+
+  test('hides the shapes it does not keep, without case', () => {
+    const shapes = namedSpheres();
+    shapes.setShapeNameFilter('sol');
+
+    expect(drawnFlags(shapes)).toEqual([1, 1, 0]);
+    expect(shapes.getShapeNameFilter()).toBe('sol');
+
+    shapes.setShapeNameFilter('SOL');
+
+    expect(drawnFlags(shapes)).toEqual([1, 1, 0]);
+  });
+
+  test('hides a shape that carries no name and shows every shape again when it is empty', () => {
+    const { shapes } = setOver([]);
+    shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3], name: 'Sol Zone' },
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3] },
+    ]);
+
+    shapes.setShapeNameFilter('zone');
+    expect(drawnFlags(shapes)).toEqual([1, 0]);
+
+    shapes.setShapeNameFilter('');
+    expect(drawnFlags(shapes)).toEqual([1, 1]);
+    expect(shapes.getShapeNameFilter()).toBe('');
+  });
+
+  test('cuts a shape a category keeps', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, primaryCategory: 'A', name: 'Sol Zone' },
+      { position: [0, 0, 0], radius: 1, primaryCategory: 'A', name: 'Achenar Zone' },
+    ]);
+    shapes.setShapeNameFilter('sol');
+
+    expect(drawnFlags(shapes)).toEqual([1, 0]);
+  });
+
+  test('is cleared with the shapes', () => {
+    const shapes = namedSpheres();
+    shapes.setShapeNameFilter('sol');
+    shapes.clearShapes();
+
+    expect(shapes.getShapeNameFilter()).toBe('');
+
+    shapes.addSpheres([
+      { position: [0, 0, 0], radius: 1, color: [1, 2, 3], name: 'Achenar Zone' },
+    ]);
+
+    expect(drawnFlags(shapes)).toEqual([1]);
+  });
+});
+
+describe('a shape read without its points', () => {
+  test('holds the centre, the reach and the categories', () => {
+    const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
+    shapes.addSpheres([
+      { position: [100, 0, 200], radius: 50, primaryCategory: 'A', name: 'Sol Zone' },
+    ]);
+    shapes.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [100, 0, 0],
+        ],
+        color: [1, 2, 3],
+      },
+    ]);
+
+    const sphere = shapes.getShapeInfo('sphere', 0);
+    const line = shapes.getShapeInfo('line', 0);
+
+    expect(sphere).toEqual({
+      name: 'Sol Zone',
+      primaryCategory: 'A',
+      secondaryCategories: [],
+      centre: [100, 0, 200],
+      reach: 50,
+      drawn: true,
+    });
+    expect(line).toEqual({
+      secondaryCategories: [],
+      centre: [50, 0, 0],
+      reach: 50,
+      drawn: true,
+    });
+    expect('points' in (line ?? {})).toBe(false);
+    expect(shapes.getShapeInfo('line', 7)).toBeNull();
+    expect(shapes.getShapeInfo('sphere', -1)).toBeNull();
+  });
+
+  test('reads half the diagonal of the box of a line in three axes', () => {
+    const { shapes } = setOver([]);
+    shapes.addLines([
+      {
+        points: [
+          [0, 0, 0],
+          [2, 6, 0],
+          [2, 6, 3],
+        ],
+        color: [1, 2, 3],
+      },
+    ]);
+
+    const line = shapes.getShapeInfo('line', 0);
+
+    expect(line?.centre).toEqual([1, 3, 1.5]);
+    // The box is 2 by 6 by 3, whose diagonal is 7.
+    expect(line?.reach).toBeCloseTo(3.5, 6);
+  });
+});
+
+describe('the sweep budget', () => {
+  test('sweeps a full set of four-category shapes inside its budget', () => {
+    // Eight categories, so a shape names four of them and half the table stays on.
+    const categories: CategoryInput[] = Array.from({ length: 8 }, (_, index) => ({
+      name: `C${index}`,
+      color: [index * 8, 128, 255 - index * 8],
+    }));
+    const { shapes, table } = setOver(categories);
+    /** The four category names one shape carries, from its place in the set. */
+    const namesOf = (index: number): [string, string[]] => [
+      `C${index % 8}`,
+      [`C${(index + 1) % 8}`, `C${(index + 2) % 8}`, `C${(index + 3) % 8}`],
+    ];
+    const spheres: SphereInput[] = Array.from({ length: MAX_SPHERES }, (_, index) => {
+      const [primaryCategory, secondaryCategories] = namesOf(index);
+      return {
+        position: [index, 0, index],
+        radius: 10 + index,
+        name: `Sphere ${index}`,
+        primaryCategory,
+        secondaryCategories,
+      };
+    });
+    const perLine = MAX_LINE_POINTS / MAX_LINES;
+    const lines: LineInput[] = Array.from({ length: MAX_LINES }, (_, index) => {
+      const [primaryCategory, secondaryCategories] = namesOf(index);
+      return {
+        points: Array.from(
+          { length: perLine },
+          (_unused, step) => [index, 0, step] as [number, number, number],
+        ),
+        name: `Line ${index}`,
+        primaryCategory,
+        secondaryCategories,
+      };
+    });
+
+    expect(shapes.addSpheres(spheres).added).toBe(MAX_SPHERES);
+    expect(shapes.addLines(lines).added).toBe(MAX_LINES);
+    // The read sweeps the set the two calls above filled, so each reading below is of one
+    // switch alone.
+    expect(shapes.sphereFlags[0]).toBe(1);
+
+    // One switch, five times. Every shape names four of the eight categories, so `C0` off
+    // leaves each one drawn and the sweep reads every name of every shape.
+    const readings: number[] = [];
+    for (let run = 0; run < 5; run += 1) {
+      table.setCategoryVisible('C0', run % 2 === 1);
+      expect(shapes.sphereFlags[0]).toBe(1);
+      readings.push(shapes.lastSweepMs);
+    }
+    const fastest = Math.min(...readings);
+    console.log('the shape sweep', {
+      spheres: shapes.sphereCount,
+      lines: shapes.lineCount,
+      readings,
+    });
+
+    // `map-shapes` holds a sweep after the first one under 1 millisecond, which is what
+    // the five switches below measure. The browser test of the scenario "The sweep holds
+    // its budget" reads the same measurement through `debug.shapeSweepMs()`, in
+    // `e2e/frame-budget.spec.ts`, and it also reads the first sweep, which the spec holds
+    // under 2 milliseconds. This test reads the fastest of the five, because the unit
+    // suite runs its files at the same time and a reading taken while seven other files
+    // run measures the machine. A sweep that got slower would raise every one of the
+    // five, so the fastest still fails on a regression.
+    expect(fastest).toBeLessThanOrEqual(1);
   });
 });

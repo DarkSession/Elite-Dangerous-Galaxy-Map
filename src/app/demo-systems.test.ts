@@ -199,6 +199,30 @@ describe('the committed UIA set', () => {
     ]);
   });
 
+  // A sphere carries the marker category of its own list, and the Gamma Velorum list has
+  // no marker and no category. A line carries the categories of its route and no colour,
+  // because the category gives it one, and a name that names the line itself.
+  test('gives its shapes the categories of the source', () => {
+    const named = uia.spheres.filter(
+      (sphere) =>
+        (sphere as { primaryCategory?: string }).primaryCategory !== undefined,
+    );
+    expect(named).toHaveLength(53);
+    const unnamed = uia.spheres.filter(
+      (sphere) =>
+        (sphere as { primaryCategory?: string }).primaryCategory === undefined,
+    );
+    expect(unnamed.map((sphere) => sphere.name)).toEqual(['Gamma Velorum']);
+    const categories = new Set(uia.categories.map((category) => category.name));
+    for (const line of uia.lines) {
+      const held = line as { primaryCategory?: string; color?: unknown; name?: string };
+      expect(held.primaryCategory).toBeDefined();
+      expect(categories.has(held.primaryCategory ?? '')).toBe(true);
+      expect(held.color).toBeUndefined();
+      expect(held.name).not.toBe(held.primaryCategory);
+    }
+  });
+
   // Each end of every UIA line is a record of the same set, so the map resolves every
   // point by name and the file holds no coordinate in a line.
   test('names a system at every line point', () => {
@@ -231,11 +255,13 @@ describe('the committed UIA set', () => {
     );
     const systems = set.addSystems(uia.systems);
     // The demo site adds the systems before the shapes, which `dataset-catalog` states.
+    // One table holds the categories of the records and of the shapes, as the map holds
+    // them, so a shape that names a category of the set resolves it.
     const shapes = createShapeSet((identity: string) => {
       const index = set.indexOfIdentity(identity);
       const system: RealSystem | null = index < 0 ? null : set.system(index);
       return system?.position ?? null;
-    });
+    }, set);
     const spheres = shapes.addSpheres(uia.spheres as unknown as readonly SphereInput[]);
     const lines = shapes.addLines(uia.lines as unknown as readonly LineInput[]);
 
@@ -250,14 +276,38 @@ describe('the committed UIA set', () => {
 });
 
 describe('the committed Adamastor set', () => {
-  // The counts describe the committed file, by the same rule as the ruins set above.
-  test('holds 4 categories, 8 systems and 8 lines of 38 points', () => {
-    expect(adamastor.categories).toHaveLength(4);
+  // The counts describe the committed file, by the same rule as the ruins set above. The
+  // set carries every category of the source table that a record or a shape names: 4 hold
+  // records and 6 more name a route alone, so the SYSTEMS tab lists 4 and the SHAPES tab
+  // lists the 7 the routes name.
+  test('holds 10 categories, 8 systems and 8 lines of 38 points', () => {
+    expect(adamastor.categories).toHaveLength(10);
     expect(adamastor.systems).toHaveLength(8);
     expect(adamastor.spheres).toHaveLength(0);
     expect(adamastor.lines).toHaveLength(8);
     const points = adamastor.lines.reduce((sum, line) => sum + line.points.length, 0);
     expect(points).toBe(38);
+  });
+
+  // The 7 categories the routes name are in the set, so no line is rejected. The one
+  // route naming the category `50`, which the source table does not hold, keeps the grey
+  // fallback and names none.
+  test('holds the categories its routes name', () => {
+    const categories = new Set(adamastor.categories.map((category) => category.name));
+    const named = adamastor.lines.filter(
+      (line) => (line as { primaryCategory?: string }).primaryCategory !== undefined,
+    );
+    expect(named).toHaveLength(7);
+    for (const line of named) {
+      const held = line as { primaryCategory?: string; color?: unknown };
+      expect(categories.has(held.primaryCategory ?? '')).toBe(true);
+      expect(held.color).toBeUndefined();
+    }
+    const fallback = adamastor.lines.filter(
+      (line) => (line as { color?: number[] }).color !== undefined,
+    );
+    expect(fallback).toHaveLength(1);
+    expect((fallback[0] as { color?: number[] }).color).toEqual([160, 160, 160]);
   });
 
   test('holds both point forms', () => {
@@ -280,11 +330,13 @@ describe('the committed Adamastor set', () => {
     );
     const systems = set.addSystems(adamastor.systems);
     // The demo site adds the systems before the lines, which `dataset-catalog` states.
+    // The set's table holds the route categories as well as the record ones, so every
+    // line resolves the category it names.
     const shapes = createShapeSet((identity: string) => {
       const index = set.indexOfIdentity(identity);
       const system: RealSystem | null = index < 0 ? null : set.system(index);
       return system?.position ?? null;
-    });
+    }, set);
     const lines = shapes.addLines(adamastor.lines as unknown as readonly LineInput[]);
 
     expect(categories.rejected).toEqual([]);
