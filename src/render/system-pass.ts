@@ -14,8 +14,11 @@ import {
 import type { MarkerStyle, RealSystemSet } from '../scene-data/real-systems';
 import { createProgram } from './program';
 import type { Program } from './program';
+import { putMarkerAlpha } from './shader-include';
 import vertexSource from './shaders/systems.vert?raw';
 import fragmentSource from './shaders/systems.frag?raw';
+import rangeFragmentSource from './shaders/marker-range.frag?raw';
+import markerAlphaSource from './shaders/marker-alpha.glsl?raw';
 
 /**
  * The colour of the ring around a marker. It is fixed and dark, so the disc holds a
@@ -116,6 +119,52 @@ export function glowAlpha(x: number, y: number, radiusCss: number): number {
   };
   const spikes = spike(x, y) + spike(y, x);
   return Math.min(1, spikes + Math.max(core, halo));
+}
+
+/**
+ * The alpha of a disc at a distance from the middle of its sprite, in device pixels, for
+ * a sprite of the radius `radius`. A disc is opaque but for the outer device pixel, whose
+ * ramp gives it a smooth edge. `marker-alpha.glsl` carries the same rule.
+ */
+export function discAlpha(distance: number, radius: number): number {
+  return Math.min(1, Math.max(0, radius - distance));
+}
+
+/**
+ * The alpha of a marker of either style at an offset from the middle of its sprite. The
+ * offset and the radius are in device pixels, as they are in the shader, and the glow
+ * rule reads CSS pixels, so this divides by the pixel ratio for a glow. It is the
+ * `markerAlpha` of `marker-alpha.glsl`, which both marker shaders read.
+ */
+export function markerAlpha(
+  offsetX: number,
+  offsetY: number,
+  radius: number,
+  style: MarkerStyle,
+  pixelRatio: number,
+): number {
+  if (style === 'glow') {
+    return glowAlpha(offsetX / pixelRatio, offsetY / pixelRatio, radius / pixelRatio);
+  }
+  return discAlpha(Math.hypot(offsetX, offsetY), radius);
+}
+
+/**
+ * The alpha a marker fragment must hold to write its range. The part of the sprite at or
+ * above it is the marker **body**, which is the part the user reads as the marker and the
+ * part a sphere and a line do not take off the screen. `marker-range.frag` holds the same
+ * number as `BODY_ALPHA`.
+ */
+export const MARKER_BODY_ALPHA = 0.5;
+
+/**
+ * Puts the shared alpha rule into a marker fragment shader. The colour shader and the
+ * range shader must give the same answer, so both read one file and neither holds a copy.
+ * `shader-include.ts` holds the rule itself, so a caller that reads the shader files
+ * itself composes what this pass compiles.
+ */
+export function withMarkerAlpha(source: string): string {
+  return putMarkerAlpha(source, markerAlphaSource);
 }
 
 /**
@@ -227,27 +276,61 @@ export interface SystemPassFrame {
   readonly pixelRatio: number;
   /** The set to draw. */
   readonly set: RealSystemSet;
+  /**
+   * The range buffer to write the marker bodies into, or null where the map holds none.
+   * The renderer clears it before the pass draws, and it makes the draw only while a
+   * sphere draws, so a map with no sphere costs what it costs without the buffer.
+   */
+  readonly range: WebGLFramebuffer | null;
 }
 
 /** The marker pass. */
 export interface SystemPass {
   /** Draws the whole set in one call and returns how many markers it drew. */
   draw(frame: SystemPassFrame): number;
+  /**
+   * How many draw calls the last draw made: one for the colours, and one more for the
+   * range buffer in a frame that writes it.
+   */
+  drawCalls(): number;
   dispose(): void;
 }
 
-/** Compiles the marker program. */
+/** The uniforms both marker programs take. The vertex shader is one file for both. */
+const MARKER_UNIFORMS = [
+  'uViewProjection',
+  'uCursorOffset',
+  'uSizeRanges',
+  'uSizeValues',
+  'uPixelRatio',
+  'uRingCss',
+  'uGlowFactor',
+  'uMaxPointSize',
+] as const;
+
+/** Compiles the marker colour program. */
 export function createSystemProgram(gl: WebGL2RenderingContext): Program {
-  return createProgram(gl, 'systems', vertexSource, fragmentSource, [
-    'uViewProjection',
-    'uCursorOffset',
-    'uSizeRanges',
-    'uSizeValues',
-    'uPixelRatio',
-    'uRingCss',
-    'uGlowFactor',
-    'uMaxPointSize',
-  ]);
+  return createProgram(
+    gl,
+    'systems',
+    vertexSource,
+    withMarkerAlpha(fragmentSource),
+    MARKER_UNIFORMS,
+  );
+}
+
+/**
+ * Compiles the marker range program. It shares the vertex shader with the colour program,
+ * so the two draws size and cut the sprites by one rule.
+ */
+export function createMarkerRangeProgram(gl: WebGL2RenderingContext): Program {
+  return createProgram(
+    gl,
+    'marker-range',
+    vertexSource,
+    withMarkerAlpha(rangeFragmentSource),
+    MARKER_UNIFORMS,
+  );
 }
 
 /**
@@ -257,6 +340,7 @@ export function createSystemProgram(gl: WebGL2RenderingContext): Program {
 export function createSystemPass(
   gl: WebGL2RenderingContext,
   program: Program,
+  rangeProgram: Program | null,
 ): SystemPass {
   const vertexArray = gl.createVertexArray();
   const positionBuffer = gl.createBuffer();
@@ -306,8 +390,54 @@ export function createSystemPass(
   gl.bindVertexArray(null);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
+  let calls = 0;
+
+  /**
+   * Writes the uniforms one of the two programs takes. Both draws read the same buffer
+   * through the same vertex shader, so both take the same values.
+   */
+  const writeUniforms = (target: Program, frame: SystemPassFrame): void => {
+    gl.useProgram(target.program);
+    gl.uniformMatrix4fv(
+      target.uniforms['uViewProjection'] ?? null,
+      false,
+      frame.viewProjection,
+    );
+    // The stop table goes to the shader as two vectors, so one edit of the table in
+    // `marker-size.ts` changes the shader as well and there is no second copy of the
+    // numbers.
+    gl.uniform4f(
+      target.uniforms['uSizeRanges'] ?? null,
+      MARKER_SIZE_RANGES[0],
+      MARKER_SIZE_RANGES[1],
+      MARKER_SIZE_RANGES[2],
+      MARKER_SIZE_RANGES[3],
+    );
+    gl.uniform4f(
+      target.uniforms['uSizeValues'] ?? null,
+      MARKER_SIZE_VALUES[0],
+      MARKER_SIZE_VALUES[1],
+      MARKER_SIZE_VALUES[2],
+      MARKER_SIZE_VALUES[3],
+    );
+    gl.uniform3f(
+      target.uniforms['uCursorOffset'] ?? null,
+      frame.cursorOffset[0],
+      frame.cursorOffset[1],
+      frame.cursorOffset[2],
+    );
+    gl.uniform1f(target.uniforms['uPixelRatio'] ?? null, frame.pixelRatio);
+    gl.uniform1f(target.uniforms['uRingCss'] ?? null, RING_CSS_PIXELS);
+    gl.uniform1f(target.uniforms['uGlowFactor'] ?? null, GLOW_SIZE_FACTOR);
+    gl.uniform1f(target.uniforms['uMaxPointSize'] ?? null, maxPointSize);
+  };
+
   return {
+    drawCalls(): number {
+      return calls;
+    },
     draw(frame: SystemPassFrame): number {
+      calls = 0;
       const count = frame.set.count;
       if (count === 0) return 0;
 
@@ -341,39 +471,7 @@ export function createSystemPass(
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, offsets, 0, count * 3);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-      gl.useProgram(program.program);
-      gl.uniformMatrix4fv(
-        program.uniforms['uViewProjection'] ?? null,
-        false,
-        frame.viewProjection,
-      );
-      // The stop table goes to the shader as two vectors, so one edit of the table in
-      // `marker-size.ts` changes the shader as well and there is no second copy of the
-      // numbers.
-      gl.uniform4f(
-        program.uniforms['uSizeRanges'] ?? null,
-        MARKER_SIZE_RANGES[0],
-        MARKER_SIZE_RANGES[1],
-        MARKER_SIZE_RANGES[2],
-        MARKER_SIZE_RANGES[3],
-      );
-      gl.uniform4f(
-        program.uniforms['uSizeValues'] ?? null,
-        MARKER_SIZE_VALUES[0],
-        MARKER_SIZE_VALUES[1],
-        MARKER_SIZE_VALUES[2],
-        MARKER_SIZE_VALUES[3],
-      );
-      gl.uniform3f(
-        program.uniforms['uCursorOffset'] ?? null,
-        frame.cursorOffset[0],
-        frame.cursorOffset[1],
-        frame.cursorOffset[2],
-      );
-      gl.uniform1f(program.uniforms['uPixelRatio'] ?? null, frame.pixelRatio);
-      gl.uniform1f(program.uniforms['uRingCss'] ?? null, RING_CSS_PIXELS);
-      gl.uniform1f(program.uniforms['uGlowFactor'] ?? null, GLOW_SIZE_FACTOR);
-      gl.uniform1f(program.uniforms['uMaxPointSize'] ?? null, maxPointSize);
+      writeUniforms(program, frame);
 
       // The pass draws over the finished frame, so it blends with alpha and reads no
       // depth. The order of the draw is the order the set holds, so two markers that
@@ -385,8 +483,31 @@ export function createSystemPass(
       gl.drawArrays(gl.POINTS, 0, count);
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
-      // The draw covers the whole set in one call, because the range cut runs in the
-      // vertex shader. The count the page reads is the number the cut kept.
+      calls += 1;
+
+      // The second draw writes the range of every marker body into the range buffer, so
+      // the shape pass can read what lies in front of it. It is the same geometry through
+      // the same vertex shader, with a fragment shader that writes one float and no
+      // colour. The MIN equation leaves the nearest marker in each pixel, whatever order
+      // the set holds.
+      if (frame.range !== null && rangeProgram !== null) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, frame.range);
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        writeUniforms(rangeProgram, frame);
+        gl.enable(gl.BLEND);
+        gl.blendEquation(gl.MIN);
+        gl.bindVertexArray(vertexArray);
+        gl.drawArrays(gl.POINTS, 0, count);
+        gl.bindVertexArray(null);
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.disable(gl.BLEND);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        calls += 1;
+      }
+
+      // The colour draw covers the whole set in one call, because the range cut runs in
+      // the vertex shader. The count the page reads is the number the cut kept.
       return drawn;
     },
     dispose(): void {

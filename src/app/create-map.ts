@@ -52,6 +52,8 @@ import { createShapeSet } from '../scene-data/shapes';
 import type {
   Line,
   LineInput,
+  ShapeInfo,
+  ShapeKind,
   ShapeReport,
   ShapeSet,
   Sphere,
@@ -79,6 +81,10 @@ import type { MarkerOverlay } from './markers';
 // point. The HUD lint rule forbids an import of `src/scene-data/`, so the entry point
 // carries the three types.
 export type { Category, RealSystem, SystemImage } from '../scene-data/real-systems';
+
+// The HUD lists the shapes of a category through `getShapeInfo`, so the entry point
+// carries the two types that call reads and writes.
+export type { ShapeInfo, ShapeKind } from '../scene-data/shapes';
 
 // The dataset catalog is part of the options and of the handle, so the entry point
 // carries its types as well. The HUD reads `DatasetInfo` through this module.
@@ -339,6 +345,11 @@ export interface GalaxyMapDebug {
    * frame, so the reading is of the last change and not of the last frame.
    */
   categorySweepMs(): number;
+  /**
+   * How long the last sweep of the shape flags took, in milliseconds. It follows the same
+   * rule as `categorySweepMs`, over the spheres and the lines.
+   */
+  shapeSweepMs(): number;
   /** Holds the close fade at a value from 0 to 1, or `null` for the zoom distance. */
   setCloseFade(value: number | null): void;
   /**
@@ -418,6 +429,22 @@ export interface GalaxyMapDebug {
    * frame that drew a line.
    */
   shapeLineBufferSize(): [number, number] | null;
+  /**
+   * How many draw calls the marker pass made in the last frame. It is 1 in a frame with
+   * markers and no sphere, and 2 in a frame that also wrote the range buffer.
+   */
+  markerDrawCalls(): number;
+  /**
+   * The width and the height of the range buffer, and null where the context cannot blend
+   * into a float target. A test reads it to tell the range path from the fallback.
+   */
+  rangeBufferSize(): [number, number] | null;
+  /**
+   * The range the range buffer holds at one pixel, in CSS pixels from the top left, in
+   * light years. A pixel where no marker body drew reads a value above every drawable
+   * range, and the reading is null where the map holds no range buffer.
+   */
+  readRange(x: number, y: number): number | null;
   /**
    * The background reading of the last frame, and null in a frame that built none. The
    * read waits for the card, so it is a probe and not the path the labels take.
@@ -522,6 +549,15 @@ export interface GalaxyMap {
   getSphere(index: number): Sphere | null;
   /** Reads one line as a copy, or null outside the set. */
   getLine(index: number): Line | null;
+  /**
+   * Reads one shape without its geometry, or null outside the set. A caller that lists
+   * the set reads it, so listing 4,096 lines costs no copy of their points.
+   */
+  getShapeInfo(kind: ShapeKind, index: number): ShapeInfo | null;
+  /** Keeps the shapes whose name holds the text, compared without case. */
+  setShapeNameFilter(text: string): void;
+  /** Reads the shape filter text. */
+  getShapeNameFilter(): string;
   /** True while the spheres and the lines draw. */
   areShapesVisible(): boolean;
   /**
@@ -539,6 +575,13 @@ export interface GalaxyMap {
   setCategoryVisible(name: string, visible: boolean): void;
   /** True when the markers of a category draw. False for a name the table lacks. */
   isCategoryVisible(name: string): boolean;
+  /**
+   * Turns the shapes of a category on or off. It reaches no marker: a category holds one
+   * flag for its markers and one for its shapes. An unknown name changes nothing.
+   */
+  setShapeCategoryVisible(name: string, visible: boolean): void;
+  /** True when the shapes of a category draw. False for a name the table lacks. */
+  isShapeCategoryVisible(name: string): boolean;
   /** Keeps the markers whose name holds the text, compared without case. */
   setNameFilter(text: string): void;
   /** Reads the filter text. */
@@ -727,6 +770,12 @@ export function createGalaxyMap(
       }
       return index < 0 ? null : (set.system(index)?.position ?? null);
     },
+    // One table holds the categories of the systems and of the shapes, so the shape set
+    // reads the table the system set holds rather than keeping a second one. It reads the
+    // names, the order and the colours alone: a category holds one visibility flag for
+    // its markers, which the system set owns, and one for its shapes, which the shape set
+    // owns.
+    set,
   );
   const view: View = createDefaultView();
 
@@ -1464,6 +1513,11 @@ export function createGalaxyMap(
       // frame after the change it wants to measure.
       return set.lastSweepMs;
     },
+    shapeSweepMs(): number {
+      // The flags of the shapes are read while the frame draws, so the reading is of the
+      // last frame and a caller draws one after the change it wants to measure.
+      return shapes.lastSweepMs;
+    },
     systemMarkerCount(): number {
       return renderer?.systemMarkerCount() ?? 0;
     },
@@ -1555,6 +1609,15 @@ export function createGalaxyMap(
     shapeLineBufferSize(): [number, number] | null {
       return renderer?.shapeLineBufferSize() ?? null;
     },
+    markerDrawCalls(): number {
+      return renderer?.markerDrawCalls() ?? 0;
+    },
+    rangeBufferSize(): [number, number] | null {
+      return renderer?.rangeBufferSize() ?? null;
+    },
+    readRange(x: number, y: number): number | null {
+      return renderer?.readRange(x, y) ?? null;
+    },
     backgroundReading(): BackgroundReading | null {
       return renderer?.backgroundReading() ?? null;
     },
@@ -1593,7 +1656,7 @@ export function createGalaxyMap(
       return report;
     },
     clearSystems(): void {
-      if (set.count > 0) hudDirty = true;
+      if (set.count > 0 || shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       set.clearSystems();
       // A line may hold the position of a system of the set, so the shapes go with it.
       shapes.clearShapes();
@@ -1601,6 +1664,7 @@ export function createGalaxyMap(
     },
     clearSystemsAndCategories(): void {
       if (set.count > 0 || set.categoryCount > 0) hudDirty = true;
+      if (shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       set.clearSystemsAndCategories();
       shapes.clearShapes();
       syncSelection();
@@ -1724,12 +1788,19 @@ export function createGalaxyMap(
       drawFrame();
     },
     addSpheres(spheres: readonly SphereInput[]): ShapeReport {
-      return shapes.addSpheres(spheres);
+      const report = shapes.addSpheres(spheres);
+      // The category panel lists the shapes, so a shape the reader keeps rebuilds it in
+      // the next frame, as a system does.
+      if (report.added > 0) hudDirty = true;
+      return report;
     },
     addLines(lines: readonly LineInput[]): ShapeReport {
-      return shapes.addLines(lines);
+      const report = shapes.addLines(lines);
+      if (report.added > 0) hudDirty = true;
+      return report;
     },
     clearShapes(): void {
+      if (shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       shapes.clearShapes();
     },
     sphereCount(): number {
@@ -1743,6 +1814,15 @@ export function createGalaxyMap(
     },
     getLine(index: number): Line | null {
       return shapes.getLine(index);
+    },
+    getShapeInfo(kind: ShapeKind, index: number): ShapeInfo | null {
+      return shapes.getShapeInfo(kind, index);
+    },
+    setShapeNameFilter(text: string): void {
+      shapes.setShapeNameFilter(text);
+    },
+    getShapeNameFilter(): string {
+      return shapes.getShapeNameFilter();
     },
     areShapesVisible(): boolean {
       return shapesVisible;
@@ -1771,6 +1851,12 @@ export function createGalaxyMap(
     },
     isCategoryVisible(name: string): boolean {
       return set.isCategoryVisible(name);
+    },
+    setShapeCategoryVisible(name: string, visible: boolean): void {
+      shapes.setCategoryVisible(name, visible);
+    },
+    isShapeCategoryVisible(name: string): boolean {
+      return shapes.isCategoryVisible(name);
     },
     setNameFilter(text: string): void {
       set.setNameFilter(text);

@@ -209,8 +209,15 @@ export interface RealSystemSet {
   readonly categoryCount: number;
   /** Rises on every change to the set. */
   readonly version: number;
-  /** Rises on every change to the category table. */
+  /** Rises on every change to the category table, and on a change of a visibility. */
   readonly categoryVersion: number;
+  /**
+   * Rises only where the table itself changes: a category added, a category replaced, or
+   * the table emptied. A visibility switch and a name filter leave it where it is, so the
+   * shape set, which reads the names and the colours alone, sweeps no shape on a switch
+   * of the markers.
+   */
+  readonly categoryTableVersion: number;
   /** Three game coordinates per system, in the order the records were added. */
   readonly positions: Float64Array;
   /**
@@ -425,6 +432,7 @@ export function createSystemSet(): RealSystemSet {
   // replacement changes the table entry and not what the user asked to see.
   const categoryVisible = new Map<string, boolean>();
   let categoryVersion = 0;
+  let categoryTableVersion = 0;
 
   const positions = new Float64Array(MAX_SYSTEMS * 3);
   const categoryIndices = new Uint16Array(MAX_SYSTEMS);
@@ -587,7 +595,10 @@ export function createSystemSet(): RealSystemSet {
         }
       }
 
-      if (added > 0 || replaced > 0) categoryVersion += 1;
+      if (added > 0 || replaced > 0) {
+        categoryVersion += 1;
+        categoryTableVersion += 1;
+      }
       return { added, replaced, rejected };
     },
 
@@ -720,6 +731,7 @@ export function createSystemSet(): RealSystemSet {
       categoryVisible.clear();
       version += 1;
       categoryVersion += 1;
+      categoryTableVersion += 1;
     },
 
     get count(): number {
@@ -740,6 +752,9 @@ export function createSystemSet(): RealSystemSet {
     },
     get categoryVersion(): number {
       return categoryVersion;
+    },
+    get categoryTableVersion(): number {
+      return categoryTableVersion;
     },
     get positions(): Float64Array {
       return positions.subarray(0, systems.length * 3);

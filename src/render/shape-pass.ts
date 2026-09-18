@@ -11,6 +11,7 @@
 // once and a corner carries no brighter dot. A full-screen pass then writes that buffer
 // over the frame. Every segment of every line draws in one instanced call, so the whole
 // pass costs three calls whatever the set holds.
+import { RANGE_EMPTY } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
 import type { ShapeSet } from '../scene-data/shapes';
@@ -57,6 +58,37 @@ export function sphereAlpha(share: number, opacity: number): number {
   return Math.min(1, opacity / Math.sqrt(1 - r * r));
 }
 
+/**
+ * How much of a sphere's shell path through one pixel lies behind the nearest marker body
+ * at that pixel. `spheres.frag` holds the same rule, so a unit test reads it at its own
+ * resolution and not at the resolution of a screenshot.
+ *
+ * `markerRange` is what the range buffer holds at the pixel, `centreRange` the range from
+ * the camera to the sphere's centre and `radiusLy` the sphere's radius, all in light
+ * years. `spriteShare` is the distance from the middle of the sprite as a share of the
+ * drawn radius.
+ *
+ * The ray cuts the shell from `centreRange - d` to `centreRange + d`, where `d` is the
+ * half chord. The share is 0 where the marker is in front of the whole chord, 1 where it
+ * is behind it, and the part of the chord behind the marker in between.
+ */
+export function depthShare(
+  markerRange: number,
+  centreRange: number,
+  radiusLy: number,
+  spriteShare: number,
+): number {
+  const r = Math.min(Math.abs(spriteShare), 1);
+  const d = radiusLy * Math.sqrt(Math.max(0, 1 - r * r));
+  // At the limb the chord is a point, so the reading is which side of the centre the
+  // marker is on.
+  if (d <= 0) return markerRange >= centreRange ? 1 : 0;
+  return Math.min(1, Math.max(0, (markerRange - (centreRange - d)) / (2 * d)));
+}
+
+/** The most of its own alpha a sphere or a line writes over a marker body. */
+export const MARKER_CAP_ALPHA = 0.5;
+
 /** What one shape pass draw needs. */
 export interface ShapePassFrame {
   /** The combined projection and view matrix, with no translation. */
@@ -69,10 +101,31 @@ export interface ShapePassFrame {
   readonly focal: number;
   /** The set to draw. */
   readonly set: ShapeSet;
+  /**
+   * The range buffer the marker pass wrote, or null where the map holds none. With none,
+   * every sphere draws at a share of 1 and the line step caps nothing, which is the frame
+   * the map drew before the buffer existed.
+   */
+  readonly range: WebGLTexture | null;
+}
+
+/** What the pass draws for a set. */
+export interface ShapeCounts {
+  /** How many spheres the set holds that are switched on. */
+  readonly spheres: number;
+  /** How many line segments the set holds that are switched on. */
+  readonly segments: number;
 }
 
 /** The shape overlay pass. */
 export interface ShapePass {
+  /**
+   * Writes the instance buffers for a set, if they are not the set's already, and gives
+   * back what the next draw of that set will hold. The renderer reads it before the
+   * marker pass draws, because the marker pass writes the range buffer only while a shape
+   * draws.
+   */
+  prepare(set: ShapeSet): ShapeCounts;
   /** Draws the set and gives back how many draw calls it issued. */
   draw(frame: ShapePassFrame): number;
   /** How many draw calls the last draw issued. */
@@ -101,6 +154,9 @@ export function createShapePrograms(gl: WebGL2RenderingContext): ShapePrograms {
       'uTargetSize',
       'uFocal',
       'uMinRadius',
+      'uRange',
+      'uHasRange',
+      'uRangeEmpty',
     ]),
     lines: createProgram(gl, 'shape-lines', lineVertexSource, lineFragmentSource, [
       'uViewProjection',
@@ -110,6 +166,9 @@ export function createShapePrograms(gl: WebGL2RenderingContext): ShapePrograms {
     ]),
     composite: createProgram(gl, 'shape-composite', fullScreenSource, compositeSource, [
       'uLines',
+      'uRange',
+      'uHasRange',
+      'uRangeEmpty',
     ]),
   };
 }
@@ -192,32 +251,47 @@ function createLineTarget(gl: WebGL2RenderingContext): LineTarget {
  * world frame, whose third axis runs the other way to the game's, and it stays an
  * absolute position: the draw passes the camera subtraction as a uniform, as the region
  * boundary pass does.
+ *
+ * A sphere whose flag is off writes no instance, so a category the user switched off
+ * costs no vertex work. The colour comes from the set, which resolves it from the shape
+ * or from the first category the shape names that is on: the pass knows no category.
  */
 export function buildSphereInstances(set: ShapeSet, out: Float32Array): number {
   const spheres = set.spheres;
-  const count = Math.min(spheres.length, MAX_SPHERES);
-  for (let index = 0; index < count; index += 1) {
+  const flags = set.sphereFlags;
+  const colors = set.sphereColors;
+  const held = Math.min(spheres.length, MAX_SPHERES);
+  let count = 0;
+  for (let index = 0; index < held; index += 1) {
+    if (flags[index] !== 1) continue;
     const sphere = spheres[index] as (typeof spheres)[number];
-    const base = index * SPHERE_FLOATS;
+    const base = count * SPHERE_FLOATS;
     out[base] = sphere.position[0];
     out[base + 1] = sphere.position[1];
     out[base + 2] = -sphere.position[2];
     out[base + 3] = sphere.radius;
-    out[base + 4] = sphere.color[0] / 255;
-    out[base + 5] = sphere.color[1] / 255;
-    out[base + 6] = sphere.color[2] / 255;
+    out[base + 4] = (colors[index * 3] as number) / 255;
+    out[base + 5] = (colors[index * 3 + 1] as number) / 255;
+    out[base + 6] = (colors[index * 3 + 2] as number) / 255;
     out[base + 7] = sphere.opacity;
+    count += 1;
   }
   return count;
 }
 
 /**
  * Writes one instance per line segment and gives back how many there are. A closed line
- * carries one more segment, from its last point back to its first.
+ * carries one more segment, from its last point back to its first. A line whose flag is
+ * off writes no segment, and the colour comes from the set, as it does for a sphere.
  */
 export function buildSegmentInstances(set: ShapeSet, out: Float32Array): number {
   let segments = 0;
-  for (const line of set.lines) {
+  const lines = set.lines;
+  const flags = set.lineFlags;
+  const colors = set.lineColors;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (flags[index] !== 1) continue;
+    const line = lines[index] as (typeof lines)[number];
     const points = line.points;
     const last = line.closed ? points.length : points.length - 1;
     const half = line.width / 2;
@@ -235,9 +309,9 @@ export function buildSegmentInstances(set: ShapeSet, out: Float32Array): number 
       out[base + 3] = end[0];
       out[base + 4] = end[1];
       out[base + 5] = -end[2];
-      out[base + 6] = line.color[0] / 255;
-      out[base + 7] = line.color[1] / 255;
-      out[base + 8] = line.color[2] / 255;
+      out[base + 6] = (colors[index * 3] as number) / 255;
+      out[base + 7] = (colors[index * 3 + 1] as number) / 255;
+      out[base + 8] = (colors[index * 3 + 2] as number) / 255;
       out[base + 9] = half;
       segments += 1;
     }
@@ -344,6 +418,10 @@ export function createShapePass(
   };
 
   return {
+    prepare(set: ShapeSet): ShapeCounts {
+      rebuild(set);
+      return { spheres: sphereCount, segments: segmentCount };
+    },
     drawCalls(): number {
       return calls;
     },
@@ -391,9 +469,21 @@ export function createShapePass(
           program.uniforms['uMinRadius'] ?? null,
           SPHERE_MIN_RADIUS_CSS * frame.pixelRatio,
         );
+        // The shell reads the range buffer to find how much of its path through each
+        // pixel lies behind the nearest marker body. With no buffer it takes a share of 1
+        // at every pixel.
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, frame.range);
+        gl.uniform1i(program.uniforms['uRange'] ?? null, 0);
+        gl.uniform1f(
+          program.uniforms['uHasRange'] ?? null,
+          frame.range === null ? 0 : 1,
+        );
+        gl.uniform1f(program.uniforms['uRangeEmpty'] ?? null, RANGE_EMPTY);
         gl.bindVertexArray(sphereArray);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, sphereCount);
         gl.bindVertexArray(null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
         gl.disable(gl.BLEND);
         calls += 1;
       }
@@ -440,9 +530,21 @@ export function createShapePass(
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, lineTarget.texture);
         gl.uniform1i(composite.uniforms['uLines'] ?? null, 0);
+        // The lines draw over the markers, so this step takes the cap the sphere step
+        // takes: a line never writes more than half its alpha over a marker body.
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, frame.range);
+        gl.uniform1i(composite.uniforms['uRange'] ?? null, 1);
+        gl.uniform1f(
+          composite.uniforms['uHasRange'] ?? null,
+          frame.range === null ? 0 : 1,
+        );
+        gl.uniform1f(composite.uniforms['uRangeEmpty'] ?? null, RANGE_EMPTY);
         gl.bindVertexArray(fullScreenVertexArray);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.bindVertexArray(null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, null);
         gl.disable(gl.BLEND);
         calls += 1;

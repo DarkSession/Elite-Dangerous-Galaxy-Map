@@ -21,10 +21,13 @@ import {
   createCloudBuffers,
   createDetailTexture,
   createFullScreenTriangle,
+  createRangeBuffer,
   createRenderTarget,
   createShapeTexture,
+  RANGE_EMPTY,
+  readsFloatTargets,
 } from './buffers';
-import type { DetailTexture, RenderTarget, ShapeTexture } from './buffers';
+import type { DetailTexture, RangeBuffer, RenderTarget, ShapeTexture } from './buffers';
 import {
   cloudFade,
   createCloudPass,
@@ -83,7 +86,11 @@ import {
   starWeight,
 } from './star-pass';
 import type { StarPass } from './star-pass';
-import { createSystemPass, createSystemProgram } from './system-pass';
+import {
+  createMarkerRangeProgram,
+  createSystemPass,
+  createSystemProgram,
+} from './system-pass';
 import type { SystemPass } from './system-pass';
 import {
   createVolumePass,
@@ -201,6 +208,21 @@ export interface Renderer {
   /** The size of the shape line buffer in device pixels, or null while it holds none. */
   shapeLineBufferSize(): [number, number] | null;
   /**
+   * How many draw calls the last frame's marker pass issued: one for the colours, and one
+   * more in a frame that wrote the range buffer.
+   */
+  markerDrawCalls(): number;
+  /**
+   * The size of the range buffer in device pixels, and null where the context cannot
+   * blend into a float target and the map holds none.
+   */
+  rangeBufferSize(): [number, number] | null;
+  /**
+   * The range the buffer holds at one pixel, in CSS pixels from the top left, and null
+   * where the map holds no range buffer. A pixel with no marker body reads `RANGE_EMPTY`.
+   */
+  readRange(x: number, y: number): number | null;
+  /**
    * Takes the real-system set the star field suppresses by and the marker pass draws.
    * The set is live: the renderer reads its version each frame.
    */
@@ -301,12 +323,23 @@ export function createRenderer(
   gl: WebGL2RenderingContext,
   canvas: HTMLCanvasElement,
 ): Renderer {
+  // The scene targets are `RGBA16F`, which blends with this extension alone.
   const float = gl.getExtension('EXT_color_buffer_float') !== null;
+  // The range buffer is `R32F`, and WebGL2 refuses the `MIN` blend into a 32-bit float
+  // target without a second extension. It therefore takes a flag of its own: a context
+  // that gives one and not the other keeps its half-float scene targets and takes the
+  // no-range fallback.
+  const rangeFloat = readsFloatTargets(gl);
   const triangle = createFullScreenTriangle(gl);
   const pointProgram: Program = createPointProgram(gl);
   const gridProgram: Program = createGridProgram(gl);
   const starProgram: Program = createStarProgram(gl);
   const systemProgram: Program = createSystemProgram(gl);
+  // The range program writes into the range buffer alone, so a context that cannot blend
+  // into a float target compiles none of it.
+  const markerRangeProgram: Program | null = rangeFloat
+    ? createMarkerRangeProgram(gl)
+    : null;
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const shapePrograms: ShapePrograms = createShapePrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
@@ -314,6 +347,13 @@ export function createRenderer(
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
 
   const shapeTexture: ShapeTexture = createShapeTexture(gl, generateCloudShapes());
+
+  // The range buffer carries the marker bodies to the shape pass. Where the context
+  // cannot blend into a float target the map holds none: every sphere then draws at a
+  // share of 1 and the line step caps nothing, which is the frame this change replaces.
+  const rangeBuffer: RangeBuffer | null = rangeFloat
+    ? createRangeBuffer(gl, 2, 2)
+    : null;
 
   const halfTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
   const sceneTarget: RenderTarget = createRenderTarget(gl, 2, 2, float);
@@ -351,6 +391,7 @@ export function createRenderer(
   let shapeSet: ShapeSet | null = null;
   let shapeDraw = true;
   let shapeCalls = 0;
+  let markerCalls = 0;
   let cloudPass: CloudPass | null = null;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -398,6 +439,8 @@ export function createRenderer(
   // held here so the draw path allocates nothing.
   const gridReach: number[] = [0, 0, 0, 0, 0, 0];
   const syncPixel = new Uint8Array(4);
+  // One pixel of the range buffer, for the probe the browser tests read.
+  const rangePixel = new Float32Array(1);
 
   // `gl.finish()` alone does not wait in this browser: the commands sit in the
   // renderer process's command buffer and the call returns at once. Reading one pixel
@@ -631,21 +674,39 @@ export function createRenderer(
       });
     }
 
-    // The shapes draw over the boundary overlay and under the markers: the spheres
-    // first, then the lines. A marker is what the user clicks, so nothing draws over one.
-    shapeCalls = 0;
-    if (passes.shapes && shapeDraw && shapeSet !== null) {
-      shapeCalls = shapePass.draw({
-        viewProjection: viewProjection as Float32Array,
-        camera,
-        pixelRatio,
-        focal,
-        set: shapeSet,
-      });
+    // The markers draw over the tone map and over the boundary overlay, and before the
+    // shapes. A sphere is a space that holds systems, so it must be able to wash the
+    // markers inside it and behind it, and it can only do that over markers the frame
+    // already holds. The range buffer is what keeps it off the markers in front of it.
+    const drawnShapes = passes.shapes && shapeDraw ? shapeSet : null;
+    // The instance buffers are written here and not in the draw below, because the marker
+    // pass needs to know whether a sphere draws before it draws itself.
+    const shapeCounts =
+      drawnShapes === null
+        ? { spheres: 0, segments: 0 }
+        : shapePass.prepare(drawnShapes);
+    // A map with no shape that draws writes no range, and costs what it costs without the
+    // buffer. A line reads the buffer as a sphere does: the line step caps its own wash
+    // over a marker body, and a set of lines and no sphere is an ordinary set, so the
+    // range draw follows the shapes and not the spheres alone.
+    const rangeTarget =
+      shapeCounts.spheres > 0 || shapeCounts.segments > 0 ? rangeBuffer : null;
+    if (rangeTarget !== null) {
+      // The shape steps read the buffer at their own fragment coordinate, so it holds the
+      // drawing buffer size and not a share of it. The size follows the first frame that
+      // draws a shape and not the resize, because 1920x1080 of one float a pixel is
+      // 8.3 MB and a map that draws no shape reads none of it.
+      rangeTarget.resize(width, height);
+      // The clear runs here and not in the marker pass, because a frame with a sphere and
+      // no marker must read an empty buffer and not the markers of an older frame.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, rangeTarget.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.clearBufferfv(gl.COLOR, 0, [RANGE_EMPTY, 0, 0, 0]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
     }
 
-    // The markers draw last, over the tone map and over the boundary overlay, so no
-    // other pass can cover one and a marker adds no light the tone map reads.
+    markerCalls = 0;
     if (passes.systems && systemPass !== null && systemSet !== null) {
       systemMarkers = systemPass.draw({
         viewProjection: viewProjection as Float32Array,
@@ -659,6 +720,23 @@ export function createRenderer(
         ],
         pixelRatio,
         set: systemSet,
+        range: rangeTarget === null ? null : rangeTarget.framebuffer,
+      });
+      markerCalls = systemPass.drawCalls();
+    }
+
+    // The shapes draw last: the spheres over the markers, washing each by how much of the
+    // shell lies behind it, and then the lines. A line carries no range of its own, so it
+    // draws after the spheres and a limb never erases a route.
+    shapeCalls = 0;
+    if (drawnShapes !== null) {
+      shapeCalls = shapePass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        pixelRatio,
+        focal,
+        set: drawnShapes,
+        range: rangeTarget === null ? null : rangeTarget.texture,
       });
     }
   };
@@ -706,6 +784,37 @@ export function createRenderer(
     shapeLineBufferSize(): [number, number] | null {
       return shapePass.lineBufferSize();
     },
+    markerDrawCalls(): number {
+      return markerCalls;
+    },
+    rangeBufferSize(): [number, number] | null {
+      return rangeBuffer === null ? null : [rangeBuffer.width, rangeBuffer.height];
+    },
+    readRange(x: number, y: number): number | null {
+      if (rangeBuffer === null) return null;
+      // The buffer takes the drawing buffer size on the first frame that draws a shape,
+      // so before that frame it is the 2 x 2 it started at. A read of the canvas
+      // coordinate would then fall outside it, so the caller gets `null` instead.
+      if (rangeBuffer.width !== canvas.width || rangeBuffer.height !== canvas.height) {
+        return null;
+      }
+      const ratio = canvas.width / Math.max(1, canvas.clientWidth);
+      const deviceX = Math.min(canvas.width - 1, Math.max(0, Math.round(x * ratio)));
+      const deviceY = Math.min(canvas.height - 1, Math.max(0, Math.round(y * ratio)));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, rangeBuffer.framebuffer);
+      // `readPixels` counts rows from the bottom and the caller counts them from the top.
+      gl.readPixels(
+        deviceX,
+        canvas.height - 1 - deviceY,
+        1,
+        1,
+        gl.RED,
+        gl.FLOAT,
+        rangePixel,
+      );
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return rangePixel[0] as number;
+    },
     setStarField(model: GalaxyModel): void {
       starPass?.dispose();
       starModel = model;
@@ -718,7 +827,8 @@ export function createRenderer(
     setSystems(set: RealSystemSet | null): void {
       systemSet = set;
       systemPass?.dispose();
-      systemPass = set === null ? null : createSystemPass(gl, systemProgram);
+      systemPass =
+        set === null ? null : createSystemPass(gl, systemProgram, markerRangeProgram);
       // The field holds the set it was made with, so a set that arrives after the model
       // needs a new field. The model is the only other input, so this costs one build.
       if (starModel !== null) {
@@ -878,6 +988,7 @@ export function createRenderer(
       pointPass?.dispose();
       starPass?.dispose();
       systemPass?.dispose();
+      rangeBuffer?.dispose();
       gridPass.dispose();
       regionPass?.dispose();
       shapePass.dispose();
@@ -891,6 +1002,7 @@ export function createRenderer(
       gl.deleteProgram(pointProgram.program);
       gl.deleteProgram(starProgram.program);
       gl.deleteProgram(systemProgram.program);
+      if (markerRangeProgram !== null) gl.deleteProgram(markerRangeProgram.program);
       gl.deleteProgram(gridProgram.program);
       gl.deleteProgram(regionPrograms.ribbon.program);
       gl.deleteProgram(regionPrograms.composite.program);

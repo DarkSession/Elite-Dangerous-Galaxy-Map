@@ -1,15 +1,61 @@
 // The dataset catalog, the dataset field and the dataset library dialog, read through
 // the browser.
 //
-// Every test but the last four builds a second map over a canvas of its own, with a
+// Every test of the first part builds a second map over a canvas of its own, with a
 // catalog the test wrote. Each entry's `load()` returns records the test made, so the
-// suite reaches no host but the page's own. The last four read the demo page's own
-// catalog, which is the five committed files.
+// suite reaches no host but the page's own. The tests of the last part read the demo
+// page's own catalog: five entries that import a committed file and one that reads the
+// factions dump, which those tests serve from a fixture of their own.
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { openMap } from './helpers';
+import {
+  dumpFaction,
+  dumpSystem,
+  openMap,
+  serveFactionsDump,
+  FACTIONS_DUMP_URL,
+} from './helpers';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+
+/** The five entries whose records the repository commits, in the order the page gives. */
+const COMMITTED_IDS = [
+  'guardian-ruins',
+  'guardian-structures',
+  'notable-systems',
+  'uia',
+  'adamastor',
+];
+
+/**
+ * The dump fixture: four factions, of which `Canonn` names three systems and
+ * `Canonn Deep Space Research` names two. `Shared System` is in both.
+ */
+const DUMP_FIXTURE = [
+  '[',
+  dumpFaction('Another Faction', [dumpSystem('Elsewhere', 1, true)]),
+  dumpFaction('Canonn', [
+    dumpSystem('Canonn Home', 10, true),
+    dumpSystem('Canonn Home', 10, false),
+    dumpSystem('Canonn Outpost', 11, false),
+    dumpSystem('Shared System', 12, true),
+  ]),
+  dumpFaction('Canonn Deep Space Research', [
+    dumpSystem('Shared System', 12, false),
+    dumpSystem('Research Post', 13, true),
+  ]),
+  dumpFaction('A Last Faction', [dumpSystem('Nowhere', 2, true)]),
+  ']',
+].join('\n');
+
+/** A dump of three factions, none of which the entry names. */
+const DUMP_WITHOUT_CANONN = [
+  '[',
+  dumpFaction('Another Faction', [dumpSystem('Elsewhere', 1, true)]),
+  dumpFaction('A Second Faction', [dumpSystem('Nowhere', 2, true)]),
+  dumpFaction('A Third Faction', [dumpSystem('Somewhere', 3, true)]),
+  ']',
+].join('\n');
 
 /** What the test asks one catalog entry to be. */
 interface EntryBuild {
@@ -666,7 +712,7 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
   expect(loads).toEqual(['one']);
 });
 
-test('the demo page carries the five Canonn sets', async ({ page }) => {
+test('the demo page carries the six Canonn sets', async ({ page }) => {
   await openMap(page, '', { demoData: true });
 
   const catalog = await page.evaluate(() => ({
@@ -681,8 +727,10 @@ test('the demo page carries the five Canonn sets', async ({ page }) => {
     'notable-systems',
     'uia',
     'adamastor',
+    'multifaction',
   ]);
   expect(catalog.collections).toEqual([
+    'Canonn Research Group',
     'Canonn Research Group',
     'Canonn Research Group',
     'Canonn Research Group',
@@ -697,7 +745,7 @@ test('the demo page carries the five Canonn sets', async ({ page }) => {
     spheres: number;
     lines: number;
   }[] = [];
-  for (const id of catalog.ids) {
+  for (const id of COMMITTED_IDS) {
     readings.push(
       await page.evaluate(async (name) => {
         await window.galaxyMap?.loadDataset(name);
@@ -710,14 +758,85 @@ test('the demo page carries the five Canonn sets', async ({ page }) => {
       }, id),
     );
   }
-  console.log('the five sets read', readings);
+  console.log('the five committed sets read', readings);
   expect(readings).toEqual([
     { systems: 212, categories: 3, spheres: 0, lines: 0 },
     { systems: 163, categories: 10, spheres: 0, lines: 0 },
     { systems: 16, categories: 4, spheres: 0, lines: 0 },
-    { systems: 1116, categories: 18, spheres: 54, lines: 983 },
-    { systems: 8, categories: 4, spheres: 0, lines: 8 },
+    { systems: 1116, categories: 19, spheres: 54, lines: 983 },
+    { systems: 8, categories: 10, spheres: 0, lines: 8 },
   ]);
+});
+
+test('every shape of the two shape sets names a category', async ({ page }) => {
+  await openMap(page, '', { demoData: true });
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    await map.loadDataset('uia');
+    const named: string[] = [];
+    const unnamed: string[] = [];
+    let gammaVelorum: string | null = null;
+    for (let index = 0; index < map.sphereCount(); index += 1) {
+      const info = map.getShapeInfo('sphere', index);
+      if (info === null) continue;
+      if (info.name === 'Gamma Velorum') gammaVelorum = info.primaryCategory ?? null;
+      if (info.primaryCategory === undefined) unnamed.push(info.name ?? '');
+      else named.push(info.primaryCategory);
+    }
+    let lines = 0;
+    let linesWithoutCategory = 0;
+    let linesWithColour = 0;
+    const lineNames: string[] = [];
+    for (let index = 0; index < map.lineCount(); index += 1) {
+      const info = map.getShapeInfo('line', index);
+      if (info === null) continue;
+      lines += 1;
+      if (info.primaryCategory === undefined) linesWithoutCategory += 1;
+      if (map.getLine(index)?.color !== undefined) linesWithColour += 1;
+      if (lineNames.length < 3) lineNames.push(info.name ?? '');
+    }
+    return {
+      spheres: map.sphereCount(),
+      named: named.length,
+      unnamed,
+      gammaVelorum,
+      categories: [...new Set(named)].sort(),
+      lines,
+      linesWithoutCategory,
+      linesWithColour,
+      lineNames,
+    };
+  });
+  console.log('the shapes of the UIA set', reading);
+
+  // 53 of the 54 spheres carry the marker category of their list. The Gamma Velorum
+  // sphere carries the category the converter adds for its list, because the source
+  // pushes no marker at its centre and so gives that list no marker category.
+  expect(reading.spheres).toBe(54);
+  expect(reading.named).toBe(54);
+  expect(reading.unnamed).toEqual([]);
+  expect(reading.categories).toEqual([
+    'Gamma Velorum Zone',
+    'Permit Locked Centers',
+    'Permit Unlocked Centers',
+    'Thargoid Systems',
+  ]);
+  // The category list is a set, so it says that one sphere names the added category and
+  // not which one. This reading names the sphere the scenario names.
+  expect(reading.gammaVelorum).toBe('Gamma Velorum Zone');
+  // Every line names a category and takes that category's colour, so it carries none of
+  // its own.
+  expect(reading.lines).toBe(983);
+  expect(reading.linesWithoutCategory).toBe(0);
+  expect(reading.linesWithColour).toBe(0);
+  // A line names itself and not its category: the waypoint lines name their table and the
+  // hyperdiction lines name their two ends.
+  for (const name of reading.lineNames) {
+    expect(name).not.toBe('All Hyperdictions');
+    expect(name.length).toBeGreaterThan(0);
+  }
 });
 
 test('a switch away from a shape set clears the shapes', async ({ page }) => {
@@ -816,4 +935,233 @@ test('the Adamastor lines connect the markers', async ({ page }) => {
   const marker = reading.marker as { x: number; y: number };
   expect(Math.abs(marker.x - at.x)).toBeLessThanOrEqual(2);
   expect(Math.abs(marker.y - at.y)).toBeLessThanOrEqual(2);
+});
+
+test('the sixth entry fetches nothing at start', async ({ page, baseURL }) => {
+  const blocked: string[] = [];
+  const origin = new URL(baseURL as string).origin;
+  await page.route('**/*', async (route) => {
+    const url = route.request().url();
+    if (url.startsWith(origin) || url.startsWith('data:') || url.startsWith('blob:')) {
+      await route.continue();
+      return;
+    }
+    blocked.push(url);
+    await route.abort();
+  });
+
+  await openMap(page, '', { demoData: true });
+  const catalog = await page.evaluate(
+    () => window.galaxyMap?.getDatasets().map((entry) => entry.id) ?? [],
+  );
+  const entry = await page.evaluate(
+    () =>
+      window.galaxyMap?.getDatasets().find((held) => held.id === 'multifaction') ??
+      null,
+  );
+  console.log('the catalog and the blocked requests', catalog, blocked);
+
+  expect(catalog).toContain('multifaction');
+  expect(entry?.label).toBe('Canonn Factions');
+  // The entry reads its records when the user loads it, so it carries no count.
+  expect(entry?.systemCount).toBeUndefined();
+  expect(blocked).toEqual([]);
+});
+
+test('the multifaction set loads from a fixture', async ({ page }) => {
+  await serveFactionsDump(page, DUMP_FIXTURE);
+  await openMap(page, '', { demoData: true });
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    await map.loadDataset('multifaction');
+    let shared = null;
+    for (let index = 0; index < map.systemCount(); index += 1) {
+      const held = map.getSystem(index);
+      if (held?.name === 'Shared System') shared = held;
+    }
+    return {
+      systems: map.systemCount(),
+      categories: map.categoryCount(),
+      spheres: map.sphereCount(),
+      lines: map.lineCount(),
+      loaded: map.getLoadedDataset()?.id ?? null,
+      shared:
+        shared === null
+          ? null
+          : {
+              primary: shared.primaryCategory,
+              secondary: [...shared.secondaryCategories],
+            },
+      sphere: map.getShapeInfo('sphere', 0),
+    };
+  });
+  console.log('the multifaction set', reading);
+
+  // The fixture holds 4 systems between the two factions, the set carries 6 categories
+  // and the 48 spheres come from the committed file.
+  expect(reading.systems).toBe(4);
+  expect(reading.categories).toBe(6);
+  expect(reading.spheres).toBe(48);
+  expect(reading.lines).toBe(0);
+  expect(reading.loaded).toBe('multifaction');
+  // The first faction of the entry's order gives the shared system its primary category.
+  expect(reading.shared?.primary).toBe('Canonn Controlled');
+  expect(reading.shared?.secondary).toEqual(['Canonn Deep Space Research Present']);
+  // A sphere names its permit category and carries no colour of its own.
+  expect(reading.sphere?.primaryCategory).toBe('Permit Locked Sector');
+});
+
+test('a failed fetch leaves the map as it was', async ({ page }) => {
+  await page.route(FACTIONS_DUMP_URL, async (route) => {
+    await route.fulfill({ status: 500, body: 'no' });
+  });
+  await openMap(page, '', { demoData: true });
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    await map.loadDataset('guardian-ruins');
+    const before = { systems: map.systemCount(), loaded: map.getLoadedDataset()?.id };
+    let rejected = false;
+    try {
+      await map.loadDataset('multifaction');
+    } catch {
+      rejected = true;
+    }
+    const frames = await new Promise<number>((resolve) => {
+      let count = 0;
+      const step = (): void => {
+        count += 1;
+        if (count >= 10) {
+          resolve(count);
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    return {
+      rejected,
+      before,
+      after: { systems: map.systemCount(), loaded: map.getLoadedDataset()?.id },
+      spheres: map.sphereCount(),
+      frames,
+    };
+  });
+  console.log('the map after the failed fetch', reading);
+
+  expect(reading.rejected).toBe(true);
+  expect(reading.after).toEqual(reading.before);
+  expect(reading.after.loaded).toBe('guardian-ruins');
+  expect(reading.spheres).toBe(0);
+  // The frame loop kept running, so the failure left the page drawing.
+  expect(reading.frames).toBe(10);
+});
+
+test('a dump that names neither faction rejects', async ({ page }) => {
+  await serveFactionsDump(page, DUMP_WITHOUT_CANONN);
+  await openMap(page, '', { demoData: true });
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    const before = { systems: map.systemCount(), loaded: map.getLoadedDataset()?.id };
+    let message = '';
+    try {
+      await map.loadDataset('multifaction');
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    return {
+      message,
+      before,
+      after: { systems: map.systemCount(), loaded: map.getLoadedDataset()?.id },
+    };
+  });
+  console.log('the map after the dump that names neither faction', reading);
+
+  expect(reading.message.length).toBeGreaterThan(0);
+  expect(reading.after).toEqual(reading.before);
+});
+
+test('a browser with no DecompressionStream rejects the load', async ({ page }) => {
+  await serveFactionsDump(page, DUMP_FIXTURE);
+  await openMap(page, '', { demoData: true });
+
+  // The map opens first, and the global goes for the load alone. The galaxy model is a
+  // PNG that `src/galaxy-model/png.ts` opens with the same call, so a page that starts
+  // without the global builds no model and never reports itself ready.
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    const before = map.systemCount();
+    const held = window.DecompressionStream;
+    let message = '';
+    try {
+      // The entry reads a gzip file, so a browser that cannot open one cannot load it.
+      Reflect.deleteProperty(window, 'DecompressionStream');
+      await map.loadDataset('multifaction');
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    } finally {
+      window.DecompressionStream = held;
+    }
+    return { message, before, after: map.systemCount() };
+  });
+  console.log('the map with no DecompressionStream', reading);
+
+  expect(reading.message).toContain('DecompressionStream');
+  expect(reading.after).toBe(reading.before);
+});
+
+test('the dialog reads FETCHED ON LOAD for the entry that fetches', async ({
+  page,
+}) => {
+  await openMap(page, '', { demoData: true, hud: true });
+
+  const demoHud = page.locator('.gm-hud');
+  const demoDialog = demoHud.locator('.gm-hud__dialog');
+  const meta = demoDialog.locator('.gm-hud__detail-meta');
+  await demoHud.locator('.gm-hud__dataset').click();
+  const rows = demoDialog.locator('.gm-hud__dataset-row');
+
+  await rows.filter({ hasText: 'Canonn Factions' }).click();
+  await expect(demoDialog.locator('.gm-hud__detail-label')).toHaveText(
+    'Canonn Factions',
+  );
+  // The entry carries no count, because it reads its records when the user loads it.
+  await expect(meta).toContainText('FETCHED ON LOAD');
+
+  // An entry that carries a count still reads that count.
+  await rows.filter({ hasText: 'Adamastor Routes' }).click();
+  await expect(meta).toContainText('8 SYSTEMS');
+
+  await page.keyboard.press('Escape');
+  await expect(demoDialog).toBeHidden();
+});
+
+// The scenario "The Gamma Velorum category holds a shape and no system". The converter
+// adds the category for the one `g_soi` sphere, and the source pushes no marker for that
+// list, so the category holds one shape and no record. The test reads the rows of the
+// panel, because the scenario is about which tab lists the category.
+test('the Gamma Velorum category holds a shape and no system', async ({ page }) => {
+  await openMap(page, '', { demoData: true, hud: true });
+  await page.evaluate(async () => {
+    await window.galaxyMap?.loadDataset('uia');
+  });
+
+  const demoHud = page.locator('.gm-hud');
+  const name = 'Gamma Velorum Zone';
+  const row = demoHud.locator(`.gm-hud__category-row[data-name="${name}"]`);
+  await expect(demoHud.locator('.gm-hud__tab[data-name="shapes"]')).toBeEnabled();
+  await expect(row).toBeHidden();
+
+  await demoHud.locator('.gm-hud__tab[data-name="shapes"]').click();
+  await expect(row).toBeVisible();
+  const count = await row.locator('.gm-hud__category-count').textContent();
+  console.log('the Gamma Velorum row of the shapes tab reads', count);
+
+  expect(count).toBe('1');
 });

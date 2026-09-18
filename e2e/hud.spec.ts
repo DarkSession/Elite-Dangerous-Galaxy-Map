@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
 import type { SystemRecordInput } from '../src/scene-data/real-systems';
+import type { LineInput, SphereInput } from '../src/scene-data/shapes';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -152,6 +153,39 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
+    primaryCategory: category,
+    ...extra,
+  };
+}
+
+/** Adds spheres to the HUD's map and returns how many the reader kept. */
+async function addSpheres(page: Page, spheres: readonly unknown[]): Promise<number> {
+  return page.evaluate(
+    (list) => window.__hudMap?.addSpheres(list as readonly SphereInput[]).added ?? -1,
+    spheres,
+  );
+}
+
+/** Adds lines to the HUD's map and returns how many the reader kept. */
+async function addLines(page: Page, lines: readonly unknown[]): Promise<number> {
+  return page.evaluate(
+    (list) => window.__hudMap?.addLines(list as readonly LineInput[]).added ?? -1,
+    lines,
+  );
+}
+
+/** A line of two points, which is the cheapest shape a category can hold. */
+function line(
+  name: string,
+  category: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    name,
+    points: [
+      [0, 0, 0],
+      [100, 0, 0],
+    ],
     primaryCategory: category,
     ...extra,
   };
@@ -441,14 +475,19 @@ async function markerCount(page: Page): Promise<number> {
   });
 }
 
-/** The category row of a name. */
+/** The colour dot of a category row, which switches the category. */
+function categoryDot(page: Page, name: string): Locator {
+  return hud(page).locator(`.gm-hud__category-dot[data-name="${name}"]`);
+}
+
+/** The rest of a category row, which opens the list and folds it. */
 function categoryRow(page: Page, name: string): Locator {
   return hud(page).locator(`.gm-hud__category-row[data-name="${name}"]`);
 }
 
-/** The expand button of a category row. */
-function expandButton(page: Page, name: string): Locator {
-  return hud(page).locator(`.gm-hud__category-expand[data-name="${name}"]`);
+/** One tab of the category panel. */
+function panelTab(page: Page, name: 'systems' | 'shapes'): Locator {
+  return hud(page).locator(`.gm-hud__tab[data-name="${name}"]`);
 }
 
 /** The system rows of the expanded list. */
@@ -473,7 +512,7 @@ async function rowNames(page: Page, name: string): Promise<string[]> {
 /** The names of the categories whose lists are open, in the panel's own order. */
 async function openCategories(page: Page): Promise<string[]> {
   return hud(page)
-    .locator('.gm-hud__category-expand[aria-expanded="true"]')
+    .locator('.gm-hud__category-row[aria-expanded="true"]')
     .evaluateAll((nodes) =>
       nodes.map((node) => (node as HTMLElement).dataset['name'] ?? ''),
     );
@@ -631,7 +670,7 @@ test.describe('the category browser', () => {
     ]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await categoryRow(page, 'Alpha').click();
+    await categoryDot(page, 'Alpha').click();
     const count = await markerCount(page);
     const visible = await page.evaluate(
       () => window.__hudMap?.isCategoryVisible('Alpha') ?? true,
@@ -640,6 +679,35 @@ test.describe('the category browser', () => {
 
     expect(count).toBe(1);
     expect(visible).toBe(false);
+  });
+
+  test('the rest of the row opens the list', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha', 'Beta']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'Alpha'),
+      record('Two', [0, 0, 200], 'Beta'),
+    ]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    // The dot switches the category and the rest of the row opens the list. Each one
+    // leaves the other alone.
+    await categoryRow(page, 'Alpha').click();
+    const opened = await openCategories(page);
+    const stillOn = await page.evaluate(
+      () => window.__hudMap?.isCategoryVisible('Alpha') ?? false,
+    );
+    await categoryRow(page, 'Alpha').click();
+    const folded = await openCategories(page);
+
+    await categoryDot(page, 'Alpha').click();
+    const afterDot = await openCategories(page);
+    console.log('the open lists', { opened, stillOn, folded, afterDot });
+
+    expect(opened).toEqual(['Alpha']);
+    expect(stillOn).toBe(true);
+    expect(folded).toEqual([]);
+    expect(afterDot).toEqual([]);
   });
 
   test('the counts read the primary category', async ({ page }) => {
@@ -699,6 +767,9 @@ test.describe('the category browser', () => {
   test('the row shows the category description as its tooltip', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    // A category with nothing in it has no row, and the test waits for the row before it
+    // starts, so `Alpha` holds one system of its own before the batches run.
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toHaveAttribute('title', 'About Alpha');
   });
 
@@ -730,7 +801,7 @@ test.describe('the category browser', () => {
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    const swatch = categoryRow(page, 'Alpha').locator('.gm-hud__category-swatch');
+    const swatch = categoryDot(page, 'Alpha').locator('.gm-hud__category-swatch');
     const colour = (): Promise<string> =>
       swatch.evaluate((element) => getComputedStyle(element).backgroundColor);
     expect(await colour()).toBe('rgb(153, 230, 255)');
@@ -756,7 +827,7 @@ test.describe('the category browser', () => {
     await addCategories(page, ['Alpha']);
     await addSystems(page, [record('Old Name', [0, 0, 0], 'Alpha', { id64: '77' })]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(1);
 
     await addSystems(page, [record('New Name', [0, 0, 0], 'Alpha', { id64: '77' })]);
@@ -845,7 +916,7 @@ test.describe('the HUD rebuild', () => {
       record('Achenar', [0, 0, 300], 'Alpha'),
     ]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(2);
 
     const row = systemRows(page).first();
@@ -867,6 +938,8 @@ test.describe('the HUD rebuild', () => {
   test('many batches in one frame cost one rebuild', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    // A category with nothing in it has no row, so the set holds one system.
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await countRefreshes(page);
 
@@ -894,9 +967,10 @@ test.describe('the HUD rebuild', () => {
 
     expect(added).toBe(1000);
     expect(calls).toBe(1);
+    // The 1,000 the loop adds, and `Sol`, which the row the test waited for is made of.
     await expect(
       categoryRow(page, 'Alpha').locator('.gm-hud__category-count'),
-    ).toHaveText('1,000');
+    ).toHaveText('1,001');
   });
 });
 
@@ -910,7 +984,7 @@ test.describe('the search box', () => {
       record('Achenar', [0, 0, 300], 'Alpha'),
     ]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
 
     await hud(page).locator('.gm-hud__search').fill('sol');
     await page.waitForTimeout(300);
@@ -976,10 +1050,13 @@ test.describe('the search box', () => {
       record('Achenar', [0, 0, 300], 'Alpha'),
     ]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
 
     await hud(page).locator('.gm-hud__search').fill('sol ');
-    await page.waitForTimeout(300);
+    // The wait is on the count of rows and not on the clock. The box gives the text to
+    // the filter 150 ms after the key, and a list that folds holds its rows for the 140
+    // ms it takes to close, so a fixed wait of 300 ms lands inside the close.
+    await expect(systemRows(page)).toHaveCount(0);
     const count = await markerCount(page);
     const rows = await systemRows(page).count();
     console.log('the markers and rows for a trailing space', { count, rows });
@@ -1015,6 +1092,7 @@ test.describe('the search box', () => {
   test('typing in the search box does not turn the camera', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 });
 
@@ -1064,7 +1142,7 @@ test.describe('the search box', () => {
   test('a search opens a category that is switched off', async ({ page }) => {
     await openHud(page);
     await addSearchSet(page);
-    await categoryRow(page, 'B').click();
+    await categoryDot(page, 'B').click();
     expect(
       await page.evaluate(() => window.__hudMap?.isCategoryVisible('B') ?? true),
     ).toBe(false);
@@ -1092,7 +1170,7 @@ test.describe('the search box', () => {
     await page.waitForTimeout(300);
     expect(await openCategories(page)).toEqual(['Alpha', 'Beta', 'Gamma']);
 
-    await expandButton(page, 'Beta').click();
+    await categoryRow(page, 'Beta').click();
     expect(await openCategories(page)).toEqual(['Alpha', 'Gamma']);
 
     // The camera move runs the panel's poll, and the refresh is the rebuild itself. The
@@ -1116,7 +1194,7 @@ test.describe('the search box', () => {
   test('clearing the box leaves one open list', async ({ page }) => {
     await openHud(page);
     await addSearchSet(page);
-    await expandButton(page, 'C').click();
+    await categoryRow(page, 'C').click();
     expect(await openCategories(page)).toEqual(['C']);
 
     await hud(page).locator('.gm-hud__search').fill('alpha');
@@ -1148,15 +1226,15 @@ test.describe('the expanded system list', () => {
     ]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(1);
     await expect(systemRows(page).first()).toHaveAttribute('data-name', 'One');
 
-    await expandButton(page, 'Beta').click();
+    await categoryRow(page, 'Beta').click();
     await expect(systemRows(page)).toHaveCount(1);
     await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Two');
 
-    await expandButton(page, 'Beta').click();
+    await categoryRow(page, 'Beta').click();
     await expect(systemRows(page)).toHaveCount(0);
   });
 
@@ -1177,7 +1255,7 @@ test.describe('the expanded system list', () => {
     expect(added).toBe(1000);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(200);
     await expect(hud(page).locator('.gm-hud__system-cut')).toHaveText('200 of 1,000');
   });
@@ -1194,7 +1272,7 @@ test.describe('the expanded system list', () => {
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 40 });
 
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await systemRows(page).nth(2).click();
     const view = await readView(page);
     const selected = await page.evaluate(
@@ -1216,11 +1294,11 @@ test.describe('the expanded system list', () => {
     ]);
     await expect(categoryRow(page, 'A')).toBeVisible();
 
-    await expandButton(page, 'A').click();
+    await categoryRow(page, 'A').click();
     await expect(systemRows(page)).toHaveCount(1);
     await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Both');
 
-    await expandButton(page, 'B').click();
+    await categoryRow(page, 'B').click();
     await expect(systemRows(page)).toHaveCount(1);
     await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Both');
   });
@@ -1231,7 +1309,7 @@ test.describe('the expanded system list', () => {
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(1);
     const row = await systemRows(page)
       .first()
@@ -1304,8 +1382,8 @@ test.describe('the expanded system list', () => {
     await addSystems(page, [record('S1', [100, 0, 100], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await expandButton(page, 'Alpha').click();
     await categoryRow(page, 'Alpha').click();
+    await categoryDot(page, 'Alpha').click();
     expect(
       await page.evaluate(() => window.__hudMap?.isCategoryVisible('Alpha') ?? true),
     ).toBe(false);
@@ -1314,6 +1392,574 @@ test.describe('the expanded system list', () => {
     expect(
       await page.evaluate(() => window.__hudMap?.isCategoryVisible('Alpha') ?? false),
     ).toBe(true);
+  });
+});
+
+/** The names of the category rows the panel shows, in its own order. */
+async function categoryNames(page: Page): Promise<string[]> {
+  return hud(page)
+    .locator('.gm-hud__category-row')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLElement).dataset['name'] ?? ''),
+    );
+}
+
+/** The count each category row shows, in the panel's own order. */
+async function categoryCounts(page: Page): Promise<string[]> {
+  return hud(page)
+    .locator('.gm-hud__category-row .gm-hud__category-count')
+    .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+}
+
+/** The height of the first element a selector names under the HUD, in CSS pixels. */
+async function heightOf(page: Page, selector: string): Promise<number> {
+  return page.evaluate((name) => {
+    const element = document.querySelector(`#hud-wrap .gm-hud ${name}`);
+    return element === null ? -1 : element.getBoundingClientRect().height;
+  }, selector);
+}
+
+/** The heights of every element a selector names under the HUD, added up. */
+async function totalHeight(page: Page, selector: string): Promise<number> {
+  return page.evaluate((name) => {
+    let total = 0;
+    for (const element of document.querySelectorAll(`#hud-wrap .gm-hud ${name}`)) {
+      total += element.getBoundingClientRect().height;
+    }
+    return total;
+  }, selector);
+}
+
+/** Waits until no flight runs. */
+async function waitForStill(page: Page): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => window.__hudMap?.isFlying() ?? false))
+    .toBe(false);
+}
+
+test.describe('the two tabs of the category panel', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('each tab lists the categories that hold its own kind', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B', 'C']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'B', name: 'Ball' },
+    ]);
+    await addLines(page, [line('Ribbon', 'A')]);
+    await expect(categoryRow(page, 'A')).toBeVisible();
+
+    const systemTab = await categoryNames(page);
+    const systemCounts = await categoryCounts(page);
+    await panelTab(page, 'shapes').click();
+    await expect(categoryRow(page, 'B')).toBeVisible();
+    const shapeTab = await categoryNames(page);
+    const shapeCounts = await categoryCounts(page);
+    console.log('the rows of the two tabs', {
+      systemTab,
+      systemCounts,
+      shapeTab,
+      shapeCounts,
+    });
+
+    // A category that holds neither a system nor a shape has no row in either tab: a
+    // row that counts nothing switches nothing the user can see.
+    expect(systemTab).toEqual(['A']);
+    expect(systemCounts).toEqual(['1']);
+    expect(shapeTab).toEqual(['A', 'B']);
+    expect(shapeCounts).toEqual(['1', '1']);
+  });
+
+  test('the shapes tab is disabled with no shape', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+    expect(await panelTab(page, 'shapes').isDisabled()).toBe(true);
+
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+    ]);
+    // The panel rebuilds on the next poll, which is 100 ms away.
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+  });
+
+  test('the panel falls back when the shapes go', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+    await expect(panelTab(page, 'shapes')).toHaveAttribute('aria-pressed', 'true');
+
+    await page.evaluate(() => {
+      window.__hudMap?.clearShapes();
+    });
+    await expect(panelTab(page, 'systems')).toHaveAttribute('aria-pressed', 'true');
+    await expect(panelTab(page, 'shapes')).toBeDisabled();
+  });
+
+  test('NONE does not move a category the tab hides', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'B' },
+    ]);
+    await expect(categoryRow(page, 'A')).toBeVisible();
+
+    await hud(page).locator('.gm-hud__bulk-button[data-name="none"]').click();
+    const reading = await page.evaluate(() => ({
+      a: window.__hudMap?.isCategoryVisible('A') ?? true,
+      b: window.__hudMap?.isCategoryVisible('B') ?? false,
+    }));
+    console.log('the two categories after NONE on the systems tab', reading);
+
+    expect(reading.a).toBe(false);
+    expect(reading.b).toBe(true);
+  });
+
+  test('NONE in the shapes tab leaves the systems', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+
+    await hud(page).locator('.gm-hud__bulk-button[data-name="none"]').click();
+    const count = await markerCount(page);
+    const reading = await page.evaluate(() => ({
+      systems: window.__hudMap?.isCategoryVisible('A') ?? false,
+      shapes: window.__hudMap?.isShapeCategoryVisible('A') ?? true,
+    }));
+    console.log('the category after NONE on the shapes tab', { count, ...reading });
+
+    // The two buttons act on the kind of the shown tab alone, so the marker stays.
+    expect(count).toBe(1);
+    expect(reading.systems).toBe(true);
+    expect(reading.shapes).toBe(false);
+  });
+
+  test('a row reads the flag of its own tab', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('One', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+
+    // The dot of the systems tab takes the markers off. The row of the same category in
+    // the shapes tab reads its own flag, which nothing moved.
+    await categoryDot(page, 'A').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+    await panelTab(page, 'shapes').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'true');
+
+    await categoryDot(page, 'A').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+    await panelTab(page, 'systems').click();
+    await expect(categoryDot(page, 'A')).toHaveAttribute('aria-pressed', 'false');
+
+    const reading = await page.evaluate(() => ({
+      systems: window.__hudMap?.isCategoryVisible('A') ?? true,
+      shapes: window.__hudMap?.isShapeCategoryVisible('A') ?? true,
+    }));
+    console.log('the two flags of the one category', reading);
+
+    expect(reading.systems).toBe(false);
+    expect(reading.shapes).toBe(false);
+  });
+
+  test('each tab keeps the list the user opened', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Ball' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+
+    await categoryRow(page, 'Alpha').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Sol');
+
+    // The shapes tab holds an open set of its own, which starts folded.
+    await panelTab(page, 'shapes').click();
+    await expect(systemRows(page)).toHaveCount(0);
+
+    // The systems tab reads as the user left it.
+    await panelTab(page, 'systems').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    await expect(systemRows(page).first()).toHaveAttribute('data-name', 'Sol');
+  });
+
+  test('the box filters the shapes in the shapes tab', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Sol Zone' },
+      {
+        position: [0, 0, 400],
+        radius: 100,
+        primaryCategory: 'Alpha',
+        name: 'Solati Zone',
+      },
+      {
+        position: [0, 0, 800],
+        radius: 100,
+        primaryCategory: 'Alpha',
+        name: 'Achenar Zone',
+      },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+
+    await hud(page).locator('.gm-hud__search').fill('sol');
+    await page.waitForTimeout(300);
+    const filters = await page.evaluate(() => ({
+      shapes: window.__hudMap?.getShapeNameFilter() ?? '',
+      systems: window.__hudMap?.getNameFilter() ?? '',
+    }));
+    const names = await rowNames(page, 'Alpha');
+    console.log('the shape filter and the open list', filters, names);
+
+    expect(filters.shapes).toBe('sol');
+    expect(filters.systems).toBe('');
+    expect(names).toEqual(['Sol Zone', 'Solati Zone']);
+  });
+
+  test('a change of tab clears the filter it leaves', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Sol', [0, 0, 0], 'Alpha'),
+      record('Achenar', [0, 0, 300], 'Alpha'),
+    ]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+
+    await hud(page).locator('.gm-hud__search').fill('sol');
+    await page.waitForTimeout(300);
+    expect(await markerCount(page)).toBe(1);
+
+    await panelTab(page, 'shapes').click();
+    const filter = await page.evaluate(() => window.__hudMap?.getNameFilter() ?? 'x');
+    const box = await hud(page).locator('.gm-hud__search').inputValue();
+    const markers = await markerCount(page);
+    console.log('the system filter after the tab change', { filter, box, markers });
+
+    expect(filter).toBe('');
+    expect(box).toBe('');
+    expect(markers).toBe(2);
+  });
+
+  test('a shape row names the shape', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSpheres(page, [
+      {
+        position: [0, 0, 0],
+        radius: 100,
+        primaryCategory: 'Alpha',
+        name: 'Col 70 Sector',
+      },
+    ]);
+    await addLines(page, [
+      {
+        points: [
+          [0, 0, 0],
+          [100, 0, 0],
+        ],
+        primaryCategory: 'Alpha',
+      },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+    await categoryRow(page, 'Alpha').click();
+
+    // A shape that carries no name reads its kind and its place in the set.
+    await expect(systemRows(page)).toHaveCount(2);
+    expect(await rowNames(page, 'Alpha')).toEqual(['Col 70 Sector', 'LINE 0']);
+  });
+
+  test('a shape row flies the camera and selects nothing', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
+    await addSpheres(page, [
+      {
+        position: [1000, 0, 2000],
+        radius: 500,
+        primaryCategory: 'Alpha',
+        name: 'Ball',
+      },
+    ]);
+    await select(page, 'Sol');
+    await waitForStill(page);
+    await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 40 });
+
+    await panelTab(page, 'shapes').click();
+    await categoryRow(page, 'Alpha').click();
+    await expect(systemRows(page)).toHaveCount(1);
+    await systemRows(page).first().click();
+    await waitForStill(page);
+    const view = await readView(page);
+    const selected = await page.evaluate(
+      () => window.__hudMap?.getSelection()?.name ?? null,
+    );
+    console.log('the view after the shape row click', view, selected);
+
+    // Half the field of view is 30 degrees, so twice the reach fills the frame.
+    expect(view.cursor).toEqual([1000, 0, 2000]);
+    expect(view.distance).toBe(1000);
+    expect(view.yaw).toBe(40);
+    expect(selected).toBe('Sol');
+  });
+
+  test('a shape row turns its category back on', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Ball' },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+
+    // The dot of a shapes row writes the shape flag, and the row click turns that same
+    // flag back on. The markers of the category are unmoved by either click.
+    await categoryDot(page, 'Alpha').click();
+    expect(
+      await page.evaluate(
+        () => window.__hudMap?.isShapeCategoryVisible('Alpha') ?? true,
+      ),
+    ).toBe(false);
+
+    await categoryRow(page, 'Alpha').click();
+    await systemRows(page).first().click();
+    expect(
+      await page.evaluate(
+        () => window.__hudMap?.isShapeCategoryVisible('Alpha') ?? false,
+      ),
+    ).toBe(true);
+  });
+
+  test('a full shape set does not grow the panel', async ({ page }) => {
+    test.setTimeout(120000);
+    await openHud(page);
+    const added = await page.evaluate(() => {
+      const map = window.__hudMap;
+      if (map === undefined) return [-1, -1, -1];
+      const names: string[] = [];
+      for (let index = 0; index < 20; index += 1) names.push(`Zone ${index}`);
+      map.addCategories(
+        names.map((name) => ({ name, color: [153, 230, 255] as const })),
+      );
+      const spheres = [];
+      for (let index = 0; index < 1024; index += 1) {
+        spheres.push({
+          position: [index * 3, 0, index] as [number, number, number],
+          radius: 50,
+          primaryCategory: names[index % 20] as string,
+        });
+      }
+      const lines = [];
+      for (let index = 0; index < 4096; index += 1) {
+        lines.push({
+          points: [
+            [index, 0, 0],
+            [index, 0, 100],
+          ] as [number, number, number][],
+          primaryCategory: names[index % 20] as string,
+        });
+      }
+      return [
+        map.categoryCount(),
+        map.addSpheres(spheres).added,
+        map.addLines(lines).added,
+      ];
+    });
+    expect(added).toEqual([20, 1024, 4096]);
+
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+    await expect(categoryRow(page, 'Zone 0')).toBeVisible();
+    await categoryRow(page, 'Zone 0').click();
+    await expect(systemRows(page)).toHaveCount(200);
+
+    const nodes = await page.evaluate(
+      () => document.querySelectorAll('#hud-wrap .gm-hud *').length,
+    );
+    // `refresh()` rebuilds every panel, so the reading is the cost of the category
+    // rebuild and a little more. The shape read goes through `getShapeInfo`, which
+    // copies no line point.
+    const rebuildMs = await page.evaluate(() => {
+      const handle = window.__hudMap?.hud ?? null;
+      if (handle === null) return -1;
+      const start = performance.now();
+      handle.refresh();
+      return performance.now() - start;
+    });
+    console.log('the panel with 1,024 spheres and 4,096 lines', { nodes, rebuildMs });
+
+    expect(nodes).toBeLessThan(900);
+    expect(rebuildMs).toBeGreaterThan(0);
+    expect(rebuildMs).toBeLessThan(40);
+  });
+});
+
+test.describe('the height of an open list', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('the open list takes the space the rows leave', async ({ page }) => {
+    await openHud(page);
+    // 3 categories of 1,000 systems each. Every list is longer than the panel, so each
+    // one is held by the cap and not by the rows it holds.
+    expect(await addGrid(page, 3, 1000)).toBe(3000);
+    await expect(categoryRow(page, 'Cat a 002')).toBeVisible();
+
+    await categoryRow(page, 'Cat a 000').click();
+    await expect(systemRows(page)).toHaveCount(200);
+    const area = await heightOf(page, '.gm-hud__category-list');
+    const rows = await totalHeight(page, '.gm-hud__category-line');
+    const list = await heightOf(page, '.gm-hud__system-list[data-open="true"]');
+    console.log('the open list against the list area', { area, rows, list });
+
+    expect(area - rows).toBeGreaterThan(0.5 * area);
+    expect(Math.abs(list - (area - rows))).toBeLessThanOrEqual(2);
+  });
+
+  test('the open list keeps half the panel', async ({ page }) => {
+    await openHud(page);
+    // 40 categories fill the list area by themselves, so the rows leave the open list
+    // nothing and the rule gives it half the area.
+    expect(await addGrid(page, 40, 25)).toBe(1000);
+    await expect(categoryRow(page, 'Cat a 039')).toBeVisible();
+
+    await categoryRow(page, 'Cat a 000').click();
+    await expect(systemRows(page)).toHaveCount(25);
+    const area = await heightOf(page, '.gm-hud__category-list');
+    const rows = await totalHeight(page, '.gm-hud__category-line');
+    const list = await heightOf(page, '.gm-hud__system-list[data-open="true"]');
+    console.log('the open list against half the panel', { area, rows, list });
+
+    expect(rows).toBeGreaterThan(0.5 * area);
+    expect(list).toBeGreaterThanOrEqual(0.5 * area - 2);
+    expect(list).toBeLessThanOrEqual(0.5 * area + 2);
+  });
+
+  test('a short list takes the height of its rows', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B', 'C']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'A'),
+      record('Two', [0, 0, 200], 'A'),
+      record('Three', [0, 0, 300], 'B'),
+      record('Four', [0, 0, 400], 'C'),
+    ]);
+    await expect(categoryRow(page, 'C')).toBeVisible();
+
+    await categoryRow(page, 'A').click();
+    await expect(systemRows(page)).toHaveCount(2);
+    const area = await heightOf(page, '.gm-hud__category-list');
+    const row = await heightOf(page, '.gm-hud__system-row');
+    const list = await heightOf(page, '.gm-hud__system-list[data-open="true"]');
+    console.log('the short list against the area', { area, row, list });
+
+    // The cap is a cap and not a height: a list of two rows takes two rows.
+    expect(Math.abs(list - 2 * row)).toBeLessThanOrEqual(2);
+    expect(list).toBeLessThan(0.5 * area);
+  });
+});
+
+test.describe('the movement of an open list', () => {
+  test('the list moves when it opens', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'Alpha'),
+      record('Two', [0, 0, 200], 'Alpha'),
+    ]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    const duration = async (): Promise<string> =>
+      page.evaluate(() => {
+        const element = document.querySelector(
+          '#hud-wrap .gm-hud .gm-hud__system-list',
+        );
+        return element === null ? '' : getComputedStyle(element).transitionDuration;
+      });
+    const withMotion = await duration();
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.evaluate(() => {
+      window.__hudMap?.hud?.refresh();
+    });
+    const reduced = await duration();
+    console.log('the transition duration of the list', { withMotion, reduced });
+
+    expect(withMotion).toBe('0.14s');
+    expect(reduced).toBe('0s');
+  });
+
+  test('the list grows over more than one frame', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'Alpha'),
+      record('Two', [0, 0, 200], 'Alpha'),
+    ]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    await categoryRow(page, 'Alpha').click();
+    const first = await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const element = document.querySelector(
+        '#hud-wrap .gm-hud .gm-hud__system-list[data-open="true"]',
+      );
+      return element === null ? -1 : element.getBoundingClientRect().height;
+    });
+    await page.waitForTimeout(300);
+    const settled = await heightOf(page, '.gm-hud__system-list[data-open="true"]');
+    console.log('the height of the list over the movement', { first, settled });
+
+    expect(settled).toBeGreaterThan(0);
+    expect(first).toBeLessThan(settled);
+  });
+
+  test('reduced motion takes the list to its height at once', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('One', [0, 0, 100], 'Alpha'),
+      record('Two', [0, 0, 200], 'Alpha'),
+    ]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    await categoryRow(page, 'Alpha').click();
+    const first = await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const element = document.querySelector(
+        '#hud-wrap .gm-hud .gm-hud__system-list[data-open="true"]',
+      );
+      return element === null ? -1 : element.getBoundingClientRect().height;
+    });
+    await page.waitForTimeout(300);
+    const settled = await heightOf(page, '.gm-hud__system-list[data-open="true"]');
+    console.log('the height of the list with reduced motion', { first, settled });
+
+    expect(first).toBe(settled);
+    expect(settled).toBeGreaterThan(0);
   });
 });
 
@@ -2362,6 +3008,7 @@ test.describe('the keyboard', () => {
   test('the movement keys work with a button focused', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await setView(page, { cursor: [0, 0, 0], distance: 20000, pitch: 89 });
 
@@ -2380,6 +3027,7 @@ test.describe('the keyboard', () => {
   test('a turn key works with a button focused', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await setView(page, { cursor: [0, 0, 0], distance: 20000, yaw: 0, pitch: 35 });
 
@@ -2397,9 +3045,11 @@ test.describe('the keyboard', () => {
   test('Enter and Space work a control', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
-    await categoryRow(page, 'Alpha').focus();
+    // The dot is the control that switches the category.
+    await categoryDot(page, 'Alpha').focus();
     await page.keyboard.press('Enter');
     expect(
       await page.evaluate(() => window.__hudMap?.isCategoryVisible('Alpha') ?? true),
@@ -2414,7 +3064,13 @@ test.describe('the keyboard', () => {
   test('Tab reaches every control', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha', 'Beta']);
-    await addSystems(page, [record('Tabbed', [0, 0, 100], 'Alpha')]);
+    await addSystems(page, [
+      record('Tabbed', [0, 0, 100], 'Alpha'),
+      record('Second', [0, 0, 200], 'Beta'),
+    ]);
+    // The shapes tab is disabled with no shape, and a disabled button takes no focus,
+    // so the set holds one shape.
+    await addLines(page, [line('Ribbon', 'Alpha')]);
     await expect(categoryRow(page, 'Beta')).toBeVisible();
     // The information panel holds the two copy buttons, so the sweep opens it first.
     await select(page, 'Tabbed');
@@ -2438,7 +3094,11 @@ test.describe('the keyboard', () => {
     console.log('the focus sweep', seen);
 
     const wanted = [
+      'gm-hud__tab|systems',
+      'gm-hud__tab|shapes',
+      'gm-hud__category-dot|Alpha',
       'gm-hud__category-row|Alpha',
+      'gm-hud__category-dot|Beta',
       'gm-hud__category-row|Beta',
       'gm-hud__bulk-button|all',
       'gm-hud__bulk-button|none',
@@ -2458,6 +3118,7 @@ test.describe('the keyboard', () => {
   test('the controls carry their state and their names', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
     const switches = await hud(page)
@@ -2484,12 +3145,12 @@ test.describe('the keyboard', () => {
     await expect(
       hud(page).locator('.gm-hud__toggle[data-name="shapes"]'),
     ).toHaveAttribute('aria-pressed', 'true');
-    await expect(categoryRow(page, 'Alpha')).toHaveAttribute('aria-pressed', 'true');
+    await expect(categoryDot(page, 'Alpha')).toHaveAttribute('aria-pressed', 'true');
+    await expect(categoryDot(page, 'Alpha')).toHaveAttribute('aria-label', 'Alpha');
     await expect(categoryRow(page, 'Alpha')).toContainText('Alpha');
-    await expect(expandButton(page, 'Alpha')).toHaveAttribute(
-      'aria-label',
-      'List systems',
-    );
+    await expect(categoryRow(page, 'Alpha')).toHaveAttribute('aria-expanded', 'false');
+    await expect(panelTab(page, 'systems')).toHaveAttribute('aria-pressed', 'true');
+    await expect(panelTab(page, 'shapes')).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('the lightbox holds and returns the focus', async ({ page }) => {
@@ -2582,7 +3243,7 @@ test.describe('the HUD budget', () => {
     expect(added).toBe(10000);
 
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
-    await expandButton(page, 'Alpha').click();
+    await categoryRow(page, 'Alpha').click();
     await expect(systemRows(page)).toHaveCount(200);
 
     const nodes = await page.evaluate(

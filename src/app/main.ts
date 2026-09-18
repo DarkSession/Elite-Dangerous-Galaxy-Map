@@ -5,6 +5,7 @@ import type { CategoryInput, SystemRecordInput } from '../scene-data/real-system
 import type { LineInput, SphereInput } from '../scene-data/shapes';
 import { createGalaxyMap } from './create-map';
 import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
+import { fetchMultifactionRecords, MULTIFACTION_CATEGORIES } from './multifaction';
 import { createFragmentWriter, decodeGrid, decodeView } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
@@ -86,7 +87,7 @@ function demoShapeSet(
 }
 
 /**
- * The five demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
+ * The six demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
  * application, so it gives the map a catalog the way any other host does: each entry
  * carries the counts the committed file holds and a `load()` that imports it. The
  * library bundles no data and fetches none.
@@ -95,11 +96,16 @@ function demoShapeSet(
  * `https://ruins.canonn.tech/images/maps/`, so the browser loads those pictures from
  * Canonn when the user selects such a system. The other four sets name no picture.
  *
- * The last two sets carry shapes as well as systems. Their `load()` writes the shapes
+ * Three of the sets carry shapes as well as systems. Their `load()` writes the shapes
  * into `DEMO_SHAPES` before it gives the two arrays back, and the catalog listener
  * below adds them.
  *
- * The demo site build carries the five files, so the dev server and the built site
+ * The sixth set is the one that fetches its records. It shows a host reading its own
+ * data: `load()` reads the Spansh factions dump over the network, and the library still
+ * fetches nothing. Its spheres are a static list, so the build writes them into a file
+ * the entry imports.
+ *
+ * The demo site build carries the six files, so the dev server and the built site
  * draw the same map. The library build reaches this module from nowhere, because
  * `src/index.ts` does not import it.
  */
@@ -168,6 +174,36 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
         (await import('../../demo-data/adamastor.json')).default,
       ),
   },
+  {
+    id: 'multifaction',
+    label: 'Canonn Factions',
+    collection: 'Canonn Research Group',
+    region: 'The bubble and the Colonia region',
+    description:
+      'The systems the Canonn and the Canonn Deep Space Research factions hold, read ' +
+      'from the Spansh factions dump when you load the set. The spheres mark the ' +
+      'permit locked and permit unlocked sectors.',
+    // The entry carries no count, because it reads the records when the user loads it.
+    // The dialog shows `FETCHED ON LOAD` in place of a count.
+    load: async (): Promise<DatasetContent> => {
+      // The records come first: a failed fetch then leaves the shape map untouched, and
+      // the map keeps the set it had.
+      const systems = await fetchMultifactionRecords();
+      const spheres = (await import('../../demo-data/multifaction-spheres.json'))
+        .default;
+      DEMO_SHAPES.set('multifaction', {
+        spheres: spheres.spheres as unknown as readonly SphereInput[],
+        lines: [],
+      });
+      return {
+        categories: [
+          ...MULTIFACTION_CATEGORIES,
+          ...(spheres.categories as unknown as readonly CategoryInput[]),
+        ],
+        systems,
+      };
+    },
+  },
 ];
 
 function start(target: HTMLCanvasElement): void {
@@ -179,8 +215,10 @@ function start(target: HTMLCanvasElement): void {
     // The page reads the base path from the build, because the published site sits
     // under a path and the dev server sits at the root.
     loadingImage: `${import.meta.env.BASE_URL}EDLoader1.svg`,
-    // The page gives the map the five demo sets and asks for the Guardian Ruins at
-    // start. The HUD then shows the dataset field and the dataset library dialog.
+    // The page gives the map the six demo sets and asks for the Guardian Ruins at
+    // start. The sixth set fetches its records, so the page fetches nothing until the
+    // user asks for that set. The HUD then shows the dataset field and the dataset
+    // library dialog.
     datasets: DEMO_DATASETS,
     dataset: 'guardian-ruins',
     // The demo site starts with the coordinate grid on, unless the fragment says `g=0`.

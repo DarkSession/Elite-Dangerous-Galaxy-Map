@@ -32,8 +32,9 @@ The entry point SHALL export `createGalaxyMap`, the three view calls `encodeView
 `CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
 `HudHandle`, `AddReport`, `CategoryReport`, `Reject`, `CategoryReject`, the four
 dataset types the catalog names: `DatasetEntry`, `DatasetContent`, `DatasetInfo` and
-`DatasetLoadResult`, the seven shape types `map-shapes` names: `SphereInput`,
-`LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport` and `ShapeReject`, and the six
+`DatasetLoadResult`, the **nine** shape types `map-shapes` names: `SphereInput`,
+`LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport`, `ShapeReject`, `ShapeInfo` and
+`ShapeKind`, and the six
 camera types this change names: `StartView`, `FlyToTarget`, `FlyToOptions`,
 `FlightOutcome`, `BrowseBounds` and `InteractionSwitches`. A host writes
 the catalog itself, so it needs `DatasetEntry` in a
@@ -44,14 +45,30 @@ host needs to write `startView`, `bounds`, `interaction`, the argument of `flyTo
 parameter of an `onFlightEnd` listener. It
 SHALL NOT export the `debug` hook type as part of the supported surface.
 
+**The two shape category members add no type.** `setShapeCategoryVisible(name, visible)`
+and `isShapeCategoryVisible(name)` take a string and a boolean, so the declaration carries
+them on `GalaxyMap` and the export list does not move.
+
+**`ShapeInfo` and `ShapeKind` join the list** because `getShapeInfo(kind, index)` is a
+handle member, which `map-shapes` states. A host that reads a shape needs the return type
+in a type position, and it cannot name the `kind` argument without `ShapeKind`. The HUD
+reads a shape row through the same two types and through no other path, which is what keeps
+the HUD boundary rule that `AGENTS.md` holds.
+
 **`RegionMode` is gone from the list.** The region overlay took three modes and now takes
 one switch, which `galactic-regions` states, so the type it named no longer exists.
 
-**The package moves to version 0.2.0.** Two calls change what they do: the category draw
-range is measured from the cursor and not the camera, which `real-systems` states, and the
-pitch clamp runs from -89 rather than 5, which `map-navigation` states. A host that set a
-`maxDrawRange` keeps a different set of markers, and a host that wrote a view with a pitch
-of 5 as its floor now has 94 more degrees below it.
+**The package moves to version 0.4.0.** `setCategoryVisible` and `isCategoryVisible` change
+what they reach. They moved the markers **and** the shapes of a category, and they now move
+its markers alone. A host that called `setCategoryVisible(name, false)` to clear both keeps
+its shapes on the screen, and it calls `setShapeCategoryVisible` as well to get the frame it
+had. The call still compiles, so the break is in what the map draws and not in the
+declaration, which is why it takes a minor version of its own.
+
+The surface keeps the two breaks 0.3.0 carried. `Sphere.color` and `Line.color` are
+optional, because a shape that names a category takes that category's colour, which
+`map-shapes` states. A sphere washes the markers inside it and behind it rather than every
+marker it covers.
 
 `package.json` SHALL name the entry point in `exports` and `types`, SHALL name the built
 files in `files`, and SHALL stop being `private`.
@@ -68,13 +85,17 @@ main-thread import of the region cell lookup adds about 199 KiB and takes the ch
 370,000 bytes.
 
 **The implementation SHALL read the built size and write it here**, as the rule this
-capability already holds says. **The built chunk reads 236,815 bytes**, which is 12,256
-over the 224,559 of the last change: the flight path, the bounds, the start view, the
-switches and the seven handle members are arithmetic and option reading, and they cost
-about 12 kB with their comments. The bound stays at **254,000** and is not raised to about
-30 kB over the reading, which the rule names: 17.2 kB of room still fails on the one fault
-the guard is for, which is 199 KiB, and a bound that follows every reading upward guards
-less each time. A later change that needs the room SHALL move the bound and say so.
+capability already holds says. The chunk read 252,975 bytes before this change, against
+the 236,815 of the change before it. **The chunk reads 253,520 bytes with this change
+in**, which leaves **480 bytes** of room under the bound. The two shape category members,
+the shape visibility map and the shape visibility version are the parts of this change
+that reach the library; the HUD is a chunk of its own and the demo data is the demo
+site's.
+
+The bound stays at **254,000**, because the reading is under it. The room under it is now
+thin. It still catches the one fault it is for, because the region cell lookup is 199 KiB
+and no amount of room under 254,000 absorbs that. A later change that needs the room SHALL
+move the bound and say so, and the next one to touch this chunk will be that change.
 
 #### Scenario: The library build carries no page and no demo data
 
@@ -131,10 +152,22 @@ less each time. A later change that needs the room SHALL move the bound and say 
   `interaction` and a `flyTo` target against the built type declaration
 - **THEN** the check passes with no error
 
+#### Scenario: The declaration names the two shape category members
+
+- **WHEN** a test type-checks a host module that calls `setShapeCategoryVisible('A', false)`
+  and reads `isShapeCategoryVisible('A')` into a boolean, against the built type declaration
+- **THEN** the check passes with no error
+
+#### Scenario: The shape types are declared
+
+- **WHEN** a test type-checks a host module that reads `getShapeInfo('sphere', 0)` into a
+  `ShapeInfo` and writes a `ShapeKind` against the built type declaration
+- **THEN** the check passes with no error
+
 #### Scenario: The package names its version
 
 - **WHEN** a test reads `version` from `package.json`
-- **THEN** it is `0.2.0`
+- **THEN** it is `0.4.0`
 
 ### Requirement: The demo site builds apart from the library
 

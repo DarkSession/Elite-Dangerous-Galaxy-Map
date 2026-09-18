@@ -75,8 +75,11 @@ export declare function convertNotable(dump: unknown): DemoSet;
 export interface DemoSphere {
   readonly position: readonly [number, number, number];
   readonly radius: number;
-  readonly color: readonly [number, number, number];
+  /** The sphere's own colour, absent where it takes the colour of a category. */
+  readonly color?: readonly [number, number, number];
   readonly name?: string;
+  /** The marker category of the list the sphere comes from, where the list names one. */
+  readonly primaryCategory?: string;
 }
 
 /**
@@ -88,10 +91,16 @@ export type DemoLinePoint =
 /** One line of a demo set. */
 export interface DemoLine {
   readonly points: readonly DemoLinePoint[];
-  readonly color: readonly [number, number, number];
+  /** The line's own colour, absent where it takes the colour of a category. */
+  readonly color?: readonly [number, number, number];
   readonly width?: number;
   readonly closed?: boolean;
+  /** The name of the line itself, which is not the name of its category. */
   readonly name?: string;
+  /** The first category the line's route names, where the source table holds one. */
+  readonly primaryCategory?: string;
+  /** The other categories the route names, without a repeat. */
+  readonly secondaryCategories?: readonly string[];
 }
 
 /**
@@ -126,6 +135,12 @@ export interface Ed3dSphereList {
   readonly category: string | null;
 }
 
+/** One category of the table an ED3D source carries, read by its id. */
+export interface Ed3dCategory {
+  readonly name: string;
+  readonly color: readonly [number, number, number];
+}
+
 /** One entry of the `systems` list of an ED3D source, as the converter builds one. */
 export interface Ed3dSystem {
   readonly name: string;
@@ -138,6 +153,8 @@ export interface Ed3dSystem {
 export interface Ed3dRoute {
   readonly cat: readonly string[];
   readonly circle: boolean;
+  /** The name of the line the route draws, where the reader gives it one. */
+  readonly name?: string;
   readonly points: readonly { readonly s: string }[];
 }
 
@@ -182,13 +199,14 @@ export declare const UIA_RANGE_LY: number;
 export declare const MODEL_BOUNDS: ModelBounds;
 export declare const UIA_SPHERE_LISTS: readonly Ed3dSphereList[];
 export declare const LINE_COLOUR_FALLBACK: readonly [number, number, number];
-export declare function parseEd3dData(text: string): unknown;
+export declare function parseEd3dData(text: string, key?: string): unknown;
 export declare function parseCsv(text: string): Record<string, string>[];
 export declare function uiaWaypointUrl(index: number): string;
 export declare function uiaWaypointRows(table: unknown): Record<string, string>[];
 export declare function uiaWaypointSet(
   rows: readonly Record<string, string>[],
   index: number,
+  table?: ReadonlyMap<string, Ed3dCategory>,
 ): Ed3dBuild;
 export declare function uiaHyperdictionSet(
   rows: readonly Record<string, string>[],
@@ -210,3 +228,22 @@ export declare function convertAdamastor(
   data: unknown,
   findPosition: (name: string) => readonly [number, number, number] | null,
 ): DemoShapeSet;
+
+/** One sphere list of the multifaction source, with the category it names. */
+export interface MultifactionSphereList {
+  readonly key: string;
+  readonly category: string;
+  readonly color: readonly [number, number, number];
+}
+
+/** The sphere file of the sixth set. Its records come from the dump at run time. */
+export interface DemoSphereSet {
+  readonly source: string;
+  readonly licence: string;
+  readonly categories: readonly DemoCategory[];
+  readonly spheres: readonly DemoSphere[];
+}
+
+export declare const MULTIFACTION_SOURCE_URL: string;
+export declare const MULTIFACTION_SPHERE_LISTS: readonly MultifactionSphereList[];
+export declare function convertMultifactionSpheres(data: unknown): DemoSphereSet;

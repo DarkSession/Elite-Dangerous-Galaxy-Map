@@ -40,6 +40,8 @@ export type {
   Line,
   LineInput,
   LinePoint,
+  ShapeInfo,
+  ShapeKind,
   ShapeReject,
   ShapeReport,
   Sphere,

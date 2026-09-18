@@ -264,6 +264,29 @@ const styleText = `
   letter-spacing: 3px;
   color: ${ACCENT};
 }
+.gm-hud__tabs {
+  display: flex;
+  gap: 6px;
+}
+.gm-hud__tab {
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 150, 60, 0.3);
+  color: rgba(244, 230, 216, 0.7);
+}
+.gm-hud__tab:hover:not(:disabled) {
+  background: rgba(255, 150, 60, 0.18);
+}
+.gm-hud__tab[aria-pressed='true'] {
+  border-color: ${ACCENT};
+  background: rgba(255, 150, 60, 0.22);
+  color: ${ACCENT};
+}
+.gm-hud__tab:disabled {
+  opacity: 0.35;
+}
 .gm-hud__bulk {
   display: flex;
   gap: 6px;
@@ -302,17 +325,41 @@ const styleText = `
   min-height: 0;
   flex: 1 1 auto;
 }
-.gm-hud__category-group {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
+/*
+ * The line between two categories sits on the row and not on the group, so the height of
+ * the row is the height of one group less the height of its list. That difference is
+ * what the panel measures to work the height cap out, and it holds while a list moves.
+ */
 .gm-hud__category-line {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .gm-hud__category-line:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+/*
+ * The dot is a button, so it hovers like the other buttons of the HUD: a wash inside a
+ * one pixel border. Without the border the wash is a bare plate behind a 12 pixel
+ * diamond, which reads as a fault and not as a control.
+ */
+.gm-hud__category-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.gm-hud__category-dot:hover {
+  background: rgba(255, 150, 60, 0.14);
+  border-color: rgba(255, 150, 60, 0.45);
 }
 .gm-hud__category-row {
   display: flex;
@@ -337,7 +384,7 @@ const styleText = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.gm-hud__category-row[aria-pressed='false'] .gm-hud__category-name {
+.gm-hud__category-line[data-on='false'] .gm-hud__category-name {
   color: rgba(244, 230, 216, 0.35);
 }
 .gm-hud__category-count {
@@ -346,30 +393,41 @@ const styleText = `
   font-size: 10px;
   color: rgba(244, 230, 216, 0.4);
 }
-.gm-hud__category-expand {
+.gm-hud__category-chevron {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
   flex: 0 0 auto;
-  border: 1px solid rgba(255, 150, 60, 0.28);
-  background: transparent;
-  color: rgba(255, 154, 60, 0.9);
+  color: rgba(255, 154, 60, 0.55);
 }
-.gm-hud__category-expand:hover {
-  background: rgba(255, 150, 60, 0.2);
-}
-.gm-hud__category-expand[aria-expanded='true'] {
-  border-color: ${ACCENT};
-  background: rgba(255, 150, 60, 0.2);
+.gm-hud__category-row[aria-expanded='true'] .gm-hud__category-chevron {
   color: ${ACCENT};
 }
+/*
+ * The list opens and closes over 140 ms on the track of a one-row grid, from 0fr to 1fr.
+ * The track resolves to the height of the box inside it, and that box carries the cap
+ * and scrolls, so the movement ends at the smaller of the cap and the rows it holds. A
+ * transition of \`max-height\` would run to the cap and finish early whenever the rows
+ * are shorter.
+ */
 .gm-hud__system-list {
-  max-height: 210px;
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows 140ms ease;
+}
+.gm-hud__system-list[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+/*
+ * The cap the panel measures. It is \`max(area - rows, 0.5 * area) / open\`, so the open
+ * lists take the height the category rows leave and half the panel where the rows leave
+ * less. \`max-height\` takes the smaller of the cap and the rows, so a list of two
+ * systems stays two rows high.
+ */
+.gm-hud__system-rows {
+  min-height: 0;
+  max-height: var(--gm-list-cap, none);
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.35);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 .gm-hud__system-row {
   display: flex;
@@ -402,6 +460,12 @@ const styleText = `
   font-size: 9px;
   letter-spacing: 1px;
   color: rgba(244, 230, 216, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gm-hud__system-list {
+    transition-duration: 0s;
+  }
 }
 
 .gm-hud__panel-body {

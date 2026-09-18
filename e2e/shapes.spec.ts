@@ -848,12 +848,19 @@ test.describe('the overlay order', () => {
     const lineColour: [number, number, number] = [255, 0, 255];
     const onBoundary = await colourAt(page, at.x, at.y);
 
-    // The sphere takes an opacity of 1, so its middle covers the band whole.
+    // The marker draws over the boundary, and it draws before the shapes.
+    await addSystems(page, [record('Sol', world)]);
+    await drawNow(page);
+    const onMarker = await colourAt(page, at.x, at.y);
+
+    // The sphere takes an opacity of 1, so its shell alpha is 1 over the whole sprite.
+    // Its centre is the marker, so half the chord lies behind the marker and the wash is
+    // the cap of 0.5.
     await addSpheres(page, [
       { position: world, radius: 3000, color: sphereColour, opacity: 1 },
     ]);
     await drawNow(page);
-    const onSphere = await colourAt(page, at.x, at.y);
+    const onWash = await colourAt(page, at.x, at.y);
 
     await addLines(page, [
       {
@@ -866,23 +873,29 @@ test.describe('the overlay order', () => {
       },
     ]);
     await drawNow(page);
-    const onLine = await colourAt(page, at.x, at.y);
+    // A pixel on the line inside the sphere and away from the marker sprite.
+    const beside = await project(page, [world[0] + 1500, world[1], world[2]]);
+    const onLine = await colourAt(page, beside.x, beside.y);
+    console.log('the overlay order', { onBoundary, onMarker, onWash, onLine });
 
-    await addSystems(page, [record('Sol', world)]);
-    await drawNow(page);
-    const onMarker = await colourAt(page, at.x, at.y);
-    console.log('the overlay order', { onBoundary, onSphere, onLine, onMarker });
-
-    // The sphere covers the boundary.
-    expect(colourDistance(onSphere, sphereColour)).toBeLessThan(24);
-    expect(colourDistance(onSphere, onBoundary)).toBeGreaterThan(24);
-    // The line covers the sphere.
+    // The marker covers the boundary.
+    expect(colourDistance(onMarker, MARKER)).toBeLessThan(24);
+    expect(colourDistance(onMarker, onBoundary)).toBeGreaterThan(24);
+    // The sphere washes the marker, and the cap leaves it at least half of its colour.
+    // The cap writes exactly half, and the frame holds bytes, so a reading can be one
+    // count under half.
+    expect(colourDistance(onWash, onMarker)).toBeGreaterThan(24);
+    expect(colourDistance(onWash, sphereColour)).toBeLessThan(
+      colourDistance(onMarker, sphereColour),
+    );
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(onWash[channel] as number).toBeGreaterThanOrEqual(
+        (onMarker[channel] as number) / 2 - 2,
+      );
+    }
+    // The line covers the sphere at a pixel with no marker.
     expect(colourDistance(onLine, lineColour)).toBeLessThan(24);
     expect(colourDistance(onLine, sphereColour)).toBeGreaterThan(24);
-    // The marker covers the line.
-    expect(colourDistance(onMarker, MARKER)).toBeLessThan(
-      colourDistance(onMarker, lineColour),
-    );
   });
 
   test('a marker draws over a shape', async ({ page }) => {
@@ -893,14 +906,70 @@ test.describe('the overlay order', () => {
     await addSpheres(page, [
       { position: [0, 0, 0], radius: 500, color: sphereColour, opacity: 1 },
     ]);
+    await addLines(page, [
+      {
+        points: [
+          [-500, 0, 0],
+          [500, 0, 0],
+        ],
+        color: [255, 0, 255],
+        width: 8,
+      },
+    ]);
     await setView(page, [0, 0, 0], 5000);
 
     const middle = await project(page, [0, 0, 0]);
     const reading = await colourAt(page, middle.x, middle.y);
-    console.log('the marker over the sphere', reading);
-    expect(colourDistance(reading, MARKER)).toBeLessThan(
-      colourDistance(reading, sphereColour),
+    await setShapePass(page, false);
+    await drawNow(page);
+    const own = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, true);
+    await drawNow(page);
+    const picked = await page.evaluate(
+      (where) => window.galaxyMap?.systemAt(where.x, where.y)?.name ?? null,
+      middle,
     );
+    console.log('the marker over the sphere', { reading, own, picked });
+
+    // Each step caps what it writes over a marker body at half, and neither step reads
+    // what the other wrote, so a marker under both keeps a quarter. Without the cap on the
+    // line step the pixel would hold the line colour whole, and the green channel of this
+    // marker would read 0 against the quarter of 64 the rule asks for.
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(reading[channel] as number).toBeGreaterThanOrEqual(
+        (own[channel] as number) / 4 - 2,
+      );
+    }
+    // The marker is still the reading at that pixel.
+    expect(picked).toBe('Sol');
+  });
+
+  test('one decoration leaves a marker half its colour', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    // A sphere and no line. The marker sits at the centre of the shell, so half the chord
+    // lies behind it and the wash is half whatever the shell alpha is.
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 500, color: [0, 255, 255], opacity: 1 },
+    ]);
+    await setView(page, [0, 0, 0], 5000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const on = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, false);
+    await drawNow(page);
+    const off = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, true);
+    console.log('the marker under one sphere', { on, off });
+
+    // The wash writes exactly half here, and the frame holds bytes, so a reading can be
+    // one count under half.
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(on[channel] as number).toBeGreaterThanOrEqual(
+        (off[channel] as number) / 2 - 2,
+      );
+    }
   });
 });
 
@@ -992,5 +1061,463 @@ test.describe('the shape pass draw calls', () => {
 
     expect(withoutLine).toBeNull();
     expect(withLine).not.toBeNull();
+  });
+});
+
+/** A point on the view axis, a distance beyond the cursor from the camera. */
+function beyond(
+  cursor: readonly [number, number, number],
+  distance: number,
+): [number, number, number] {
+  const forward = forwardOf();
+  return [
+    cursor[0] + forward[0] * distance,
+    cursor[1] + forward[1] * distance,
+    cursor[2] + forward[2] * distance,
+  ];
+}
+
+/** Reads the range buffer at one pixel, and null where the map holds no buffer. */
+async function rangeAt(page: Page, x: number, y: number): Promise<number | null> {
+  return page.evaluate(
+    (where) =>
+      window.galaxyMap?.debug.readRange(Math.round(where.x), Math.round(where.y)) ??
+      null,
+    { x, y },
+  );
+}
+
+test.describe('the range buffer', () => {
+  test('holds the nearer of two markers that cover one pixel', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    // Two systems on the view axis, so both markers cover the middle pixel. The near one
+    // is 5,000 light years from the camera and the far one 6,000.
+    await addSystems(page, [
+      record('Near', [0, 0, 0]),
+      record('Far', beyond([0, 0, 0], 1000)),
+    ]);
+    // The map writes the range buffer only while a sphere draws.
+    await addSpheres(page, [
+      { position: beyond([0, 0, 0], 3000), radius: 500, color: [0, 255, 255] },
+    ]);
+    await setView(page, [0, 0, 0], 5000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const held = await rangeAt(page, middle.x, middle.y);
+    const empty = await rangeAt(page, 4, 4);
+    const size = await page.evaluate(() => ({
+      range: window.galaxyMap?.debug.rangeBufferSize() ?? null,
+      drawing: window.galaxyMap?.debug.drawingBufferSize() ?? null,
+    }));
+    console.log('the range buffer', { held, empty, size });
+
+    // The gate reads this: a null size is the no-float fallback, and a measurement taken
+    // there measures the frame this change replaces.
+    expect(size.range).not.toBeNull();
+    expect(size.range).toEqual(size.drawing);
+    expect(held).not.toBeNull();
+    expect(held ?? 0).toBeGreaterThan(4990);
+    expect(held ?? 0).toBeLessThan(5010);
+    // A pixel no marker body covers holds a value above every drawable range.
+    expect(empty ?? 0).toBeGreaterThan(1e6);
+  });
+
+  test('takes no range draw while the map holds no sphere', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    await setView(page, [0, 0, 0], 5000);
+    const withoutSphere = await page.evaluate(
+      () => window.galaxyMap?.debug.markerDrawCalls() ?? -1,
+    );
+
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 500, color: [0, 255, 255] },
+    ]);
+    await drawNow(page);
+    const withSphere = await page.evaluate(
+      () => window.galaxyMap?.debug.markerDrawCalls() ?? -1,
+    );
+
+    // The sphere of a category that is off draws nothing, so the range draw goes with it.
+    await page.evaluate(() => {
+      window.galaxyMap?.setShapesVisible(false);
+    });
+    await drawNow(page);
+    const shapesOff = await page.evaluate(
+      () => window.galaxyMap?.debug.markerDrawCalls() ?? -1,
+    );
+    console.log('the marker draw calls', { withoutSphere, withSphere, shapesOff });
+
+    expect(withoutSphere).toBe(1);
+    expect(withSphere).toBe(2);
+    expect(shapesOff).toBe(1);
+  });
+});
+
+test.describe('the sphere depth wash', () => {
+  /** The colour and the opacity every sphere of this block takes. */
+  const SPHERE: [number, number, number] = [0, 255, 255];
+  const OPACITY = 0.4;
+
+  /**
+   * Reads the middle pixel of the marker at the cursor with the shapes on and with them
+   * off, over one sphere.
+   */
+  async function readings(
+    page: Page,
+    centre: readonly [number, number, number],
+    radius: number,
+  ): Promise<{ on: [number, number, number]; off: [number, number, number] }> {
+    await addSpheres(page, [
+      { position: centre, radius, color: SPHERE, opacity: OPACITY },
+    ]);
+    await setView(page, [0, 0, 0], 5000);
+    const middle = await project(page, [0, 0, 0]);
+    const on = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, false);
+    await drawNow(page);
+    const off = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, true);
+    await drawNow(page);
+    return { on, off };
+  }
+
+  /** The frame the marker takes, mixed with the sphere colour at an alpha. */
+  function washed(
+    off: readonly [number, number, number],
+    alpha: number,
+  ): [number, number, number] {
+    return [
+      off[0] * (1 - alpha) + SPHERE[0] * alpha,
+      off[1] * (1 - alpha) + SPHERE[1] * alpha,
+      off[2] * (1 - alpha) + SPHERE[2] * alpha,
+    ];
+  }
+
+  /** Each channel of two colours, within a count of each other. */
+  function expectNear(
+    read: readonly [number, number, number],
+    want: readonly [number, number, number],
+    within: number,
+  ): void {
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((read[channel] as number) - (want[channel] as number)),
+      ).toBeLessThanOrEqual(within);
+    }
+  }
+
+  test('leaves a marker in front of the sphere alone', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    // The shell runs from 6,500 to 7,500 light years and the marker is at 5,000, so the
+    // whole chord lies behind it.
+    const { on, off } = await readings(page, beyond([0, 0, 0], 2000), 500);
+    console.log('the marker in front', { on, off });
+    expectNear(on, off, 8);
+  });
+
+  test('washes a marker at the centre with half the shell', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    // The marker sits at the centre of the sphere, so half the chord lies behind it.
+    const { on, off } = await readings(page, [0, 0, 0], 500);
+    console.log('the marker at the centre', { on, off });
+    expectNear(on, washed(off, OPACITY * 0.5), 8);
+  });
+
+  test('washes a marker behind the sphere whole', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    // The shell runs from 4,400 to 4,600 light years and the marker is at 5,000, so the
+    // whole chord lies in front of it.
+    const { on, off } = await readings(page, beyond([0, 0, 0], -500), 100);
+    console.log('the marker behind', { on, off });
+    expectNear(on, washed(off, OPACITY), 8);
+  });
+
+  test('gives the halo of a marker the whole wash', async ({ page }) => {
+    // At a range of 10 light years a marker holds the cap size, so a glow sprite is 40
+    // CSS pixels across and its radius is 20.
+    await openMap(page, '#c=0,0,0&d=10&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    await addSpheres(page, [
+      {
+        position: beyond([0, 0, 0], 2000),
+        radius: 500,
+        color: SPHERE,
+        opacity: OPACITY,
+      },
+    ]);
+    await setView(page, [0, 0, 0], 10);
+
+    const middle = await project(page, [0, 0, 0]);
+    // Ten CSS pixels out on the diagonal, which is off both spikes, the marker's own
+    // alpha is 0.106 and the range draw writes nothing: a spike reaches 1 CSS pixel from
+    // its axis, and the halo at half the sprite radius is 0.85 * 0.5 ** 3.
+    const halo = { x: middle.x + 10 / Math.SQRT2, y: middle.y + 10 / Math.SQRT2 };
+    // Thirty CSS pixels out the sprite is over, so this pixel carries no marker at all.
+    const bare = { x: middle.x + 30 / Math.SQRT2, y: middle.y + 30 / Math.SQRT2 };
+    const haloOn = await colourAt(page, halo.x, halo.y);
+    const bareOn = await colourAt(page, bare.x, bare.y);
+    await setShapePass(page, false);
+    await drawNow(page);
+    const haloOff = await colourAt(page, halo.x, halo.y);
+    const bareOff = await colourAt(page, bare.x, bare.y);
+    await setShapePass(page, true);
+    console.log('the halo wash', { haloOn, haloOff, bareOn, bareOff });
+
+    // The wash the halo takes is the wash a pixel with no marker takes: the halo's own
+    // alpha is 0.106 there, which is under the 0.5 a marker body holds, so the range draw
+    // writes nothing at that pixel and the sphere writes its whole share over it.
+    //
+    // The two readings are counts and not alphas, and a wash is a blend toward the sphere
+    // colour: `on - off` is the wash alpha times `sphere - off`. The halo pixel starts
+    // about 22 counts nearer the marker's own colour than the bare pixel does, so at a
+    // wash alpha of 0.4 the two counts differ by about 9 although the alpha is the same.
+    // The reading measured 9, so the bound is 10 and not the 8 the other readings take.
+    for (let channel = 0; channel < 3; channel += 1) {
+      const overHalo = (haloOn[channel] as number) - (haloOff[channel] as number);
+      const overNothing = (bareOn[channel] as number) - (bareOff[channel] as number);
+      expect(Math.abs(overHalo - overNothing)).toBeLessThanOrEqual(10);
+    }
+  });
+
+  test('caps the wash it writes over a marker body', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    // An opacity of 1 puts the shell alpha at 1 over the whole sprite, which is the alpha
+    // the limb holds at the opacity a sphere takes by default. The centre is nearer the
+    // camera than the system, so the whole chord lies in front of the marker and the
+    // share is 1: this is the most a sphere can write over a marker.
+    await addSpheres(page, [
+      { position: beyond([0, 0, 0], -500), radius: 100, color: SPHERE, opacity: 1 },
+    ]);
+    await setView(page, [0, 0, 0], 5000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const on = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, false);
+    await drawNow(page);
+    const off = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, true);
+    console.log('the capped limb', { on, off });
+
+    // The cap alone holds this reading: the shell alpha is 1 and the share is 1, so
+    // without it the sphere would write its colour over the marker whole and every
+    // channel of the marker's own colour would go. The cap writes exactly half, and the
+    // frame holds bytes, so a reading can be one count under half.
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(on[channel] as number).toBeGreaterThanOrEqual(
+        (off[channel] as number) / 2 - 2,
+      );
+    }
+    // The marker is yellow and the sphere cyan, so a missing cap would read as the sphere.
+    expect(colourDistance(on, SPHERE)).toBeGreaterThan(24);
+  });
+
+  // The scenario "The galaxy behind a sphere takes the whole wash". The set holds no
+  // system, so no marker writes range and the pixel reads `RANGE_EMPTY`. The share is then
+  // 1 and the sphere writes its whole shell, which is the frame the map drew before the
+  // range buffer existed.
+  test('washes the galaxy behind it whole', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await setView(page, [0, 0, 0], 5000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const off = await colourAt(page, middle.x, middle.y);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 500, color: SPHERE, opacity: OPACITY },
+    ]);
+    await drawNow(page);
+    const on = await colourAt(page, middle.x, middle.y);
+    console.log('the galaxy behind the sphere', { on, off });
+
+    expectNear(on, washed(off, OPACITY), 8);
+  });
+});
+
+test.describe('the line over a marker', () => {
+  test('keeps at least half of the marker', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=5000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    await addLines(page, [
+      {
+        points: [
+          [-2000, 0, 0],
+          [2000, 0, 0],
+        ],
+        color: [255, 0, 255],
+        width: 8,
+      },
+    ]);
+    await setView(page, [0, 0, 0], 5000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const away = await project(page, [1500, 0, 0]);
+    const onMarker = await colourAt(page, middle.x, middle.y);
+    const onLine = await colourAt(page, away.x, away.y);
+    await setShapePass(page, false);
+    await drawNow(page);
+    const offMarker = await colourAt(page, middle.x, middle.y);
+    await setShapePass(page, true);
+    console.log('the line over the marker', { onMarker, offMarker, onLine });
+
+    // The cap writes exactly half, and the frame holds bytes, so a reading can be one
+    // count under half.
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(onMarker[channel] as number).toBeGreaterThanOrEqual(
+        (offMarker[channel] as number) / 2 - 2,
+      );
+    }
+    // The cap reaches the marker body alone: the same line away from it draws whole.
+    expect(colourDistance(onLine, [255, 0, 255])).toBeLessThan(24);
+  });
+});
+
+// The category rules of a shape, read at the pixel. The unit tests hold the sweep itself;
+// these read the whole path from the switch through the sweep and the instance buffers to
+// the frame, which is what the demo sets lean on: 983 UIA lines and 48 multifaction
+// spheres carry no colour of their own.
+test.describe('a shape and its categories', () => {
+  /** Adds `A` in red and `B` in green, which every test of this block names. */
+  async function addPair(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      window.galaxyMap?.addCategories([
+        { name: 'A', color: [255, 0, 0], maxDrawRange: 200000 },
+        { name: 'B', color: [0, 255, 0], maxDrawRange: 200000 },
+      ]);
+    });
+  }
+
+  /** Switches the shapes of one category and draws a frame. */
+  async function switchCategory(page: Page, name: string, on: boolean): Promise<void> {
+    await page.evaluate(
+      (which) => {
+        window.galaxyMap?.setShapeCategoryVisible(which.name, which.on);
+      },
+      { name, on },
+    );
+    await drawNow(page);
+  }
+
+  // The scenario "A category that is off removes its shapes".
+  test('a category that is off removes its shapes', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+    await addPair(page);
+    await addSpheres(page, [
+      { position: [-800, 0, 0], radius: 500, primaryCategory: 'A' },
+      { position: [800, 0, 0], radius: 500, primaryCategory: 'B' },
+    ]);
+    await setView(page, [0, 0, 0], 4000);
+    const both = await frameHash(page);
+
+    await switchCategory(page, 'A', false);
+    const withoutA = await frameHash(page);
+
+    // The control frame: the same view with the sphere of `A` never added, and `A` on
+    // again so the switch itself cannot be what the hash reads.
+    await page.evaluate(() => {
+      window.galaxyMap?.clearShapes();
+      window.galaxyMap?.setShapeCategoryVisible('A', true);
+    });
+    await addSpheres(page, [
+      { position: [800, 0, 0], radius: 500, primaryCategory: 'B' },
+    ]);
+    await drawNow(page);
+    const onlyB = await frameHash(page);
+    console.log('the frames of the switch', { both, withoutA, onlyB });
+
+    expect(withoutA).not.toBe(both);
+    expect(withoutA).toBe(onlyB);
+  });
+
+  // The scenario "A shape with no colour follows the first category that is on".
+  test('a shape with no colour follows the first category that is on', async ({
+    page,
+  }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addPair(page);
+    await addLines(page, [
+      {
+        points: [
+          [-100, 0, 0],
+          [100, 0, 0],
+        ],
+        width: 8,
+        primaryCategory: 'A',
+        secondaryCategories: ['B'],
+      },
+    ]);
+    await setView(page, [0, 0, 0], 1000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const first = await colourAt(page, middle.x, middle.y);
+    await switchCategory(page, 'A', false);
+    const second = await colourAt(page, middle.x, middle.y);
+    console.log('the line colour of the two categories', { first, second });
+
+    expect(colourDistance(first, [255, 0, 0])).toBeLessThanOrEqual(8);
+    expect(colourDistance(second, [0, 255, 0])).toBeLessThanOrEqual(8);
+  });
+
+  // The scenario "A shape with a colour keeps it".
+  test('a shape with a colour keeps it', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addPair(page);
+    await addLines(page, [
+      {
+        points: [
+          [-100, 0, 0],
+          [100, 0, 0],
+        ],
+        width: 8,
+        color: [0, 0, 255],
+        primaryCategory: 'A',
+      },
+    ]);
+    await setView(page, [0, 0, 0], 1000);
+
+    const middle = await project(page, [0, 0, 0]);
+    const reading = await colourAt(page, middle.x, middle.y);
+    console.log('the line that carries its own colour', reading);
+
+    expect(colourDistance(reading, [0, 0, 255])).toBeLessThanOrEqual(8);
+  });
+
+  // The scenario "The two filters are separate". `setNameFilter` reaches the markers and
+  // `setShapeNameFilter` reaches the shapes, so a filter that named the sphere by chance
+  // must still leave it on the screen.
+  test('the marker filter does not reach a shape', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=2000&p=35&y=0');
+    await addCategory(page);
+    await addSystems(page, [record('Sol', [0, 0, 0])]);
+    await addSpheres(page, [
+      { position: [0, 0, 0], radius: 500, color: [0, 255, 255], name: 'Sol Zone' },
+    ]);
+    await setView(page, [0, 0, 0], 2000);
+    await page.evaluate(() => {
+      window.galaxyMap?.setNameFilter('achenar');
+    });
+    await drawNow(page);
+
+    const markers = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+    const sphere = await page.evaluate(
+      () => window.galaxyMap?.getShapeInfo('sphere', 0)?.drawn ?? null,
+    );
+    console.log('the two filters', { markers, sphere });
+
+    expect(markers).toBe(0);
+    expect(sphere).toBe(true);
   });
 });

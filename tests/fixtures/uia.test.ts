@@ -117,7 +117,7 @@ describe('the conversion of the UIA source', () => {
     expect(written).toEqual(expected);
   });
 
-  test('reads 23 systems and 11 categories', () => {
+  test('reads 23 systems and 12 categories', () => {
     const set = convertUia(extract(), extras());
     expect(set.systems).toHaveLength(23);
     expect(set.categories.map((category) => category.name)).toEqual([
@@ -132,6 +132,7 @@ describe('the conversion of the UIA source', () => {
       'All Hyperdictions',
       'Hostile',
       'UIA#1 Taranis',
+      'Gamma Velorum Zone',
     ]);
     // `init()` of the source adds `UIA#1` to `UIA#8`, so the source's own table holds
     // none of them. Only the one the fixture's reports name reaches the set, as the
@@ -152,7 +153,8 @@ describe('the conversion of the UIA source', () => {
     expect(set.spheres).toHaveLength(10);
     const byColour = new Map<string, number>();
     for (const sphere of set.spheres) {
-      const key = sphere.color.join(',');
+      // Every sphere of this set carries its own colour, which the next assertion reads.
+      const key = sphere.color?.join(',') ?? 'none';
       byColour.set(key, (byColour.get(key) ?? 0) + 1);
     }
     // The colours are the four materials of the source's own `finishMap`.
@@ -171,7 +173,39 @@ describe('the conversion of the UIA source', () => {
       radius: 514,
       color: [51, 179, 255],
       name: 'Col 70 Sector',
+      primaryCategory: 'Permit Locked Centers',
     });
+  });
+
+  // `formatHDs` gives the marker at the centre of a sphere the category of its list, and
+  // the sphere takes that same category. The `g_soi` list gets no marker, so it has no
+  // marker category to take, and the converter adds the category `Gamma Velorum Zone`
+  // for it.
+  test('gives each sphere the category of its own list', () => {
+    const set = convertUia(extract(), extras());
+    const byCategory = new Map<string, number>();
+    for (const sphere of set.spheres) {
+      const key = sphere.primaryCategory ?? 'none';
+      byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
+    }
+    expect([...byCategory]).toEqual([
+      ['Permit Locked Centers', 4],
+      ['Permit Unlocked Centers', 3],
+      ['Thargoid Systems', 2],
+      ['Gamma Velorum Zone', 1],
+    ]);
+    // The sphere keeps its own colour and the category keeps the other. The two differ
+    // on purpose: the source draws the shell with a material of its own and colours the
+    // marker at its centre from the category table. A reader who makes the sphere take
+    // its category's colour makes every permit-locked shell red.
+    const blue = set.spheres.filter(
+      (sphere) => sphere.primaryCategory === 'Permit Locked Centers',
+    );
+    expect(blue.every((sphere) => sphere.color?.join(',') === '51,179,255')).toBe(true);
+    expect(
+      set.categories.find((category) => category.name === 'Permit Locked Centers')
+        ?.color,
+    ).toEqual([255, 51, 51]);
   });
 
   // `formatHDs` pushes a marker at the centre of every `pls`, `puls` and `hd_soi` sphere
@@ -191,6 +225,26 @@ describe('the conversion of the UIA source', () => {
       for (const point of line.points) {
         expect(Array.isArray(point)).toBe(false);
       }
+    }
+  });
+
+  // The shape list of the HUD shows the name of a line, and 983 lines all reading
+  // `All Hyperdictions` would name nothing.
+  test('names a line for itself and not for its category', () => {
+    const set = convertUia(extract(), extras());
+    const hyperdiction = set.lines.find(
+      (line) => line.primaryCategory === 'UIA#1 Taranis',
+    );
+    expect(hyperdiction?.name).toBe('Fixture Waypoint B to Fixture Report Near');
+    expect(hyperdiction?.secondaryCategories).toEqual(['All Hyperdictions']);
+    const waypoint = set.lines.find(
+      (line) => line.primaryCategory === 'Recorded Route',
+    );
+    expect(waypoint?.name).toBe('UIA#1 Recorded Route');
+    // A line takes the colour of the category it names, so it carries none of its own.
+    for (const line of set.lines) {
+      expect(line.primaryCategory).not.toBeUndefined();
+      expect(line.color).toBeUndefined();
     }
   });
 
@@ -389,10 +443,12 @@ describe('the readers over the converted fixture', () => {
       converted.categories as unknown as readonly CategoryInput[],
     );
     const added = systems.addSystems(converted.systems);
+    // One table holds the categories of the records and of the shapes, as the map holds
+    // them, so a shape that names a category of the set resolves it.
     const shapes = createShapeSet((identity: string) => {
       const index = systems.indexOfIdentity(identity);
       return index < 0 ? null : (systems.system(index)?.position ?? null);
-    });
+    }, systems);
     const spheres = shapes.addSpheres(
       converted.spheres as unknown as readonly SphereInput[],
     );

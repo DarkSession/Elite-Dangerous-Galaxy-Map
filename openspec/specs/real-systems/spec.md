@@ -47,6 +47,8 @@ The handle SHALL carry these members:
 | `getCategory(index)`          | Reads one category of the table, or null outside it           |
 | `setCategoryVisible(name, on)`| Turns the markers of a category on or off                     |
 | `isCategoryVisible(name)`     | Reads whether the markers of a category draw                  |
+| `setShapeCategoryVisible(name, on)` | Turns the shapes of a category on or off                |
+| `isShapeCategoryVisible(name)`| Reads whether the shapes of a category draw                   |
 | `setNameFilter(text)`         | Keeps the markers whose name holds the text                   |
 | `getNameFilter()`             | Reads the filter text                                         |
 | `getSelection()`              | Reads the selected system, or null                            |
@@ -67,6 +69,9 @@ The handle SHALL carry these members:
 | `lineCount()`                 | How many lines the shape set holds                            |
 | `getSphere(index)`            | Reads one sphere of the set, or null outside it               |
 | `getLine(index)`              | Reads one line of the set, or null outside it                 |
+| `getShapeInfo(kind, index)`   | Reads one shape without its geometry, or null outside the set |
+| `setShapeNameFilter(text)`    | Keeps the shapes whose name holds the text                    |
+| `getShapeNameFilter()`        | Reads the shape filter text                                   |
 | `setShapesVisible(on)`        | Turns the spheres and the lines on or off                     |
 | `areShapesVisible()`          | Reads whether the spheres and the lines draw                  |
 | `getDatasets()`               | The dataset catalog, which `dataset-catalog` defines          |
@@ -142,8 +147,15 @@ and SHALL keep every `window.__galaxyMap` hook the browser tests read today, inc
 the handle and not on `debug`, because each one is a setting a host chooses and not a
 renderer probe. The `regions` pass switch and the `shapes` pass switch stay on `debug`.
 
-The nine shape members are the whole shape surface, which `map-shapes` defines. A shape is
-not in the category table, so no member of the category rows reaches one.
+The **twelve** shape members are the whole shape surface, which `map-shapes` defines. The
+table held nine and named nine. `getShapeInfo`, `setShapeNameFilter` and
+`getShapeNameFilter` are on the handle and `map-shapes` states each one, so the table gains
+the three rows it lost. A shape is
+not an entry of the category table, but it may name one. A category therefore holds two
+visibility flags, one for its markers and one for its shapes, which `map-shapes` states:
+`setCategoryVisible` and `isCategoryVisible` reach the markers alone, and
+`setShapeCategoryVisible` and `isShapeCategoryVisible` reach the shapes alone. No other
+member of the category rows reaches a shape.
 
 **The handle carried `getRegionMode` and `setRegionMode`.** The region overlay now takes one
 switch, which `galactic-regions` states, so the two members and the `regionMode` option are

@@ -89,6 +89,14 @@
         153,
         0
       ]
+    },
+    {
+      "name": "Gamma Velorum Zone",
+      "color": [
+        0,
+        0,
+        153
+      ]
     }
   ],
   "systems": [
@@ -364,7 +372,8 @@
         179,
         255
       ],
-      "name": "Col 70 Sector"
+      "name": "Col 70 Sector",
+      "primaryCategory": "Permit Locked Centers"
     },
     {
       "position": [
@@ -378,7 +387,8 @@
         179,
         255
       ],
-      "name": "NGC 2264 Sector"
+      "name": "NGC 2264 Sector",
+      "primaryCategory": "Permit Locked Centers"
     },
     {
       "position": [
@@ -392,7 +402,8 @@
         179,
         255
       ],
-      "name": "Bleia1"
+      "name": "Bleia1",
+      "primaryCategory": "Permit Locked Centers"
     },
     {
       "position": [
@@ -406,7 +417,8 @@
         179,
         255
       ],
-      "name": "Sidgoir"
+      "name": "Sidgoir",
+      "primaryCategory": "Permit Locked Centers"
     },
     {
       "position": [
@@ -420,7 +432,8 @@
         191,
         26
       ],
-      "name": "Barnard's Loop Sector"
+      "name": "Barnard's Loop Sector",
+      "primaryCategory": "Permit Unlocked Centers"
     },
     {
       "position": [
@@ -434,7 +447,8 @@
         191,
         26
       ],
-      "name": "Col 132 Sector"
+      "name": "Col 132 Sector",
+      "primaryCategory": "Permit Unlocked Centers"
     },
     {
       "position": [
@@ -448,7 +462,8 @@
         191,
         26
       ],
-      "name": "Witch Head Sector"
+      "name": "Witch Head Sector",
+      "primaryCategory": "Permit Unlocked Centers"
     },
     {
       "position": [
@@ -462,7 +477,8 @@
         102,
         0
       ],
-      "name": "Merope"
+      "name": "Merope",
+      "primaryCategory": "Thargoid Systems"
     },
     {
       "position": [
@@ -476,7 +492,8 @@
         102,
         0
       ],
-      "name": "HIP 22460"
+      "name": "HIP 22460",
+      "primaryCategory": "Thargoid Systems"
     },
     {
       "position": [
@@ -490,7 +507,8 @@
         0,
         153
       ],
-      "name": "Gamma Velorum"
+      "name": "Gamma Velorum",
+      "primaryCategory": "Gamma Velorum Zone"
     }
   ],
   "lines": [
@@ -503,13 +521,9 @@
           "system": "Fixture Waypoint B"
         }
       ],
-      "color": [
-        102,
-        255,
-        102
-      ],
       "width": 2,
-      "name": "Recorded Route"
+      "name": "UIA#1 Recorded Route",
+      "primaryCategory": "Recorded Route"
     },
     {
       "points": [
@@ -523,13 +537,9 @@
           "system": "Fixture Waypoint F"
         }
       ],
-      "color": [
-        79,
-        0,
-        0
-      ],
       "width": 2,
-      "name": "Lost Section"
+      "name": "UIA#1 Lost Section",
+      "primaryCategory": "Lost Section"
     },
     {
       "points": [
@@ -543,13 +553,9 @@
           "system": "Fixture Waypoint D"
         }
       ],
-      "color": [
-        51,
-        68,
-        0
-      ],
       "width": 2,
-      "name": "Estimated Route"
+      "name": "UIA#1 Estimated Route",
+      "primaryCategory": "Estimated Route"
     },
     {
       "points": [
@@ -560,13 +566,9 @@
           "system": "extended mean direction of UIA#1"
         }
       ],
-      "color": [
-        0,
-        79,
-        79
-      ],
       "width": 2,
-      "name": "Estimated Direction"
+      "name": "UIA#1 Estimated Direction",
+      "primaryCategory": "Estimated Direction"
     },
     {
       "points": [
@@ -577,13 +579,12 @@
           "system": "Fixture Report Near"
         }
       ],
-      "color": [
-        153,
-        153,
-        0
-      ],
       "width": 2,
-      "name": "UIA#1 Taranis"
+      "name": "Fixture Waypoint B to Fixture Report Near",
+      "primaryCategory": "UIA#1 Taranis",
+      "secondaryCategories": [
+        "All Hyperdictions"
+      ]
     },
     {
       "points": [
@@ -594,13 +595,12 @@
           "system": "Fixture Report Far Side"
         }
       ],
-      "color": [
-        153,
-        153,
-        0
-      ],
       "width": 2,
-      "name": "UIA#1 Taranis"
+      "name": "Fixture Report Close to Fixture Report Far Side",
+      "primaryCategory": "UIA#1 Taranis",
+      "secondaryCategories": [
+        "All Hyperdictions"
+      ]
     },
     {
       "points": [
@@ -611,13 +611,13 @@
           "system": "Fixture Report Repeat"
         }
       ],
-      "color": [
-        153,
-        153,
-        0
-      ],
       "width": 2,
-      "name": "UIA#1 Taranis"
+      "name": "Fixture Waypoint A to Fixture Report Repeat",
+      "primaryCategory": "UIA#1 Taranis",
+      "secondaryCategories": [
+        "All Hyperdictions",
+        "Hostile"
+      ]
     }
   ]
 }

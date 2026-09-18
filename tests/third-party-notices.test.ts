@@ -27,6 +27,9 @@ describe('the third-party notices', () => {
       'Notable Systems',
       'UIA',
       'Adamastor',
+      'Canonn Factions',
+      'Spansh',
+      'factions.json.gz',
       'EDSM',
       'EDLoader1.svg',
     ]) {

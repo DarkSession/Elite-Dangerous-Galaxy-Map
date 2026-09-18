@@ -358,6 +358,106 @@ export function createRenderTarget(
   return target;
 }
 
+/**
+ * Whether the context can blend into a 32-bit float colour target.
+ *
+ * `EXT_color_buffer_float` lets the context draw to a float target. It does not let it
+ * blend into a 32-bit float one: WebGL2 refuses that without `EXT_float_blend`, and the
+ * range buffer needs it, because the `MIN` equation is how a pixel keeps the nearest
+ * marker rather than the last one drawn. The map reads the two as one flag, so it holds
+ * one fallback and not two.
+ */
+export function readsFloatTargets(gl: WebGL2RenderingContext): boolean {
+  return (
+    gl.getExtension('EXT_color_buffer_float') !== null &&
+    gl.getExtension('EXT_float_blend') !== null
+  );
+}
+
+/**
+ * What a pixel of the range buffer holds where no marker body drew. It is above every
+ * drawable range, which is at most the width of the galaxy, so a sphere takes the whole
+ * wash there and the frame outside the markers is the frame the map drew before the
+ * buffer existed. It is far below the largest `float32`, so no arithmetic on it overflows.
+ */
+export const RANGE_EMPTY = 1e30;
+
+/**
+ * The range buffer: one 32-bit float per pixel of the drawing buffer, holding the range
+ * from the camera to the nearest marker body that covers that pixel, in light years. The
+ * marker pass writes it with the `MIN` equation and the shape pass reads it.
+ *
+ * `R32F` and not `R16F`: a half float carries about three decimal digits, so at a range
+ * of 100,000 light years the step is 64 light years, which is a sixth of the chord of a
+ * sphere that is still large enough to draw. The share would then move in bands across
+ * the sphere.
+ */
+export interface RangeBuffer {
+  readonly framebuffer: WebGLFramebuffer;
+  readonly texture: WebGLTexture;
+  width: number;
+  height: number;
+  /** Matches the buffer to a drawing buffer size. */
+  resize(width: number, height: number): void;
+  dispose(): void;
+}
+
+/** Creates the range buffer. The caller creates it only where the float flag is true. */
+export function createRangeBuffer(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+): RangeBuffer {
+  const texture = gl.createTexture();
+  const framebuffer = gl.createFramebuffer();
+  if (texture === null || framebuffer === null) {
+    throw new Error('The context gave no range buffer.');
+  }
+
+  const allocate = (w: number, h: number): void => {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, null);
+    // The shape steps read one texel at the fragment's own coordinate, so the buffer
+    // needs no filter between texels.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    // The attachment follows the storage. A texture attached before it holds an image
+    // leaves the framebuffer without one.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    );
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  };
+
+  allocate(width, height);
+
+  const buffer: RangeBuffer = {
+    framebuffer,
+    texture,
+    width,
+    height,
+    resize(newWidth: number, newHeight: number): void {
+      if (newWidth === buffer.width && newHeight === buffer.height) return;
+      buffer.width = newWidth;
+      buffer.height = newHeight;
+      allocate(newWidth, newHeight);
+    },
+    dispose(): void {
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+    },
+  };
+  return buffer;
+}
+
 /** A vertex array that draws one full-screen triangle with no attributes. */
 export function createFullScreenTriangle(gl: WebGL2RenderingContext): {
   vertexArray: WebGLVertexArrayObject;

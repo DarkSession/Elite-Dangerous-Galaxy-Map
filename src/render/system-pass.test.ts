@@ -8,8 +8,11 @@ import {
   buildMarkerColors,
   buildMarkerStyleRanges,
   createSystemPass,
+  discAlpha,
   GLOW_SIZE_FACTOR,
   glowAlpha,
+  markerAlpha,
+  MARKER_BODY_ALPHA,
   markerCssSize,
   markerPointSize,
   markerSpriteCssSize,
@@ -19,8 +22,12 @@ import {
   RING_COLOR,
   STYLE_DISC,
   STYLE_GLOW,
+  withMarkerAlpha,
 } from './system-pass';
 import type { Program } from './program';
+import markerAlphaSource from './shaders/marker-alpha.glsl?raw';
+import rangeFragmentSource from './shaders/marker-range.frag?raw';
+import colourFragmentSource from './shaders/systems.frag?raw';
 
 /** A record the reader accepts. */
 function record(
@@ -58,6 +65,7 @@ interface Call {
 /** A context that records the calls the pass makes and gives every name a number. */
 function fakeContext(): {
   gl: WebGL2RenderingContext;
+  calls: Call[];
   of(name: string): Call[];
 } {
   const calls: Call[] = [];
@@ -87,6 +95,7 @@ function fakeContext(): {
 
   return {
     gl: new Proxy(state, handler) as unknown as WebGL2RenderingContext,
+    calls,
     of(name: string): Call[] {
       return calls.filter((call) => call.name === name);
     },
@@ -425,18 +434,167 @@ describe('the two styles', () => {
     }
     expect(set.addSystems(records).added).toBe(200);
 
-    const pass = createSystemPass(context.gl, fakeProgram());
+    const pass = createSystemPass(context.gl, fakeProgram(), fakeProgram());
     const drawn = pass.draw({
       viewProjection: new Float32Array(16),
       camera: [0, 0, 0],
       cursorOffset: [0, 0, 0],
       pixelRatio: 1,
       set,
+      range: null,
     });
 
     const draws = context.of('drawArrays');
     expect(draws).toHaveLength(1);
     expect(draws[0]?.args[2]).toBe(200);
     expect(drawn).toBe(200);
+  });
+});
+
+/** A set of one system in one category, which every range test below draws. */
+function oneSystemSet(): ReturnType<typeof createSystemSet> {
+  const set = createSystemSet();
+  set.addCategories([{ name: 'Alpha', color: [1, 2, 3] }]);
+  expect(set.addSystems([record('Sol', [0, 0, 0], 'Alpha')]).added).toBe(1);
+  return set;
+}
+
+describe('the marker range draw', () => {
+  test('writes the markers into the range buffer with the MIN equation', () => {
+    const context = fakeContext();
+    const pass = createSystemPass(context.gl, fakeProgram(), fakeProgram());
+    const target = { name: 'range' } as unknown as WebGLFramebuffer;
+
+    pass.draw({
+      viewProjection: new Float32Array(16),
+      camera: [0, 0, 0],
+      cursorOffset: [0, 0, 0],
+      pixelRatio: 1,
+      set: oneSystemSet(),
+      range: target,
+    });
+
+    expect(context.of('drawArrays')).toHaveLength(2);
+    expect(pass.drawCalls()).toBe(2);
+    // The second draw goes to the range buffer, and the pass gives the frame back to the
+    // default target after it.
+    const binds = context.of('bindFramebuffer');
+    expect(binds.map((call) => call.args[1])).toEqual([target, null]);
+    const equations = context.of('blendEquation').map((call) => call.args[0]);
+    expect(equations).toEqual([context.gl.MIN, context.gl.FUNC_ADD]);
+    // The order is the colours first, so the range draw cannot write over the frame.
+    const order = context.calls
+      .filter((call) => call.name === 'drawArrays' || call.name === 'bindFramebuffer')
+      .map((call) => call.name);
+    expect(order).toEqual([
+      'drawArrays',
+      'bindFramebuffer',
+      'drawArrays',
+      'bindFramebuffer',
+    ]);
+  });
+
+  test('makes the colour draw alone with no range buffer', () => {
+    const context = fakeContext();
+    const pass = createSystemPass(context.gl, fakeProgram(), fakeProgram());
+
+    pass.draw({
+      viewProjection: new Float32Array(16),
+      camera: [0, 0, 0],
+      cursorOffset: [0, 0, 0],
+      pixelRatio: 1,
+      set: oneSystemSet(),
+      range: null,
+    });
+
+    expect(context.of('drawArrays')).toHaveLength(1);
+    expect(context.of('blendEquation')).toHaveLength(0);
+    expect(pass.drawCalls()).toBe(1);
+  });
+
+  test('counts no call in a frame with no system', () => {
+    const context = fakeContext();
+    const pass = createSystemPass(context.gl, fakeProgram(), fakeProgram());
+    const drawn = pass.draw({
+      viewProjection: new Float32Array(16),
+      camera: [0, 0, 0],
+      cursorOffset: [0, 0, 0],
+      pixelRatio: 1,
+      set: createSystemSet(),
+      range: { name: 'range' } as unknown as WebGLFramebuffer,
+    });
+    expect(drawn).toBe(0);
+    expect(pass.drawCalls()).toBe(0);
+    expect(context.of('drawArrays')).toHaveLength(0);
+  });
+});
+
+describe('the marker body', () => {
+  test('holds the alpha of 0.5 and above, and no more of the sprite', () => {
+    // The sprite of a cap-size glow is 40 CSS pixels across, so its radius is 20, and the
+    // sprite of a cap-size disc is 16 across.
+    const glowRadius = (MAX_MARKER_CSS * GLOW_SIZE_FACTOR) / 2;
+    const discRadius = MAX_MARKER_CSS / 2;
+    expect(glowRadius).toBe(20);
+
+    for (const distance of [0, 1, 3]) {
+      // On the diagonal, which is off both spikes, so the reading is the core and the
+      // halo alone and the body is not the spikes.
+      const x = distance / Math.SQRT2;
+      const alpha = markerAlpha(x, x, glowRadius, 'glow', 1);
+      expect(alpha).toBe(glowAlpha(x, x, glowRadius));
+      expect(alpha).toBeGreaterThanOrEqual(MARKER_BODY_ALPHA);
+    }
+    const far = 10 / Math.SQRT2;
+    expect(markerAlpha(far, far, glowRadius, 'glow', 1)).toBeLessThan(
+      MARKER_BODY_ALPHA,
+    );
+
+    for (const distance of [0, 1, 3]) {
+      const alpha = markerAlpha(distance, 0, discRadius, 'disc', 1);
+      expect(alpha).toBe(discAlpha(distance, discRadius));
+      expect(alpha).toBeGreaterThanOrEqual(MARKER_BODY_ALPHA);
+    }
+    expect(markerAlpha(10, 0, discRadius, 'disc', 1)).toBe(0);
+  });
+
+  test('reads the glow rule in CSS pixels at every device pixel ratio', () => {
+    const radius = (MAX_MARKER_CSS * GLOW_SIZE_FACTOR) / 2;
+    for (const pixelRatio of [1, 2, 3]) {
+      const alpha = markerAlpha(
+        6 * pixelRatio,
+        0,
+        radius * pixelRatio,
+        'glow',
+        pixelRatio,
+      );
+      expect(alpha).toBeCloseTo(glowAlpha(6, 0, radius), 12);
+    }
+  });
+
+  test('is the threshold the range shader carries', () => {
+    expect(rangeFragmentSource).toContain(
+      `const float BODY_ALPHA = ${MARKER_BODY_ALPHA.toFixed(1)};`,
+    );
+  });
+});
+
+describe('the shared alpha rule', () => {
+  test('reaches both marker shaders once', () => {
+    for (const source of [rangeFragmentSource, colourFragmentSource]) {
+      const filled = withMarkerAlpha(source);
+      expect(filled).toContain(markerAlphaSource);
+      // The rule is in place of the marker line. The chunk names that line in its own
+      // header, so the test reads a whole line and not the text anywhere in the source.
+      const lines = filled.split('\n').map((line) => line.trim());
+      expect(lines).not.toContain('// @marker-alpha');
+      expect(filled.split('float markerAlpha(')).toHaveLength(2);
+    }
+  });
+
+  test('rejects a shader that holds no place for it', () => {
+    expect(() => withMarkerAlpha('void main() {}')).toThrow(
+      'holds no place for the alpha rule',
+    );
   });
 });

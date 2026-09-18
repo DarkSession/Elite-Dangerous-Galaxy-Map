@@ -1086,7 +1086,7 @@ spheres and lines the host draws, and gives the camera two turn keys.
   markers.** A marker is what the user clicks, so nothing draws over one.
 
 - **The demo site carries two more sets, and the converters parse their sources.** The
-  UIA set gives 1,116 systems, 18 categories, 54 spheres and 983 lines of 2,214 points;
+  UIA set gives 1,116 systems, 19 categories, 54 spheres and 983 lines of 2,214 points;
   `MapData-Adamastor.js` gives 8 systems, 4 categories and 8 lines of 38 points. Both
   sources are JavaScript, so the converter holds a tolerant parser for the `systemsData`
   literal and **runs no statement of the file**. A route point names a system, and a name
@@ -1180,6 +1180,121 @@ size.
   at 27 characters, and every label of the frame takes it. The cap height is about a
   thirty-eighth of the level's spacing. A narrower bound holds shorter numbers, so a
   sphere of 900 light years draws them larger.
+
+## Phase 5.9: the shape categories, the sphere depth and the live data set
+
+Change: `shape-categories-sphere-depth-and-live-data`. Status: implemented.
+
+Gives a shape a category, washes a marker by its depth in a sphere, splits the category
+row into two buttons over two tabs, and adds a sixth demo entry that fetches its own
+records.
+
+- **A shape names categories, and the category owns its colour.** A sphere and a line take
+  a `primaryCategory` and a list of `secondaryCategories`, and `color` is optional on both.
+  A shape that names a category draws in that category's colour and hides with it; a shape
+  that names none keeps a colour of its own. The set rejects a shape that names a category
+  its table does not hold, so a shape set needs the category table of its system set. The
+  handle answers `getShapeInfo(kind, index)` with the name, the categories, the centre, the
+  reach and the `drawn` flag, and `ShapeInfo` and `ShapeKind` are exported from the package
+  root.
+
+- **The `drawn` flag is swept on a change and not per frame.** `shapes.ts` holds a flag and
+  a resolved colour per shape, and sweeps them when the shape set, the category table, a
+  category's visibility or the shape name filter changes. The sweep over 1,024 spheres and
+  4,096 lines is about 20,000 lookups, which per frame would cost 6 per cent of the frame
+  budget for a set that only changes when the user clicks. The render pass reads a flag and
+  does not know what a category is, so `src/render/` stays replaceable.
+
+- **The category panel has two tabs and two buttons in a row.** SYSTEMS lists the
+  categories that hold records and SHAPES lists the ones that hold shapes. The dot switches
+  the category and the rest of the row opens it, where one click did both before. This is
+  breaking for a host that drove the row, and the dot carries `aria-pressed` while the row
+  carries `aria-expanded`, so both jobs stay reachable from the keyboard. Each tab holds its
+  own filter text, and ALL and NONE act on the shown tab alone.
+
+- **A range buffer gives the sphere the depth of the nearest marker.** The overlay has no
+  depth attachment and cannot get one, so the marker pass draws its geometry a second time
+  into a single-channel float texture with a `MIN` blend, and each pixel holds the range of
+  the nearest marker. The sphere step reads it at `gl_FragCoord.xy` and draws the fraction
+  of its shell chord that lies behind that marker:
+  `share = clamp((t - (c - d)) / (2 * d), 0, 1)`, with `d = radius * sqrt(1 - r * r)`. A
+  pixel with no marker holds `RANGE_EMPTY`, which is `1e30`, and reads `share = 1`, so
+  the frame outside the markers is the frame the map drew before. The buffer is `R32F`
+  and costs 8.3 MB at 1920x1080.
+
+- **The range buffer needs two extensions, and they take two flags.**
+  `EXT_color_buffer_float` lets the context draw to a float target and `EXT_float_blend`
+  lets it blend into a 32-bit one; WebGL2 refuses the `MIN` blend without the second, and
+  the buffer would then hold the last marker and not the nearest. The existing `float` flag
+  keeps gating the `RGBA16F` scene targets, which need the first extension alone, and the
+  range buffer takes a flag of its own that is the AND of the two. Folding them into one
+  flag would drop the scene target, the half target and the glow to `RGBA8` on a context
+  that gives only the first. Where either is missing the map holds no range buffer, draws
+  every sphere at a share of 1 and caps no line, which is the frame this change replaces.
+  `R16F` blends with no second extension and was rejected: its step is 64 light years at a
+  range of 100,000, which is 16 per cent of the chord of a sphere that is still drawable
+  there, and the share would band.
+
+- **The overlay order moves the markers ahead of the spheres.** It is grid, regions,
+  markers, spheres, lines. A sphere can only draw over a marker that is inside it or behind
+  it if the marker is already on the frame, and the range buffer then keeps the sphere off
+  the markers in front of it. The lines stay last because a line carries no range, so a
+  sphere treats it as behind: a line that drew first would be erased by a sphere's limb, and
+  a thin line loses all of itself rather than part.
+
+- **A decoration never takes a marker off the screen, and the caps compound.** The sphere
+  step and the line step each cap their wash over a marker pixel at an alpha of 0.5, so one
+  decoration leaves a marker half its colour. Neither step reads what the other wrote, so a
+  marker under a sphere and a line keeps a quarter, and the floor is 0.5 to the power of the
+  number of decorations over it, not a flat half. Bounding the total would need the spheres
+  to blend into a target of their own with a `MAX` blend, which would change how two
+  overlapping spheres read. A marker stays clickable either way, because `systemAt` picks
+  from the scene data and not from the frame.
+
+- **The sixth demo entry fetches its records, and the library still fetches nothing.**
+  `multifaction` reads the Spansh factions dump, 16.9 MB of gzip and 101 MB of JSON, through
+  the browser's own `DecompressionStream`. The page keeps the fetch and moves the body to a
+  worker: Chromium inflates a body it already holds in one burst, which costs the map a gap
+  of 70 ms on a 62 MB fixture, and the same read in a worker costs no frame. The reader cuts
+  the bytes into lines, reads the faction name from the head of each line with a regex,
+  parses only a line that names one of the two factions it wants, and cancels the stream
+  once it has both. It reads the line break as a byte and decodes only the head of a line,
+  so a line it does not want keeps 58 bytes and not its 2.33 MB. One faction per line is a property of the file and not of JSON, so a
+  dump that reformats onto one line finds nothing and rejects with a message that says so.
+  The fetch is the demo host's own `load()`; `src/index.ts` does not import the reader. The
+  48 permit spheres of that map are a static literal, so the build script converts them into
+  `demo-data/multifaction-spheres.json` rather than putting an ED3D parser in the bounded
+  entry chunk.
+
+- **A set's categories are the ones its records and its shapes name.** The rule was the
+  ones its records name, which left the Adamastor routes with a colour and no category and a
+  SHAPES tab that switched nothing. Adamastor now reads 10 categories where it read 4: the 4
+  its records name and the 7 its routes name, with one in both.
+
+## Phase 5.10: the two category switches
+
+Change: `split-the-shape-and-system-category-switches`. Status: implemented.
+
+Gives a category one visibility flag for its systems and one for its shapes, so each tab of
+the category browser switches the kind it lists.
+
+- **The shape set owns the shape flag, and the handle says which kind it moves.** The shape
+  set keeps its own map of flags and stops reading the visibility of the system set, which
+  now carries `categoryTableVersion` beside `categoryVersion`: the first rises where the
+  table itself changes and the second where a marker switch or a name filter moves. The
+  shape sweep watches the first, so a switch in the SYSTEMS tab sweeps no shape. The handle
+  gains `setShapeCategoryVisible` and `isShapeCategoryVisible`, and `setCategoryVisible` and
+  `isCategoryVisible` reach the markers alone. **The package moves to 0.4.0**, because a
+  host that called `setCategoryVisible` to clear both kinds keeps its shapes on the screen.
+  A pair that moved both kinds was rejected: the reader has no answer a caller can use for a
+  category whose markers are on and whose shapes are off.
+
+- **The UIA `g_soi` sphere gets a category the source does not hold.** The converter adds
+  `Gamma Velorum Zone` in the shell's own colour of (0, 0, 153), as it already adds the
+  eight `UIA#N` categories, so the UIA set reads 19 categories where it read 18. The list
+  gets no marker, so the category holds one shape and no record: it has a row in the SHAPES
+  tab and none in the SYSTEMS tab. `UIA_SPHERE_LISTS` carries a `record` field for that,
+  because its `category` field carried both meanings before.
 
 ## Sources
 

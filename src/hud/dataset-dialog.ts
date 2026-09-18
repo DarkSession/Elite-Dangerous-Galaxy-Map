@@ -168,13 +168,18 @@ export function createDatasetDialog(
     const loadedId = map.getLoadedDataset()?.id ?? null;
     setText(detailLabel, entry?.label ?? '');
     // One line of the three fields, in the order the mockup writes them, and only the
-    // fields the entry carries.
+    // fields the entry carries. An entry that reads its records when the user loads it
+    // carries no count, and the line says so in place of a number.
     const count = entry?.systemCount;
-    const meta = [
-      entry?.collection ?? '',
-      entry?.region ?? '',
-      count === undefined ? '' : `${formatWhole(count)} SYSTEMS`,
-    ].filter((part) => part.length > 0);
+    const countLine =
+      entry === null
+        ? ''
+        : count === undefined
+          ? 'FETCHED ON LOAD'
+          : `${formatWhole(count)} SYSTEMS`;
+    const meta = [entry?.collection ?? '', entry?.region ?? '', countLine].filter(
+      (part) => part.length > 0,
+    );
     setText(detailMeta, meta.join(' · ').toUpperCase());
     setShown(detailMeta, meta.length > 0);
     setText(detailText, entry?.description ?? '');

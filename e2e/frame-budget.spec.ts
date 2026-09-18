@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap } from './helpers';
+import { dumpFaction, dumpSystem, openMap, serveFactionsDump } from './helpers';
 import { TRACED_CORNER } from './region-views';
 import type { SystemRecordInput } from '../src/scene-data/real-systems';
 
@@ -418,7 +418,8 @@ test('the frame interval holds with the HUD on', async ({ page }) => {
 
   // The demo page builds the HUD, so the panels below are the page's own.
   await expect(page.locator('.gm-hud__category-row[data-name="Empire"]')).toBeVisible();
-  await page.locator('.gm-hud__category-expand[data-name="Empire"]').click();
+  // The rest of the row opens the list. The dot beside it switches the category.
+  await page.locator('.gm-hud__category-row[data-name="Empire"]').click();
   await expect(page.locator('.gm-hud__system-row')).toHaveCount(200);
   await page.evaluate(() => {
     const system = window.galaxyMap?.getSystem(0) ?? null;
@@ -710,4 +711,203 @@ test('a full shape set holds the frame rate', async ({ page }) => {
 
   expect(stats.frames).toBeGreaterThanOrEqual(60);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+/**
+ * The longest animation frame interval the read of the dump may leave, in milliseconds.
+ *
+ * The page fetches the dump and moves the body to a worker, so the inflate never holds
+ * the main thread. One frame at 60 Hz is 16.7 ms and a dropped frame gives 33.3, so this
+ * bound fails where the read drops one frame. A read on the main thread leaves a gap of
+ * about 70 ms, because Chromium inflates a body it already holds in one burst.
+ */
+const DUMP_WORST_MS = 25;
+
+/**
+ * A fixture of the factions dump, about 62 MB of text.
+ *
+ * The two factions the entry wants sit at its end, so the reader reads the whole file and
+ * the measure covers the worst case: the order of the dump is not stated anywhere.
+ */
+function bigDumpFixture(): string {
+  const lines: string[] = ['['];
+  // One line of 1.03 MB, which is near the 2.33 MB longest line of the live dump. Sixty
+  // of them carry the 62 MB the reading below asks for.
+  const systems = Array.from({ length: 10000 }, (_, index) =>
+    dumpSystem(`Filler System ${index}`, 1000 + index, index % 3 === 0),
+  );
+  for (let line = 0; line < 60; line += 1) {
+    lines.push(dumpFaction(`Filler Faction ${line}`, systems));
+  }
+  lines.push(
+    dumpFaction('Canonn', [
+      dumpSystem('Canonn Home', 10, true),
+      dumpSystem('Canonn Outpost', 11, false),
+    ]),
+  );
+  lines.push(
+    dumpFaction('Canonn Deep Space Research', [dumpSystem('Research Post', 13, true)]),
+  );
+  lines.push(']');
+  return lines.join('\n');
+}
+
+// The page fetches the dump and moves the body to a worker, which inflates it and reads
+// it. The budget is the frame interval and not the whole read: the time the fetch takes
+// is the network's.
+test('the map keeps drawing while the dump is read', async ({ page }) => {
+  test.setTimeout(300000);
+  const fixture = bigDumpFixture();
+  console.log('the dump fixture holds', fixture.length, 'bytes');
+  expect(fixture.length).toBeGreaterThan(60_000_000);
+  await serveFactionsDump(page, fixture);
+  await openMap(page, '', { demoData: true, hud: true });
+  await waitFrames(page, 10);
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    const started = performance.now();
+    await map?.loadDataset('multifaction');
+    return {
+      systems: map?.systemCount() ?? -1,
+      spheres: map?.sphereCount() ?? -1,
+      loadMs: performance.now() - started,
+      stats: window.__galaxyMap?.frameIntervalStats?.() ?? {
+        frames: 0,
+        meanMs: Number.POSITIVE_INFINITY,
+        worstMs: Number.POSITIVE_INFINITY,
+      },
+    };
+  });
+  console.log('the interval over the dump read', reading);
+
+  // The two factions at the end of the file reached the map, so the read covered it all.
+  expect(reading.systems).toBe(3);
+  expect(reading.spheres).toBe(48);
+  // The frame loop kept running while the read ran.
+  expect(reading.stats.frames).toBeGreaterThan(10);
+  expect(reading.stats.worstMs).toBeLessThan(DUMP_WORST_MS);
+});
+
+/**
+ * The largest shape set the map takes, with 256 categories over it.
+ *
+ * Each shape names 4 categories, which is the count the budget states. The set carries no
+ * colour of its own, so every shape draws in the colour of the first category it names
+ * that is on.
+ */
+async function addCategorisedShapeSet(page: Page): Promise<{
+  categories: number;
+  spheres: number;
+  lines: number;
+}> {
+  return page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) return { categories: -1, spheres: -1, lines: -1 };
+    let state = 8191;
+    const unit = (): number => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+    const place = (): [number, number, number] => [
+      -49985 + unit() * 100000,
+      -40985 + unit() * 81910,
+      -24105 + unit() * 100000,
+    ];
+    const names: string[] = [];
+    const categories = [];
+    for (let index = 0; index < 256; index += 1) {
+      const name = `Sweep ${index}`;
+      names.push(name);
+      categories.push({ name, color: [255, 128, 0] });
+    }
+    map.addCategories(categories as never);
+    // Four names for one shape, spread over the table so the sweep reads no one row twice.
+    const four = (index: number): string[] => [
+      names[index % 256] as string,
+      names[(index * 7 + 1) % 256] as string,
+      names[(index * 13 + 2) % 256] as string,
+      names[(index * 29 + 3) % 256] as string,
+    ];
+    const spheres = [];
+    for (let index = 0; index < 1024; index += 1) {
+      const naming = four(index);
+      spheres.push({
+        position: place(),
+        radius: 100 + unit() * 900,
+        primaryCategory: naming[0],
+        secondaryCategories: naming.slice(1),
+      });
+    }
+    // 4,096 lines of 16 points come to 65,536, which is the point bound.
+    const lines = [];
+    for (let index = 0; index < 4096; index += 1) {
+      const start = place();
+      const points: [number, number, number][] = [];
+      for (let step = 0; step < 16; step += 1) {
+        points.push([start[0] + step * 40, start[1] + step * 8, start[2] + step * 40]);
+      }
+      const naming = four(index + 1);
+      lines.push({
+        points,
+        width: 2,
+        primaryCategory: naming[0],
+        secondaryCategories: naming.slice(1),
+      });
+    }
+    map.addSpheres(spheres as never);
+    map.addLines(lines as never);
+    return {
+      categories: map.categoryCount(),
+      spheres: map.sphereCount(),
+      lines: map.lineCount(),
+    };
+  });
+}
+
+/**
+ * Switches the shapes of all 256 categories on or off, draws a frame, and reads the
+ * sweep. It calls `setShapeCategoryVisible`, because `setCategoryVisible` reaches the
+ * markers alone and sweeps no shape: the reading would then be 0 for every switch.
+ */
+async function switchEveryCategory(page: Page, visible: boolean): Promise<number> {
+  await page.evaluate((on) => {
+    for (let index = 0; index < 256; index += 1) {
+      window.galaxyMap?.setShapeCategoryVisible(`Sweep ${index}`, on);
+    }
+  }, visible);
+  await waitFrames(page, 2);
+  return page.evaluate(() => window.galaxyMap?.debug.shapeSweepMs() ?? -1);
+}
+
+// The sweep of the shape flags runs when a category changes and the frame reads the set,
+// so the reading is of the frame after the change. `map-shapes` budgets it at 2 ms for the
+// first switch that follows the arrival of the set, and at 1 ms for every switch after it.
+// The set arrives with a sweep of its own, and the switch that follows it still runs code
+// the engine has not compiled, so it reads about five times the cost of the switches that
+// follow. Both are far under one frame.
+test('the shape flag sweep holds its budget', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  const set = await addCategorisedShapeSet(page);
+  expect(set.categories).toBe(256);
+  expect(set.spheres).toBe(1024);
+  expect(set.lines).toBe(4096);
+  await waitFrames(page, 2);
+
+  // One NONE call of the HUD, which turns every category off before the next frame.
+  const first = await switchEveryCategory(page, false);
+  const readings = [first];
+  for (let run = 0; run < 3; run += 1) {
+    readings.push(await switchEveryCategory(page, run % 2 === 0));
+  }
+  const last = readings[readings.length - 1] as number;
+  console.log('the shape sweep in ms', readings);
+
+  // A reading of 0 is a fast sweep and not a missing one: Chromium gives
+  // `performance.now()` in steps of 0.1 milliseconds. The budgets are the upper bounds.
+  expect(first).toBeGreaterThanOrEqual(0);
+  expect(first).toBeLessThan(2);
+  expect(last).toBeLessThan(1);
 });

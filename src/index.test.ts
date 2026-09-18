@@ -32,6 +32,8 @@ const PUBLIC_TYPES = [
   'MapView',
   'RealSystem',
   'Reject',
+  'ShapeInfo',
+  'ShapeKind',
   'ShapeReject',
   'ShapeReport',
   'Sphere',
