@@ -20,16 +20,9 @@ uniform float uDetailScale;
 
 out vec4 fragColour;
 
+// @volume-density
+
 const int STEPS = 96;
-// The emission is the decoded density relative to the peak, through a curve with two
-// slopes on a logarithmic scale. Above the knee the power keeps the bulge and the
-// disc in one display range. Below it the larger power spreads the low densities, so
-// the patches the detail grid holds reach the screen.
-const float GAMMA = 0.34;
-const float LOW_GAMMA = 0.87;
-// The knee sits at the density of the disc at 14,000 light years, relative to the
-// peak texel, so the whole outer disc runs on the low slope and holds its contrast.
-const float KNEE = 2.13e-2;
 // The ramp has two axes: the compressed density and the galactocentric radius. The
 // inner ramp runs from a red-brown dust lane through a soft salmon band to a
 // near-white core. The outer ramp runs from a blue haze to a dusty pink
@@ -52,18 +45,6 @@ const float PATCH_HIGH = 0.030;
 // paints the disc by region, and the radius is the region.
 const float BLEND_IN = 20000.0;
 const float BLEND_OUT = 32000.0;
-// The dust absorbs blue most and red least, so the light behind it turns warm.
-const vec3 DUST = vec3(0.55, 1.00, 1.70);
-// The fade by galactocentric radius. The map has no texel past the painted rim, and
-// this removes the analytic tail beyond it. It does not read the density, so the
-// space between the arms keeps its light.
-const float RIM_FULL = 47000.0;
-const float RIM_ZERO = 51000.0;
-// The fade by height above the mid-plane. The model's vertical profile stops at
-// 2,867 light years with the bulge still lit, so this spreads its top over 1,080
-// light years and the bulge has no hard edge.
-const float HEIGHT_FULL = 1800.0;
-const float HEIGHT_ZERO = 2880.0;
 
 void main() {
   vec3 direction = normalize(vRay);
@@ -93,24 +74,18 @@ void main() {
   for (int index = 0; index < STEPS; ++index) {
     float distance = near + (float(index) + 0.5) * step;
     vec3 point = direction * distance;
-    vec3 local = (point - uBoxMin) / uBoxSize;
-    // The world frame negates the model's z, so the texture runs the other way on it.
-    float encoded = texture(uVolume, vec3(local.x, local.y, 1.0 - local.z)).r;
-    if (encoded <= 0.0) {
+    float compressed = volumeDensity(
+      point, uCentre, uVolume, uDetail, uBoxMin, uBoxSize,
+      uLo, uSpan, uEpsilon, uDetailScale, peak);
+    // An empty sample adds no light and takes none, so it skips the ramp. The volume
+    // pass takes about 50 million samples a frame and most of them are empty.
+    if (compressed <= 0.0) {
       continue;
     }
 
-    // The detail grid covers the same bounds in x and z, with the same z flip. It
-    // holds the logarithm of the ratio of the game's map to the smooth model.
-    float detail = texture(uDetail, vec2(local.x, 1.0 - local.z)).r * 255.0 - 128.0;
-    float density = max(exp(uLo + encoded * uSpan) - uEpsilon, 0.0) * exp(detail * uDetailScale);
-    float ratio = density / peak;
-    float compressed = ratio >= KNEE
-      ? pow(ratio, GAMMA)
-      : pow(KNEE, GAMMA) * pow(ratio / KNEE, LOW_GAMMA);
+    // The radius keys the blend of the two ramps. The shared rule reads it as well, for
+    // the fade at the rim, and one repeated line is cheaper than a second return value.
     float radius = length(point.xz - uCentre.xz);
-    compressed *= 1.0 - smoothstep(RIM_FULL, RIM_ZERO, radius);
-    compressed *= 1.0 - smoothstep(HEIGHT_FULL, HEIGHT_ZERO, abs(point.y - uCentre.y));
     // Inside the inner disc the lanes are red-brown, the disc is salmon and only the
     // centre reaches the core colour. In the outer disc the space between the patches
     // is blue and the patches are pink.

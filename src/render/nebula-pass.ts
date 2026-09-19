@@ -6,6 +6,7 @@ import { NEBULA_ATLAS_COLUMNS } from './buffers';
 import type { NebulaAtlasTexture } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
+import { withVolumeDensity } from './volume-pass';
 import vertexSource from './shaders/nebulae.vert?raw';
 import fragmentSource from './shaders/nebulae.frag?raw';
 
@@ -15,6 +16,24 @@ import fragmentSource from './shaders/nebulae.frag?raw';
  * sprite quad shows against the background. A browser test pins it.
  */
 export const DEFAULT_NEBULA_BRIGHTNESS = 8;
+
+/**
+ * How much of the volume's own extinction a sprite takes. 0 is the look before the
+ * march, and 1 is the extinction the volume pass would have carried to the record's
+ * centre. The default is 1: the frame already dims its own light by the dust it marches
+ * through, so a nebula that did not would contradict it.
+ */
+export const DEFAULT_NEBULA_OCCLUSION = 1;
+
+/**
+ * The texture units the three samplers read. Each one takes a unit of its own and every
+ * draw sets all three, whether or not a texture is bound: an unset `sampler3D` reads unit
+ * 0, where the atlas sits, and two samplers of different types on one unit make the draw
+ * fail with `INVALID_OPERATION`.
+ */
+const ATLAS_UNIT = 0;
+const VOLUME_UNIT = 1;
+const DETAIL_UNIT = 2;
 
 /** How many floats one instance carries: the position, the radius, the tile, the fade. */
 export const NEBULA_INSTANCE_FLOATS = 6;
@@ -63,6 +82,32 @@ export interface NebulaPassFrame {
   readonly weight: number;
   /** The records the frame draws, furthest from the camera first. */
   readonly instances: readonly NebulaInstance[];
+  /**
+   * The density volume the march reads, or null before it arrives. The pass takes it per
+   * frame and not at construction, because the nebulae may attach before the volume does
+   * and the volume may be replaced.
+   */
+  readonly volume: WebGLTexture | null;
+  /** The surface detail texture, or null when the grid has not arrived. */
+  readonly detail: WebGLTexture | null;
+  /** The low corner of the volume box minus the camera, in the world frame. */
+  readonly boxMin: readonly [number, number, number];
+  /** The size of the volume box in the world frame. */
+  readonly boxSize: readonly [number, number, number];
+  /** The galactic centre minus the camera, in the world frame. */
+  readonly centre: readonly [number, number, number];
+  /** The low bound of the stored density logarithm. */
+  readonly lo: number;
+  /** The span of the stored density logarithm. */
+  readonly span: number;
+  /** The offset the stored density logarithm carries. */
+  readonly epsilon: number;
+  /** The absorption per unit of compressed density per light year. */
+  readonly absorption: number;
+  /** The scale one stored detail step stands for. It is 0 without a grid. */
+  readonly detailScale: number;
+  /** How much of the volume's extinction a sprite takes, 0 to 1. */
+  readonly occlusion: number;
 }
 
 /** The nebula pass. */
@@ -75,9 +120,14 @@ export interface NebulaPass {
   dispose(): void;
 }
 
-/** Compiles the nebula program. Call it before the record set arrives. */
+/**
+ * Compiles the nebula program. Call it before the record set arrives.
+ *
+ * The vertex shader carries the marker line of the shared density rule, so the pass puts
+ * the rule in place of it here. The volume shader reads the same file.
+ */
 export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
-  return createProgram(gl, 'nebulae', vertexSource, fragmentSource, [
+  return createProgram(gl, 'nebulae', withVolumeDensity(vertexSource), fragmentSource, [
     'uViewProjection',
     'uChunkOffset',
     'uTargetSize',
@@ -89,6 +139,17 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
     'uAtlasSide',
     'uBrightness',
     'uAtlas',
+    'uVolume',
+    'uDetail',
+    'uBoxMin',
+    'uBoxSize',
+    'uCentre',
+    'uLo',
+    'uSpan',
+    'uEpsilon',
+    'uAbsorption',
+    'uDetailScale',
+    'uOcclusion',
   ]);
 }
 
@@ -202,9 +263,49 @@ export function createNebulaPass(
       gl.uniform1f(program.uniforms['uAtlasSide'] ?? null, atlas.side);
       gl.uniform1f(program.uniforms['uBrightness'] ?? null, frame.brightness);
 
-      gl.activeTexture(gl.TEXTURE0);
+      // The march reads the volume the volume pass draws, over the segment from the
+      // camera to the record's centre. Without a texture the pass sends an occlusion of
+      // 0 and the shader leaves the transmittance at 1.
+      gl.uniform3f(
+        program.uniforms['uBoxMin'] ?? null,
+        frame.boxMin[0],
+        frame.boxMin[1],
+        frame.boxMin[2],
+      );
+      gl.uniform3f(
+        program.uniforms['uBoxSize'] ?? null,
+        frame.boxSize[0],
+        frame.boxSize[1],
+        frame.boxSize[2],
+      );
+      gl.uniform3f(
+        program.uniforms['uCentre'] ?? null,
+        frame.centre[0],
+        frame.centre[1],
+        frame.centre[2],
+      );
+      gl.uniform1f(program.uniforms['uLo'] ?? null, frame.lo);
+      gl.uniform1f(program.uniforms['uSpan'] ?? null, frame.span);
+      gl.uniform1f(program.uniforms['uEpsilon'] ?? null, frame.epsilon);
+      gl.uniform1f(program.uniforms['uAbsorption'] ?? null, frame.absorption);
+      gl.uniform1f(program.uniforms['uDetailScale'] ?? null, frame.detailScale);
+      gl.uniform1f(
+        program.uniforms['uOcclusion'] ?? null,
+        frame.volume === null ? 0 : frame.occlusion,
+      );
+
+      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
-      gl.uniform1i(program.uniforms['uAtlas'] ?? null, 0);
+      gl.uniform1i(program.uniforms['uAtlas'] ?? null, ATLAS_UNIT);
+
+      gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
+      gl.bindTexture(gl.TEXTURE_3D, frame.volume);
+      gl.uniform1i(program.uniforms['uVolume'] ?? null, VOLUME_UNIT);
+
+      gl.activeTexture(gl.TEXTURE0 + DETAIL_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, frame.detail);
+      gl.uniform1i(program.uniforms['uDetail'] ?? null, DETAIL_UNIT);
+      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
 
       gl.enable(gl.BLEND);
       // Premultiplied source-over. One blend serves a bright nebula and a dark one:
@@ -216,6 +317,11 @@ export function createNebulaPass(
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
       gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
+      gl.bindTexture(gl.TEXTURE_3D, null);
+      gl.activeTexture(gl.TEXTURE0 + DETAIL_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
 
       drawnCount = count;
       drawCalls = 1;

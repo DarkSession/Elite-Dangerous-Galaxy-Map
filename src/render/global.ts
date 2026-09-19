@@ -50,6 +50,12 @@ export interface GalaxyMapGlobal {
   /** Whether the nebula records and the atlas reached the renderer. */
   nebulaeAttached?: () => boolean;
   /**
+   * Sets how much of the volume's extinction a nebula sprite takes, 0 to 1. At 0 the
+   * pass draws what it drew before the march, so a test reads one frame at each value
+   * and compares the two.
+   */
+  setNebulaOcclusion?: (value: number) => void;
+  /**
    * Holds the close fade at a value from 0 to 1, or gives it back to the zoom distance
    * with `null`. A test holds it at 1 to read the invented field at a close view.
    */

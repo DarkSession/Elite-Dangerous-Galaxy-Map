@@ -1,13 +1,26 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { meanLuminanceBlock, meanLuminanceFrame, openMap } from './helpers';
+import { meanLuminanceBlock, meanLuminanceFrame, openMap, readRect } from './helpers';
+import { putVolumeDensity } from '../src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
 function shaderSource(name: string): string {
   return readFileSync(
     fileURLToPath(new URL(`../src/render/shaders/${name}`, import.meta.url)),
     'utf8',
+  );
+}
+
+/**
+ * The nebula vertex shader as the pass compiles it. The file carries a line in place of
+ * the shared density rule, and the pass puts the rule there before it compiles, so a
+ * probe that compiled the raw file would compile a source the map never uses.
+ */
+function nebulaVertex(): string {
+  return putVolumeDensity(
+    shaderSource('nebulae.vert'),
+    shaderSource('volume-density.glsl'),
   );
 }
 
@@ -102,9 +115,38 @@ test('the nebula shaders compile', async ({ page }) => {
   const error = await page.evaluate(
     (sources) =>
       window.__galaxyMap?.compileTestProgram?.(sources.vertex, sources.fragment),
-    { vertex: shaderSource('nebulae.vert'), fragment: shaderSource('nebulae.frag') },
+    { vertex: nebulaVertex(), fragment: shaderSource('nebulae.frag') },
   );
   expect(error).toBeNull();
+});
+
+// The march reads a `sampler3D` in the vertex stage. WebGL2 guarantees at least 16
+// vertex texture units, so a count check cannot fail on a conforming implementation and
+// the assertion is the link, not the count. The count is a diagnostic, read from a probe
+// context of the same driver, because the limit belongs to the implementation and not to
+// one context. The program compiles on the map's own context.
+test('the vertex stage carries the volume sampler', async ({ page }) => {
+  await openMap(page);
+  const report = await page.evaluate(
+    (sources) => {
+      const probe = document.createElement('canvas').getContext('webgl2');
+      const units =
+        probe === null
+          ? -1
+          : (probe.getParameter(probe.MAX_VERTEX_TEXTURE_IMAGE_UNITS) as number);
+      return {
+        units,
+        error: window.__galaxyMap?.compileTestProgram?.(
+          sources.vertex,
+          sources.fragment,
+        ),
+      };
+    },
+    { vertex: nebulaVertex(), fragment: shaderSource('nebulae.frag') },
+  );
+  console.log('the vertex texture units', report.units);
+
+  expect(report.error).toBeNull();
 });
 
 // The lookup insets by half a texel, so a tile whose border is alpha 0 cannot carry
@@ -434,4 +476,149 @@ test('the map starts when the nebula art never answers', async ({ page }) => {
   expect(report.drawn).toBe(0);
   expect(report.calls).toBe(0);
   expect(report.meanMs).toBeGreaterThan(0);
+});
+
+/**
+ * Barnard's Loop seen from the far side of the galactic centre, 33,000 light years out,
+ * where it draws about 3.8 CSS pixels across the radius. It is the only named record the
+ * core can stand in front of: `G2 Dust Cloud` is the one other record beyond the centre
+ * and its 8.62 light year radius stops it drawing past about 3,600 light years. The
+ * block is 6 pixels, because a 10 pixel block reads more background than sprite.
+ */
+const CORE_VIEW = '#c=18.0,-36.9,25760.9&d=6000&p=0.83&y=178.71';
+
+/**
+ * Record 199, a dark nebula of 88.93 light years, 15,414 light years from a camera that
+ * looks at it through the centre. The record carries no name, as the two dark records
+ * the suite already reads carry none. It draws about 3.6 CSS pixels across the radius,
+ * so this block is 6 pixels as well.
+ */
+const DARK_CORE_VIEW = '#c=-3163.1,163.1,23474.2&d=6000&p=-2.84&y=-127.30';
+
+/** The block of a sprite reading: the mean light, the colour ratio and the bytes. */
+interface BlockReading {
+  lum: number;
+  blueToRed: number;
+  bytes: string;
+}
+
+/** Reads a square block at the middle of the frame. */
+async function blockReading(
+  page: import('@playwright/test').Page,
+  size: number,
+): Promise<BlockReading> {
+  const half = size / 2;
+  const bytes = await readRect(page, MIDDLE.x - half, MIDDLE.y - half, size, size);
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  for (let index = 0; index < bytes.length; index += 4) {
+    red += bytes[index] as number;
+    green += bytes[index + 1] as number;
+    blue += bytes[index + 2] as number;
+  }
+  const count = bytes.length / 4;
+  return {
+    lum: (0.2126 * red + 0.7152 * green + 0.0722 * blue) / (255 * count),
+    blueToRed: blue / red,
+    bytes: bytes.join(','),
+  };
+}
+
+/** Draws one frame with the occlusion constant at a value and reads the block. */
+async function atOcclusion(
+  page: import('@playwright/test').Page,
+  value: number,
+  size: number,
+): Promise<BlockReading> {
+  await page.evaluate((amount) => {
+    window.__galaxyMap?.setPasses?.({ nebulae: true });
+    window.__galaxyMap?.setNebulaOcclusion?.(amount);
+    window.__galaxyMap?.drawNow?.();
+  }, value);
+  return blockReading(page, size);
+}
+
+/**
+ * Every hook call in this suite is optional-chained, so a hook that is missing or
+ * misnamed would give two readings of one frame and the "barely changes" test would pass
+ * over a feature that never ran.
+ */
+async function hookExists(page: import('@playwright/test').Page): Promise<boolean> {
+  return page.evaluate(
+    () => typeof window.__galaxyMap?.setNebulaOcclusion === 'function',
+  );
+}
+
+test('a nebula with little in front of it barely changes', async ({ page }) => {
+  await openMap(page, BRIGHT_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 10;
+  const on = await atOcclusion(page, 1, size);
+  const off = await atOcclusion(page, 0, size);
+  const change = Math.abs(on.lum - off.lum) / off.lum;
+  console.log('little in front', { on: on.lum, off: off.lum, change });
+
+  // The two frames are not the same frame.
+  expect(on.bytes).not.toBe(off.bytes);
+  // The design costs this 5,912 light year segment at a transmittance of 0.997, 0.994
+  // and 0.989 by channel, so the worst channel changes by about 1.1 percent and the
+  // spec puts the band at 2 percent of the block mean. The measured change of the block
+  // is 0.095 percent. It sits under the estimate because the block mean carries the
+  // background as well as the sprite, and because luminance weights the green channel,
+  // which the middle transmittance of 0.994 attenuates.
+  expect(change).toBeLessThan(0.02);
+});
+
+test('occluded light turns warm', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  const on = await atOcclusion(page, 1, size);
+  const off = await atOcclusion(page, 0, size);
+  console.log('warm', { on: on.blueToRed, off: off.blueToRed });
+
+  expect(on.bytes).not.toBe(off.bytes);
+  // The dust weights are 0.55, 1.00 and 1.70, so the blue channel loses the most light
+  // of the three. The measured ratio is 0.8165 at 1 against 0.8347 at 0.
+  expect(on.blueToRed).toBeLessThan(off.blueToRed);
+});
+
+test('a dark nebula behind the core stops cutting a hole', async ({ page }) => {
+  await openMap(page, DARK_CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  const on = await atOcclusion(page, 1, size);
+  const off = await atOcclusion(page, 0, size);
+  console.log('the hole', { on: on.lum, off: off.lum, added: on.lum - off.lum });
+
+  expect(on.bytes).not.toBe(off.bytes);
+  // The transmittance scales the alpha as well as the colour, so the sprite holds back
+  // less of the light of the core behind it. The measured readings are 0.88114 at 1
+  // against 0.85038 at 0, a rise of 3.6 percent.
+  expect(on.lum).toBeGreaterThan(off.lum);
+});
+
+test('a nebula behind the core dims', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  const off = await withNebulae(page, false, () => blockReading(page, size));
+  const on1 = await atOcclusion(page, 1, size);
+  const on0 = await atOcclusion(page, 0, size);
+  const added1 = on1.lum - off.lum;
+  const added0 = on0.lum - off.lum;
+  console.log('through the core', { off: off.lum, added1, added0 });
+
+  expect(on1.bytes).not.toBe(on0.bytes);
+  // The reading is what the sprite contributes, the block with the pass on less the
+  // block with the pass off, because through the core the block itself cannot fall. The
+  // spec states the pixel algebra. The measured contribution is 0.00087 at occlusion 1
+  // against 0.01505 at 0, both of them negative: the sprite reads as a hole here, and
+  // the march makes that hole shallower.
+  expect(Math.abs(added1)).toBeLessThan(Math.abs(added0));
 });

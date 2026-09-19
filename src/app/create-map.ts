@@ -332,6 +332,14 @@ export interface MapView {
  */
 export interface GalaxyMapDebug {
   setPasses(passes: Partial<PassSwitches>): void;
+  /**
+   * Sets how much of the volume's extinction a nebula sprite takes, 0 to 1. It writes
+   * the same field as `look.nebulaOcclusion`. The setter sits beside the mutable handle
+   * because the browser tests reach the hook through `window.__galaxyMap`, where a named
+   * call is what the page can expose and type. The frame holds the range, so both routes
+   * give the same picture.
+   */
+  setNebulaOcclusion(value: number): void;
   readonly look: LookSettings;
   measureFrames(count: number): number;
   frameStats(): FrameStats;
@@ -1549,6 +1557,10 @@ export function createGalaxyMap(
     setPasses(passes: Partial<PassSwitches>): void {
       renderer?.setPasses(passes);
       if (passes.regions !== undefined) regionPassOn = passes.regions;
+      drawFrame();
+    },
+    setNebulaOcclusion(value: number): void {
+      renderer?.setNebulaOcclusion(value);
       drawFrame();
     },
     get look(): LookSettings {

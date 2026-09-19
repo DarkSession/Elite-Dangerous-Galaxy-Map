@@ -289,6 +289,7 @@ function start(target: HTMLCanvasElement): void {
   global.setView = (next) => map.setView(next);
   global.project = (point) => debug.project(point);
   global.setPasses = (next) => debug.setPasses(next);
+  global.setNebulaOcclusion = (value) => debug.setNebulaOcclusion(value);
   global.starVertexCount = () => debug.starVertexCount();
   global.starDrawnCount = () => debug.starDrawnCount();
   global.starSuppressedCount = () => debug.starSuppressedCount();

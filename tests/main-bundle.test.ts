@@ -79,8 +79,17 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * chunk already held 26 shader sources; the nebula pair, the pass, the record set and
  * the wiring come to about 12 kB. The guard still holds: a chunk that pulled the 199 KiB
  * region cell table in reads over 370,000 bytes, far above this figure.
+ *
+ * The nebula occlusion march takes the reading to **275,909 bytes**, and the bound moves
+ * to **280,000**, the next round figure above it. The 270,000 bound left 3,004 bytes and
+ * the change needs 8,913. Shader text is most of it: `volume-density.glsl` is a new
+ * source file of about 3.4 kB that two shaders now carry, `nebulae.vert` gains the march
+ * and its comments, and the pass, the renderer wiring and the look constant carry the
+ * rest. The guard still holds at 280,000: a chunk that pulled the 199 KiB region cell
+ * table in reads over 370,000 bytes. The next change that touches this chunk must read
+ * the bound again.
  */
-const ENTRY_CHUNK_LIMIT = 270_000;
+const ENTRY_CHUNK_LIMIT = 280_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first

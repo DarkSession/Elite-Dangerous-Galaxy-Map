@@ -27,6 +27,13 @@ test('every view stays inside the frame budget', async ({ page }) => {
   );
   expect(size).toEqual([1920, 1080]);
 
+  // The nebula march reads the density volume between the camera and each sprite. The
+  // constant is at its default here, and the test sets it so the reading states which
+  // frame it measured.
+  await page.evaluate(() => {
+    window.__galaxyMap?.setNebulaOcclusion?.(1);
+  });
+
   // The most nebula sprites any one view draws. The nebulae fade out above 20,000
   // light years, so some views in the list draw none. One view with sprites is enough
   // to state the budget holds with the nebula pass at work.
@@ -58,7 +65,14 @@ test('every view stays inside the frame budget', async ({ page }) => {
     }
   }
 
-  expect(mostNebulae).toBeGreaterThan(0);
+  // A measured floor, not an estimate. The near end of the band is open, so 500, 1,000,
+  // 2,000, 4,000 and 12,000 light years all draw at weight 1, and the floor is set by a
+  // near view: the cursor at Sol and 500 light years draws 178 sprites. The size floor
+  // admits at most 184 records, which `src/scene-data/nebulae.ts` states beside the
+  // budget, so the count stays under `NEBULA_MAX_DRAWN`. Over the 16 views, the run
+  // that set this floor read a mean of 1.063 ms and a worst of 1.597 ms, against the
+  // 16.7 ms budget.
+  expect(mostNebulae).toBeGreaterThanOrEqual(178);
 });
 
 // The 10 light year view is the new closest zoom. The field adds no light there, but it
