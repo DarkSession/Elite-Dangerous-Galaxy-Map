@@ -24,6 +24,8 @@ const PUBLIC_TYPES = [
   'GalaxyMapOptions',
   'HudAction',
   'HudHandle',
+  'HudInfoFields',
+  'HudMapOption',
   'HudOptions',
   'InteractionSwitches',
   'Line',
@@ -40,6 +42,8 @@ const PUBLIC_TYPES = [
   'Sphere',
   'SphereInput',
   'StartView',
+  'SystemDetailValue',
+  'SystemDetails',
   'SystemImage',
   'SystemRecordInput',
 ];

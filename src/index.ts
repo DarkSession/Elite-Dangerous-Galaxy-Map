@@ -51,4 +51,8 @@ export type {
   Sphere,
   SphereInput,
 } from './scene-data/shapes';
-export type { HudAction, HudHandle, HudOptions } from './hud/types';
+// The panel types. A host cannot write the return of the `details` loader, the
+// `infoFields` object or an entry of `lockedOptions` in typed code without them.
+// `HudAction` is one of them: it names a footer button, which `SystemDetails` carries.
+export type { HudAction, SystemDetails, SystemDetailValue } from './hud/details';
+export type { HudHandle, HudInfoFields, HudMapOption, HudOptions } from './hud/types';

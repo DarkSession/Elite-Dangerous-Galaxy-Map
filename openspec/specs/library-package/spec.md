@@ -36,11 +36,16 @@ dataset types the catalog names: `DatasetEntry`, `DatasetContent`, `DatasetInfo`
 `LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport`, `ShapeReject`, `ShapeInfo` and
 `ShapeKind`, the six
 camera types: `StartView`, `FlyToTarget`, `FlyToOptions`,
-`FlightOutcome`, `BrowseBounds` and `InteractionSwitches`, and **`NebulaSource`**, which
-this change names. A host writes
+`FlightOutcome`, `BrowseBounds` and `InteractionSwitches`, **`NebulaSource`**, which
+`make-nebulae-optional` named, and the **four** panel types `system-details` and `map-hud`
+add: `SystemDetails`, `SystemDetailValue`, `HudInfoFields` and `HudMapOption`. `HudAction`
+is a panel type as well, and it is not new: it stays in the list and changes only the type
+that names it. A host writes
 the catalog itself, so it needs `DatasetEntry` in a
 type position; a list that left the four out would make the `datasets` option unwritable
-in typed code. The same holds for `SphereInput` and `LineInput`, which a host needs to
+in typed code. The same holds for the four panel types: a host cannot write the return of
+the `details` loader, the `infoFields` object or an entry of `lockedOptions` in typed code
+without them. The same holds for `SphereInput` and `LineInput`, which a host needs to
 write the argument of `addSpheres` and `addLines`, and for the six camera types, which a
 host needs to write `startView`, `bounds`, `interaction`, the argument of `flyTo` and the
 parameter of an `onFlightEnd` listener. It
@@ -74,9 +79,36 @@ one switch, which `galactic-regions` states, so the type it named no longer exis
 `setNebulaeVisible(on)` take and give a boolean, so the declaration carries them on
 `GalaxyMap` and the export list does not move for them.
 
-**The package moves to version 0.5.0.** The nebulae drew with no option and now need one.
-A host that built a map with no options saw them and now does not, and the call still
-compiles, so the break is in what the map draws and not in the declaration.
+**The package moves to version 0.6.0.** A description now draws as **Markdown**, which
+`system-details` states. A host that wrote a star, a bracket, a backtick or a backslash in
+a description as literal text escapes it with a backslash, or the panel draws a mark where
+it drew a character.
+
+**The release carries two breaks, and one of them is in the declaration.** The Markdown
+break is in what the panel draws: the call still compiles. The second break is
+`HudOptions.actions`, which this release removes: a host that writes
+`hud: { actions: [...] }` now fails the type check, and moves the same array into the answer
+its `details` loader returns. A minor version carries both, because this package is below
+1.0 and already takes a minor for a break in what the map draws.
+
+**0.6.0 and not 0.5.0**, because `make-nebulae-optional` has landed and took 0.5.0.
+`publish-library-package` claims 0.5.0 as well; whichever of the two lands after this
+change takes the number above the one it finds, because a version that skips a number
+states a break that never happened.
+
+`GalaxyMapOptions` SHALL carry `systemNames`, which `system-selection` states, so each of
+the four map options carries a default. `HudOptions` SHALL carry `details`, `infoFields`
+and `lockedOptions`, which `map-hud` states. All four are optional, and a map built without
+them draws what it drew before this change.
+
+`HudOptions` SHALL NOT carry `actions`. The footer buttons move to `SystemDetails.actions`,
+which `map-hud` and `system-details` state, so one place holds everything the panel shows
+about one system. `HudAction` stays in the export list under the same name, because
+`SystemDetails` names it.
+
+The surface keeps the break 0.5.0 carried. The nebulae drew with no option and now need
+one, so a host that built a map with no options saw them and now does not. The call still
+compiles, so that break too is in what the map draws and not in the declaration.
 
 The surface keeps the breaks 0.3.0 and 0.4.0 carried. `Sphere.color` and `Line.color` are
 optional, because a shape that names a category takes that category's colour, which
@@ -110,23 +142,70 @@ capability already holds says. The readings so far are 236,815, then 252,975, th
 253,520, then **266,996** when `add-nebulae` put the nebula pass, the record set and a
 shader pair into the chunk, which is when the bound moved from 254,000 to 270,000, and
 then **275,909** when `add-nebula-occlusion` added the volume march, which is when the
-bound moved from 270,000 to **280,000**. 280,000 is the bound this change starts from.
+bound moved from 270,000 to **280,000**. 280,000 is the bound `make-nebulae-optional`
+started from.
 
-This change takes the nebula code back out of the chunk, into the second entry point.
+`make-nebulae-optional` took the nebula code back out of the chunk, into the second entry
+point.
 
-**The measured readings are 254,058 and 259,581 bytes, and the bound is 260,000.** The
+**The pair this change starts from is a reading of 254,058 and a bound of 260,000**, which
+`make-nebulae-optional` set and which the rest of this paragraph records. The
 first figure is `index.js` alone and the second is `index.js` with every chunk it imports
 at load. The two differ because the package now has two entry points and
 `src/render/program.ts` is reached from both, so the build puts it in a shared chunk of
 5,523 bytes that `index.js` imports at load. The fall against the 275,909 the tree read
-before is **21,851 bytes** for the entry chunk alone and **16,328 bytes** for the pair,
-and the second figure is the one to compare. The bound moves **down** from 280,000 to
-**260,000**, the next round figure above the reading, and leaves 5,942 bytes of room. A
+before was **21,851 bytes** for the entry chunk alone and **16,328 bytes** for the pair,
+and the second figure is the one to compare. The bound moved **down** from 280,000 to
+**260,000**, the next round figure above the reading, and it leaves 5,942 bytes of room. A
 bound that only ever rises guards less each time, and a reading that falls is the one
 moment the bound can be tightened without guessing.
 
 The bound still catches the one fault it is for at any figure in this range, because the
 region cell table is 199 KiB.
+
+**The reading this change ends at is 254,076 for the entry chunk alone**, and the pair is
+**259,599**. The reading it started from was 254,058, and the pair 259,581, so the entry
+chunk moves 18 bytes. The 18 bytes are the `systemNames` option and the default it takes.
+
+The `actions` work moves neither figure. The reader that takes the footer buttons and the
+draw that puts them in the footer are both HUD code, and `HudAction` is a type the build
+erases, so the type moving from `src/hud/types.ts` to `src/hud/details.ts` costs the entry
+chunk nothing. The bound stays at **260,000**, which leaves 5,924 bytes of room.
+
+**The HUD chunk has a bound of its own**, `HUD_CHUNK_LIMIT` in the same file. This change
+**started** at **56,000 bytes** against a reading of **53,023**, which left about 3,000
+bytes. That is the chunk
+this change grows. The Markdown parser, the details reader, the panel fields and the lock
+list are HUD code, so they land there and not in the entry chunk. The four new types are
+types, and the build erases them.
+
+**The reading before the `actions` work is 61,416 bytes**, which passes the 56,000 bound,
+so the bound moves to **70,000**, the next round 10,000 bytes above the reading. The
+Markdown parser and its render, the details reader, the details request of the panel, the
+field placement rule, the lock list and the new style rules took the 8,393 bytes, and
+every one of them is HUD code.
+
+**The reading this change ends at is 62,293 bytes.** The `actions` work took 437 bytes:
+the reader that keeps at most six buttons, and the draw that puts the buttons of the held
+answer in the footer. The close-scan memo that holds the Markdown parse to a linear cost
+took 440 more. Both are HUD code as well. The bound stays at **70,000**, which leaves
+7,707 bytes of room. The move is not for a data layer: the bound is a guard against
+the HUD pulling one in, and the region cell table alone is 199 KiB, which no room under
+70,000 absorbs.
+
+**The part of this change that reaches the entry chunk is small and named.** It is the
+`systemNames` option and the default it takes.
+
+**The implementation SHALL measure both chunks and SHALL NOT claim a bound holds without
+the reading.** It SHALL read both bounds from `tests/main-bundle.test.ts` rather than from
+this text, because a figure written here ages the moment another change lands. Where a
+reading stays under its bound, the bound does not move and the implementation writes the
+reading here. Where a reading passes its bound, the implementation SHALL move **that one
+bound** to the next round 10,000 bytes above the reading, write both numbers here, and
+state which part of this change took the room. A move of the entry bound SHALL state that
+it is for the option field and not for a main-thread import of the region cell lookup,
+which is the one fault that bound is for: that import adds about 199 KiB, and no room
+under any of these bounds absorbs it.
 
 #### Scenario: The library build carries no page and no demo data
 
@@ -231,7 +310,22 @@ region cell table is 199 KiB.
 #### Scenario: The package names its version
 
 - **WHEN** a test reads `version` from `package.json`
-- **THEN** it is `0.5.0`
+- **THEN** it is `0.6.0`, and `tests/main-bundle.test.ts` asserts the same number
+
+#### Scenario: The declaration names the panel types
+
+- **WHEN** a test compiles a file that imports `SystemDetails`, `SystemDetailValue`,
+  `HudInfoFields`, `HudMapOption` and `HudAction` from the built declaration, writes a
+  `details` loader whose `SystemDetails` carries a `values` entry and an `actions` entry,
+  and writes an `infoFields` object and a `lockedOptions` array
+- **THEN** the compile is clean
+
+#### Scenario: The HUD chunk stays under its bound
+
+- **WHEN** the bundle test reads the built HUD chunk, which carries the Markdown parser,
+  the details reader and the new panel code
+- **THEN** its size is under the HUD bound this requirement states, and the requirement
+  holds the reading the build gave
 
 ### Requirement: The demo site builds apart from the library
 

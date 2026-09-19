@@ -298,16 +298,19 @@ distance already inside 500 light years does not change, so a close view stays c
 `getHover` gives the system under the pointer. The map draws a mark around the hovered
 system and a second mark around the selected one.
 
-Four options build what the host does not have to drive itself:
+Five options build what the host does not have to drive itself:
 
 ```ts
 const map = createGalaxyMap(canvas, {
   grid: true,
+  systemNames: true,
   cursorMarker: true,
   loadingImage: '/loader.svg',
   hud: {
     title: 'GALACTIC CARTOGRAPHICS',
-    actions: [{ label: 'LOG RECORD', onSelect: (system) => console.log(system) }],
+    details: (system) => ({
+      actions: [{ label: 'LOG RECORD', onSelect: (record) => console.log(record) }],
+    }),
   },
 });
 ```
@@ -355,12 +358,115 @@ attributes: an `<img>` element reads no size from the file's own CSS, and a file
 the attributes grows with the box it sits in. The demo site names its own
 `EDLoader1.svg`, which it serves from the site's own origin at 170 by 170.
 
+`systemNames` starts the map with the marker name labels on. The labels are off unless
+the options ask for them, because a set of 10,000 systems opens on a screen of labels
+otherwise. `setSystemNamesVisible` and `areSystemNamesVisible` drive them later, and the
+HUD's **System names** switch opens on the state the option gives.
+
 `hud` builds the heads-up display. `true` builds it with its defaults, and an object
-names the `title`, the `host` element and the footer `actions`. With no `host` the HUD
-goes in the canvas's parent. Each action carries a `label` and an `onSelect(system)`
-callback, and its button draws in the information panel footer. The HUD is a separate
-chunk that loads by dynamic import, so `map.hud` is null until `ready` settles. The
-handle then carries `element`, `refresh()` and `dispose()`.
+names the `title`, the `host` element, the `details` loader, the `infoFields` switches
+and the `lockedOptions` list. With no `host` the HUD goes in the canvas's parent. The
+footer buttons come from the `details` loader, which is the one place that holds
+everything the panel shows about a system. The HUD is a separate chunk that loads by
+dynamic import, so `map.hud` is null until `ready` settles. The handle then carries
+`element`, `refresh()` and `dispose()`.
+
+**The panel draws a description as Markdown.** The library owns the parser. It builds DOM
+nodes one at a time, it sets no `innerHTML`, and it reads no host string as HTML, so raw
+HTML in the text draws as text. The subset holds paragraphs, hard line breaks, bold
+`**x**`, italic `*x*`, inline code, links `[label](url)`, bullet lists and numbered
+lists. Nothing else is a mark: a line that starts with `#`, `>`, `|` or four spaces draws
+as text, and `_` is never a mark, because a system name such as `Col 285 Sector XY_Z`
+carries one.
+
+A backslash escapes `\`, a backtick, `*`, `[`, `]`, `(` and `)`, and draws that one
+character. **A description that holds a star, a bracket, a backtick or a backslash as
+plain text now needs that escape**, which is the first break version 0.6.0 carries. The
+second is `HudOptions.actions`, which that version **removes**: a host that wrote
+`hud: { actions: [...] }` moves the same array into the answer its `details` loader
+returns, for every system. A link
+draws as a link where its URL holds no whitespace, and where its scheme is `http` or
+`https` or it names no scheme; every other URL, such as a `javascript:` one, draws as
+text. A drawn link opens in a tab of its own and carries `rel="noreferrer noopener"`.
+
+```ts
+map.addSystems([
+  {
+    name: 'HIP 36823',
+    coords: { x: 570.4, y: 17.5, z: -68.6 },
+    primaryCategory: 'Beacon',
+    description:
+      'A **Guardian beacon** points to a ruins site.\n\n' +
+      '- The site is 1,100 light years away\n' +
+      '- Read [the survey](https://example.test/survey)\n\n' +
+      'The tag \\[GPL\\] draws as plain text.',
+  },
+]);
+```
+
+**`details` loads the description, the extra values and the footer buttons of one
+system.**
+`details(system, signal)` returns a `SystemDetails`, a promise of one, or null. The panel
+calls it once for each system it opens on, never per frame and never per record. It draws
+a `LOADING…` line while a promise runs. The library aborts `signal` when the selection
+changes and on `dispose`, so a host that fetches passes the signal to `fetch` and the
+request stops. The panel drops an answer whose selection has moved. A loader that throws,
+and a promise that rejects, reach `console.warn`; the panel then draws the record's own
+`description`, which is also what it draws when the host gives no loader and when the
+answer carries none.
+
+A `SystemDetails` carries an optional `description` string, an optional `values` array of
+`SystemDetailValue` and an optional `actions` array of `HudAction`. A `values` entry
+carries a `label`, and either a short `value`, which joins the field grid, or a
+`markdown` body, which draws as its own section under the description. A `value` entry
+may carry a `copy`, which gives it a copy button. The library keeps at most 12 entries
+and drops an entry it cannot read.
+
+An `actions` entry carries a `label` and an `onSelect(system)` callback, and its button
+draws in the information panel footer beside the centre view button. The library keeps at
+most 6 entries and drops an entry it cannot read. **The buttons arrive with the answer.**
+The panel draws the footer and its centre view button before it calls the loader, so the
+footer never appears late, but a slow load shows the centre view button alone while it
+runs and a failed load shows it alone for good. A host that needs a button on a system
+whose details cannot load returns that button from the failure path of its own loader.
+
+```ts
+const map = createGalaxyMap(canvas, {
+  hud: {
+    details: async (system, signal) => {
+      const answer = await fetch(`/systems/${system.name}`, { signal });
+      const held = (await answer.json()) as { about: string; faction: string };
+      return {
+        description: held.about,
+        values: [
+          { label: 'FACTION', value: held.faction, copy: held.faction },
+          { label: 'HISTORY', markdown: 'The **first** survey ran in 3304.' },
+        ],
+        actions: [{ label: 'LOG RECORD', onSelect: (record) => console.log(record) }],
+      };
+    },
+    infoFields: { distanceFromSol: true, range: true, region: false },
+    lockedOptions: ['grid', 'shapes'],
+  },
+});
+```
+
+**`infoFields` turns the three worked-out fields off.** A `HudInfoFields` holds the
+boolean fields `distanceFromSol`, `range` and `region`. Each one is on unless the host
+names it false, and a value that is not a boolean takes the default. The setting covers
+every system, and a field the host turns off is not built. With `region` false the panel
+asks for no region, so the map never fetches the 199 KiB region cell table that
+`regionNameAtExact` loads.
+
+**`lockedOptions` holds a map option at the host's setting.** It is an array of
+`HudMapOption`, which is `regions`, `systemNames`, `grid`, `shapes` or `nebulae`. A
+locked option draws **no switch**, because a switch the user may not move is a control
+that does nothing. When every switch the panel would hold is locked, the HUD builds no
+map options panel and the left column holds the category browser alone. The count is not
+fixed: a map with no nebula source holds four switches and a map with one holds five. The
+handle's setters still move a locked option, so a lock holds the user and not the host. A
+name the list does not hold is ignored, and a `lockedOptions` that is not an array is
+ignored.
 
 A change to the system set or the category table reaches the HUD in the next animation
 frame. The map collects the changes of one turn and rebuilds the rows once, so a host

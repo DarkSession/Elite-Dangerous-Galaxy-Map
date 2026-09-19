@@ -99,6 +99,13 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * less each time, and a reading that falls is the one moment it can be tightened without
  * guessing. The guard still holds: a chunk that pulled the 199 KiB region cell table in
  * reads over 370,000 bytes.
+ *
+ * The host panel controls take the reading to **254,076 bytes**, and the pair to
+ * **259,599**. The 18 bytes are the `systemNames` option and the default it takes, which
+ * is the whole of that change that reaches the entry chunk: the Markdown parser, the
+ * details reader, the panel work and the footer buttons of the `details` answer are all
+ * HUD code, and `HudAction` is a type the build erases. The bound stays at 260,000,
+ * which leaves 5,924 bytes of room.
  */
 const ENTRY_CHUNK_LIMIT = 260_000;
 
@@ -113,8 +120,22 @@ const ENTRY_CHUNK_LIMIT = 260_000;
  * 56,000, which leaves 2,977 bytes of room: no room under that figure absorbs a data
  * layer, so the guard holds. The comment above recorded 47,360 as the last reading and
  * the tree had already moved past it; this entry is the reading of the tree.
+ *
+ * The reading is **61,416 bytes** with the host panel controls, which passes the 56,000
+ * bound, so the bound moves to **70,000**, the next round 10,000 bytes above it. The
+ * Markdown parser and its render, the details reader, the details request of the panel,
+ * the field placement rule, the lock list and the new style rules are what took the
+ * room, and all of them are HUD code.
+ *
+ * The reading is **62,293 bytes** once the footer buttons come from the `details` answer
+ * and the Markdown parser holds its close-scan answers. The reader that keeps at most six
+ * buttons and the draw that puts them in the footer took 437 bytes, and the memo that
+ * makes the parse linear took 440 more. All of them are HUD code as well. The bound stays
+ * at 70,000, which leaves 7,707 bytes of room. The guard still holds at that figure: it
+ * is a guard against the HUD pulling in a data layer, and the region cell table alone is
+ * 199 KiB.
  */
-const HUD_CHUNK_LIMIT = 56_000;
+const HUD_CHUNK_LIMIT = 70_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,
@@ -183,6 +204,10 @@ const PUBLIC_TYPES = [
   'BrowseBounds',
   'InteractionSwitches',
   'NebulaSource',
+  'SystemDetails',
+  'SystemDetailValue',
+  'HudInfoFields',
+  'HudMapOption',
 ];
 
 /**
@@ -761,7 +786,16 @@ describe('the library build', () => {
     // 0.5.0: the nebulae drew with no option and now need one. A host that built a map
     // with no options saw them and now does not, and the call still compiles, so the
     // break is again in what the map draws.
-    expect(manifest.version).toBe('0.5.0');
+    //
+    // 0.6.0 carries two breaks. The first is in what the panel draws: a description now
+    // draws as Markdown, so a host that wrote a star, a bracket, a backtick or a
+    // backslash in one as literal text escapes it with a backslash.
+    //
+    // The second is in what compiles. `HudOptions.actions` is removed, and the footer
+    // buttons come from `SystemDetails.actions` alone, so a host that writes
+    // `hud: { actions: [...] }` now fails the type check. It moves the same array into
+    // the answer its `details` loader returns.
+    expect(manifest.version).toBe('0.6.0');
 
     // Every entry of `exports`, and not the `.` entry alone. The `./nebulae` entry names
     // two more paths, and a reading of the main entry alone would leave them unchecked.
@@ -900,6 +934,33 @@ describe('the library build', () => {
         'map.setNebulaeVisible(!held);\n' +
         'const on: boolean = map.areNebulaeVisible();\n' +
         'void on;\n',
+      'utf8',
+    );
+    expect(typeCheck(host)).toBe('');
+  }, 60_000);
+
+  // The panel types a host writes: the return of the `details` loader, which now carries
+  // the footer buttons, the `infoFields` object and an entry of `lockedOptions`. The test
+  // above declares each type on its own, which a type alias satisfies. This one writes
+  // the three options through `HudOptions`, which fails if an option ever stops naming
+  // its type.
+  test('the declaration names the panel types', () => {
+    const host = join(outDir, 'reads-the-panel-types.ts');
+    writeFileSync(
+      host,
+      'import type { HudAction, HudInfoFields, HudMapOption, HudOptions, RealSystem, ' +
+        "SystemDetailValue, SystemDetails } from './types/index';\n" +
+        "const value: SystemDetailValue = { label: 'FACTION', value: 'Pilots' };\n" +
+        "const action: HudAction = { label: 'LOG', onSelect: () => undefined };\n" +
+        'const details = (system: RealSystem, signal: AbortSignal): SystemDetails => {\n' +
+        '  void signal.aborted;\n' +
+        '  return { description: system.name, values: [value], actions: [action] };\n' +
+        '};\n' +
+        'const infoFields: HudInfoFields = { distanceFromSol: false, region: true };\n' +
+        "const lockedOptions: HudMapOption[] = ['regions', 'systemNames', 'grid', " +
+        "'shapes', 'nebulae'];\n" +
+        'const options: HudOptions = { details, infoFields, lockedOptions };\n' +
+        'void options;\n',
       'utf8',
     );
     expect(typeCheck(host)).toBe('');

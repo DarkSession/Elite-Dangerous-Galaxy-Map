@@ -32,6 +32,14 @@ declare global {
     __selectionLog?: (string | null)[];
     /** The second map the HUD tests build, with the HUD on. */
     __hudMap?: GalaxyMap;
+    /** The second map the information panel tests build, with a details loader. */
+    __panelMap?: GalaxyMap;
+    /** The names of the systems the details loader was called with. */
+    __detailsCalls?: string[];
+    /** The signals the details loader was given, in the order of the calls. */
+    __detailsSignals?: AbortSignal[];
+    /** The second map the name label option tests build. */
+    __namesMap?: GalaxyMap;
     /** The second map the start-view tests build, with a `startView` of their own. */
     __startMap?: GalaxyMap;
     /** The map the touch tests build, over a canvas that states no `touch-action`. */

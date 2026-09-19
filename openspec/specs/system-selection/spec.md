@@ -529,9 +529,14 @@ on it.
 The hovered system and the selected system SHALL always carry a label, whatever the
 switch below says.
 
-The handle SHALL carry `setSystemNamesVisible(on)` and `areSystemNamesVisible()`. The
-switch SHALL be off when the map starts. While it is on, every drawn marker SHALL be a
-label candidate.
+The handle SHALL carry `setSystemNamesVisible(on)` and `areSystemNamesVisible()`. While it
+is on, every drawn marker SHALL be a label candidate.
+
+**The host sets the state the map starts in.** `GalaxyMapOptions` SHALL carry
+`systemNames`. True starts the map with the labels on, and the switch SHALL be **off**
+when the options leave it out, when it is false, and when it holds a value that is not a
+boolean. Off stays the default because a set of 10,000 systems opens on a screen of
+labels otherwise, and the other three map options already carry a default of their own.
 
 **A name label SHALL carry a stroke and SHALL NOT carry a blurred shadow.** The stroke
 SHALL be **2 CSS pixels** in `rgba(0, 0, 0, 0.9)`, drawn under the glyph. The label was
@@ -589,6 +594,19 @@ The placement SHALL hold to these bounds:
   colour within 2 on each channel of `rgba(0, 0, 0, 0.9)`, and `stroke` or `stroke fill`
   for the paint order, which is what puts the stroke under the glyph. `coordinate-grid`
   states why the paint order has two strings
+
+#### Scenario: The option starts the labels on
+
+- **WHEN** a browser test builds a map with `systemNames: true`, adds 10 systems in view,
+  draws a frame and counts the name labels, and a second builds one with no `systemNames`
+  option and does the same
+- **THEN** the first count is 10 and the second is 0
+
+#### Scenario: An unreadable option keeps the labels off
+
+- **WHEN** a browser test builds a map whose `systemNames` is the string `yes`, adds 10
+  systems in view, draws a frame and reads `areSystemNamesVisible` and the label count
+- **THEN** the reading is false and the count is 0
 
 ### Requirement: Selection holds the frame budget
 

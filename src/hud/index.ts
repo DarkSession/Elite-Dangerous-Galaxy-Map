@@ -9,12 +9,13 @@ import { createDatasetDialog } from './dataset-dialog';
 import { make } from './dom';
 import { createInfoPanel } from './info-panel';
 import { createLightbox } from './lightbox';
-import { createOptionsPanel } from './options-panel';
+import { createOptionsPanel, readLockedOptions } from './options-panel';
 import { addHudStyles } from './styles';
 import { createTopBar, DEFAULT_TITLE } from './top-bar';
 import type { HudHandle, HudOptions } from './types';
 
-export type { HudAction, HudHandle, HudOptions } from './types';
+export type { HudAction } from './details';
+export type { HudHandle, HudOptions } from './types';
 
 /** How often the HUD rewrites what follows the view, in milliseconds. */
 export const UPDATE_INTERVAL_MS = 100;
@@ -42,11 +43,19 @@ export function createHud(
     datasetDialog?.open(topBar.dataset?.button ?? null);
   });
   const categories = createCategoryPanel(doc, map);
-  const optionsPanel = createOptionsPanel(doc, map);
-  const info = createInfoPanel(doc, map, options.actions ?? [], lightbox);
+  // The panel is null where every switch it would hold is locked. The count is not
+  // fixed: a map with no nebula source holds four switches and a map with one holds
+  // five.
+  const optionsPanel = createOptionsPanel(
+    doc,
+    map,
+    readLockedOptions(options.lockedOptions),
+  );
+  const info = createInfoPanel(doc, map, options, lightbox);
 
   const left = make(doc, 'div', 'gm-hud__left');
-  left.append(categories.element, optionsPanel.element);
+  left.appendChild(categories.element);
+  if (optionsPanel !== null) left.appendChild(optionsPanel.element);
   element.append(topBar.element, left, info.element, lightbox.element);
   if (datasetDialog !== null) element.appendChild(datasetDialog.element);
 
@@ -91,7 +100,7 @@ export function createHud(
       info.update();
     }
     categories.poll();
-    optionsPanel.update();
+    optionsPanel?.update();
   };
   const timer = window.setInterval(tick, UPDATE_INTERVAL_MS);
 
@@ -99,7 +108,7 @@ export function createHud(
     topBar.update();
     topBar.dataset?.update();
     categories.rebuild();
-    optionsPanel.update();
+    optionsPanel?.update();
     info.rebuild();
   };
 

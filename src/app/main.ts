@@ -230,16 +230,41 @@ function start(target: HTMLCanvasElement): void {
     // That is this page's own option: a host that gives no `grid` still gets no grid.
     grid: decodeGrid(window.location.hash) !== false,
     // The demo page is a host application, so it turns the HUD on the way any other
-    // host does, and it adds one footer action to show what `actions` gives a host.
+    // host does.
     hud: {
-      actions: [
-        {
-          label: 'LOG RECORD',
-          onSelect: (system) => {
-            console.info('The demo action read a system.', system);
+      // The loader the panel calls when the user opens it. It gives everything the panel
+      // shows about one system: the description, the extra values and the footer
+      // buttons. The demo page holds its descriptions in the dataset, so the loader
+      // passes the record's own text on and adds one value, a body that draws as its own
+      // section, and one button. A host that keeps its text in a second store fetches it
+      // here instead, and passes the signal to `fetch`.
+      //
+      // The loader gives no field for the grid. The panel already draws the categories
+      // as chips, so a grid field that named the primary category would draw the same
+      // fact twice. `e2e/info-panel.spec.ts` covers a grid value on a map of its own.
+      details: (system) => ({
+        description:
+          system.description ?? '*The dataset holds no survey text for this system.*',
+        actions: [
+          {
+            label: 'LOG RECORD',
+            onSelect: (record) => {
+              console.info('The demo action read a system.', record);
+            },
           },
-        },
-      ],
+        ],
+        values: [
+          {
+            label: 'ABOUT THIS TEXT',
+            markdown:
+              'The demo page loads this section with the `details` option. The panel ' +
+              'draws it in the Markdown subset, which holds:\n\n' +
+              '- **bold**, *italic* and `code`\n' +
+              '- bullet lists and numbered lists\n' +
+              '- links, which open in a tab of their own',
+          },
+        ],
+      }),
     },
   });
   // The shapes of the set that loads. `loadDataset` writes the systems and clears the

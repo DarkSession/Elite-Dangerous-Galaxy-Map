@@ -582,16 +582,11 @@ const styleText = `
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 8px 9px;
 }
-/* The position field holds the longest value of the panel, so it takes both columns. */
+/* The position field holds the longest value of the panel, so it takes both columns.
+   The region field takes both for the same reading, and so does a field that would
+   otherwise leave the other cell of its row empty. The panel works out which fields are
+   wide and writes this class, because a field the host turned off moves the rest. */
 .gm-hud__field--wide {
-  grid-column: 1 / -1;
-}
-/* The position field and the region field each fill two cells, and the two distances
-   fill one each, so the four fields every record shows fill six cells and leave the grid
-   full. A grid of n fields therefore fills n + 2 cells, and an odd count of fields leaves
-   the last one alone on its row. It takes both columns, so the grid shows no empty
-   cell. */
-.gm-hud__field:last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
 .gm-hud__field-head {
@@ -662,6 +657,39 @@ const styleText = `
   font-size: 13px;
   line-height: 1.6;
   color: rgba(244, 230, 216, 0.85);
+}
+/* The nodes the Markdown render builds. It builds a plain element for each mark, so the
+   rules read the element and the description takes no class of its own. */
+.gm-hud__description p {
+  margin: 0 0 8px;
+}
+.gm-hud__description p:last-child {
+  margin-bottom: 0;
+}
+.gm-hud__description ul,
+.gm-hud__description ol {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style-position: inside;
+}
+.gm-hud__description li {
+  padding-left: 14px;
+}
+.gm-hud__description code {
+  font-family: ${MONO};
+  font-size: 12px;
+  padding: 1px 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.gm-hud__description a {
+  color: ${ACCENT};
+}
+/* The line the panel shows while a host's details loader runs. */
+.gm-hud__loading {
+  font-family: ${MONO};
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: rgba(244, 230, 216, 0.45);
 }
 .gm-hud__thumbs {
   display: grid;
