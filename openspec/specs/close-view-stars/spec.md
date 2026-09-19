@@ -9,7 +9,6 @@ zoom distance of 2,560 light years and adds no light at 640 and below.
 
 ## Requirements
 
-
 ### Requirement: The star field uses the game's mass-code octree
 
 The star field SHALL place its stars in boxels of the mass-code grid: the grid origin
@@ -142,14 +141,17 @@ The boxel SHALL place `min(256, round(count))` stars. That number is the boxel's
 SHALL be the placed count less the stars a real system suppresses. A boxel whose count
 rounds to zero SHALL place no star.
 
+The calibration is held against two measurements of Sol's neighbourhood: **3.8 systems
+per 1,000 cubic light years** at Sol, and **16,000 systems within 100 light years**.
+This requirement is the record of both figures.
+
 #### Scenario: The count at Sol matches the neighbourhood measurement
 
 - **WHEN** a unit test reads the system count per 1,000 cubic light years at Sol, the
   count of the 20 light year boxel that holds Sol, and the count within 100 light years
   of Sol by numeric integration
-- **THEN** the first is 3.80 within 0.05, against the roadmap's measured 3.8; the
-  second is 30 within 1; and the third is within 5 percent of 15,650, against the
-  roadmap's measured 16,000
+- **THEN** the first is 3.80 within 0.05, against the measured 3.8; the second is 30
+  within 1; and the third is within 5 percent of 15,650, against the measured 16,000
 
 #### Scenario: The calibration falls with the density
 
@@ -668,11 +670,18 @@ crosses the frame would enter every one of the three readings, and no subtractio
 removes it. The overlay is not part of the star field, so it goes off with the volume, the
 clouds, the glow and the points rather than the bounds going up.
 
+**The two readings that state an absolute difference SHALL switch the nebulae off** for
+the same reason. The nebula band has no near end, so 135 sprites draw at the 500 light
+years these readings open at, and one bright sprite takes the difference between the
+brightest pixel and the corners to 0.14003 against a bound of 0.01. The grain reading
+divides by the mean of its own block, so a smooth sprite moves it by little and it does
+not name the switch.
+
 #### Scenario: The field alone rises above the background
 
 - **WHEN** the browser test holds the close fade at 1, opens `#c=0,0,0&d=500&p=35&y=0`
-  with the volume, the clouds, the glow, the points and the region overlay switched off
-  and the stars on
+  with the volume, the clouds, the nebulae, the glow, the points and the region overlay
+  switched off and the stars on
 - **THEN** the brightest pixel of the frame has luminance at least 0.05 above the mean
   luminance of the four corner pixels, and with the stars also switched off that
   difference is below 0.01
@@ -689,8 +698,8 @@ clouds, the glow and the points rather than the bounds going up.
 #### Scenario: The field adds no light at the close zoom distances
 
 - **WHEN** the browser test opens `#c=0,0,0&d=500&p=35&y=0` with the volume, the clouds,
-  the glow, the points and the region overlay switched off and the stars on, and does not
-  hold the close fade
+  the nebulae, the glow, the points and the region overlay switched off and the stars on,
+  and does not hold the close fade
 - **THEN** the brightest pixel of the frame is within 0.01 of the mean luminance of the
   four corner pixels
 

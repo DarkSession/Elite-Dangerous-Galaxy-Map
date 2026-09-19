@@ -6,7 +6,6 @@ the look of the game's galaxy map, exact positions at every distance, and a fram
 
 ## Requirements
 
-
 ### Requirement: Hardware rendering is asserted
 At startup the renderer SHALL read the unmasked renderer string through
 `WEBGL_debug_renderer_info`, or `RENDERER` when that extension is absent, and expose it
@@ -29,7 +28,6 @@ names a software renderer.
 - **THEN** the first test fails, because the exposed string names `SwiftShader`, which
   is what current Chromium falls back to, or because the string is missing
 
-
 ### Requirement: WebGL2 is required
 If the browser gives no WebGL2 context, the page SHALL show a message that says WebGL2
 is required and SHALL NOT throw.
@@ -37,7 +35,6 @@ is required and SHALL NOT throw.
 #### Scenario: No WebGL2
 - **WHEN** the page starts in a browser that returns null for a `webgl2` context
 - **THEN** the page shows the message and the console has no uncaught error
-
 
 ### Requirement: Three scene passes and a tone map compose the far view
 
@@ -204,7 +201,6 @@ sprites soften.
   all three switched off
 - **THEN** the two image files are byte-identical
 
-
 ### Requirement: Rendering is camera-relative
 The renderer SHALL subtract the camera position from world positions before any
 `float32` matrix multiplication, with the subtraction done in `float64` on the CPU per
@@ -265,7 +261,6 @@ of Sol when the camera looks from Sol toward the centre.
 - **WHEN** a unit test projects Sol and (10,000, 0, 0) with the default view
 - **THEN** the second point's screen `x` is greater than Sol's
 
-
 ### Requirement: Frame budget
 At 1920x1080 on the dev container's GPU, the mean render time over 300 consecutive
 frames SHALL stay under 16.7 ms at zoom distances of 2,000, 12,000, 20,000, 30,000
@@ -292,7 +287,6 @@ SHALL NOT call `gl.finish()`.
   calls the measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms
 
-
 ### Requirement: Canvas follows the window
 The canvas SHALL fill the viewport and SHALL resize its drawing buffer to the viewport
 size times the device pixel ratio, capped at 2, when the window resizes.
@@ -301,10 +295,9 @@ size times the device pixel ratio, capped at 2, when the window resizes.
 - **WHEN** the browser test resizes the viewport to 800x600 at device pixel ratio 2
 - **THEN** the drawing buffer is 1600x1200
 
-
 ### Requirement: Glow surrounds the disc
-A blurred copy of the volume and cloud passes SHALL be added to the scene before the
-tone map, scaled by a weight and tinted toward the haze colour. The copy SHALL be
+A blurred copy of the volume, cloud and nebula passes SHALL be added to the scene before
+the tone map, scaled by a weight and tinted toward the haze colour. The copy SHALL be
 downsampled with a box filter before the blur, so no source pixel is skipped. The
 downsample SHALL hold the source luminance down to a clamp, so the brightest pixels do
 not spread over the whole frame. The blur radius SHALL be a fixed fraction of the
@@ -325,6 +318,11 @@ off, beside the switches for the volume, the clouds and the points.
   6,000 and 12,000 light years above the galactic centre
 - **THEN** the first has luminance at most 0.20 and the second at most 0.08
 
+#### Scenario: No nebula reaches the glow at the default view
+- **WHEN** the browser test renders the default view at 60,000 light years with the
+  nebula pass on and then with it off
+- **THEN** the two frames are the same, because the nebula fade by zoom distance gives
+  every record weight 0 at and above 20,000 light years
 
 ### Requirement: Cloud shapes come from a generated set
 The renderer SHALL build a set of 16 cloud shapes of 64 x 64 texels each, once, from a
@@ -360,7 +358,6 @@ differ from one another, so neighbouring sprites do not repeat.
 #### Scenario: Deterministic
 - **WHEN** a unit test builds the set twice
 - **THEN** the two arrays are byte-identical
-
 
 ### Requirement: Cloud sprites give the haze its chunks
 
@@ -472,7 +469,6 @@ image pins them.
   clouds off and reads it again
 - **THEN** the reading with the clouds on is at most 0.10 above the reading with them
   off
-
 
 ### Requirement: The tone map dithers
 The tone map SHALL add a dither of one 8-bit step, triangular, from a hash of the

@@ -549,7 +549,7 @@ src/camera/         the view state, the projection, the controls
 src/hud/            the heads-up display, its styles and the bundled fonts
 e2e/                the Playwright tests and the baseline image
 tests/fixtures/     the model fixture and the detail fixture
-docs/               the model formulas and the roadmap
+docs/               the model formulas
 ```
 
 `src/galaxy-model/` and `src/scene-data/` must not import `src/render/`. An ESLint rule

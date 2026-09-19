@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRangeBuffer, RANGE_EMPTY, readsFloatTargets } from './buffers';
+import type { NebulaAtlasImage } from './buffers';
 import { createFrameAccumulator, createRenderer } from './renderer';
 import { createShapeSet } from '../scene-data/shapes';
 import { createSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
-import type { RegionLines } from '../scene-data/types';
+import { buildNebulaSet } from '../scene-data/nebulae';
+import type { NebulaSet } from '../scene-data/nebulae';
+import { DEFAULT_NEBULA_BRIGHTNESS } from './nebula-pass';
+import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
   test('reads the count, the mean and the worst over 10 frames', () => {
@@ -383,5 +387,177 @@ describe('the overlay order', () => {
     const formats = context.of('texImage2D').map((call) => call.args[2]);
     expect(formats).not.toContain(gl.RGBA16F);
     expect(formats).not.toContain(gl.R32F);
+  });
+});
+
+/** A one-texel density volume, which is enough to make the cloud pass draw. */
+function tinyVolume(): DensityVolume {
+  return {
+    size: [1, 1, 1],
+    origin: [-100, -100, -100],
+    extent: [200, 200, 200],
+    lo: -10,
+    hi: 0,
+    epsilon: 1e-6,
+    data: Uint8Array.from([128]),
+  };
+}
+
+/** One cloud sample at the cursor. */
+function oneCloud(): CloudSet {
+  return {
+    count: 1,
+    positions: Float32Array.from([0, 0, 0]),
+    tints: Uint8Array.from([128]),
+    radii: Float32Array.from([1000]),
+    ratios: Float32Array.from([1e-3]),
+  };
+}
+
+/** One nebula at the cursor, large enough to pass the size floor at 12,000 ly. */
+function oneNebula(): NebulaSet {
+  return buildNebulaSet({
+    tiles: Array.from({ length: 34 }, (_unused, index) => `tile-${index}`),
+    records: [[0, 0, 0, 200, 0, 'one']],
+  });
+}
+
+/** A decoded atlas file, which the upload reads the tile side from. */
+function atlasImage(): NebulaAtlasImage {
+  return { width: 384, height: 384 } as unknown as NebulaAtlasImage;
+}
+
+/** The pass a draw belongs to, read from the shaders its program was linked from. */
+function scenePassOf(sources: readonly string[]): string {
+  const source = sources.join('\n');
+  if (source.includes('uAtlasSide')) return 'nebulae';
+  if (source.includes('uSpreadPower')) return 'clouds';
+  if (source.includes('uAbsorption')) return 'volume';
+  return 'other';
+}
+
+describe('the nebula pass in the frame', () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  /** Draws one frame with the volume, the clouds and the nebulae all held. */
+  function sceneFrame(distance: number): {
+    context: FakeContext;
+    renderer: ReturnType<typeof createRenderer>;
+    order: string[];
+  } {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setVolume(tinyVolume());
+    renderer.setCloudSet(oneCloud());
+    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.render({ cursor: [0, 0, 0], distance, yaw: 0, pitch: 30 });
+    const order = context
+      .drawSources()
+      .map(scenePassOf)
+      .filter((name) => name !== 'other');
+    return { context, renderer, order };
+  }
+
+  test('carries a brightness of its own, which the caller may change', () => {
+    const { renderer } = sceneFrame(12000);
+    expect(renderer.look.nebulaBrightness).toBe(DEFAULT_NEBULA_BRIGHTNESS);
+    renderer.look.nebulaBrightness = 3.5;
+    expect(renderer.look.nebulaBrightness).toBe(3.5);
+    renderer.dispose();
+  });
+
+  test('draws after the cloud sprites, into the same target', () => {
+    const { context, renderer, order } = sceneFrame(12000);
+    expect(order).toEqual(['volume', 'clouds', 'nebulae']);
+
+    // The framebuffer bound at the nebula draw is the one bound at the cloud draw, so
+    // the nebulae join the volume and the clouds in the half-resolution target and the
+    // glow reads all three.
+    let bound: unknown = 'none';
+    const targets = new Map<string, unknown>();
+    let drawIndex = 0;
+    const names = context.drawSources().map(scenePassOf);
+    for (const call of context.calls) {
+      if (call.name === 'bindFramebuffer') bound = call.args[1];
+      if (
+        call.name === 'drawArrays' ||
+        call.name === 'drawArraysInstanced' ||
+        call.name === 'drawElements'
+      ) {
+        const name = names[drawIndex] as string;
+        if (name !== 'other' && !targets.has(name)) targets.set(name, bound);
+        drawIndex += 1;
+      }
+    }
+    expect(targets.get('nebulae')).toBe(targets.get('clouds'));
+    expect(targets.get('nebulae')).toBe(targets.get('volume'));
+    renderer.dispose();
+  });
+
+  test('reports the drawn count and the one draw call', () => {
+    const { renderer } = sceneFrame(12000);
+    expect(renderer.nebulaDrawnCount()).toBe(1);
+    expect(renderer.nebulaDrawCalls()).toBe(1);
+    renderer.dispose();
+  });
+
+  test('draws nothing at the default view, where the zoom weight is 0', () => {
+    const { renderer, order } = sceneFrame(60000);
+    expect(order).not.toContain('nebulae');
+    expect(renderer.nebulaDrawnCount()).toBe(0);
+    expect(renderer.nebulaDrawCalls()).toBe(0);
+    renderer.dispose();
+  });
+
+  // The set arrives from a fetch, so the first frames draw before it is there.
+  test('draws nothing and reports no error before the set arrives', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setVolume(tinyVolume());
+    renderer.setCloudSet(oneCloud());
+    expect(() =>
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 }),
+    ).not.toThrow();
+    const order = context.drawSources().map(scenePassOf);
+    expect(order).toContain('clouds');
+    expect(order).not.toContain('nebulae');
+    expect(renderer.nebulaDrawnCount()).toBe(0);
+    expect(renderer.nebulaDrawCalls()).toBe(0);
+    renderer.dispose();
+  });
+
+  test('draws nothing while the switch is off', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setVolume(tinyVolume());
+    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setPasses({ nebulae: false });
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+    const order = context.drawSources().map(scenePassOf);
+    expect(order).not.toContain('nebulae');
+    expect(renderer.nebulaDrawnCount()).toBe(0);
+    renderer.dispose();
+  });
+
+  // The glow reads the half-resolution target, so it must run in a frame where the
+  // nebulae drew and the volume and the clouds did not.
+  test('runs the glow when the nebulae drew alone', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setVolume(tinyVolume());
+    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setPasses({ volume: false, clouds: false, nebulae: true, glow: true });
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+    const glowDraws = context
+      .drawSources()
+      .filter((sources) => sources.join('\n').includes('uClamp')).length;
+    expect(glowDraws).toBeGreaterThan(0);
+    renderer.dispose();
   });
 });

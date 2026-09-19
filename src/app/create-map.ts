@@ -16,6 +16,8 @@ import {
 import type { BrowseBounds, ResolvedBounds } from '../camera/view';
 import type { View } from '../camera/view';
 import { loadDetailGrid } from '../galaxy-model/detail';
+import { loadNebulaAtlas } from '../render/buffers';
+import { loadNebulaSet } from '../scene-data/nebulae';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import { createGalaxyModel } from '../galaxy-model/model';
 import type { HudHandle, HudOptions } from '../hud/types';
@@ -339,6 +341,15 @@ export interface GalaxyMapDebug {
   starDrawnCount(): number;
   starSuppressedCount(): number;
   systemMarkerCount(): number;
+  /** How many nebula instances the last frame drew. */
+  nebulaDrawnCount(): number;
+  /** How many draw calls the last frame's nebula pass issued. */
+  nebulaDrawCalls(): number;
+  /**
+   * Whether the nebula records and the atlas reached the renderer. The start chain does
+   * not wait for them, so a caller that reads the pass must wait for this.
+   */
+  nebulaeAttached(): boolean;
   /**
    * How long the last rebuild of the marker flags took, in milliseconds. The sweep runs
    * on a change of the set, the table, the visibility or the filter, and not on a
@@ -934,6 +945,10 @@ export function createGalaxyMap(
   let jumped = false;
 
   let renderer: Renderer | null = null;
+  let nebulaeAttached = false;
+  // The decoded sprite atlas, from the fetch until the upload frees it. `dispose` frees
+  // it from here when it runs in that window.
+  let pendingAtlas: ImageBitmap | null = null;
   let labels: LabelOverlay | null = null;
   let markers: MarkerOverlay | null = null;
   let gridLabels: GridLabelOverlay | null = null;
@@ -1324,6 +1339,33 @@ export function createGalaxyMap(
     // detailed density, so the grid loads beside them.
     const scenePromise = loadSceneData({ signal: loadStop.signal });
     const detailPromise = loadDetailGrid();
+    // The nebulae are not part of the first frame. A failure here leaves the map
+    // without them and every other pass drawing, so the pair is reported and dropped
+    // rather than thrown. Both halves settle, because one half alone draws nothing and
+    // the decoded atlas must close even where the records fail.
+    const nebulaPromise = Promise.allSettled([loadNebulaSet(), loadNebulaAtlas()]).then(
+      ([records, atlas]) => {
+        if (records.status === 'fulfilled' && atlas.status === 'fulfilled') {
+          // A dispose before the atlas arrives frees it here. After this point
+          // `pendingAtlas` holds it, and `dispose` frees it from there.
+          if (disposed) {
+            atlas.value.close();
+            return null;
+          }
+          pendingAtlas = atlas.value;
+          return [records.value, atlas.value] as const;
+        }
+        if (atlas.status === 'fulfilled') atlas.value.close();
+        const reason =
+          records.status === 'rejected'
+            ? records.reason
+            : atlas.status === 'rejected'
+              ? atlas.reason
+              : undefined;
+        console.warn('The map dropped the nebulae.', reason);
+        return null;
+      },
+    );
 
     await nextFrame();
     if (disposed) return;
@@ -1413,6 +1455,32 @@ export function createGalaxyMap(
     if (disposed) return;
     renderer.setStarField(createGalaxyModel(parameters, detailGrid));
 
+    // The nebulae attach after the loop runs, and the start chain does not wait for
+    // them. An await here would hold the first frame, and the loading picture with it,
+    // behind a fetch that may never answer, and every other pass would be down with the
+    // nebulae. The loop draws every frame, so the sprites appear on the frame after the
+    // upload.
+    void nebulaPromise
+      .then((nebulae) => {
+        if (nebulae === null) return;
+        const [records, atlas] = nebulae;
+        // The texture copies the pixels, so the decoded atlas closes on every path.
+        try {
+          if (!disposed && renderer !== null) {
+            renderer.setNebulae(records, atlas);
+            nebulaeAttached = true;
+          }
+        } finally {
+          atlas.close();
+          pendingAtlas = null;
+        }
+      })
+      // The upload reads the atlas and throws on a shape the tile grid cannot hold.
+      // The map keeps every other pass, as it does for a failed fetch.
+      .catch((reason: unknown) => {
+        console.warn('The map dropped the nebulae.', reason);
+      });
+
     await nextFrame();
     if (disposed) return;
     drawFrame();
@@ -1495,6 +1563,15 @@ export function createGalaxyMap(
     },
     resetFrameStats(): void {
       renderer?.resetFrameStats();
+    },
+    nebulaDrawnCount(): number {
+      return renderer?.nebulaDrawnCount() ?? 0;
+    },
+    nebulaDrawCalls(): number {
+      return renderer?.nebulaDrawCalls() ?? 0;
+    },
+    nebulaeAttached(): boolean {
+      return nebulaeAttached;
     },
     drawNow(): void {
       drawFrame();
@@ -1693,6 +1770,10 @@ export function createGalaxyMap(
       window.removeEventListener('resize', onResize);
       hud?.dispose();
       hud = null;
+      if (pendingAtlas !== null) {
+        pendingAtlas.close();
+        pendingAtlas = null;
+      }
       renderer?.dispose();
       renderer = null;
       labels = null;

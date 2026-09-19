@@ -34,10 +34,6 @@ change in the renderer. The second holds the HUD to the public handle of
 [src/app/create-map.ts](src/app/create-map.ts), so a host can build its own chrome from
 the same members the HUD uses.
 
-The work is planned in four phases. [docs/roadmap.md](docs/roadmap.md) records each
-phase, the facts gathered for it, the decisions that span phases and the open
-questions. Read it before proposing a change, and update it when a decision changes.
-
 ## Stack
 
 | Piece              | Choice                                                              |

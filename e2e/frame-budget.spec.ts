@@ -27,9 +27,14 @@ test('every view stays inside the frame budget', async ({ page }) => {
   );
   expect(size).toEqual([1920, 1080]);
 
+  // The most nebula sprites any one view draws. The nebulae fade out above 20,000
+  // light years, so some views in the list draw none. One view with sprites is enough
+  // to state the budget holds with the nebula pass at work.
+  let mostNebulae = 0;
+
   for (const cursor of [SOL, GALACTIC_CENTRE]) {
     for (const distance of DISTANCES) {
-      const mean = await page.evaluate(
+      const report = await page.evaluate(
         (view) => {
           window.__galaxyMap?.setView?.({
             cursor: view.cursor,
@@ -37,17 +42,23 @@ test('every view stays inside the frame budget', async ({ page }) => {
             yaw: 0,
             pitch: 35,
           });
-          return window.__galaxyMap?.measureFrames?.(300) ?? Number.POSITIVE_INFINITY;
+          const mean =
+            window.__galaxyMap?.measureFrames?.(300) ?? Number.POSITIVE_INFINITY;
+          return { mean, nebulae: window.__galaxyMap?.nebulaDrawnCount?.() ?? 0 };
         },
         { cursor, distance },
       );
       console.log(
-        `cursor ${cursor.join(',')} distance ${distance}: ${mean.toFixed(3)} ms`,
+        `cursor ${cursor.join(',')} distance ${distance}: ` +
+          `${report.mean.toFixed(3)} ms, ${report.nebulae} nebulae`,
       );
-      expect(mean).toBeGreaterThan(0);
-      expect(mean).toBeLessThan(BUDGET_MS);
+      mostNebulae = Math.max(mostNebulae, report.nebulae);
+      expect(report.mean).toBeGreaterThan(0);
+      expect(report.mean).toBeLessThan(BUDGET_MS);
     }
   }
+
+  expect(mostNebulae).toBeGreaterThan(0);
 });
 
 // The 10 light year view is the new closest zoom. The field adds no light there, but it

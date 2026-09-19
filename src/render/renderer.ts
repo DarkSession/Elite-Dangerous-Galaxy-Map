@@ -6,6 +6,8 @@ import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
 import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
+import { nebulaFocalPixels, selectNebulae } from '../scene-data/nebulae';
+import type { NebulaSet } from '../scene-data/nebulae';
 import type { RealSystemSet } from '../scene-data/real-systems';
 import type { ShapeSet } from '../scene-data/shapes';
 import { createStarField } from '../scene-data/star-field';
@@ -17,10 +19,12 @@ import type {
   RegionLines,
   SurfaceDetail,
 } from '../scene-data/types';
+import type { NebulaAtlasImage } from './buffers';
 import {
   createCloudBuffers,
   createDetailTexture,
   createFullScreenTriangle,
+  createNebulaAtlasTexture,
   createRangeBuffer,
   createRenderTarget,
   createShapeTexture,
@@ -36,6 +40,12 @@ import {
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
+import {
+  createNebulaPass,
+  createNebulaProgram,
+  DEFAULT_NEBULA_BRIGHTNESS,
+} from './nebula-pass';
+import type { NebulaPass } from './nebula-pass';
 import {
   createGridPass,
   createGridProgram,
@@ -154,6 +164,7 @@ export function createFrameAccumulator(): FrameAccumulator {
 export interface PassSwitches {
   volume: boolean;
   clouds: boolean;
+  nebulae: boolean;
   points: boolean;
   stars: boolean;
   glow: boolean;
@@ -168,6 +179,7 @@ export interface LookSettings {
   emission: number;
   absorption: number;
   cloudBrightness: number;
+  nebulaBrightness: number;
   pointBrightness: number;
   exposure: number;
   glowWeight: number;
@@ -185,6 +197,15 @@ export interface Renderer {
   setPointCloud(cloud: PointCloud): void;
   /** Uploads the cloud set. Call it in its own animation frame. */
   setCloudSet(set: CloudSet): void;
+  /**
+   * Takes the nebula record set and its sprite atlas. Call it in its own animation
+   * frame. Before it is called the nebula pass draws nothing.
+   */
+  setNebulae(set: NebulaSet, atlas: NebulaAtlasImage): void;
+  /** How many nebula instances the last frame drew. */
+  nebulaDrawnCount(): number;
+  /** How many draw calls the last frame's nebula pass issued: one, or none. */
+  nebulaDrawCalls(): number;
   /** Uploads the surface detail grid. Call it in its own animation frame. */
   setDetail(detail: SurfaceDetail): void;
   /**
@@ -343,6 +364,7 @@ export function createRenderer(
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const shapePrograms: ShapePrograms = createShapePrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
+  const nebulaProgram: Program = createNebulaProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
 
@@ -393,6 +415,10 @@ export function createRenderer(
   let shapeCalls = 0;
   let markerCalls = 0;
   let cloudPass: CloudPass | null = null;
+  let nebulaPass: NebulaPass | null = null;
+  let nebulaSet: NebulaSet | null = null;
+  let nebulaDrawn = 0;
+  let nebulaCalls = 0;
   let volumePass: VolumePass | null = null;
   let volumeBox: DensityVolume | null = null;
   let detailTexture: DetailTexture | null = null;
@@ -400,6 +426,7 @@ export function createRenderer(
   const passes: PassSwitches = {
     volume: true,
     clouds: true,
+    nebulae: true,
     points: true,
     stars: true,
     glow: true,
@@ -412,6 +439,7 @@ export function createRenderer(
     emission: DEFAULT_EMISSION,
     absorption: DEFAULT_ABSORPTION,
     cloudBrightness: DEFAULT_CLOUD_BRIGHTNESS,
+    nebulaBrightness: DEFAULT_NEBULA_BRIGHTNESS,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
     glowWeight: DEFAULT_GLOW_WEIGHT,
@@ -531,6 +559,37 @@ export function createRenderer(
       });
     }
 
+    // The nebulae join the volume and the clouds in the half-resolution target, after
+    // the cloud sprites. The glow then reads them with the rest of the source, and the
+    // tone map reads them with the rest of the scene. The blend is source-over, so a
+    // dark nebula attenuates what the two passes before it drew.
+    nebulaDrawn = 0;
+    nebulaCalls = 0;
+    if (passes.nebulae && nebulaPass !== null && nebulaSet !== null) {
+      const area = viewport();
+      // The size floor and the cap are stated in CSS pixels, so the selection reads
+      // the canvas and not the half-resolution target it draws into.
+      const selection = selectNebulae(nebulaSet, {
+        camera: [camera[0], camera[1], camera[2]],
+        distance: view.distance,
+        focalPixels: nebulaFocalPixels(area.height, FIELD_OF_VIEW_DEGREES),
+        canvasHeightCss: area.height,
+      });
+      const halfFocal =
+        halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+      nebulaPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        chunkOffset: [-camera[0], -camera[1], camera[2]],
+        targetSize: [halfTarget.width, halfTarget.height],
+        spriteScale: halfFocal,
+        brightness: look.nebulaBrightness,
+        weight: selection.weight,
+        instances: selection.instances,
+      });
+      nebulaDrawn = nebulaPass.drawnCount;
+      nebulaCalls = nebulaPass.drawCalls;
+    }
+
     // The scene target holds the sum of the scene passes.
     gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget.framebuffer);
     gl.viewport(0, 0, sceneTarget.width, sceneTarget.height);
@@ -538,9 +597,9 @@ export function createRenderer(
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.blit(halfTarget.texture);
 
-    // The glow adds a blurred copy of the volume and the clouds, so a halo
-    // surrounds the disc.
-    if (passes.glow && (passes.volume || passes.clouds)) {
+    // The glow adds a blurred copy of the volume, the clouds and the nebulae, so a
+    // halo surrounds the disc.
+    if (passes.glow && (passes.volume || passes.clouds || passes.nebulae)) {
       glowPass.render(
         halfTarget.texture,
         look.glowWeight,
@@ -761,6 +820,29 @@ export function createRenderer(
         shapeTexture,
       );
     },
+    setNebulae(set: NebulaSet, atlas: NebulaAtlasImage): void {
+      // Everything that can throw runs before the old pass is disposed. The texture
+      // throws on an atlas the tile grid cannot hold, and the pass throws where the
+      // context gives no buffer. A dispose before either would leave the frame drawing
+      // through a freed vertex array on a second call that fails.
+      const texture = createNebulaAtlasTexture(gl, atlas);
+      let pass: NebulaPass;
+      try {
+        pass = createNebulaPass(gl, nebulaProgram, set, texture);
+      } catch (reason: unknown) {
+        texture.dispose();
+        throw reason;
+      }
+      nebulaPass?.dispose();
+      nebulaSet = set;
+      nebulaPass = pass;
+    },
+    nebulaDrawnCount(): number {
+      return nebulaDrawn;
+    },
+    nebulaDrawCalls(): number {
+      return nebulaCalls;
+    },
     setDetail(detail: SurfaceDetail): void {
       detailTexture?.dispose();
       detailTexture = createDetailTexture(gl, detail);
@@ -908,6 +990,7 @@ export function createRenderer(
     setPasses(next: Partial<PassSwitches>): void {
       if (next.volume !== undefined) passes.volume = next.volume;
       if (next.clouds !== undefined) passes.clouds = next.clouds;
+      if (next.nebulae !== undefined) passes.nebulae = next.nebulae;
       if (next.points !== undefined) passes.points = next.points;
       if (next.stars !== undefined) passes.stars = next.stars;
       if (next.grid !== undefined) passes.grid = next.grid;
@@ -993,6 +1076,7 @@ export function createRenderer(
       regionPass?.dispose();
       shapePass.dispose();
       cloudPass?.dispose();
+      nebulaPass?.dispose();
       volumePass?.dispose();
       detailTexture?.dispose();
       shapeTexture.dispose();
@@ -1010,6 +1094,7 @@ export function createRenderer(
       gl.deleteProgram(shapePrograms.lines.program);
       gl.deleteProgram(shapePrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);
+      gl.deleteProgram(nebulaProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();
       triangle.dispose();
