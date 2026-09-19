@@ -1,0 +1,223 @@
+## Context
+
+See [proposal.md](proposal.md) for the motivation and the measured step at a flip.
+
+Three facts of the tree shape the design.
+
+**The pass writes into a target that already holds the scene.** The volume and the cloud
+sprites draw into the half-resolution target, and the nebula pass blends over what they
+left. The emission and the background are mixed in the same three channels from the first
+record onward, so nothing downstream of that first blend can separate them.
+
+**The shader already computes both terms the new blend needs.** The march accumulates a
+per-channel transmittance and an emission, and writes
+`vec4(emission * vTransmittance * vWeight, (1.0 - transmittance.a) * mean * vWeight)`,
+where `vTransmittance` is the occlusion from the galaxy dust and `vWeight` the fade. The
+alpha it writes is one minus a transmittance, so the transmittance is the same expression
+without the subtraction. The colour channels already carry the march's own transmittance,
+applied per step inside the sum, and nothing multiplies them by it again.
+
+**Source-over with the right order is already exact for the background.** Drawing A then
+B gives `Eb + Tb * Ea + Ta * Tb * Bg`. The background term `Ta * Tb * Bg` does not depend
+on the order at all. Only the emission terms do. The flip is therefore a change in how
+much one nebula dims another, and never a change in how much the pair dims the sky.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- A frame that does not change when two records change rank.
+- One composite draw a frame, whatever the count of records.
+- The same blend on a card with a floating point target and on one without.
+
+**Non-Goals:**
+
+- An exact composite of two overlapping nebulae. No per-record order gives one, and this
+  design does not try. See the spec.
+- A second pass over the records, a depth pre-pass, or per-fragment sorting.
+- Any change to the march, the transfer tables, the selection floor or the budget.
+
+## Decisions
+
+### Accumulate emission and transmittance separately, then composite once
+
+**Chosen:** the pass draws into an accumulation target cleared to `(0, 0, 0, 1)`, with
+`blendFuncSeparate(ONE, ONE, ZERO, SRC_ALPHA)`. The colour channels sum the emissions and
+the alpha channel takes the product of the transmittances, because
+`dst.a = 0 * src.a + src.a * dst.a`. One full-screen draw then applies
+`scene = accumulated.rgb + accumulated.a * scene`.
+
+- _Why:_ it is the exact answer for records that do not overlap, it is one draw call more
+  than today, and it needs no sort. The whole ordering question leaves the pass.
+- _Why a separate target is unavoidable:_ the sum of the emissions and the product of the
+  transmittances have to stay apart until the last step, and the half-resolution target
+  has the background in the same channels from the first record onward. There is no blend
+  equation over one target that keeps them apart.
+- _Rejected:_ weighted blended order-independent transparency. It weights each fragment by
+  its depth, so a nearer record dominates and the overlap error shrinks. It costs a second
+  accumulation target, it needs a weight function tuned against this art, and the weight is
+  a new look control with no reading behind it. The error it would reduce is one this
+  change measures first. If task 4.2 says the overlap error is what blocks the change, this
+  is where to look next.
+- _Rejected:_ keeping source-over and stabilising the sort. Hysteresis delays a flip and
+  does not remove it, and a delayed flip is the same step at a different camera angle.
+
+### Group 1 keeps the frame by changing the alpha factor, not the clear
+
+**Chosen:** the accumulation target clears to `(0, 0, 0, 1)` and the composite writes
+`vec4(accumulated.rgb, 1 - accumulated.a)` from the first task onward, and neither changes
+again. Group 1 draws the records with
+`blendFuncSeparate(ONE, ONE_MINUS_SRC_ALPHA, ZERO, ONE_MINUS_SRC_ALPHA)`, which is
+source-over in the colour channels and `dst.a = (1 - src.a) * dst.a` in the alpha channel.
+The alpha channel therefore holds the product of one minus the alphas, the composite turns
+it into the same attenuation source-over would have applied, and the frame is unchanged.
+
+- _Why:_ the clear and the composite are the two pieces the whole scheme rests on, and a
+  group that changed them and then changed them back would make the group 1 commit a
+  different shape from the group 3 commit. With this split, group 3 changes one blend call
+  and one shader line and nothing else.
+- _Why not the obvious form:_ clearing to `(0, 0, 0, 0)` and drawing with plain
+  `blendFunc(ONE, ONE_MINUS_SRC_ALPHA)` looks simpler, but `blendFunc` sets all four
+  channels, so from a clear of 1 the alpha channel reads
+  `src.a + (1 - src.a) * 1 = 1` after every record. The composite would then write an alpha
+  of 0, the scene would never be attenuated, and a dark nebula would stop dimming. The
+  alpha factor has to be separated in group 1 as well; only the colour factor waits for
+  group 3.
+
+### The pass saves and restores the framebuffer binding
+
+**Chosen:** the draw reads `FRAMEBUFFER_BINDING`, binds its own target, and binds the
+saved value back before the composite.
+
+- _Why:_ `NebulaDraw.draw` takes a frame and no framebuffer. The renderer leaves the
+  half-resolution target bound and calls the draw, which is a contract this change should
+  not widen. Reading the binding keeps the pass self-contained and keeps `NebulaFrame` to
+  one new member, the number format.
+- _Rejected:_ a framebuffer on `NebulaFrame`. It puts a WebGL handle in a published type
+  for no gain, and the renderer would then have to pass what it had already bound.
+
+### The CPU reference composites the way the pass does
+
+**Chosen:** `scripts/build-nebula-fixture.mjs` drops its own range sort and composites
+additively, and both `.bin` fixtures are rebuilt in the same commit as the shader.
+
+- _Why:_ the fixture frames draw 105 and 109 records, not one. The reference composites
+  them source-over by hand, so an unchanged reference read against the new pass would
+  report the blend change as a march error. The test exists to catch a march error, and a
+  reference that moved for another reason makes it useless in both directions.
+- _On what the reading then proves:_ less than it did, for one run. The rebuilt reference
+  and the new pass change together, so the comparison cannot say the frame is unchanged. It
+  says the march still agrees with an independent statement of the same integral and the
+  same composite, which is what the requirement asks of it. The check that the frame did
+  not change elsewhere is task 4.3, over the readings of `e2e/nebulae.spec.ts`.
+- _Rejected:_ keeping the old reference and widening the bound. That hides the size of the
+  change in the bound and leaves the next reader unable to tell a march error from this
+  one.
+
+### The shader writes the transmittance, not one minus it
+
+**Chosen:** the fragment shader's alpha becomes
+`1 - (1 - transmittance.a) * mean * fade`, which is the transmittance of the record.
+
+- _Why:_ the blend multiplies by `SRC_ALPHA`, so the alpha channel has to carry the factor
+  the background is multiplied by. Writing it in the shader keeps the one expression in one
+  place, and the composite then reads a number that means what its name says.
+- _On the range:_ a unit test already holds the current alpha inside 0 to 1 for every
+  asset, which puts the new alpha in 0 to 1 as well. Five assets carry a negative
+  extinction channel and the march has no upper clamp, so that test is what the range rests
+  on. It stays, and it is the reason the product of the transmittances cannot run away.
+- _Rejected:_ writing one minus the transmittance and using `ONE_MINUS_SRC_ALPHA` in the
+  alpha factor. That gives `dst.a = (1 - src.a) * dst.a`, which is the same product written
+  the other way round, but the composite then needs the subtraction instead, and the value
+  in the target means neither one thing nor the other while it accumulates.
+
+### The accumulation target follows the half-resolution target
+
+**Chosen:** the same size and the same `float` flag, through the existing
+`createRenderTarget`.
+
+- _Why:_ the pass is written against the half-resolution target's size today, and the
+  boxes it marches are projected into it. A different size would move every reading the
+  cost tests hold. The `float` flag keeps the card without floating point targets on one
+  code path.
+- _The cost on the non-floating path:_ `RGBA8` quantises the transmittance product to 8
+  bits, and a frame drawing 124 records multiplies 124 such numbers. The error compounds.
+  The argument that this change does not make it worse is that source-over writes the same
+  quantised product into the same 8 bits step by step today. **That is an argument and not
+  a reading.** No committed test exercises it: `e2e/00-renderer.spec.ts` asserts
+  `EXT_color_buffer_float` on every run, so every target in the suite is `RGBA16F`, and the
+  browser test that refuses the compressed-texture extensions changes the format of the
+  **art** and not of the target. Reading it would need a test that stubs
+  `EXT_color_buffer_float` to null, which this change does not add.
+
+### The composite is its own shader pair
+
+**Chosen:** a full-screen triangle with a two-line fragment shader, in
+`src/render/shaders/`, and the draw in `src/render/nebula-pass.ts`.
+
+- _Why:_ the pass owns its target and its composite, so the renderer keeps one call and
+  the whole graph stays behind `src/nebulae/`. The import rule that keeps the nebula art
+  out of a host that asks for no nebulae is what decides this: a composite shader in the
+  renderer would be in the main chunk.
+- _Rejected:_ reusing `src/render/composite-pass.ts`. It reads the scene target and tone
+  maps it, which is a different draw at a different place in the frame.
+
+## Risks / Trade-offs
+
+- **The overlap error may be larger than the step it removes.** → This is the risk that
+  decides the change. The probe read 1.84 screen areas over 124 records at the near view, so
+  the records do overlap there; task 2.4 re-takes it, and no task assumes it. Task 2.4 captures the frames before and task 4.2 reads the rise against
+  them, per camera. The gate has two halves. The committed readings of `e2e/nebulae.spec.ts`
+  either hold or they do not, which is task 4.3; and the rise itself must stay under a
+  tenth of the light the camera drew before, which is task 4.2 and which the spec states as
+  a scenario. That tenth is a judgement, written down as one. Task 4.5 is the abort branch.
+  The committed readings are a weak proxy on their own — most of them assert that light
+  rose, so a blend that adds light passes them harder — which is why the rise has a bound of
+  its own.
+- **The step may not fall to the floor.** → The spec bounds it at 8, which is the no-flip
+  floor the sweep measured. If the blend is order independent the step must reach that
+  floor, so a reading above it means something else still depends on the order — the
+  selection, the budget fade or the clear. Task 4.1 reads the same sweep the probe ran.
+- **One more full-screen draw and one more target.** → 230,400 fragments and 1,843,200
+  bytes at 1280 by 720. The pass already reads far more than that per frame in the march,
+  so the composite should not show. Task 2.2 takes the cost before and task 4.4 after, at the cameras
+  the cost spec already uses, each against the bound that spec states for it.
+- **Every reading of a view inside the band moves.** → The committed baseline image is
+  safe, because it draws no nebula at 60,000 light years. Nothing else is: the two CPU
+  fixture frames draw 105 and 109 records, so the one-record identity covers no committed
+  reading. The light can rise and cannot fall, because each record's alpha is held from 0
+  to 1. Task 2.3 enumerates the readings, task 4.3 reads them again, and **no bound moves
+  to make a test pass** — a broken bound is the abort signal of task 4.5.
+- **The one-record identity is a floating point claim.** → On the `RGBA8` fallback the
+  emission and the alpha are quantised into a separate target before the composite, so
+  "identical" becomes "identical to the precision of that target". Nothing rests on it: no
+  committed reading draws one record, and the suite runs on the floating point path.
+- **The glow reads a different image.** → The glow reads the half-resolution target after
+  the composite, so it reads the same kind of image it reads today. Brighter overlaps make
+  a brighter halo, which is the overlap error again and not a second effect.
+
+## Migration Plan
+
+1. Add the accumulation target, the composite shader and the composite draw, with the pass
+   still blending source-over into the accumulation target and the sort still in place.
+   The frame is unchanged, which is what makes this step safe to check on its own.
+2. Add the sweep test of the spec's continuity scenario and run it against that tree. It
+   fails, and the reading it fails with is the before figure the proposal states.
+3. Change the blend and the shader's alpha, and remove the range sort. The sweep passes.
+4. Read the overlap difference and the pass cost. Either the change lands or step 5 runs.
+5. The abort branch: revert the commits of steps 1 and 3 together, which takes the
+   accumulation target, the composite and the blend out in one move. The target is one
+   extra draw for no gain once the blend goes back, so it does not stay. Keep the sweep
+   test of step 2, marked as expected to fail with the reading that stopped the change,
+   because that is the measurement a later attempt starts from.
+
+**Rollback** after the change lands is the same revert. No published type, record file or
+asset moves, and `NebulaFrame` loses the member it gained, so nothing outside the package
+notices.
+
+## Open Questions
+
+- Whether the accumulation target wants `NEAREST` filtering. The composite reads it at
+  one texel per fragment, so the filter cannot matter, but the existing helper sets
+  `LINEAR` and this design does not change the helper. It changes no requirement and no
+  task.
