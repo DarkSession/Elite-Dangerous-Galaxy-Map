@@ -478,12 +478,12 @@ function acceptingCanvas(): HTMLCanvasElement {
 /** A source of spies the map can read, with a draw that draws nothing. */
 function spySource(): {
   loadSet: ReturnType<typeof vi.fn>;
-  loadAtlas: ReturnType<typeof vi.fn>;
+  loadVolumes: ReturnType<typeof vi.fn>;
   createDraw: ReturnType<typeof vi.fn>;
 } {
   return {
     loadSet: vi.fn(() => new Promise(() => undefined)),
-    loadAtlas: vi.fn(() => new Promise(() => undefined)),
+    loadVolumes: vi.fn(() => new Promise(() => undefined)),
     createDraw: vi.fn(() => ({
       draw: () => undefined,
       drawnCount: 0,
@@ -547,8 +547,8 @@ describe('the nebula option', () => {
     expect(readNebulaSource(undefined)).toBeNull();
     expect(readNebulaSource({})).toBeNull();
     // Two of the three members, which is the near miss a hand-written source makes.
-    const { loadSet, loadAtlas } = spySource();
-    expect(readNebulaSource({ loadSet, loadAtlas })).toBeNull();
+    const { loadSet, loadVolumes } = spySource();
+    expect(readNebulaSource({ loadSet, loadVolumes })).toBeNull();
     expect(readNebulaSource({ loadSet, createDraw: () => undefined })).toBeNull();
   });
 
@@ -560,7 +560,7 @@ describe('the nebula option', () => {
       true,
       null,
       {},
-      { loadSet: partial.loadSet, loadAtlas: partial.loadAtlas },
+      { loadSet: partial.loadSet, loadVolumes: partial.loadVolumes },
     ];
 
     for (const value of unreadable) {
@@ -579,7 +579,7 @@ describe('the nebula option', () => {
     }
 
     expect(partial.loadSet).not.toHaveBeenCalled();
-    expect(partial.loadAtlas).not.toHaveBeenCalled();
+    expect(partial.loadVolumes).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
     warn.mockRestore();
@@ -594,7 +594,7 @@ describe('the nebula option', () => {
     await map.ready.catch(() => undefined);
 
     expect(source.loadSet).toHaveBeenCalledTimes(1);
-    expect(source.loadAtlas).toHaveBeenCalledTimes(1);
+    expect(source.loadVolumes).toHaveBeenCalledTimes(1);
     expect(map.hasNebulae()).toBe(true);
     // The sprites open visible on a map that holds a source.
     expect(map.areNebulaeVisible()).toBe(true);
@@ -602,6 +602,30 @@ describe('the nebula option', () => {
     expect(map.areNebulaeVisible()).toBe(false);
     map.setNebulaeVisible(true);
     expect(map.areNebulaeVisible()).toBe(true);
+  });
+
+  // The nebulae are not part of the first frame, so a load that fails is reported and
+  // dropped. The map keeps running and every other pass keeps drawing.
+  test('drops the nebulae and keeps drawing when the art fails to load', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const source = spySource();
+    source.loadSet.mockReturnValue(Promise.resolve({ count: 0 }));
+    source.loadVolumes.mockReturnValue(
+      Promise.reject(new Error('The nebula volume index did not load.')),
+    );
+
+    const map = createGalaxyMap(acceptingCanvas(), { nebulae: source as never });
+    await map.ready.catch(() => undefined);
+    await Promise.resolve();
+
+    expect(source.createDraw).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      'The map dropped the nebulae.',
+      expect.anything(),
+    );
+    // The map still holds its source, so the rest of it is untouched by the failure.
+    expect(map.hasNebulae()).toBe(true);
+    warn.mockRestore();
   });
 
   test('holds no nebulae with no option at all', async () => {

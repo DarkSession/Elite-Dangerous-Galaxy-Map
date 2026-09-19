@@ -3,12 +3,12 @@
 // Eleven modules of `src/` import `buffers.ts` and nine of them import it as a value, so
 // the main entry point reaches this module at load whatever the renderer does about the
 // nebulae. Vite emits an asset from its transform hook, which runs before tree shaking,
-// so a build that reaches a module naming `nebula-art.webp` carries the file even where
-// every call that would fetch it is shaken away.
+// so a build that reaches a module naming `./nebula-art/*` carries all 68 files even
+// where every call that would fetch them is shaken away.
 //
 // The test reads the source and not a build, because it is the import graph that decides
 // this and not the calls. Every other test of this change passes on a tree that puts the
-// atlas import back here; this one does not.
+// volume import back here; this one does not.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';

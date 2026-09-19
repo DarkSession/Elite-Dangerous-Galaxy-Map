@@ -47,15 +47,15 @@ function importGroupsFor(directory) {
  */
 const nebulaImportGroups = [
   './nebula-pass',
-  './nebula-atlas',
+  './nebula-volumes',
   '../render/nebula-pass',
-  '../render/nebula-atlas',
+  '../render/nebula-volumes',
   '../../render/nebula-pass',
-  '../../render/nebula-atlas',
+  '../../render/nebula-volumes',
   'src/render/nebula-pass',
-  'src/render/nebula-atlas',
+  'src/render/nebula-volumes',
   '**/render/nebula-pass',
-  '**/render/nebula-atlas',
+  '**/render/nebula-volumes',
   '../scene-data/nebulae',
   '../../scene-data/nebulae',
   './nebulae',
@@ -179,7 +179,7 @@ export default tseslint.config(
   },
   {
     // The nebulae are the optional feature, and the main entry point must not reach
-    // them. A value import pulls the pass, the two shaders, the sprite atlas and the
+    // them. A value import pulls the pass, the two shaders, the volume art and the
     // record set into the chunk every host downloads; a type import costs nothing,
     // because the build erases it. The renderer therefore reaches the nebulae through
     // `src/render/nebula-slot.ts` alone, which this rule does not name.
@@ -197,7 +197,7 @@ export default tseslint.config(
     ignores: [
       'src/nebulae/**',
       'src/render/nebula-pass.ts',
-      'src/render/nebula-atlas.ts',
+      'src/render/nebula-volumes.ts',
       '**/*.test.ts',
     ],
     rules: {

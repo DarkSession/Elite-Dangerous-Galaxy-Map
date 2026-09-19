@@ -172,6 +172,15 @@ draw that puts them in the footer are both HUD code, and `HudAction` is a type t
 erases, so the type moving from `src/hud/types.ts` to `src/hud/details.ts` costs the entry
 chunk nothing. The bound stays at **260,000**, which leaves 5,924 bytes of room.
 
+**The reading the marched volumes end at is 254,496 for the entry chunk alone**, and the
+pair is **260,019**. The reading they started from was 254,076, and the pair 259,599, so
+the entry chunk moves 420 bytes. The 420 bytes are the light gain array and the step rate
+on `src/render/nebula-slot.ts`, and the two selection readings the browser tests need, less
+the drawn-radius cap and the two fades that change deletes. Every map carries all of them.
+The volume art, the volume module and the pass all sit behind the `./nebulae` subpath and
+reach no chunk here. The bound stays at **260,000**, which leaves 5,504 bytes of room. The
+bound reads `index.js` alone, so the pair above it is a reading and not a failure.
+
 **The HUD chunk has a bound of its own**, `HUD_CHUNK_LIMIT` in the same file. This change
 **started** at **56,000 bytes** against a reading of **53,023**, which left about 3,000
 bytes. That is the chunk
@@ -268,8 +277,8 @@ under any of these bounds absorbs it.
 
 - **WHEN** a test runs the library build and reads the entry chunk and every chunk the
   entry chunk imports at load
-- **THEN** none of them holds the nebula shader text, the record file name or the sprite
-  atlas file name
+- **THEN** none of them holds the nebula shader text, the record file name, the volume index
+  name or any volume asset name
 
 #### Scenario: The entry point exports the camera surface
 

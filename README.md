@@ -90,7 +90,7 @@ nebula source of **[The nebulae](#the-nebulae)**. `pnpm build` writes the two mo
 `dist/index.js` and `dist/nebulae.js`, and their declarations to `dist/types/`.
 
 A host that imports the package root alone reaches no nebula module, so its bundler
-leaves the nebula code, the record file and the sprite art out of its build.
+leaves the nebula code, the record file and the volume art out of its build.
 
 `createGalaxyMap(canvas, options)` in
 [src/app/create-map.ts](src/app/create-map.ts) builds a map. It returns a handle in the
@@ -257,9 +257,11 @@ marker further out.
 
 ## The nebulae
 
-The map draws 358 nebulae as sprites, 190 of them named, from a record file of 14,626
-bytes and one sprite atlas of 811,762 bytes. They are an **opt-in**, because a host pays for that art
-in its own build. A host that wants them imports the source from the subpath and passes
+The map draws 358 nebulae as ray-marched volumes, 190 of them named, from a record file
+of 18,411 bytes and 33 volume assets. The art directory holds 2,914,225 bytes: 2,770,472
+of volume blocks, 135,168 of transfer tables and 8,585 of the index. Each record names an asset, a
+radius and three rotation angles, so two records over one asset can differ. They are an
+**opt-in**, because a host pays for that art in its own build. A host that wants them imports the source from the subpath and passes
 it in the options:
 
 ```ts
@@ -270,18 +272,18 @@ const map = createGalaxyMap(canvas, { nebulae });
 ```
 
 The source names the record file and the art, and the map loads both after the first
-frame. The sprites appear when the pair arrives, so nothing holds the first frame behind
+frame. The nebulae appear when the pair arrives, so nothing holds the first frame behind
 them. A failed load leaves the map drawing every other pass.
 
 Three handle members drive them. `hasNebulae()` answers whether the map holds a source it
-can read. `setNebulaeVisible(on)` takes the sprites off the frame and gives them back,
+can read. `setNebulaeVisible(on)` takes the nebulae off the frame and gives them back,
 and `areNebulaeVisible()` reads that state. The switch keeps the records and the art on
-the GPU, so the sprites come back without a second download. A map with no source reads
+the GPU, so they come back without a second download. A map with no source reads
 `false` from `hasNebulae()` and from `areNebulaeVisible()`, and `setNebulaeVisible` then
 changes nothing.
 
 The options object takes the source by value and not by name: the map calls `loadSet`,
-`loadAtlas` and `createDraw` on the object the host gives it. An option that is not an
+`loadVolumes` and `createDraw` on the object the host gives it. An option that is not an
 object, or that does not carry the three calls, turns the nebulae off and reports
 nothing.
 
@@ -703,6 +705,6 @@ holds that line, so a different density source can replace the data layers witho
 change in the renderer. A second rule stops `src/hud/` importing `src/render/`,
 `src/scene-data/` or `src/camera/`, so the HUD reads the map through the public handle
 alone. A third rule stops every module but `src/nebulae/`, `src/render/nebula-pass.ts`
-and `src/render/nebula-atlas.ts` value-importing a nebula module, so the main entry
+and `src/render/nebula-volumes.ts` value-importing a nebula module, so the main entry
 reaches the nebula code through the source the host passes and a build without that
 source carries none of it.

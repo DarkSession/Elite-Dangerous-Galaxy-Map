@@ -27,15 +27,6 @@ function nebulaVertex(): string {
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
-const atlasPath = fileURLToPath(
-  new URL('../src/render/nebula-art.webp', import.meta.url),
-);
-
-/** How many tiles a row of the atlas holds, and how many tiles carry art. */
-const ATLAS_COLUMNS = 6;
-const ATLAS_TILE_SIDE = 256;
-const TILE_COUNT = 34;
-
 /**
  * Barnard's Loop, the largest record in the set at 200 light years. The view puts it at
  * the middle of the frame at a zoom distance inside the band, where it draws about 21
@@ -44,36 +35,10 @@ const TILE_COUNT = 34;
 const BRIGHT_VIEW = '#c=624.4,-425.9,-1229.5&d=6000&p=35&y=0';
 
 /**
- * Record 187, of 94.06 light years, at the middle of the frame. It draws tile 15, which
- * holds 66 percent of its alpha in the top half of the file. The record is a dark one,
- * so the sprite takes light away where its alpha is high. The sprite covers 97.7 CSS
- * pixels across the radius at this zoom distance, so a block above the middle and one
- * below it read opposite halves of the tile, and the reading states which way up the
- * art draws.
- */
-const TILE_UP_VIEW = '#c=-5493.1,-589.2,10425.9&d=600&p=35&y=0';
-
-/**
  * A dark nebula of 88.93 light years. It is the largest record in the middle of this
- * frame, so the block the test samples reads its sprite.
+ * frame, so the block the test samples reads its volume.
  */
 const DARK_VIEW = '#c=-10642.7,629.4,17776.7&d=6000&p=35&y=0';
-
-/**
- * The camera at the centre of a nebula of 49.53 light years, at a zoom distance
- * inside the band. The camera-inside fade takes that record to 0, and no other record
- * reaches 4 CSS pixels from there, so the frame shows nothing of either.
- */
-const INSIDE_VIEW = '#c=-11550.7,849.9,54077.2&d=12000&p=0&y=0';
-
-/**
- * The same record ahead of the camera at three times its radius, which is where the
- * camera-inside fade reaches 1. Its apparent radius is 208 CSS pixels, under the 540
- * pixel cap. Its art takes light out of the block the test reads, whatever the tile is
- * named: the sprite composites source-over, so alpha that carries little colour
- * attenuates what is behind it.
- */
-const OUTSIDE_VIEW = '#c=-11550.7,849.9,53928.6&d=12000&p=0&y=0';
 
 /**
  * Barnard's Loop again, with the camera 1,000 light years from it and the zoom well
@@ -81,19 +46,6 @@ const OUTSIDE_VIEW = '#c=-11550.7,849.9,53928.6&d=12000&p=0&y=0';
  * about six times as wide as it does at 6,000 light years.
  */
 const CLOSE_VIEW = '#c=624.4,-425.9,-1229.5&d=1000&p=35&y=0';
-
-/**
- * The same record of 49.53 light years, ahead of the camera at three, two and 1.2 times
- * its radius, at a zoom distance inside the band. Its apparent radius is 208, 312 and
- * 520 CSS pixels at a 720 pixel canvas, so it grows the whole way and never reaches the
- * 540 pixel cap. What takes it out is the size fade, which starts at 180 pixels and
- * reaches 0 at 540, together with the camera-inside fade.
- */
-const CLOSING_VIEWS = [
-  '#c=-11550.7,849.9,43928.6&d=2000&p=0&y=0',
-  '#c=-11550.7,849.9,43978.1&d=2000&p=0&y=0',
-  '#c=-11550.7,849.9,44017.8&d=2000&p=0&y=0',
-];
 
 /** The middle of the frame. */
 const MIDDLE = { x: 640, y: 360 };
@@ -148,63 +100,6 @@ test('the vertex stage carries the volume sampler', async ({ page }) => {
   console.log('the vertex texture units', report.units);
 
   expect(report.error).toBeNull();
-});
-
-// The lookup insets by half a texel, so a tile whose border is alpha 0 cannot carry
-// colour into its neighbour under a linear filter. Node decodes no WebP, so the check
-// runs here, on the bytes of the committed file.
-test('no tile of the atlas bleeds into its neighbour', async ({ page }) => {
-  await openMap(page);
-  const bytes = readFileSync(atlasPath).toString('base64');
-
-  const report = await page.evaluate(
-    async (input) => {
-      const binary = atob(input.bytes);
-      const buffer = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) {
-        buffer[index] = binary.charCodeAt(index);
-      }
-      const image = await createImageBitmap(new Blob([buffer]), {
-        premultiplyAlpha: 'none',
-        colorSpaceConversion: 'none',
-      });
-      // The file states its own tile size, so this reads whatever pack is committed.
-      const tile = image.width / input.columns;
-      const canvas = new OffscreenCanvas(image.width, image.height);
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (context === null) return { width: 0, height: 0, worst: -1 };
-      context.drawImage(image, 0, 0);
-      const data = context.getImageData(0, 0, image.width, image.height).data;
-
-      let worst = 0;
-      let filled = 0;
-      for (let index = 0; index < input.tiles; index += 1) {
-        const column = index % input.columns;
-        const row = Math.floor(index / input.columns);
-        let inside = 0;
-        for (let y = 0; y < tile; y += 1) {
-          for (let x = 0; x < tile; x += 1) {
-            const at = ((row * tile + y) * image.width + column * tile + x) * 4;
-            const alpha = data[at + 3] as number;
-            const edge = x === 0 || y === 0 || x === tile - 1 || y === tile - 1;
-            if (edge) worst = Math.max(worst, alpha);
-            else inside = Math.max(inside, alpha);
-          }
-        }
-        if (inside > 0) filled += 1;
-      }
-      return { width: image.width, height: image.height, worst, tile, filled };
-    },
-    { bytes, columns: ATLAS_COLUMNS, tiles: TILE_COUNT },
-  );
-  console.log('the atlas', report);
-
-  expect(report.width).toBe(report.height);
-  expect(report.width).toBe(ATLAS_TILE_SIDE * ATLAS_COLUMNS);
-  expect(report.tile).toBe(ATLAS_TILE_SIDE);
-  expect(report.worst).toBe(0);
-  // Every tile a record can name carries art, so no record draws an empty sprite.
-  expect(report.filled).toBe(TILE_COUNT);
 });
 
 test('the default view does not change with the nebula pass on', async ({ page }) => {
@@ -266,80 +161,6 @@ test('a bright nebula adds light and a dark one takes it away', async ({ page })
   expect(darkOn).toBeLessThan(darkOff);
 });
 
-test('the brightness constant stays where it was set', async ({ page }) => {
-  await openMap(page, BRIGHT_VIEW);
-  const on = await withNebulae(page, true, () => meanLuminanceBlock(page, MIDDLE, 24));
-  const off = await withNebulae(page, false, () =>
-    meanLuminanceBlock(page, MIDDLE, 24),
-  );
-  const added = on - off;
-  console.log('brightness', { on, off, added });
-
-  // The constant is a look value set by eye. The band is here so a later change to it
-  // fails a test rather than passing unnoticed. It brackets the reading 0.0557.
-  expect(added).toBeGreaterThanOrEqual(0.04);
-  expect(added).toBeLessThanOrEqual(0.07);
-});
-
-// The budget of 256 is a guard for a larger record file. The size floor is what bounds
-// this file: the most records it puts above the floor at any camera position is 184 on
-// a canvas 1,080 CSS pixels tall. This view holds about 122 on the 720 pixel canvas of
-// the test, so the budget cuts nothing here.
-test('a view inside the band draws every record above the floor in one call', async ({
-  page,
-}) => {
-  await openMap(page, DARK_VIEW);
-  const reading = await page.evaluate(() => {
-    window.__galaxyMap?.setPasses?.({ nebulae: true });
-    window.__galaxyMap?.drawNow?.();
-    return {
-      drawn: window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
-      calls: window.__galaxyMap?.nebulaDrawCalls?.() ?? -1,
-    };
-  });
-  console.log('budget', reading);
-
-  expect(reading.drawn).toBeGreaterThan(60);
-  expect(reading.drawn).toBeLessThanOrEqual(256);
-  expect(reading.calls).toBe(1);
-});
-
-// The art of a nebula is not symmetric, and the atlas uploads with no flip, so the
-// lookup has to negate y to draw the file the same way up. Nothing else in the suite can
-// tell the two orientations apart: every other reading is a mean over a block.
-test('a sprite draws its tile the same way up as the file', async ({ page }) => {
-  await openMap(page, TILE_UP_VIEW);
-  const middle = { x: 640, y: 360 };
-  const block = 64;
-  const offset = 49;
-  const read = async (on: boolean): Promise<{ above: number; below: number }> =>
-    withNebulae(page, on, async () => ({
-      above: await meanLuminanceBlock(
-        page,
-        { x: middle.x, y: middle.y - offset },
-        block,
-      ),
-      below: await meanLuminanceBlock(
-        page,
-        { x: middle.x, y: middle.y + offset },
-        block,
-      ),
-    }));
-  const on = await read(true);
-  const off = await read(false);
-  const above = on.above - off.above;
-  const below = on.below - off.below;
-  console.log('the two halves of the sprite', { on, off, above, below });
-
-  // Both blocks lose light, because the record is a dark one. The upper block covers
-  // the half of the tile with the alpha, at a mean of 0.720 against 0.414, so it loses
-  // the more of the two. A sprite that drew the file upside down would read the other
-  // way about. The measured readings are -0.102 above and -0.036 below.
-  expect(above).toBeLessThan(0);
-  expect(below).toBeLessThan(0);
-  expect(Math.abs(above)).toBeGreaterThan(1.5 * Math.abs(below));
-});
-
 test('the pass issues no draw call outside the band', async ({ page }) => {
   await openMap(page);
   const reading = await page.evaluate(() => {
@@ -373,53 +194,6 @@ test('a close zoom still draws the nebulae', async ({ page }) => {
   expect(on).toBeGreaterThan(off);
 });
 
-test('a nebula thins out as the camera closes on it', async ({ page }) => {
-  const reading = async (fragment: string): Promise<number> => {
-    await openMap(page, fragment);
-    const on = await withNebulae(page, true, () =>
-      meanLuminanceBlock(page, MIDDLE, 180),
-    );
-    const off = await withNebulae(page, false, () =>
-      meanLuminanceBlock(page, MIDDLE, 180),
-    );
-    return off - on;
-  };
-
-  const far = await reading(CLOSING_VIEWS[0] as string);
-  const middle = await reading(CLOSING_VIEWS[1] as string);
-  const near = await reading(CLOSING_VIEWS[2] as string);
-  console.log('closing in', { far, middle, near });
-
-  // The record is a dark one, so what it takes out of the block is what it draws. The
-  // sprite grows all the way in, and what it contributes falls.
-  expect(far).toBeGreaterThan(middle);
-  expect(middle).toBeGreaterThan(near);
-  expect(near).toBeLessThan(0.02);
-});
-
-test('the camera inside a nebula sees none of it', async ({ page }) => {
-  await openMap(page, INSIDE_VIEW);
-  const insideOn = await withNebulae(page, true, () => meanLuminanceFrame(page));
-  const insideOff = await withNebulae(page, false, () => meanLuminanceFrame(page));
-
-  // The control reads the block the sprite covers, because the sprite fills a small
-  // part of the frame and the reading above has to hold over the whole of it.
-  await openMap(page, OUTSIDE_VIEW);
-  const outsideOn = await withNebulae(page, true, () =>
-    meanLuminanceBlock(page, MIDDLE, 180),
-  );
-  const outsideOff = await withNebulae(page, false, () =>
-    meanLuminanceBlock(page, MIDDLE, 180),
-  );
-  console.log('inside', { insideOn, insideOff, outsideOn, outsideOff });
-
-  // At three radii the camera-inside fade is 1 and the sprite is 208 CSS pixels in
-  // radius, under the 540 pixel cap, which the frame reads as a large dark mass. At the
-  // centre the camera-inside fade is 0 and the record contributes nothing.
-  expect(outsideOff - outsideOn).toBeGreaterThan(0.05);
-  expect(Math.abs(insideOn - insideOff)).toBeLessThan(0.002);
-});
-
 test('the glow reads the nebulae', async ({ page }) => {
   await openMap(page, BRIGHT_VIEW);
   await page.evaluate(() => {
@@ -438,7 +212,7 @@ test('the glow reads the nebulae', async ({ page }) => {
       window.__galaxyMap?.setPasses?.({ glow: value });
       window.__galaxyMap?.drawNow?.();
     }, glow);
-    // A ring outside the sprite, which draws about 21 CSS pixels across the radius.
+    // A ring outside the box, which draws about 21 CSS pixels across the radius.
     return meanLuminanceBlock(page, { x: 640 + 60, y: 360 }, 24);
   };
 
@@ -456,11 +230,11 @@ test('the glow reads the nebulae', async ({ page }) => {
 test('the map starts when the nebula art never answers', async ({ page }) => {
   let asked = false;
   // The handler never fulfils, aborts or continues, so the request stays open.
-  await page.route('**/nebula-art*', () => {
+  await page.route('**/*-density-*.dds', () => {
     asked = true;
   });
 
-  // The open does not wait for the attach here: the atlas never arrives.
+  // The open does not wait for the attach here: the volumes never arrive.
   await openMap(page, '', { waitForNebulae: false });
 
   const report = await page.evaluate(() => ({
@@ -469,7 +243,7 @@ test('the map starts when the nebula art never answers', async ({ page }) => {
     calls: window.__galaxyMap?.nebulaDrawCalls?.() ?? -1,
     meanMs: window.__galaxyMap?.measureFrames?.(10) ?? 0,
   }));
-  console.log('the held atlas', { asked, ...report });
+  console.log('the held volumes', { asked, ...report });
 
   expect(asked).toBe(true);
   expect(report.attached).toBe(false);
@@ -484,7 +258,7 @@ test('the map starts when the nebula art never answers', async ({ page }) => {
  * where it draws about 3.8 CSS pixels across the radius. It is the only named record the
  * core can stand in front of: `G2 Dust Cloud` is the one other record beyond the centre
  * and its 8.62 light year radius stops it drawing past about 3,600 light years. The
- * block is 6 pixels, because a 10 pixel block reads more background than sprite.
+ * block is 6 pixels, because a 10 pixel block reads more background than nebula.
  */
 const CORE_VIEW = '#c=18.0,-36.9,25760.9&d=6000&p=0.83&y=178.71';
 
@@ -496,7 +270,7 @@ const CORE_VIEW = '#c=18.0,-36.9,25760.9&d=6000&p=0.83&y=178.71';
  */
 const DARK_CORE_VIEW = '#c=-3163.1,163.1,23474.2&d=6000&p=-2.84&y=-127.30';
 
-/** The block of a sprite reading: the mean light, the colour ratio and the bytes. */
+/** The block of a nebula reading: the mean light, the colour ratio and the bytes. */
 interface BlockReading {
   lum: number;
   blueToRed: number;
@@ -567,7 +341,7 @@ test('a nebula with little in front of it barely changes', async ({ page }) => {
   // and 0.989 by channel, so the worst channel changes by about 1.1 percent and the
   // spec puts the band at 2 percent of the block mean. The measured change of the block
   // is 0.095 percent. It sits under the estimate because the block mean carries the
-  // background as well as the sprite, and because luminance weights the green channel,
+  // background as well as the nebula, and because luminance weights the green channel,
   // which the middle transmittance of 0.994 attenuates.
   expect(change).toBeLessThan(0.02);
 });
@@ -597,7 +371,7 @@ test('a dark nebula behind the core stops cutting a hole', async ({ page }) => {
   console.log('the hole', { on: on.lum, off: off.lum, added: on.lum - off.lum });
 
   expect(on.bytes).not.toBe(off.bytes);
-  // The transmittance scales the alpha as well as the colour, so the sprite holds back
+  // The transmittance scales the alpha as well as the colour, so the nebula holds back
   // less of the light of the core behind it. The measured readings are 0.88114 at 1
   // against 0.85038 at 0, a rise of 3.6 percent.
   expect(on.lum).toBeGreaterThan(off.lum);
@@ -616,27 +390,32 @@ test('a nebula behind the core dims', async ({ page }) => {
   console.log('through the core', { off: off.lum, added1, added0 });
 
   expect(on1.bytes).not.toBe(on0.bytes);
-  // The reading is what the sprite contributes, the block with the pass on less the
+  // The reading is what the nebula contributes, the block with the pass on less the
   // block with the pass off, because through the core the block itself cannot fall. The
   // spec states the pixel algebra. The measured contribution is 0.00087 at occlusion 1
-  // against 0.01505 at 0, both of them negative: the sprite reads as a hole here, and
+  // against 0.01505 at 0, both of them negative: the nebula reads as a hole here, and
   // the march makes that hole shallower.
   expect(Math.abs(added1)).toBeLessThan(Math.abs(added0));
 });
 
-/** The record file and the sprite atlas, as the build names them. */
-const NEBULA_FILES = /nebula[\w-]*\.(json|webp)/i;
+/**
+ * The record file, the volume index, the transfer file and the 66 volumes, as the build
+ * names them. Every one is hashed, so the pattern reads the stem and the suffix.
+ */
+const NEBULA_FILES =
+  /(nebulae[\w-]*\.json|nebula-volumes[\w-]*\.json|transfer[\w-]*\.bin|-(density|colour)[\w-]*\.dds)$/i;
 
-/** Collects the URL of every request the page makes for one of the two files. */
+/** Collects the URL of every request the page makes for a nebula file. */
 function watchNebulaFiles(page: Page): string[] {
   const asked: string[] = [];
   page.on('request', (request) => {
-    if (NEBULA_FILES.test(request.url())) asked.push(request.url());
+    const url = request.url();
+    if (NEBULA_FILES.test(url)) asked.push(url);
   });
   return asked;
 }
 
-/** Draws one frame on the demo page and reads how many sprites it drew. */
+/** Draws one frame on the demo page and reads how many records it drew. */
 async function drawnNow(page: Page): Promise<number> {
   return page.evaluate(() => {
     window.__galaxyMap?.drawNow?.();
@@ -664,7 +443,7 @@ test('the switch removes the sprites and gives them back', async ({ page }) => {
 
   expect(before).toBeGreaterThan(0);
   expect(off).toBe(0);
-  // The records and the art stay on the GPU, so the sprites come back as they were and
+  // The records and the art stay on the GPU, so the nebulae come back as they were and
   // the map downloads neither file a second time.
   expect(on).toBe(before);
   expect(visible).toBe(true);
@@ -685,7 +464,7 @@ test('a map with no nebula option downloads neither file', async ({ page }) => {
   });
 
   // The second map is built with no `nebulae` option, which is the state a host that
-  // never asks for the sprites is in. The demo map comes down first, so its own frames
+  // never asks for the nebulae is in. The demo map comes down first, so its own frames
   // do not draw beside the second map's.
   const report = await page.evaluate(async () => {
     const factory = window.galaxyMapFactory;
@@ -720,10 +499,337 @@ test('a map with no nebula option downloads neither file', async ({ page }) => {
   expect(report.has).toBe(false);
   expect(report.visible).toBe(false);
   expect(report.attached).toBe(false);
-  // The view is the one that draws the most sprites, and this map draws none of them.
+  // The view is the one that draws the most records, and this map draws none of them.
   expect(report.drawn).toBe(0);
   expect(report.calls).toBe(0);
   // The map keeps drawing, and it reports nothing to the console.
   expect(report.meanMs).toBeGreaterThan(0);
   expect(failures).toEqual([]);
+});
+
+// The positive control of the two tests above. Both of them pass on a watcher that sees
+// nothing, so a pattern that matched no built file would pass them and guard nothing.
+// This test installs the same watcher before the open, where the map does download the
+// nebulae, and holds it to every one of the four kinds of file.
+test('the watcher reports the records, the index, the transfer file and the volumes', async ({
+  page,
+}) => {
+  const asked = watchNebulaFiles(page);
+
+  await openMap(page, BRIGHT_VIEW);
+
+  const names = asked.map((url) => url.split('/').pop() ?? '');
+  console.log('the nebula files', names);
+
+  expect(names.filter((name) => /^nebulae[\w-]*\.json$/.test(name)).length).toBe(1);
+  expect(names.filter((name) => /^nebula-volumes[\w-]*\.json$/.test(name)).length).toBe(
+    1,
+  );
+  expect(names.filter((name) => /^transfer[\w-]*\.bin$/.test(name)).length).toBe(1);
+  // The loader reads the index and fetches the pair of every asset it names, so the
+  // count is the 33 of the index and not the count the view draws.
+  expect(names.filter((name) => /-density[\w-]*\.dds$/.test(name)).length).toBe(33);
+  expect(names.filter((name) => /-colour[\w-]*\.dds$/.test(name)).length).toBe(33);
+});
+
+// The volumes are `.dds` block files, and the loader decodes the blocks on the CPU into
+// plain `R8` and `RGBA8` textures. It therefore asks for no compressed-texture extension.
+// The test refuses all three the formats belong to, so a run that started to upload the
+// blocks unchanged would find no format and draw nothing.
+test.describe('a card with no compressed-texture extension', () => {
+  test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+
+  test('loads the nebulae and draws them', async ({ page }) => {
+    const refused = [
+      'WEBGL_compressed_texture_s3tc',
+      'EXT_texture_compression_rgtc',
+      'EXT_texture_compression_bptc',
+    ];
+    await page.addInitScript((names: string[]) => {
+      const original = WebGL2RenderingContext.prototype.getExtension;
+      WebGL2RenderingContext.prototype.getExtension = function patched(
+        this: WebGL2RenderingContext,
+        name: string,
+      ) {
+        if (names.includes(name)) return null;
+        return (original as (...args: unknown[]) => unknown).call(this, name);
+      } as typeof WebGL2RenderingContext.prototype.getExtension;
+    }, refused);
+
+    await openMap(page, BRIGHT_VIEW);
+
+    const report = await page.evaluate((names: string[]) => {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2');
+      window.__galaxyMap?.drawNow?.();
+      return {
+        // The positive control: the refusal reached the page.
+        offered: names.filter((name) => gl?.getExtension(name) != null),
+        attached: window.__galaxyMap?.nebulaeAttached?.() ?? false,
+        drawn: window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
+      };
+    }, refused);
+    const light = await meanLuminanceBlock(page, MIDDLE, 6);
+    console.log('the card with no compressed format', { ...report, light });
+
+    expect(report.offered).toEqual([]);
+    expect(report.attached).toBe(true);
+    expect(report.drawn).toBeGreaterThan(0);
+    expect(light).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The CPU reference the march is read against. `scripts/build-nebula-fixture.mjs` writes
+ * the files and `tests/nebula-fixture.test.ts` holds that generator to the map's own
+ * block decode, selection and rotation matrix.
+ */
+const FIXTURES = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('./fixtures/nebula-fixtures.json', import.meta.url)),
+    'utf8',
+  ),
+) as {
+  canvas: { width: number; height: number };
+  stepRate: number;
+  views: Record<
+    string,
+    {
+      asset: string;
+      record: number;
+      crop: number;
+      drawn: number;
+      view: {
+        cursor: [number, number, number];
+        distance: number;
+        pitch: number;
+        yaw: number;
+      };
+    }
+  >;
+};
+
+/** The reference bytes of one view: three bytes a pixel, row by row from the top. */
+function fixtureBytes(name: string): Uint8Array {
+  return new Uint8Array(
+    readFileSync(
+      fileURLToPath(new URL(`./fixtures/nebula-${name}.bin`, import.meta.url)),
+    ),
+  );
+}
+
+/**
+ * The root mean square difference in display units, 0 to 1, between the drawn frame and
+ * the reference. The frame is read at full resolution and averaged two by two, because
+ * the nebulae draw into a half-resolution target and the reference marches on that grid.
+ */
+function fixtureRmse(frame: number[], reference: Uint8Array, crop: number): number {
+  let sum = 0;
+  for (let row = 0; row < crop; row += 1) {
+    for (let column = 0; column < crop; column += 1) {
+      for (let channel = 0; channel < 3; channel += 1) {
+        let mean = 0;
+        for (let dy = 0; dy < 2; dy += 1) {
+          for (let dx = 0; dx < 2; dx += 1) {
+            const at = ((row * 2 + dy) * crop * 2 + (column * 2 + dx)) * 4 + channel;
+            mean += (frame[at] as number) / 4;
+          }
+        }
+        const want = reference[(row * crop + column) * 3 + channel] as number;
+        const difference = (mean - want) / 255;
+        sum += difference * difference;
+      }
+    }
+  }
+  return Math.sqrt(sum / (crop * crop * 3));
+}
+
+// The fidelity reading of this change. The frame marches on the GPU and the fixture
+// marches the same integral on the CPU, from the `.dds` bytes and each record's own
+// rotation, through the map's exposure and tone map. A flipped axis, a transposed
+// rotation or a mistaken transfer lookup moves the reading and no other test would
+// catch it.
+//
+// The occlusion is held at 0, so the galaxy volume's extinction leaves the reading
+// alone and the fixture needs no copy of the volume march. Every other pass is off.
+//
+// The readings on the hardware renderer are barnards-loop 0.0083 and cats-eye 0.0058,
+// against bounds of 0.02 and 0.01. `barnards-loop` is the mildest asset in the set;
+// `cats-eye` carries its largest negative extinction, -193.5, so it is where the
+// transmittance recurrence shows first. Its bound is its reading rounded up to the next
+// hundredth, as the spec asks. A reading above 0.05 means the march is wrong.
+for (const [name, bound] of [
+  ['barnards-loop', 0.02],
+  ['cats-eye', 0.01],
+] as const) {
+  test(`the march of ${name} reproduces the reference integral`, async ({ page }) => {
+    const entry = FIXTURES.views[name];
+    if (entry === undefined) throw new Error(`The fixture file holds no ${name}.`);
+
+    await openMap(page, '');
+    const drawn = await page.evaluate((view) => {
+      window.__galaxyMap?.setPasses?.({
+        volume: false,
+        clouds: false,
+        points: false,
+        stars: false,
+        glow: false,
+        grid: false,
+        regions: false,
+        shapes: false,
+        systems: false,
+        nebulae: true,
+      });
+      window.__galaxyMap?.setNebulaOcclusion?.(0);
+      window.__galaxyMap?.setView?.(view);
+      window.__galaxyMap?.drawNow?.();
+      return window.__galaxyMap?.nebulaDrawnCount?.() ?? -1;
+    }, entry.view);
+
+    const crop = entry.crop;
+    const first = {
+      x: ((FIXTURES.canvas.width >> 1) - crop) >> 1,
+      y: ((FIXTURES.canvas.height >> 1) - crop) >> 1,
+    };
+    const frame = await readRect(page, first.x * 2, first.y * 2, crop * 2, crop * 2);
+    const rmse = fixtureRmse(frame, fixtureBytes(name), crop);
+    console.log(`the ${name} march`, { drawn, rmse });
+
+    // The fixture marches every record the selection keeps, so the frame must draw the
+    // same set. A different count means the two sides read different records.
+    expect(drawn).toBe(entry.drawn);
+    expect(frame).toHaveLength(crop * 2 * crop * 2 * 4);
+    expect(rmse).toBeLessThan(bound);
+  });
+}
+
+/** The record of `dark-02` the step-rate reading uses, and the view that fills the frame. */
+const DARK_02_VIEW = {
+  cursor: [-15776.8, -113.4, 11581.3] as [number, number, number],
+  distance: 228,
+  pitch: 0,
+  yaw: 0,
+};
+
+/** Turns off every pass but the nebulae and holds the occlusion at 0. */
+async function nebulaeAlone(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({
+      volume: false,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      grid: false,
+      regions: false,
+      shapes: false,
+      systems: false,
+      nebulae: true,
+    });
+    window.__galaxyMap?.setNebulaOcclusion?.(0);
+  });
+}
+
+// The step rate is a cost dial and not a look dial. `dark-02` is the asset whose
+// transfer table reaches the set's largest extinction, 3,066, and the transmittance
+// recurrence is linear, so the quadrature error grows with the extinction. If doubling
+// the rate does not move that asset, it moves nothing.
+//
+// The measured difference on the hardware renderer is 0.00125 against a block mean of
+// 0.0672, which is 1.9 percent, under the 5 percent bound. The default step rate of 32
+// therefore stays where it is.
+test('doubling the step rate moves nothing visible', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+
+  const read = async (rate: number): Promise<number> => {
+    await page.evaluate(
+      (where) => {
+        const map = window.galaxyMap;
+        if (map !== undefined) map.debug.look.nebulaStepRate = where.rate;
+        window.__galaxyMap?.setView?.(where.view);
+        window.__galaxyMap?.drawNow?.();
+      },
+      { view: DARK_02_VIEW, rate },
+    );
+    return meanLuminanceBlock(page, MIDDLE, 120);
+  };
+
+  const coarse = await read(32);
+  const fine = await read(64);
+  const difference = Math.abs(fine - coarse);
+  console.log('the step rate', {
+    coarse,
+    fine,
+    difference,
+    share: difference / coarse,
+  });
+
+  expect(coarse).toBeGreaterThan(0.005);
+  expect(difference).toBeLessThan(0.05 * coarse);
+});
+
+// The camera inside a nebula sees the part in front of it, and that part covers the
+// frame. The pass this change replaces drew a flat card that faded to nothing here.
+test('the camera inside a nebula is surrounded by it', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setView?.({
+      cursor: [624.4, -425.9, -1229.5],
+      distance: 20,
+      pitch: 0,
+      yaw: 0,
+    });
+    window.__galaxyMap?.drawNow?.();
+  });
+
+  // Nine blocks over the frame, so the reading covers the corners as well as the middle.
+  const points = [];
+  for (const x of [160, 640, 1120])
+    for (const y of [90, 360, 630]) points.push({ x, y });
+  const lights = [];
+  for (const point of points) lights.push(await meanLuminanceBlock(page, point, 40));
+  const off = await withNebulae(page, false, () => meanLuminanceFrame(page));
+  console.log('inside a nebula', { lights, off });
+
+  // Every block carries light, and the whole frame is brighter than the frame with the
+  // pass off.
+  for (let at = 0; at < lights.length; at += 1) {
+    expect(lights[at], `block ${at} is dark`).toBeGreaterThan(off);
+  }
+});
+
+// A nebula grows as the camera closes on it, which is what a volume does and a flat
+// card of a fixed apparent size does not. The reading is the contribution at three,
+// two and 1.2 times the radius.
+test('a nebula grows as the camera closes on it', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+
+  // Barnard's Loop, whose radius is 200 light years.
+  const read = async (multiple: number): Promise<number> =>
+    page
+      .evaluate(
+        (distance) => {
+          window.__galaxyMap?.setView?.({
+            cursor: [624.4, -425.9, -1229.5],
+            distance,
+            pitch: 0,
+            yaw: 0,
+          });
+          window.__galaxyMap?.drawNow?.();
+          return window.__galaxyMap?.nebulaDrawnCount?.() ?? -1;
+        },
+        Math.round(200 * multiple),
+      )
+      .then(() => meanLuminanceBlock(page, MIDDLE, 200));
+
+  const far = await read(3);
+  const middle = await read(2);
+  const near = await read(1.2);
+  console.log('closing on a nebula', { far, middle, near });
+
+  expect(middle).toBeGreaterThan(far);
+  expect(near).toBeGreaterThan(middle);
 });

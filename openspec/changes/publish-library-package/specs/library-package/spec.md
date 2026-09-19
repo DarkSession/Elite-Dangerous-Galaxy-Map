@@ -187,6 +187,13 @@ because this delta replaces the requirement whole.
 The bound still catches the one fault it is for at any figure in this range, because the
 region cell table is 199 KiB.
 
+**The readings `replace-nebula-sprites-with-volumes` left are 254,496 for the entry chunk
+alone and 260,019 for the pair**, against a bound of **260,000**, which leaves 5,504 bytes
+of room. The bound reads `index.js` alone, so the pair above it is a reading and not a
+failure. This delta replaces the requirement whole, so it carries those figures forward
+rather than dropping them. The implementation of this change SHALL measure again and
+replace them with what it reads.
+
 #### Scenario: The library build carries no page and no demo data
 
 - **WHEN** a test runs the library build into a temporary directory and reads every file
@@ -268,8 +275,8 @@ region cell table is 199 KiB.
 
 - **WHEN** a test runs the library build and reads the entry chunk and every chunk the
   entry chunk imports at load
-- **THEN** none of them holds the nebula shader text, the record file name or the sprite
-  atlas file name
+- **THEN** none of them holds the nebula shader text, the record file name, the volume index
+  name or any volume asset name
 
 #### Scenario: The entry point exports the camera surface
 

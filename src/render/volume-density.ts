@@ -1,5 +1,5 @@
 // The shared density rule, as the passes compile it. The volume pass draws the dust and
-// the nebula pass dims a sprite by the dust in front of it, so both read one rule.
+// the nebula pass dims a record by the dust in front of it, so both read one rule.
 //
 // The rule sits in a module of its own and not beside the volume pass, because the nebula
 // pass is the second reader. A nebula pass that imported the volume pass would drag the

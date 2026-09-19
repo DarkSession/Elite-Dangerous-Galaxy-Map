@@ -1,26 +1,30 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildNebulaSet,
-  NEBULA_CAP_FRACTION,
-  NEBULA_MAX_DRAWN,
   nebulaFocalPixels,
   selectNebulae,
 } from '../scene-data/nebulae';
-import type { NebulaInstance, NebulaSelection, NebulaSet } from '../scene-data/nebulae';
-import { createNebulaAtlasTexture, NEBULA_ATLAS_COLUMNS } from './nebula-atlas';
-import type { NebulaAtlasImage } from './nebula-atlas';
+import type { NebulaSelection, NebulaSet } from '../scene-data/nebulae';
 import {
   createNebulaPass,
-  NEBULA_INSTANCE_FLOATS,
-  writeNebulaInstances,
+  NEBULA_BOX_CORNERS,
+  NEBULA_BOX_VERTICES,
+  NEBULA_WORLD_FLIP,
+  nebulaRotationMatrix,
 } from './nebula-pass';
-import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import type { NebulaVolumeTexture, NebulaVolumeTextures } from './nebula-volumes';
+import {
+  DEFAULT_NEBULA_LIGHT_GAIN,
+  DEFAULT_NEBULA_OCCLUSION,
+  DEFAULT_NEBULA_STEP_RATE,
+} from './nebula-slot';
 import type { NebulaFrame } from './nebula-slot';
 import type { Program } from './program';
 import { DEFAULT_ABSORPTION } from './volume-pass';
 import { withVolumeDensity } from './volume-density';
 import densitySource from './shaders/volume-density.glsl?raw';
 import nebulaVertexSource from './shaders/nebulae.vert?raw';
+import nebulaFragmentSource from './shaders/nebulae.frag?raw';
 import volumeFragmentSource from './shaders/volume.frag?raw';
 
 /** One call the pass made on the context. */
@@ -75,15 +79,16 @@ function fakeProgram(): Program {
   const names = [
     'uViewProjection',
     'uChunkOffset',
-    'uTargetSize',
-    'uSpriteScale',
-    'uMaxRadius',
+    'uPosition',
+    'uRadius',
     'uWeight',
-    'uTileSide',
-    'uAtlasColumns',
-    'uAtlasSide',
-    'uBrightness',
-    'uAtlas',
+    'uFade',
+    'uSteps',
+    'uLightGain',
+    'uRotation',
+    'uDensity',
+    'uColour',
+    'uNebulaTransfer',
     'uVolume',
     'uDetail',
     'uBoxMin',
@@ -101,26 +106,51 @@ function fakeProgram(): Program {
   return { program: {} as WebGLProgram, uniforms };
 }
 
-const tileNames = Array.from({ length: 34 }, (_unused, index) => `tile-${index}`);
+/** More records than any one frame of this file draws. */
+const MANY = 264;
 
-/** A set whose records sit on the `z` axis, one per light year of tile index. */
-/** More records than the budget draws, so a test can reach the cut. */
-const OVER_BUDGET = NEBULA_MAX_DRAWN + 8;
+/** How many assets the committed set holds, which the fixtures below name. */
+const ASSET_COUNT = 33;
 
+/** A set whose records sit on the `z` axis, one per light year of asset index. */
 function manySet(count: number): NebulaSet {
   const records: unknown[] = [];
   for (let index = 0; index < count; index += 1) {
-    records.push([0, 0, 5000 + index * 10, 60, index % 34]);
+    records.push([0, 0, 5000 + index * 10, 60, index % ASSET_COUNT, 0, 0, 0]);
   }
-  return buildNebulaSet({ tiles: tileNames, records });
+  return buildNebulaSet({ records });
 }
 
 /** The uploaded textures the march reads. The pass binds them and reads nothing of them. */
 const VOLUME_TEXTURE = { name: 'volume' } as unknown as WebGLTexture;
 const DETAIL_TEXTURE = { name: 'detail' } as unknown as WebGLTexture;
 
+/** A set of uploaded assets, one per index a record can name. */
+function volumesOf(count = ASSET_COUNT): NebulaVolumeTextures {
+  const assets: NebulaVolumeTexture[] = [];
+  for (let index = 0; index < count; index += 1) {
+    assets.push({
+      name: `asset-${index}`,
+      density: { name: `density-${index}` } as unknown as WebGLTexture,
+      colour: { name: `colour-${index}` } as unknown as WebGLTexture,
+      transfer: { name: `transfer-${index}` } as unknown as WebGLTexture,
+      densitySide: 32,
+      colourSide: 8,
+    });
+  }
+  let disposed = 0;
+  return {
+    assets,
+    dispose(): void {
+      disposed += 1;
+      assets.length = disposed * 0 + assets.length;
+    },
+  };
+}
+
 /** The canvas and the camera the frames of this file are drawn with. */
 const CANVAS_HEIGHT_CSS = 720;
+const CANVAS_WIDTH_CSS = 1280;
 const FIELD_OF_VIEW_DEGREES = 60;
 
 /**
@@ -137,14 +167,11 @@ function selectionOf(
     distance,
     focalPixels: nebulaFocalPixels(CANVAS_HEIGHT_CSS, FIELD_OF_VIEW_DEGREES),
     canvasHeightCss: CANVAS_HEIGHT_CSS,
+    canvasWidthCss: CANVAS_WIDTH_CSS,
   });
 }
 
-function frameOf(
-  distance: number,
-  brightness = DEFAULT_NEBULA_BRIGHTNESS,
-  march: Partial<NebulaFrame> = {},
-): NebulaFrame {
+function frameOf(distance: number, march: Partial<NebulaFrame> = {}): NebulaFrame {
   return {
     viewProjection: new Float32Array(16),
     chunkOffset: [0, 0, 0],
@@ -152,9 +179,10 @@ function frameOf(
     distance,
     targetSize: [640, 360],
     canvasHeightCss: CANVAS_HEIGHT_CSS,
+    canvasWidthCss: CANVAS_WIDTH_CSS,
     fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
-    spriteScale: 311.7691453623979,
-    brightness,
+    lightGain: [...DEFAULT_NEBULA_LIGHT_GAIN],
+    stepRate: DEFAULT_NEBULA_STEP_RATE,
     volume: VOLUME_TEXTURE,
     detail: DETAIL_TEXTURE,
     boxMin: [-100, -100, -100],
@@ -180,298 +208,409 @@ function uniformsOf(context: FakeContext): Map<unknown, unknown> {
   return sent;
 }
 
-/** A test double, at a tile side the committed atlas does not use. */
-const ATLAS_SIDE = 384;
-const TILE_SIDE = ATLAS_SIDE / NEBULA_ATLAS_COLUMNS;
-
-/** A decoded atlas file of a side, which is all the upload reads of it. */
-function atlasImage(side: number): NebulaAtlasImage {
-  return { width: side, height: side } as unknown as NebulaAtlasImage;
+/** Every value one uniform took over a draw, in the order the draw sent them. */
+function everyValueOf(context: FakeContext, name: string): unknown[] {
+  return context.calls
+    .filter((call) => call.name.startsWith('uniform') && call.args[0] === name)
+    .map((call) => call.args.slice(1));
 }
 
-function atlasOf(
-  context: FakeContext,
-  side = ATLAS_SIDE,
-): ReturnType<typeof createNebulaAtlasTexture> {
-  return createNebulaAtlasTexture(context.gl, atlasImage(side));
-}
-
-describe('the nebula atlas texture', () => {
-  test('uploads as sRGB with a linear filter and clamped wrapping', () => {
-    const context = fakeContext();
-    const gl = context.gl;
-    atlasOf(context);
-
-    const storage = context.of('texStorage2D')[0];
-    expect(storage?.args[2]).toBe(gl.SRGB8_ALPHA8);
-    expect(storage?.args[3]).toBe(ATLAS_SIDE);
-    expect(storage?.args[4]).toBe(ATLAS_SIDE);
-
-    const parameters = context.of('texParameteri').map((call) => call.args.slice(1));
-    expect(parameters).toContainEqual([gl.TEXTURE_MIN_FILTER, gl.LINEAR]);
-    expect(parameters).toContainEqual([gl.TEXTURE_MAG_FILTER, gl.LINEAR]);
-    expect(parameters).toContainEqual([gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE]);
-    expect(parameters).toContainEqual([gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]);
+describe('the marched box', () => {
+  // One draw call per record covers 12 triangles of three vertices.
+  test('holds 36 vertices of three floats', () => {
+    expect(NEBULA_BOX_VERTICES).toBe(36);
+    expect(NEBULA_BOX_CORNERS).toHaveLength(36 * 3);
+    for (const value of NEBULA_BOX_CORNERS) expect(Math.abs(value)).toBe(1);
   });
 
-  // A pack at a larger tile size is a drop-in: the file states its own texel sizes and
-  // nothing in the renderer holds them.
-  test('reads the tile side from the file, whatever the file is', () => {
-    const small = atlasOf(fakeContext(), 384);
-    expect(small.side).toBe(384);
-    expect(small.tileSide).toBe(64);
-
-    const large = atlasOf(fakeContext(), 1536);
-    expect(large.side).toBe(1536);
-    expect(large.tileSide).toBe(256);
-
-    const context = fakeContext();
-    const atlas = atlasOf(context, 1536);
-    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), atlas);
-    pass.draw(frameOf(6000));
-    const floats = new Map(
-      context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
-    );
-    expect(floats.get('uTileSide')).toBe(256);
-    expect(floats.get('uAtlasSide')).toBe(1536);
+  // The pass culls the front faces so a camera inside a box still gets a fragment. That
+  // only works if every face is wound the same way round.
+  test('winds every face counter-clockwise seen from outside', () => {
+    for (let triangle = 0; triangle < 12; triangle += 1) {
+      const at = triangle * 9;
+      const point = (slot: number): number[] => [
+        NEBULA_BOX_CORNERS[at + slot * 3] as number,
+        NEBULA_BOX_CORNERS[at + slot * 3 + 1] as number,
+        NEBULA_BOX_CORNERS[at + slot * 3 + 2] as number,
+      ];
+      const [a, b, c] = [point(0), point(1), point(2)];
+      const u = b.map((value, axis) => value - (a[axis] as number));
+      const v = c.map((value, axis) => value - (a[axis] as number));
+      const normal = [
+        (u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+        (u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+        (u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+      ];
+      // The face centre is the mean of its three corners, and it points outward from
+      // the cube's own centre. A counter-clockwise winding puts the normal with it.
+      const centre = a.map(
+        (value, axis) => (value + (b[axis] as number) + (c[axis] as number)) / 3,
+      );
+      const dot = normal.reduce(
+        (sum, value, axis) => sum + value * (centre[axis] as number),
+        0,
+      );
+      expect(dot, `triangle ${triangle} faces inward`).toBeGreaterThan(0);
+    }
   });
 
-  test('refuses a file the grid does not fit', () => {
-    expect(() => atlasOf(fakeContext(), 500)).toThrow(/6 tiles a row do not divide/);
-    expect(() =>
-      createNebulaAtlasTexture(fakeContext().gl, {
-        width: 384,
-        height: 192,
-      } as unknown as NebulaAtlasImage),
-    ).toThrow(/must be square/);
-  });
-
-  // The art holds the emission and the absorption together, so the colour channels are
-  // radiance and not a colour the browser may multiply by the alpha.
-  test('does not let the upload premultiply the alpha', () => {
-    const context = fakeContext();
-    const gl = context.gl;
-    atlasOf(context);
-    const stores = context.of('pixelStorei').map((call) => call.args);
-    expect(stores).toContainEqual([gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false]);
+  // Every face of the cube is covered, so no ray enters through a hole.
+  test('covers all six faces, twice each', () => {
+    const faces = new Map<string, number>();
+    for (let triangle = 0; triangle < 12; triangle += 1) {
+      const at = triangle * 9;
+      for (let axis = 0; axis < 3; axis += 1) {
+        const values = [0, 1, 2].map(
+          (slot) => NEBULA_BOX_CORNERS[at + slot * 3 + axis] as number,
+        );
+        if (values.every((value) => value === values[0])) {
+          const key = `${axis}:${values[0] as number}`;
+          faces.set(key, (faces.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    expect(faces.size).toBe(6);
+    // Two triangles cover one face, and no triangle is flat on two axes at once.
+    for (const count of faces.values()) expect(count).toBe(2);
   });
 });
 
-describe('the nebula instance buffer', () => {
-  test('copies the record into the world frame, which negates z', () => {
-    const set = buildNebulaSet({
-      tiles: tileNames,
-      records: [[10, 20, 30, 7.5, 5, 'one']],
-    });
-    const out = new Float32Array(NEBULA_MAX_DRAWN * NEBULA_INSTANCE_FLOATS);
-    const instances: NebulaInstance[] = [
-      { index: 0, range: 100, pixels: 9, fade: 0.5 },
-    ];
-    expect(writeNebulaInstances(set, instances, out)).toBe(1);
-    expect(Array.from(out.subarray(0, NEBULA_INSTANCE_FLOATS))).toEqual([
-      10, 20, -30, 7.5, 5, 0.5,
-    ]);
+describe('the rotation matrix', () => {
+  /** The matrix as rows, from the column-major array the uniform takes. */
+  function rowsOf(matrix: Float32Array): number[][] {
+    return [0, 1, 2].map((row) =>
+      [0, 1, 2].map((column) => matrix[column * 3 + row] as number),
+    );
+  }
+
+  test('gives the identity with its z column negated for a record of three zeros', () => {
+    const rows = rowsOf(nebulaRotationMatrix([0, 0, 0]));
+    expect(rows[0]?.map((v) => Math.round(v) + 0)).toEqual([1, 0, 0]);
+    expect(rows[1]?.map((v) => Math.round(v) + 0)).toEqual([0, 1, 0]);
+    expect(rows[2]?.map((v) => Math.round(v) + 0)).toEqual([0, 0, -1]);
+    expect(NEBULA_WORLD_FLIP).toEqual([1, 1, -1]);
   });
 
-  test('writes at most the budget, whatever the selection holds', () => {
-    const set = manySet(OVER_BUDGET);
-    const out = new Float32Array(NEBULA_MAX_DRAWN * NEBULA_INSTANCE_FLOATS);
-    const instances: NebulaInstance[] = Array.from(
-      { length: OVER_BUDGET },
-      (_u, index) => ({
-        index,
-        range: 5000 + index,
-        pixels: 10,
-        fade: 1,
-      }),
-    );
-    expect(writeNebulaInstances(set, instances, out)).toBe(NEBULA_MAX_DRAWN);
+  // The convention is `Rx(a) * Ry(b) * Rz(c)` composed with the flip. A quarter turn
+  // about x alone is what the five rotated records mostly carry.
+  test('reads a quarter turn about x as Rx', () => {
+    const rows = rowsOf(nebulaRotationMatrix([Math.PI / 2, 0, 0]));
+    expect(rows[0]?.map((v) => Math.round(v) + 0)).toEqual([1, 0, 0]);
+    expect(rows[1]?.map((v) => Math.round(v) + 0)).toEqual([0, 0, 1]);
+    expect(rows[2]?.map((v) => Math.round(v) + 0)).toEqual([0, 1, 0]);
+  });
+
+  // Three angles compose in that order, and no other order gives this matrix.
+  test('composes the three angles as Rx then Ry then Rz', () => {
+    const [a, b, c] = [0.3, 0.7, 1.1];
+    const rows = rowsOf(nebulaRotationMatrix([a, b, c]));
+    expect(rows[0]?.[0]).toBeCloseTo(Math.cos(b) * Math.cos(c), 6);
+    expect(rows[0]?.[2]).toBeCloseTo(-Math.sin(b), 6);
+    expect(rows[2]?.[2]).toBeCloseTo(-Math.cos(a) * Math.cos(b), 6);
+  });
+
+  test('writes into the array it is given', () => {
+    const out = new Float32Array(9);
+    expect(nebulaRotationMatrix([0, 0, 0], out)).toBe(out);
   });
 });
 
 describe('the nebula pass', () => {
-  test('draws every selected instance in one call, with source-over blending', () => {
+  test('draws one call per selected record, with source-over blending', () => {
     const context = fakeContext();
-    const gl = context.gl;
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(gl, fakeProgram(), set, atlasOf(context));
-    expect(selectionOf(set, 12000).instances.length).toBe(NEBULA_MAX_DRAWN);
+    const set = manySet(MANY);
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+    const expected = selectionOf(set, 12000).instances.length;
 
     pass.draw(frameOf(12000));
 
-    const draws = context.of('drawArraysInstanced');
-    expect(draws).toHaveLength(1);
-    expect(draws[0]?.args[3]).toBe(NEBULA_MAX_DRAWN);
-    expect(pass.drawCalls).toBe(1);
-    expect(pass.drawnCount).toBe(NEBULA_MAX_DRAWN);
+    const draws = context.of('drawArrays');
+    expect(draws).toHaveLength(expected);
+    expect(draws[0]?.args.slice(1)).toEqual([0, NEBULA_BOX_VERTICES]);
+    expect(pass.drawCalls).toBe(expected);
+    expect(pass.drawnCount).toBe(expected);
+    const gl = context.gl;
+    expect(context.of('blendFunc')[0]?.args).toEqual([gl.ONE, gl.ONE_MINUS_SRC_ALPHA]);
+  });
 
-    const blend = context.of('blendFunc')[0];
-    expect(blend?.args).toEqual([gl.ONE, gl.ONE_MINUS_SRC_ALPHA]);
+  // The camera can be inside a box, so the front faces are the ones that go.
+  test('culls the front faces, not the back ones', () => {
+    const context = fakeContext();
+    const gl = context.gl;
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), volumesOf());
+    pass.draw(frameOf(12000));
+
+    expect(context.of('enable').some((call) => call.args[0] === gl.CULL_FACE)).toBe(
+      true,
+    );
+    expect(context.of('cullFace')[0]?.args).toEqual([gl.FRONT]);
+    expect(context.of('disable').some((call) => call.args[0] === gl.CULL_FACE)).toBe(
+      true,
+    );
   });
 
   test('draws nothing and issues no draw call when the zoom weight is 0', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    const before = context.calls.length;
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(),
+    );
 
     pass.draw(frameOf(60000));
 
-    expect(pass.drawCalls).toBe(0);
+    expect(context.of('drawArrays')).toHaveLength(0);
     expect(pass.drawnCount).toBe(0);
-    expect(context.of('drawArraysInstanced')).toHaveLength(0);
-    // The pass makes no call at all past the guard, so a frame outside the band costs
-    // nothing beyond the selection.
-    expect(context.calls.length).toBe(before);
+    expect(pass.drawCalls).toBe(0);
   });
 
-  // The cap holds the fill cost. It reads a share of the target height, which is the
-  // same share of the canvas height, so the sprite size does not follow the target.
-  test('caps the drawn radius at a share of the target height', () => {
+  // The record is in game coordinates and the pass draws in the world frame.
+  test('sends the record position with its z negated', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(12000));
+    const set = buildNebulaSet({ records: [[10, 20, 30, 200, 0, 0, 0, 0, 'one']] });
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
 
-    const cap = context.of('uniform1f').find((call) => call.args[0] === 'uMaxRadius');
-    expect(cap?.args[1]).toBe(NEBULA_CAP_FRACTION * 360);
-    expect(cap?.args[1]).toBe(270);
+    pass.draw(frameOf(6000));
+
+    expect(everyValueOf(context, 'uPosition')).toEqual([[10, 20, -30]]);
+    expect(everyValueOf(context, 'uRadius')).toEqual([[200]]);
   });
 
-  test('names the atlas layout the shader reads', () => {
+  // Each record binds its own three textures, on three units of their own.
+  test('binds the asset each record names', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(12000));
+    const set = buildNebulaSet({
+      records: [
+        [0, 0, 400, 200, 7, 0, 0, 0],
+        [0, 0, 200, 200, 2, 0, 0, 0],
+      ],
+    });
+    const volumes = volumesOf();
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumes);
 
-    const floats = new Map(
-      context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
+    pass.draw(frameOf(6000));
+
+    const bound = context
+      .of('bindTexture')
+      .map((call) => (call.args[1] as { name?: string } | null)?.name)
+      .filter((name) => name?.startsWith('density') === true);
+    // Furthest first: the record at 400 light years draws before the one at 200.
+    expect(bound).toEqual(['density-7', 'density-2']);
+  });
+
+  // The march reads the transfer table with `texelFetch`, so the three samplers each
+  // take a unit of their own and the draw sets all three.
+  test('gives the three asset samplers three units of their own', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
+    pass.draw(frameOf(6000));
+
+    const sent = uniformsOf(context);
+    const units = ['uDensity', 'uColour', 'uNebulaTransfer', 'uVolume', 'uDetail'].map(
+      (name) => sent.get(name),
     );
-    expect(floats.get('uTileSide')).toBe(TILE_SIDE);
-    expect(floats.get('uAtlasColumns')).toBe(NEBULA_ATLAS_COLUMNS);
-    expect(floats.get('uAtlasSide')).toBe(ATLAS_SIDE);
+    expect(new Set(units).size).toBe(5);
+    for (const unit of units) expect(unit).toBeDefined();
   });
 
-  // The brightness is a look setting. It scales the colour channels alone: scaling the
-  // alpha with it would turn a look setting into a change in how much a dark nebula
-  // hides of what is behind it.
-  test('doubling the brightness doubles the colour and leaves the alpha alone', () => {
-    const set = manySet(OVER_BUDGET);
-    const readings: { brightness: number; fades: number[] }[] = [];
-    for (const brightness of [1, 2]) {
-      const context = fakeContext();
-      const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-      pass.draw(frameOf(12000, brightness));
-      const sent = context
-        .of('uniform1f')
-        .find((call) => call.args[0] === 'uBrightness');
-      const data = context.of('bufferSubData')[0]?.args[2] as Float32Array;
-      const fades: number[] = [];
-      for (let slot = 0; slot < pass.drawnCount; slot += 1) {
-        fades.push(data[slot * NEBULA_INSTANCE_FLOATS + 5] as number);
-      }
-      readings.push({ brightness: sent?.args[1] as number, fades });
-    }
-    expect(readings[1]?.brightness).toBe(2 * (readings[0]?.brightness as number));
-    // The alpha the pass sends per sprite is the weight times the fade, and neither
-    // moved.
-    expect(readings[1]?.fades).toEqual(readings[0]?.fades);
-  });
-
-  test('sends the instances furthest first', () => {
+  test('sends the light gain and the step rate the frame carries', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(12000));
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
 
-    const data = context.of('bufferSubData')[0]?.args[2] as Float32Array;
-    let previous = Infinity;
-    for (let slot = 0; slot < pass.drawnCount; slot += 1) {
-      // The records sit on the `z` axis, which the world frame negates, and the camera
-      // is at the origin.
-      const range = Math.abs(data[slot * NEBULA_INSTANCE_FLOATS + 2] as number);
-      expect(range).toBeLessThanOrEqual(previous);
-      previous = range;
+    pass.draw(frameOf(6000, { lightGain: [1, 2, 3], stepRate: 25 }));
+
+    const sent = uniformsOf(context);
+    expect(sent.get('uLightGain')).toBe(JSON.stringify([1, 2, 3]));
+    expect(sent.get('uSteps')).toBe(JSON.stringify([25]));
+  });
+
+  // The light gain scales the emission alone. The shader multiplies it into the colour
+  // and never into the alpha, which a stub context cannot watch, so this reads the text.
+  test('doubling the light gain doubles the colour and leaves the alpha alone', () => {
+    expect(nebulaFragmentSource).toContain(
+      'emission += colour * uLightGain * transmittance.rgb * density * step;',
+    );
+    const alpha = nebulaFragmentSource.slice(
+      nebulaFragmentSource.indexOf('fragColour = vec4('),
+    );
+    expect(alpha).toContain('(1.0 - transmittance.a) * mean * vWeight');
+    expect(alpha).not.toContain('uLightGain');
+  });
+
+  // The draw writes into one array it owns, so a test that kept the reference would
+  // read the last record's matrix twice. Each set below holds one record.
+  test('sends each record the matrix its own rotation builds', () => {
+    const matrices: number[][] = [];
+    for (const rotation of [
+      [Math.PI / 2, 0, 0],
+      [0, 0, 0],
+    ]) {
+      const context = fakeContext();
+      const set = buildNebulaSet({ records: [[0, 0, 400, 200, 0, ...rotation]] });
+      const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+      pass.draw(frameOf(6000));
+
+      const sent = context.calls.filter((call) => call.name === 'uniformMatrix3fv');
+      expect(sent).toHaveLength(1);
+      matrices.push([...(sent[0]?.args[2] as Float32Array)]);
     }
+    expect(matrices[0]).not.toEqual(matrices[1]);
+    expect(matrices[1]).toEqual([...nebulaRotationMatrix([0, 0, 0])]);
+    // The set holds the angles as float32, so the expected matrix takes the same
+    // rounding the record file's own value took.
+    const quarter = Math.fround(Math.PI / 2);
+    expect(matrices[0]).toEqual([...nebulaRotationMatrix([quarter, 0, 0])]);
+  });
+
+  // One asset serves many records. `bright-02` is asset 3 of the committed index, and
+  // the record file puts several records over it. The two records below share it and
+  // differ in radius and in rotation, so the pass must bind one pair of textures twice
+  // and send a radius and a matrix of each record's own.
+  test("draws two records over one asset with each record's own size and turn", () => {
+    const context = fakeContext();
+    const BRIGHT_02 = 3;
+    const set = buildNebulaSet({
+      records: [
+        [0, 0, 400, 60, BRIGHT_02, 0, 0, 0],
+        [0, 0, 200, 30, BRIGHT_02, Math.PI / 2, 0, 0],
+      ],
+    });
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+
+    pass.draw(frameOf(6000));
+
+    const bound = context
+      .of('bindTexture')
+      .map((call) => (call.args[1] as { name?: string } | null)?.name)
+      .filter((name) => name?.startsWith('density') === true);
+    // The same asset, once per record, furthest first.
+    expect(bound).toEqual(['density-3', 'density-3']);
+    expect(pass.drawCalls).toBe(2);
+
+    // The radius is the record's own, so one asset draws 120 light years across and the
+    // other 60.
+    expect(everyValueOf(context, 'uRadius')).toEqual([[60], [30]]);
+
+    // The draw writes the matrix into one array it owns, so a reading of both calls of
+    // one draw would read the last matrix twice. Each record is drawn alone here.
+    const matrices = [
+      [0, 0, 0],
+      [Math.PI / 2, 0, 0],
+    ].map((rotation) => {
+      const one = fakeContext();
+      const alone = buildNebulaSet({
+        records: [[0, 0, 400, 60, BRIGHT_02, ...rotation]],
+      });
+      createNebulaPass(one.gl, fakeProgram(), alone, volumesOf()).draw(frameOf(6000));
+      const sent = one.calls.filter((call) => call.name === 'uniformMatrix3fv');
+      expect(sent).toHaveLength(1);
+      return [...(sent[0]?.args[2] as Float32Array)];
+    });
+    expect(matrices[0]).toEqual([...nebulaRotationMatrix([0, 0, 0])]);
+    expect(matrices[1]).toEqual([
+      ...nebulaRotationMatrix([Math.fround(Math.PI / 2), 0, 0]),
+    ]);
+    expect(matrices[0]).not.toEqual(matrices[1]);
+  });
+
+  // Source-over depends on the order, so the pass draws from the furthest to the
+  // nearest. The set below puts its records on the `z` axis in the wrong order.
+  test('draws from the furthest to the nearest', () => {
+    const context = fakeContext();
+    const set = buildNebulaSet({
+      records: [
+        [0, 0, 200, 200, 0, 0, 0, 0],
+        [0, 0, 600, 200, 1, 0, 0, 0],
+        [0, 0, 400, 200, 2, 0, 0, 0],
+      ],
+    });
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+
+    pass.draw(frameOf(6000));
+
+    expect(everyValueOf(context, 'uPosition')).toEqual([
+      [0, 0, -600],
+      [0, 0, -400],
+      [0, 0, -200],
+    ]);
+  });
+
+  // A record naming an asset the set does not hold draws nothing rather than throwing.
+  // The loader applies no upper bound, so this is where a mismatch lands at run time.
+  test('skips a record whose asset the set does not hold', () => {
+    const context = fakeContext();
+    const set = buildNebulaSet({
+      records: [
+        [0, 0, 400, 200, 0, 0, 0, 0],
+        [0, 0, 200, 200, 99, 0, 0, 0],
+      ],
+    });
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf(4));
+
+    pass.draw(frameOf(6000));
+
+    expect(pass.drawCalls).toBe(1);
+  });
+
+  test('frees the program, the buffers and the textures on dispose', () => {
+    const context = fakeContext();
+    let freed = 0;
+    const volumes: NebulaVolumeTextures = {
+      assets: volumesOf().assets,
+      dispose(): void {
+        freed += 1;
+      },
+    };
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumes);
+
+    pass.dispose();
+
+    expect(freed).toBe(1);
+    expect(context.of('deleteBuffer')).toHaveLength(1);
+    expect(context.of('deleteVertexArray')).toHaveLength(1);
+    expect(context.of('deleteProgram')).toHaveLength(1);
   });
 });
 
 describe('the march uniforms', () => {
-  // An unset `sampler3D` reads unit 0, where the atlas sits, and two samplers of
-  // different types on one unit make the draw fail with `INVALID_OPERATION`.
-  test('gives the three samplers three units, and sets all three with no volume', () => {
-    for (const volume of [VOLUME_TEXTURE, null]) {
-      const context = fakeContext();
-      const set = manySet(OVER_BUDGET);
-      const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-      pass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { volume }));
-
-      const units = new Map(
-        context.of('uniform1i').map((call) => [call.args[0], call.args[1]]),
-      );
-      expect(units.get('uAtlas')).toBe(0);
-      expect(units.get('uVolume')).toBe(1);
-      expect(units.get('uDetail')).toBe(2);
-      expect(new Set(units.values()).size).toBe(3);
-    }
-  });
-
   test('sends the box, the decoding and the absorption the volume pass reads', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(12000));
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
 
-    const floats = new Map(
-      context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
-    );
-    expect(floats.get('uLo')).toBe(-10);
-    expect(floats.get('uSpan')).toBe(10);
-    expect(floats.get('uEpsilon')).toBe(1e-6);
-    expect(floats.get('uAbsorption')).toBe(DEFAULT_ABSORPTION);
-    expect(floats.get('uDetailScale')).toBe(1 / 127);
+    pass.draw(frameOf(6000));
 
-    const triples = new Map(
-      context.of('uniform3f').map((call) => [call.args[0], call.args.slice(1)]),
-    );
-    expect(triples.get('uBoxMin')).toEqual([-100, -100, -100]);
-    expect(triples.get('uBoxSize')).toEqual([200, 200, 200]);
-    expect(triples.get('uCentre')).toEqual([0, 0, 0]);
+    const sent = uniformsOf(context);
+    expect(sent.get('uBoxMin')).toBe(JSON.stringify([-100, -100, -100]));
+    expect(sent.get('uBoxSize')).toBe(JSON.stringify([200, 200, 200]));
+    expect(sent.get('uCentre')).toBe(JSON.stringify([0, 0, 0]));
+    expect(sent.get('uLo')).toBe(JSON.stringify([-10]));
+    expect(sent.get('uSpan')).toBe(JSON.stringify([10]));
+    expect(sent.get('uEpsilon')).toBe(JSON.stringify([1e-6]));
+    expect(sent.get('uAbsorption')).toBe(JSON.stringify([DEFAULT_ABSORPTION]));
+    expect(sent.get('uDetailScale')).toBe(JSON.stringify([1 / 127]));
   });
 
-  // The multiplication happens in the shader. A stub context reads the value the pass
-  // sends and nothing of the frame, so the browser readings cover the arithmetic.
   test('sends the occlusion the frame carries, and 1 by default', () => {
-    expect(DEFAULT_NEBULA_OCCLUSION).toBe(1);
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0.25 }));
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
 
-    const sent = context.of('uniform1f').find((call) => call.args[0] === 'uOcclusion');
-    expect(sent?.args[1]).toBe(0.25);
+    pass.draw(frameOf(6000));
+    expect(uniformsOf(context).get('uOcclusion')).toBe(JSON.stringify([1]));
+
+    const half = fakeContext();
+    const other = createNebulaPass(half.gl, fakeProgram(), manySet(2), volumesOf());
+    other.draw(frameOf(6000, { occlusion: 0.5 }));
+    expect(uniformsOf(half).get('uOcclusion')).toBe(JSON.stringify([0.5]));
   });
 
-  // Before the volume arrives there is nothing to march, so the sprite takes no
-  // extinction and the frame is the frame the pass drew before the march existed.
   test('sends an occlusion of 0 with no volume, as it does at a constant of 0', () => {
-    const set = manySet(OVER_BUDGET);
-    const without = fakeContext();
-    const withoutPass = createNebulaPass(
-      without.gl,
-      fakeProgram(),
-      set,
-      atlasOf(without),
-    );
-    withoutPass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { volume: null }));
+    const context = fakeContext();
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
 
-    const off = fakeContext();
-    const offPass = createNebulaPass(off.gl, fakeProgram(), set, atlasOf(off));
-    offPass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0 }));
+    pass.draw(frameOf(6000, { volume: null }));
 
-    const sent = without.of('uniform1f').find((call) => call.args[0] === 'uOcclusion');
-    expect(sent?.args[1]).toBe(0);
-    expect(uniformsOf(without)).toEqual(uniformsOf(off));
+    expect(uniformsOf(context).get('uOcclusion')).toBe(JSON.stringify([0]));
   });
 });
 
@@ -517,11 +656,11 @@ describe('the shared density rule', () => {
 });
 
 describe('the march in the nebula vertex shader', () => {
-  // A collapsed sprite must not pay for 64 texture fetches. A stub-context test reads
+  // A collapsed box must not pay for 64 texture fetches. A stub-context test reads
   // uniform and buffer calls and cannot watch vertex-shader control flow, so the
   // assertion is on the source. The browser suite reads the drawn count and the frame
   // cost, which is where the behaviour shows.
-  test('runs after the early-out that collapses a sprite', () => {
+  test('runs after the early-out that collapses a box', () => {
     const collapse = nebulaVertexSource.indexOf(
       'gl_Position = vec4(0.0, 0.0, 2.0, 1.0);',
     );
@@ -532,7 +671,7 @@ describe('the march in the nebula vertex shader', () => {
     expect(march).toBeGreaterThan(earlyReturn);
   });
 
-  test('writes a transmittance of 1 for a collapsed sprite', () => {
+  test('writes a transmittance of 1 for a collapsed box', () => {
     const collapse = nebulaVertexSource.indexOf(
       'gl_Position = vec4(0.0, 0.0, 2.0, 1.0);',
     );
@@ -549,6 +688,65 @@ describe('the march in the nebula vertex shader', () => {
     expect(nebulaVertexSource).toContain('vec3 depth = vec3(0.0);');
     expect(nebulaVertexSource).toContain('depth += DUST * (density * uAbsorption');
   });
+
+  // The 36 vertices of one box march the same segment, so every one reaches the same
+  // answer. The march reads the record's centre alone and no per-vertex value.
+  test('marches the record centre, so every vertex reaches the same answer', () => {
+    expect(nebulaVertexSource).toContain(
+      'vTransmittance = marchTransmittance(centre);',
+    );
+    expect(nebulaVertexSource).not.toContain('marchTransmittance(aCorner');
+  });
+
+  // Nothing names the atlas or a tile any more. `tests/main-bundle.test.ts` reads
+  // `vMarchObject` and `uNebulaTransfer` as its needles, so this holds both in place.
+  test('names the volume varyings and no tile', () => {
+    expect(nebulaVertexSource).toContain('out vec3 vMarchObject;');
+    expect(nebulaFragmentSource).toContain('uniform sampler2D uNebulaTransfer;');
+    for (const source of [nebulaVertexSource, nebulaFragmentSource]) {
+      expect(source).not.toContain('vTileUv');
+      expect(source).not.toContain('uAtlas');
+    }
+  });
+});
+
+describe('the fragment march', () => {
+  // The near end clamps at 0 so a camera inside the box starts its march at the eye.
+  test('clamps the near end of the slab at 0', () => {
+    expect(nebulaFragmentSource).toContain(
+      'float near = max(max(low.x, low.y), max(low.z, 0.0));',
+    );
+  });
+
+  // Five assets carry a negative extinction channel, so the transmittance can rise
+  // above 1 along a ray. The client applies no upper clamp and neither does this.
+  test('applies no upper clamp to the transmittance', () => {
+    expect(nebulaFragmentSource).toContain(
+      'transmittance *= max(vec4(0.0), vec4(1.0) - extinction * density * step);',
+    );
+    expect(nebulaFragmentSource).not.toContain('min(vec4(1.0), transmittance');
+  });
+
+  test('abandons a ray below 0.01 transmittance and takes at most 256 steps', () => {
+    expect(nebulaFragmentSource).toContain('const int MAX_STEPS = 256;');
+    expect(nebulaFragmentSource).toContain(
+      'if (all(lessThan(transmittance, vec4(0.01)))) break;',
+    );
+    expect(nebulaFragmentSource).toContain('count = clamp(count, 1, MAX_STEPS);');
+  });
+
+  // The stored volume runs opposite to object-space y.
+  test('samples at (u, 1 - v, w)', () => {
+    expect(nebulaFragmentSource).toContain('uvw.y = 1.0 - uvw.y;');
+  });
+
+  // The emission takes the transmittance after the step, as the integral asks.
+  test('takes the transmittance after the step', () => {
+    const body = nebulaFragmentSource.slice(
+      nebulaFragmentSource.indexOf('for (int index = 0'),
+    );
+    expect(body.indexOf('transmittance *=')).toBeLessThan(body.indexOf('emission +='));
+  });
 });
 
 /**
@@ -562,58 +760,46 @@ const BAND_VIEWS: { distance: number; camera: readonly [number, number, number] 
   { distance: 12000, camera: [0, 500, 8000] },
 ];
 
-/** The instance array one draw uploaded, cut to the floats the draw sent. */
-function uploadedInstances(context: FakeContext, count: number): Float32Array {
-  const call = context.of('bufferSubData')[0];
-  const data = call?.args[2] as Float32Array;
-  return data.slice(0, count * NEBULA_INSTANCE_FLOATS);
-}
-
 // The renderer chose the records before this change and handed the pass a list. The draw
 // chooses them now, from the frame it is given. The two paths must give one picture, so
-// this test runs the old path beside the new one and compares what reaches the card.
+// this test runs the selection beside the draw and compares what reaches the card.
 describe('the selection the draw makes', () => {
-  test('matches the selection the caller made before, at three views in the band', () => {
+  test('matches the selection the caller makes, at three views in the band', () => {
     for (const view of BAND_VIEWS) {
       const context = fakeContext();
-      const set = manySet(OVER_BUDGET);
-      const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-
-      // The old path: the caller selects, then writes the instances itself.
+      const set = manySet(MANY);
+      const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
       const selection = selectionOf(set, view.distance, view.camera);
-      const expected = new Float32Array(NEBULA_MAX_DRAWN * NEBULA_INSTANCE_FLOATS);
-      const count = writeNebulaInstances(set, selection.instances, expected);
 
-      pass.draw(
-        frameOf(view.distance, DEFAULT_NEBULA_BRIGHTNESS, { camera: view.camera }),
+      pass.draw(frameOf(view.distance, { camera: view.camera }));
+
+      expect(selection.instances.length).toBeGreaterThan(0);
+      expect(pass.drawnCount, `${view.distance} ly drew a different count`).toBe(
+        selection.instances.length,
       );
-
-      expect(count).toBeGreaterThan(0);
-      expect(pass.drawnCount, `${view.distance} ly drew a different count`).toBe(count);
-      // The floats carry the order as well as the values: each slot holds the position,
-      // the radius, the tile and the fade of one record, in the draw order.
+      // The positions carry the order as well as the values: one draw call per record,
+      // in the draw order.
       expect(
-        [...uploadedInstances(context, count)],
-        `${view.distance} ly sent different instances`,
-      ).toEqual([...expected.slice(0, count * NEBULA_INSTANCE_FLOATS)]);
-      expect(pass.drawCalls).toBe(1);
+        everyValueOf(context, 'uPosition'),
+        `${view.distance} ly drew different records`,
+      ).toEqual(
+        selection.instances.map((instance) => [
+          set.positions[instance.index * 3] as number,
+          set.positions[instance.index * 3 + 1] as number,
+          -(set.positions[instance.index * 3 + 2] as number),
+        ]),
+      );
     }
   });
 
-  // The figures the pass read before this change, at the views the tests above use.
-  // A selection that moved into the draw and changed what it chose would read here.
-  test('reads the drawn count and the draw call count it read before', () => {
+  test('issues one draw call per drawn record, and none above the band', () => {
     const context = fakeContext();
-    const set = manySet(OVER_BUDGET);
-    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
+    const set = manySet(MANY);
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
 
     pass.draw(frameOf(12000));
-    expect(pass.drawnCount).toBe(NEBULA_MAX_DRAWN);
-    expect(pass.drawCalls).toBe(1);
-
-    pass.draw(frameOf(6000));
-    expect(pass.drawnCount).toBe(NEBULA_MAX_DRAWN);
-    expect(pass.drawCalls).toBe(1);
+    expect(pass.drawnCount).toBe(selectionOf(set, 12000).instances.length);
+    expect(pass.drawCalls).toBe(pass.drawnCount);
 
     // Above the far end of the band the weight is 0, so nothing draws.
     pass.draw(frameOf(60000));

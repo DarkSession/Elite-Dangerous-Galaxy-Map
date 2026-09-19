@@ -84,12 +84,12 @@ export interface OpenOptions {
   /**
    * False opens the map without a wait for the nebulae. The default waits for them,
    * because they attach after the first frame: a test that draws before the upload
-   * reads one picture with the sprites and one without. Only a test that holds or
+   * reads one picture with the nebulae and one without. Only a test that holds or
    * breaks a nebula asset passes false.
    *
    * The name states the wait and not the map option. `nebulae` is the option a host
-   * gives `createGalaxyMap` to turn the sprites on, so one word would carry two
-   * opposite meanings in one suite.
+   * gives `createGalaxyMap` to turn them on, so one word would carry two opposite
+   * meanings in one suite.
    */
   readonly waitForNebulae?: boolean;
 }
@@ -108,11 +108,11 @@ export async function openMap(
 }
 
 /**
- * Waits until the nebula sprites are on the map, then draws one frame.
+ * Waits until the nebulae are on the map, then draws one frame.
  *
- * The map starts before the nebula records and the sprite atlas arrive, so the first
- * frames carry no sprites. Every test that reads the canvas waits here first, or the
- * upload lands in the middle of the test and moves the light it measures.
+ * The map starts before the nebula records and the volumes arrive, so the first frames
+ * carry no nebula. Every test that reads the canvas waits here first, or the upload
+ * lands in the middle of the test and moves the light it measures.
  *
  * A map that holds no nebula source attaches nothing, and that is a supported state and
  * not a failure. The helper asks the handle first and waits only where the map holds a

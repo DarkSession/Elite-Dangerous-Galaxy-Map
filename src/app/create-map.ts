@@ -208,8 +208,8 @@ export interface GalaxyMapOptions {
   readonly interaction?: Partial<InteractionSwitches>;
   /**
    * The nebula source, which is the single export of the package's `./nebulae` subpath.
-   * With it the map fetches the records and the art and draws the sprites. With no value
-   * the map fetches neither file, compiles no nebula program and draws no sprite, and
+   * With it the map fetches the records and the art and draws the nebulae. With no value
+   * the map fetches no nebula file, compiles no nebula program and draws no nebula, and
    * reports no error: asking for no nebulae is not a fault.
    *
    * A value the map cannot read turns the nebulae off, as every other option of this
@@ -334,17 +334,17 @@ export function readStartView(value: unknown): StartView | null {
 }
 
 /**
- * Closes a decoded sprite atlas the source gave.
+ * Closes the decoded volumes the source gave.
  *
- * The map holds the atlas as an opaque value, because the source names the type and the
- * map does not. A decoded `ImageBitmap` holds pixels until it is closed, and the texture
- * upload copies them, so the map closes it on every path. A value that carries no
- * `close` is left as it is.
+ * The map holds the volumes as an opaque value, because the source names the type and
+ * the map does not. A value that holds its pixels until it is closed is closed here, on
+ * every path, because the texture upload copies them. A value that carries no `close` is
+ * left as it is.
  */
-function closeAtlas(atlas: unknown): void {
-  if (atlas === null || typeof atlas !== 'object') return;
-  const image = atlas as { close?: unknown };
-  if (typeof image.close === 'function') (image.close as () => void).call(image);
+function closeVolumes(volumes: unknown): void {
+  if (volumes === null || typeof volumes !== 'object') return;
+  const held = volumes as { close?: unknown };
+  if (typeof held.close === 'function') (held.close as () => void).call(held);
 }
 
 /**
@@ -360,11 +360,11 @@ export function readNebulaSource(value: unknown): NebulaSource | null {
   if (value === null || typeof value !== 'object') return null;
   const source = value as {
     loadSet?: unknown;
-    loadAtlas?: unknown;
+    loadVolumes?: unknown;
     createDraw?: unknown;
   };
   if (typeof source.loadSet !== 'function') return null;
-  if (typeof source.loadAtlas !== 'function') return null;
+  if (typeof source.loadVolumes !== 'function') return null;
   if (typeof source.createDraw !== 'function') return null;
   return value as NebulaSource;
 }
@@ -384,7 +384,7 @@ export interface MapView {
 export interface GalaxyMapDebug {
   setPasses(passes: Partial<PassSwitches>): void;
   /**
-   * Sets how much of the volume's extinction a nebula sprite takes, 0 to 1. It writes
+   * Sets how much of the volume's extinction a nebula takes, 0 to 1. It writes
    * the same field as `look.nebulaOcclusion`. The setter sits beside the mutable handle
    * because the browser tests reach the hook through `window.__galaxyMap`, where a named
    * call is what the page can expose and type. The frame holds the range, so both routes
@@ -404,8 +404,12 @@ export interface GalaxyMapDebug {
   nebulaDrawnCount(): number;
   /** How many draw calls the last frame's nebula pass issued. */
   nebulaDrawCalls(): number;
+  /** How many records passed the size floor in the last frame, before the budget. */
+  nebulaAboveFloorCount(): number;
+  /** How much of the screen the last frame's nebulae cover, in screen areas. */
+  nebulaCoveredArea(): number;
   /**
-   * Whether the nebula records and the atlas reached the renderer. The start chain does
+   * Whether the nebula records and the volumes reached the renderer. The start chain does
    * not wait for them, so a caller that reads the pass must wait for this.
    */
   nebulaeAttached(): boolean;
@@ -631,14 +635,14 @@ export interface GalaxyMap {
   /** True where the map was built with a nebula source it can read. */
   hasNebulae(): boolean;
   /**
-   * True while the nebula sprites draw. A map that holds no source reads false.
+   * True while the nebulae draw. A map that holds no source reads false.
    *
-   * Turning the sprites off leaves the records and the art loaded, so turning them on
+   * Turning them off leaves the records and the art loaded, so turning them on
    * again draws in the next frame and fetches nothing.
    */
   areNebulaeVisible(): boolean;
   /**
-   * Turns the nebula sprites on or off, from the next frame on. On a map that holds no
+   * Turns the nebulae on or off, from the next frame on. On a map that holds no
    * source it does nothing and throws nothing. A value that is not a boolean leaves the
    * state as it was.
    */
@@ -1022,12 +1026,12 @@ export function createGalaxyMap(
   // The source the host gave, or null where it gave none or gave one the map cannot
   // read. Every nebula member of the handle reads this one field.
   const nebulaSource: NebulaSource | null = readNebulaSource(options.nebulae);
-  // The sprites open visible on a map that holds a source.
+  // The nebulae open visible on a map that holds a source.
   let nebulaeVisible = true;
   let nebulaeAttached = false;
-  // The decoded sprite atlas, from the fetch until the upload frees it. `dispose` frees
-  // it from here when it runs in that window.
-  let pendingAtlas: unknown = null;
+  // The decoded volumes, from the fetch until the upload frees them. `dispose` frees
+  // them from here when it runs in that window.
+  let pendingVolumes: unknown = null;
   let labels: LabelOverlay | null = null;
   let markers: MarkerOverlay | null = null;
   let gridLabels: GridLabelOverlay | null = null;
@@ -1423,31 +1427,31 @@ export function createGalaxyMap(
     // The nebulae are not part of the first frame. A failure here leaves the map
     // without them and every other pass drawing, so the pair is reported and dropped
     // rather than thrown. Both halves settle, because one half alone draws nothing and
-    // the decoded atlas must close even where the records fail.
+    // the decoded volumes must close even where the records fail.
     //
-    // A map with no source fetches neither file. The two loaders live in the source, so
-    // a host that never imports the subpath carries neither the code nor the two assets.
+    // A map with no source fetches no nebula file. The two loaders live in the source,
+    // so a host that never imports the subpath carries neither the code nor the art.
     const nebulaPromise =
       nebulaSource === null
         ? Promise.resolve(null)
-        : Promise.allSettled([nebulaSource.loadSet(), nebulaSource.loadAtlas()]).then(
-            ([records, atlas]) => {
-              if (records.status === 'fulfilled' && atlas.status === 'fulfilled') {
-                // A dispose before the atlas arrives frees it here. After this point
-                // `pendingAtlas` holds it, and `dispose` frees it from there.
+        : Promise.allSettled([nebulaSource.loadSet(), nebulaSource.loadVolumes()]).then(
+            ([records, volumes]) => {
+              if (records.status === 'fulfilled' && volumes.status === 'fulfilled') {
+                // A dispose before the volumes arrive frees them here. After this point
+                // `pendingVolumes` holds them, and `dispose` frees them from there.
                 if (disposed) {
-                  closeAtlas(atlas.value);
+                  closeVolumes(volumes.value);
                   return null;
                 }
-                pendingAtlas = atlas.value;
-                return [records.value, atlas.value] as const;
+                pendingVolumes = volumes.value;
+                return [records.value, volumes.value] as const;
               }
-              if (atlas.status === 'fulfilled') closeAtlas(atlas.value);
+              if (volumes.status === 'fulfilled') closeVolumes(volumes.value);
               const reason =
                 records.status === 'rejected'
                   ? records.reason
-                  : atlas.status === 'rejected'
-                    ? atlas.reason
+                  : volumes.status === 'rejected'
+                    ? volumes.reason
                     : undefined;
               console.warn('The map dropped the nebulae.', reason);
               return null;
@@ -1545,27 +1549,27 @@ export function createGalaxyMap(
     // The nebulae attach after the loop runs, and the start chain does not wait for
     // them. An await here would hold the first frame, and the loading picture with it,
     // behind a fetch that may never answer, and every other pass would be down with the
-    // nebulae. The loop draws every frame, so the sprites appear on the frame after the
+    // nebulae. The loop draws every frame, so they appear on the frame after the
     // upload.
     void nebulaPromise
       .then((nebulae) => {
         if (nebulae === null || nebulaSource === null) return;
-        const [records, atlas] = nebulae;
-        // The texture copies the pixels, so the decoded atlas closes on every path.
+        const [records, volumes] = nebulae;
+        // The texture copies the pixels, so the decoded volumes close on every path.
         try {
           if (!disposed && renderer !== null) {
             // The source builds the draw. The renderer holds the slot alone and knows
             // neither the records nor the art.
-            renderer.setNebulae(nebulaSource.createDraw(gl, records, atlas));
+            renderer.setNebulae(nebulaSource.createDraw(gl, records, volumes));
             renderer.setPasses({ nebulae: nebulaeVisible });
             nebulaeAttached = true;
           }
         } finally {
-          closeAtlas(atlas);
-          pendingAtlas = null;
+          closeVolumes(volumes);
+          pendingVolumes = null;
         }
       })
-      // The upload reads the atlas and throws on a shape the tile grid cannot hold.
+      // The upload reads the volumes and throws on a shape the textures cannot hold.
       // The map keeps every other pass, as it does for a failed fetch.
       .catch((reason: unknown) => {
         console.warn('The map dropped the nebulae.', reason);
@@ -1663,6 +1667,12 @@ export function createGalaxyMap(
     },
     nebulaDrawCalls(): number {
       return renderer?.nebulaDrawCalls() ?? 0;
+    },
+    nebulaAboveFloorCount(): number {
+      return renderer?.nebulaAboveFloorCount() ?? 0;
+    },
+    nebulaCoveredArea(): number {
+      return renderer?.nebulaCoveredArea() ?? 0;
     },
     nebulaeAttached(): boolean {
       return nebulaeAttached;
@@ -1864,9 +1874,9 @@ export function createGalaxyMap(
       window.removeEventListener('resize', onResize);
       hud?.dispose();
       hud = null;
-      if (pendingAtlas !== null) {
-        closeAtlas(pendingAtlas);
-        pendingAtlas = null;
+      if (pendingVolumes !== null) {
+        closeVolumes(pendingVolumes);
+        pendingVolumes = null;
       }
       renderer?.dispose();
       renderer = null;

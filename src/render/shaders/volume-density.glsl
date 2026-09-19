@@ -3,7 +3,7 @@
 //
 // `volume.frag` and `nebulae.vert` both read this file, which `volume-pass.ts` puts in
 // place of the `// @volume-density` line of each source, because GLSL has no include. The
-// volume pass draws the dust, and the nebula pass dims a sprite by the dust between the
+// volume pass draws the dust, and the nebula pass dims a record by the dust between the
 // camera and it. The two must give the same answer: a second copy of the rule that
 // drifted would light a nebula against a rim the volume no longer draws.
 //
