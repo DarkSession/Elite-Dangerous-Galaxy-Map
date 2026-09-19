@@ -544,6 +544,18 @@ describe('the three HUD record fields', () => {
     expect(second?.primaryStar).toBeUndefined();
   });
 
+  // A description is Markdown, and the reader keeps the string as the record gave it:
+  // it strips no character, escapes none and parses nothing. The HUD parses the text
+  // when it draws it.
+  test('keeps the Markdown characters of a description', () => {
+    const description = 'A **hub** with `code`, a [label] and a back slash \\.';
+    const set = setWith('A');
+    const report = set.addSystems(asRecords([{ ...record('Sol', 'A'), description }]));
+
+    expect(report.added).toBe(1);
+    expect(set.system(0)?.description).toBe(description);
+  });
+
   test('drops a bad image entry and caps the list at eight', () => {
     const set = setWith('A');
     const images: unknown[] = [

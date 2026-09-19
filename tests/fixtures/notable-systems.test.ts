@@ -9,6 +9,7 @@ import type { CategoryInput } from '../../src/scene-data/real-systems';
 import {
   convertNotable,
   plainTextFromHtml,
+  escapeMarkdown,
 } from '../../scripts/build-demo-systems.mjs';
 
 const extract = JSON.parse(
@@ -77,6 +78,23 @@ describe('the conversion of the notable systems dump', () => {
     expect(system?.primaryCategory).toBe('Other');
   });
 
+  test('escapes the marks of a description', () => {
+    const records = [
+      {
+        category: 'Human',
+        system: 'Sol',
+        x: '0',
+        y: '0',
+        z: '0',
+        html: '<p>A site of the INRA [1] with a *note*.</p>',
+      },
+    ];
+
+    const system = convertNotable(records).systems[0];
+
+    expect(system?.description).toBe('A site of the INRA \\[1] with a \\*note\\*.');
+  });
+
   test('holds no markup in any description', () => {
     for (const system of convertNotable(extract).systems) {
       const description = system.description ?? '';
@@ -136,6 +154,26 @@ describe('the plain text of an html field', () => {
   test('gives an empty text for an empty field', () => {
     expect(plainTextFromHtml(undefined)).toBe('');
     expect(plainTextFromHtml('<p></p>')).toBe('');
+  });
+});
+
+describe('the markdown escape of a description', () => {
+  test('escapes the four mark characters', () => {
+    expect(escapeMarkdown('a*b[c`d\\e')).toBe('a\\*b\\[c\\`d\\\\e');
+  });
+
+  test('keeps an underscore, because a system name carries one', () => {
+    expect(escapeMarkdown('Col 285 Sector XY_Z')).toBe('Col 285 Sector XY_Z');
+  });
+
+  test('stops a commander name from opening a link', () => {
+    expect(escapeMarkdown('CMDR Maxwell Hauser [GPL] reported')).toBe(
+      'CMDR Maxwell Hauser \\[GPL] reported',
+    );
+  });
+
+  test('gives an empty text for no text', () => {
+    expect(escapeMarkdown(undefined)).toBe('');
   });
 });
 

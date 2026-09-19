@@ -67,6 +67,7 @@ export declare const CATEGORY_OF_SUBJECT: Record<string, DemoCategory>;
 export declare function describeSystem(sites: readonly RuinsSite[]): string;
 export declare function describeStructureSystem(sites: readonly RuinsSite[]): string;
 export declare function plainTextFromHtml(html: unknown): string;
+export declare function escapeMarkdown(text: unknown): string;
 export declare function convertRuins(dump: unknown): DemoSet;
 export declare function convertStructures(dump: unknown): DemoSet;
 export declare function convertNotable(dump: unknown): DemoSet;

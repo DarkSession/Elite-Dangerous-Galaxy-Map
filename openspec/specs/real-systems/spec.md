@@ -437,9 +437,15 @@ The reader SHALL store `id64` as a decimal string. A Spansh `id64` is a 64-bit i
 and `JSON.parse` loses digits above 2^53, so a host that needs every digit passes a
 string or a `bigint`.
 
-`description` is a paragraph about the system and `primaryStar` is the class of its
-primary star, for example `K5 V`. Neither changes how a marker draws. The HUD shows each
-one and hides its section when the record carries none.
+`description` is text about the system, written in the **Markdown subset** that
+`system-details` states. The reader SHALL keep the string as the record gave it: it SHALL
+NOT strip a character, SHALL NOT escape one, and SHALL NOT parse the text. The HUD parses
+it when it draws it, and it draws no HTML from it, so a description from an untrusted dump
+carries no markup into the page.
+
+`primaryStar` is the class of the system's primary star, for example `K5 V`. Neither field
+changes how a marker draws. The HUD shows each one, and it hides the description section
+when the record carries none and the `details` loader of `system-details` gives none.
 
 `images` is an array of entries, each an object with a `url` string and an optional
 `caption` string. The reader SHALL keep at most **8** entries, in the order the record
@@ -507,6 +513,12 @@ browser loads it from the element.
 - **WHEN** a unit test adds one record whose `images` is the string `a.png` and one whose
   `images` is an empty array
 - **THEN** both records are accepted and neither holds an image
+
+#### Scenario: A description keeps its Markdown characters
+
+- **WHEN** a unit test adds one record whose `description` holds a star, a backtick, a
+  bracket and a backslash, and reads the record back from the handle
+- **THEN** the string reads exactly as the record gave it, character for character
 
 ### Requirement: The reader reports every record it rejects
 

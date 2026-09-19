@@ -1549,3 +1549,90 @@ test('the ring, the pin and the name follow the same gate', async ({ page }) => 
   expect(marks.rings).toBe(1);
   expect(marks.labels).toBeGreaterThan(0);
 });
+
+// The `systemNames` option of `GalaxyMapOptions`, which sets the state the map starts
+// in. The tests build a map of their own, because the option is read once at the build.
+test.describe('the system names option', () => {
+  /**
+   * Builds a map with the `systemNames` the test names, over a canvas of its own, and
+   * adds 10 systems in view. The demo page's map comes down first, so the label count
+   * of the document is the count of this map alone.
+   */
+  async function buildNamesMap(page: Page, options: unknown): Promise<void> {
+    await page.evaluate(async (settings) => {
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      window.galaxyMap?.dispose();
+      const wrap = document.createElement('div');
+      wrap.id = 'names-wrap';
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      wrap.appendChild(canvas);
+      document.body.appendChild(wrap);
+      const map = factory(canvas, {
+        ...(settings as Record<string, unknown>),
+        startView: { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 },
+      } as never);
+      window.__namesMap = map;
+      await map.ready;
+      map.addCategories([
+        { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 200000 },
+      ]);
+      const records = [];
+      for (let index = 0; index < 10; index += 1) {
+        records.push({
+          name: `S${index}`,
+          coords: { x: (index - 5) * 100 + 50, y: 0, z: 0 },
+          primaryCategory: 'Alpha',
+        });
+      }
+      map.addSystems(records as never);
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    }, options);
+  }
+
+  /** Takes the map of the test down, so the next build counts its own labels. */
+  async function dropNamesMap(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      window.__namesMap?.dispose();
+      delete window.__namesMap;
+      document.getElementById('names-wrap')?.remove();
+    });
+  }
+
+  test.afterEach(async ({ page }) => {
+    await dropNamesMap(page);
+  });
+
+  // The scenario "The option starts the labels on".
+  test('the option starts the labels on', async ({ page }) => {
+    await openMap(page);
+    await buildNamesMap(page, { systemNames: true });
+    const on = (await markCounts(page)).labels;
+    await dropNamesMap(page);
+
+    await buildNamesMap(page, {});
+    const off = (await markCounts(page)).labels;
+    console.log('the label counts of the two maps', { on, off });
+
+    expect(on).toBe(10);
+    expect(off).toBe(0);
+  });
+
+  // The scenario "An unreadable option keeps the labels off".
+  test('an unreadable option keeps the labels off', async ({ page }) => {
+    await openMap(page);
+    await buildNamesMap(page, { systemNames: 'yes' });
+    const reading = await page.evaluate(
+      () => window.__namesMap?.areSystemNamesVisible() ?? true,
+    );
+    const labels = (await markCounts(page)).labels;
+    console.log('the reading of an unreadable option', { reading, labels });
+
+    expect(reading).toBe(false);
+    expect(labels).toBe(0);
+  });
+});

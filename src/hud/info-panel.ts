@@ -1,32 +1,54 @@
 // The information panel: what the map knows about the selected system.
 import type { GalaxyMap, RealSystem } from '../app/create-map';
+import type { SystemDetails, SystemDetailValue } from './details';
+import { isSection, readDetails } from './details';
 import {
   cssColor,
   cssColorAlpha,
+  focusMark,
   formatCoordinate,
   formatLightYears,
   formatWhole,
   make,
   makeButton,
   replaceChildrenKeepingFocus,
+  restoreFocus,
   setShown,
   setText,
 } from './dom';
 import { distanceFromSol, rangeFromCursor } from './geometry';
 import type { Lightbox } from './lightbox';
-import type { HudAction } from './types';
+import { renderMarkdown } from './markdown';
+import type { HudInfoFields, HudOptions } from './types';
 
 /** How long a copy button shows its tick, in milliseconds. */
 export const COPY_TICK_MS = 1400;
+
+/** What a field's copy button writes, what it is called, and the key of its tick. */
+interface FieldCopy {
+  /** The text the button writes to the clipboard. */
+  readonly text: string;
+  /** The accessible name the button carries while it is idle. */
+  readonly name: string;
+  /** What the button is identified by, so one tick shows at a time. */
+  readonly key: string;
+}
 
 /** One field of the grid. */
 interface Field {
   readonly label: string;
   readonly value: string;
-  /** The text the field's copy button writes, when the field carries one. */
-  readonly copy?: string;
+  /** The copy button the field carries, where it carries one. */
+  readonly copy?: FieldCopy;
   /** True where the field takes both columns of the grid. */
   readonly wide?: boolean;
+}
+
+/** Which worked-out fields the panel builds. */
+export interface InfoFieldSwitches {
+  readonly distanceFromSol: boolean;
+  readonly range: boolean;
+  readonly region: boolean;
 }
 
 /** The information panel of the HUD. */
@@ -36,8 +58,21 @@ export interface InfoPanel {
   rebuild(): void;
   /** Rewrites the range from the camera, which follows the view. */
   update(): void;
-  /** Drops the timer a copy button holds. */
+  /** Drops the timer a copy button holds and the details load in flight. */
   dispose(): void;
+}
+
+/**
+ * Which worked-out fields the host left on. Each one is on unless the host names it
+ * false, and a value that is not a boolean takes the default.
+ */
+export function readInfoFields(fields: HudInfoFields | undefined): InfoFieldSwitches {
+  const on = (held: unknown): boolean => (typeof held === 'boolean' ? held : true);
+  return {
+    distanceFromSol: on(fields?.distanceFromSol),
+    range: on(fields?.range),
+    region: on(fields?.region),
+  };
 }
 
 /** The three game coordinates, each with the digits the field shows. */
@@ -58,26 +93,68 @@ function copyPosition(position: readonly [number, number, number]): string {
   return positionText(position, false);
 }
 
-/** The fields the record carries, in the order the panel shows them. */
-function fieldsOf(system: RealSystem, range: number): Field[] {
+/**
+ * Places the cells with one rule. A field is wide when it is `POSITION` or `REGION`,
+ * when it sits at the first column and the field after it is wide, or when it sits at
+ * the first column and it is the last field. The grid then holds no empty cell.
+ *
+ * The column condition is what keeps `DISTANCE FROM SOL` and `RANGE` sharing one row
+ * with `REGION` under them: `RANGE` sits at the second column, so the clause does not
+ * reach it.
+ */
+function placeFields(fields: readonly Field[]): Field[] {
+  const placed: Field[] = [];
+  let column = 0;
+  for (const [order, field] of fields.entries()) {
+    const after = fields[order + 1];
+    const wide =
+      field.wide === true ||
+      (column === 0 && (after === undefined || after.wide === true));
+    placed.push({ ...field, wide });
+    column = wide ? 0 : (column + 1) % 2;
+  }
+  return placed;
+}
+
+/**
+ * The fields the panel shows, in order: the position, the worked-out fields the host
+ * left on, the fields the record carries, and the host's grid values.
+ */
+export function fieldsOf(
+  system: RealSystem,
+  range: number,
+  switches: InfoFieldSwitches,
+  hostValues: readonly SystemDetailValue[],
+): Field[] {
   const position = system.position;
   const fields: Field[] = [
     {
       label: 'POSITION',
       value: positionText(position, true),
-      copy: copyPosition(position),
+      copy: {
+        text: copyPosition(position),
+        name: 'Copy position',
+        key: 'position',
+      },
       wide: true,
     },
-    { label: 'DISTANCE FROM SOL', value: formatLightYears(distanceFromSol(position)) },
-    { label: 'RANGE', value: formatLightYears(range) },
+  ];
+  if (switches.distanceFromSol) {
+    fields.push({
+      label: 'DISTANCE FROM SOL',
+      value: formatLightYears(distanceFromSol(position)),
+    });
+  }
+  if (switches.range) fields.push({ label: 'RANGE', value: formatLightYears(range) });
+  if (switches.region) {
     // The region is looked up on a promise, so the field is placed at once with an
     // empty value and the name is written in when the answer arrives. The grid then
     // does not reflow under the reader.
     //
     // It takes both columns because a region name runs to 26 characters, as
     // `Outer Scutum-Centaurus Arm` does, and one column of two is too narrow for it.
-    { label: 'REGION', value: '', wide: true },
-  ];
+    fields.push({ label: 'REGION', value: '', wide: true });
+  }
   const add = (label: string, value: string | undefined): void => {
     // A field the record does not carry is left out, and not shown empty.
     if (value === undefined || value === '') return;
@@ -94,7 +171,19 @@ function fieldsOf(system: RealSystem, range: number): Field[] {
   if (system.bodyCount !== undefined) {
     fields.push({ label: 'BODIES', value: formatWhole(system.bodyCount) });
   }
-  return fields;
+  for (const entry of hostValues) {
+    const text = entry.copy;
+    fields.push({
+      label: entry.label,
+      value: entry.value ?? '',
+      // The button carries the entry's label as its key, so its tick does not collide
+      // with the position button's.
+      ...(text === undefined
+        ? {}
+        : { copy: { text, name: `Copy ${entry.label}`, key: entry.label } }),
+    });
+  }
+  return placeFields(fields);
 }
 
 /** Draws the two squares of the copy mark. */
@@ -156,15 +245,32 @@ async function writeClipboard(doc: Document, text: string): Promise<boolean> {
   }
 }
 
+/** What the panel holds one system by. It is the identity the record set uses. */
+function identityOf(system: RealSystem): string {
+  return system.id64 ?? system.name;
+}
+
+/** True where the answer is a promise the panel waits on. */
+function isPromise(value: unknown): value is Promise<SystemDetails | null> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
 /** Builds the information panel. It is hidden while nothing is selected. */
 export function createInfoPanel(
   doc: Document,
   map: GalaxyMap,
-  actions: readonly HudAction[],
+  options: HudOptions,
   lightbox: Lightbox,
 ): InfoPanel {
   const element = make(doc, 'section', 'gm-hud__info');
   element.hidden = true;
+  const switches = readInfoFields(options.infoFields);
+  const loader =
+    typeof options.details === 'function' ? options.details.bind(options) : null;
 
   // The tick of the button that wrote last, and the timer that takes it away. One tick
   // shows at a time, so a click on the second button moves it.
@@ -254,23 +360,6 @@ export function createInfoPanel(
     map.setView({ cursor: [...system.position] });
   });
   footer.appendChild(centre);
-  for (const action of actions) {
-    const button = makeButton(doc, 'gm-hud__footer-button gm-hud__action');
-    button.textContent = action.label;
-    button.dataset['name'] = action.label;
-    button.addEventListener('click', () => {
-      const system = map.getSelection();
-      if (system === null) return;
-      try {
-        action.onSelect(system);
-      } catch (error) {
-        // The host's action is not the map. A failure in it must not stop the frame
-        // loop, and the library does not read what the action returns.
-        console.warn('A HUD action failed.', error);
-      }
-    });
-    footer.appendChild(button);
-  }
 
   element.append(header, body, footer);
 
@@ -281,6 +370,75 @@ export function createInfoPanel(
   // resolves is dropped, so a slow first load cannot write the region of a system the
   // user has left.
   let regionRequest = 0;
+
+  // The details load takes the same shape as the region lookup: a counter that drops a
+  // stale answer, the identity the held answer belongs to, and the answer itself. A
+  // rebuild for the same selection draws from what is held and starts no second load.
+  let detailsRequest = 0;
+  let detailsIdentity: string | null = null;
+  let detailsHeld: SystemDetails | null = null;
+  let detailsLoading = false;
+  let detailsAbort: AbortController | null = null;
+  // The buttons the held answer put in the footer. An answer that is replaced or dropped
+  // takes its buttons with it, so the footer never holds the buttons of another system.
+  let hostButtons: HTMLButtonElement[] = [];
+
+  /**
+   * Drops the answer and stops the work behind it. The abort says the answer is no
+   * longer wanted, so a host that fetches passes the signal to `fetch` and the request
+   * stops. The library keeps nothing after the abort.
+   */
+  function dropDetails(): void {
+    detailsRequest += 1;
+    detailsHeld = null;
+    detailsLoading = false;
+    detailsAbort?.abort();
+    detailsAbort = null;
+  }
+
+  /** Takes the record as the answer, and reports what is not an abort. */
+  function failDetails(controller: AbortController, error: unknown): void {
+    detailsHeld = {};
+    detailsLoading = false;
+    // A failure in the host's loader is not the map's failure. It must not throw out of
+    // the HUD and must not stop the frame loop.
+    if (!controller.signal.aborted) console.warn('A HUD details loader failed.', error);
+  }
+
+  /** Calls the host's loader for one system. */
+  function startDetails(system: RealSystem): void {
+    if (loader === null) return;
+    const request = detailsRequest;
+    const controller = new AbortController();
+    detailsAbort = controller;
+    let answer: SystemDetails | Promise<SystemDetails | null> | null;
+    try {
+      answer = loader(system, controller.signal);
+    } catch (error) {
+      failDetails(controller, error);
+      return;
+    }
+    if (!isPromise(answer)) {
+      // A value and not a promise draws at once, with no loading line.
+      detailsHeld = readDetails(answer);
+      return;
+    }
+    detailsLoading = true;
+    void answer.then(
+      (value) => {
+        // A promise that resolves after the selection changed is dropped.
+        if (request !== detailsRequest) return;
+        detailsHeld = readDetails(value);
+        detailsLoading = false;
+        rebuild();
+      },
+      (error: unknown) => {
+        if (request !== detailsRequest) return;
+        failDetails(controller, error);
+        rebuild();
+      },
+    );
+  }
 
   /** The colour of each category, read once per build of the panel. */
   function colorsByName(): Map<string, readonly [number, number, number]> {
@@ -293,8 +451,53 @@ export function createInfoPanel(
     return colors;
   }
 
+  /**
+   * Draws the footer buttons of the held answer. The footer and its centre view button
+   * are built before the loader is called, so the footer never appears late and never
+   * moves the rest of the panel. Where the load has not settled, where it failed and
+   * where the answer carries no `actions`, the footer holds the centre view button
+   * alone.
+   */
+  function drawFooterActions(): void {
+    const mark = focusMark(footer);
+    for (const button of hostButtons) button.remove();
+    hostButtons = [];
+    for (const action of detailsHeld?.actions ?? []) {
+      const button = makeButton(doc, 'gm-hud__footer-button gm-hud__action');
+      button.textContent = action.label;
+      button.dataset['name'] = action.label;
+      button.addEventListener('click', () => {
+        const system = map.getSelection();
+        if (system === null) return;
+        try {
+          action.onSelect(system);
+        } catch (error) {
+          // The host's action is not the map. A failure in it must not stop the frame
+          // loop, and the library does not read what the action returns.
+          console.warn('A HUD action failed.', error);
+        }
+      });
+      hostButtons.push(button);
+      footer.appendChild(button);
+    }
+    restoreFocus(footer, mark);
+  }
+
+  /** One section title of the panel body. */
+  function sectionTitle(text: string): HTMLElement {
+    const title = make(doc, 'div', 'gm-hud__section-title');
+    title.textContent = text;
+    return title;
+  }
+
   function rebuild(): void {
     const system = map.getSelection();
+    const identity = system === null ? null : identityOf(system);
+    if (identity !== detailsIdentity) {
+      dropDetails();
+      detailsIdentity = identity;
+      if (system !== null) startDetails(system);
+    }
     shown = system;
     rangeValue = null;
     regionValue = null;
@@ -302,6 +505,7 @@ export function createInfoPanel(
     // The position's button is made again with the grid, so the tick it may hold goes
     // with it.
     clearTick();
+    drawFooterActions();
     if (system === null) {
       setShown(element, false);
       replaceChildrenKeepingFocus(body, []);
@@ -310,10 +514,12 @@ export function createInfoPanel(
 
     setText(name, system.name);
     const parts: HTMLElement[] = [];
+    const values = detailsHeld?.values ?? [];
 
     const grid = make(doc, 'div', 'gm-hud__field-grid');
     const range = rangeFromCursor(map.getView(), system.position);
-    for (const field of fieldsOf(system, range)) {
+    const gridValues = values.filter((entry) => !isSection(entry));
+    for (const field of fieldsOf(system, range, switches, gridValues)) {
       const box = make(doc, 'div', 'gm-hud__field');
       if (field.wide === true) box.classList.add('gm-hud__field--wide');
       const label = make(doc, 'div', 'gm-hud__field-label');
@@ -325,11 +531,11 @@ export function createInfoPanel(
       if (field.copy === undefined) {
         box.append(label, value);
       } else {
-        const text = field.copy;
+        const copy = field.copy;
         const head = make(doc, 'div', 'gm-hud__field-head');
         head.append(
           label,
-          makeCopyButton('Copy position', 'position', () => text),
+          makeCopyButton(copy.name, copy.key, () => copy.text),
         );
         box.append(head, value);
       }
@@ -339,24 +545,27 @@ export function createInfoPanel(
 
     // `Unknown` reads for a position the region map does not cover and for a failed
     // load, because the panel states one fact and an empty field states none.
-    const request = regionRequest;
-    const writeRegion = (name: string): void => {
-      if (request !== regionRequest || regionValue === null) return;
-      setText(regionValue, name);
-    };
-    map.regionNameAtExact(system.position).then(
-      (name) => {
-        writeRegion(name ?? 'Unknown');
-      },
-      () => {
-        writeRegion('Unknown');
-      },
-    );
+    //
+    // With the field off the panel asks for no region, so the map never fetches the
+    // 199 KiB region cell table.
+    if (switches.region) {
+      const request = regionRequest;
+      const writeRegion = (name: string): void => {
+        if (request !== regionRequest || regionValue === null) return;
+        setText(regionValue, name);
+      };
+      map.regionNameAtExact(system.position).then(
+        (name) => {
+          writeRegion(name ?? 'Unknown');
+        },
+        () => {
+          writeRegion('Unknown');
+        },
+      );
+    }
 
     const colors = colorsByName();
     const categoryNames = [system.primaryCategory, ...system.secondaryCategories];
-    const chipTitle = make(doc, 'div', 'gm-hud__section-title');
-    chipTitle.textContent = 'CATEGORIES';
     const chips = make(doc, 'div', 'gm-hud__chips');
     for (const categoryName of categoryNames) {
       const color = colors.get(categoryName);
@@ -369,20 +578,36 @@ export function createInfoPanel(
       }
       chips.appendChild(chip);
     }
-    parts.push(chipTitle, chips);
+    parts.push(sectionTitle('CATEGORIES'), chips);
 
-    if (system.description !== undefined && system.description !== '') {
-      const title = make(doc, 'div', 'gm-hud__section-title');
-      title.textContent = 'DESCRIPTION';
+    // The loaded description replaces the record's own. The record is what the panel
+    // draws when the host gives no loader, when the loader gives none, and when a load
+    // failed.
+    const loaded = detailsHeld?.description;
+    const description =
+      loaded !== undefined && loaded !== '' ? loaded : (system.description ?? '');
+    if (detailsLoading) {
+      const line = make(doc, 'div', 'gm-hud__loading');
+      line.textContent = 'LOADING…';
+      line.setAttribute('aria-busy', 'true');
+      parts.push(sectionTitle('DESCRIPTION'), line);
+    } else if (description !== '') {
       const text = make(doc, 'div', 'gm-hud__description');
-      text.textContent = system.description;
-      parts.push(title, text);
+      text.appendChild(renderMarkdown(doc, description));
+      parts.push(sectionTitle('DESCRIPTION'), text);
+    }
+
+    // Each section value draws under the description, with its label as the title.
+    for (const entry of values) {
+      if (!isSection(entry)) continue;
+      const text = make(doc, 'div', 'gm-hud__description');
+      text.dataset['name'] = entry.label;
+      text.appendChild(renderMarkdown(doc, entry.markdown ?? ''));
+      parts.push(sectionTitle(entry.label), text);
     }
 
     const images = system.images ?? [];
     if (images.length > 0) {
-      const title = make(doc, 'div', 'gm-hud__section-title');
-      title.textContent = 'VISUAL RECORDS';
       const thumbs = make(doc, 'div', 'gm-hud__thumbs');
       for (const record of images) {
         const caption = record.caption ?? '';
@@ -409,7 +634,7 @@ export function createInfoPanel(
         });
         thumbs.appendChild(thumb);
       }
-      parts.push(title, thumbs);
+      parts.push(sectionTitle('VISUAL RECORDS'), thumbs);
     }
 
     replaceChildrenKeepingFocus(body, parts);
@@ -428,6 +653,9 @@ export function createInfoPanel(
     },
     dispose(): void {
       clearTick();
+      // The dispose aborts the load in flight and drops the answer behind it.
+      dropDetails();
+      detailsIdentity = null;
     },
   };
 }

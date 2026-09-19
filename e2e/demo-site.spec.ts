@@ -109,3 +109,43 @@ test('starts the grid on and reads g=0 from the fragment', async ({ page }) => {
   expect(off).toBe(false);
   expect(on).toBe(true);
 });
+
+// The `details` loader the demo page gives the HUD. It passes the record's own text on
+// and adds one section. The test adds a record of its own, because no browser test
+// selects a record of the demo set.
+test('the details loader draws a host section', async ({ page }) => {
+  await openMap(page, '', { demoData: true, hud: true });
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) return;
+    map.addCategories([
+      { name: 'Survey', color: [153, 230, 255], maxDrawRange: 200000 },
+    ]);
+    map.addSystems([
+      {
+        name: 'PANEL TEST',
+        coords: { x: 0, y: 0, z: 100 },
+        primaryCategory: 'Survey',
+        description: 'A *survey* note.',
+      },
+    ]);
+    map.setSelection('PANEL TEST');
+  });
+
+  const panel = page.locator('.gm-hud__info');
+  await expect(panel).toBeVisible();
+  const labels = await panel
+    .locator('.gm-hud__field-label')
+    .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+  console.log('the fields the demo panel shows', labels);
+
+  // The panel draws the categories as chips, so no field repeats the primary category.
+  expect(labels).not.toContain('CATEGORY');
+  const section = panel.locator('.gm-hud__description[data-name="ABOUT THIS TEXT"]');
+  await expect(section.locator('li')).toHaveCount(3);
+  await expect(section.locator('code').first()).toHaveText('details');
+  // The record's own text still draws, in the description section above the section.
+  const description = panel.locator('.gm-hud__description:not([data-name])');
+  await expect(description).toContainText('A survey note.');
+  await expect(description.locator('em')).toHaveText('survey');
+});

@@ -330,6 +330,18 @@ function decodeReferences(text) {
 }
 
 /**
+ * Escapes the four characters the HUD reads as Markdown marks: `*`, `[`, a backtick and a
+ * backslash. A record description draws as Markdown, so a dump that carries one of them as
+ * literal text needs the backslash in front of it. `_` is not a mark, because system names
+ * carry one.
+ *
+ * The backslash goes first. An escape added after it would itself be escaped.
+ */
+export function escapeMarkdown(text) {
+  return String(text ?? '').replace(/[\\*[`]/g, (mark) => `\\${mark}`);
+}
+
+/**
  * Turns one `html` field of the Notable Systems dump into plain text: the tags go, the
  * character references decode, and the paragraphs join with a blank line. A `<` or a `>`
  * that a reference decodes to goes as well, because the description carries no markup.
@@ -370,8 +382,10 @@ export function convertNotable(dump) {
   const systems = [];
   for (const held of bySystem.values()) {
     const categories = held.keys.map((subject) => CATEGORY_OF_SUBJECT[subject].name);
+    // This set writes its records itself and reaches `ed3dRecords` at no point, so the
+    // escape of the dump text belongs here.
     const description = held.records
-      .map((entry) => plainTextFromHtml(entry['html']))
+      .map((entry) => escapeMarkdown(plainTextFromHtml(entry['html'])))
       .filter((text) => text.length > 0)
       .join('\n\n');
     systems.push({
@@ -594,7 +608,7 @@ export function ed3dRecords(data, table) {
     }
     if (names.length === 0) continue;
 
-    const description = plainTextFromHtml(entry['infos']);
+    const description = escapeMarkdown(plainTextFromHtml(entry['infos']));
     const first = held.get(name.toLowerCase());
     if (first !== undefined) {
       for (const category of names) {
@@ -1408,6 +1422,8 @@ export function uiaHyperdictionSet(rows, tables) {
       .trim()
       .slice(0, 10);
     const commander = String(row['Commander'] ?? '').trim();
+    // `ed3dRecords` escapes every `infos` field it reads, and this record reaches it, so
+    // the text goes in as it stands. A second escape here would draw a backslash.
     const infos =
       commander.length === 0
         ? ''

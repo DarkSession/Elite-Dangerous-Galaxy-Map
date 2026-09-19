@@ -152,6 +152,12 @@ export interface GalaxyMapOptions {
   /** True draws the coordinate grid. The grid is off unless the options ask for it. */
   readonly grid?: boolean;
   /**
+   * True starts the map with the marker name labels on. The labels are off unless the
+   * options ask for them, because a set of 10,000 systems opens on a screen of labels
+   * otherwise. A value that is not a boolean takes the default.
+   */
+  readonly systemNames?: boolean;
+  /**
    * False takes the cursor marker off. The marker is on unless the options turn it off,
    * because nothing else on the screen says where the cursor is. A host that draws its
    * own cursor turns this one off here or with `setCursorMarkerVisible`.
@@ -1026,7 +1032,9 @@ export function createGalaxyMap(
   let markers: MarkerOverlay | null = null;
   let gridLabels: GridLabelOverlay | null = null;
   let cursorMarker: CursorMarkerOverlay | null = null;
-  let namesOn = false;
+  // Off unless the options ask for the labels. The reading is `=== true`, so a value
+  // that is not a boolean takes the default.
+  let namesOn = options.systemNames === true;
   let gridOn = options.grid === true;
   // On unless the options turn it off. The grid reads `=== true` because it is off by
   // default; the marker reads `!== false` because it is on by default.
