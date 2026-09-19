@@ -604,21 +604,44 @@ describe('the selection', () => {
     expect(result.instances).toHaveLength(0);
   });
 
-  // Source-over depends on the order, so the pass draws from the furthest to the
-  // nearest. The input order of this pair is deliberately the wrong way round.
-  test('gives the selected records furthest first', () => {
-    const result = selectNebulae(pairSet(), {
-      camera: [0, 0, 0],
+  // The spec's scenario **The selection does not order by range**. The pass adds the
+  // emissions and multiplies the transmittances, so the frame does not read the draw
+  // order and the selection does not sort by range.
+  //
+  // The two records of `pairSet` hold the same apparent size at different ranges: 200
+  // light years of radius at 10,000 and 100 at 5,000. The pair below exchanges the two
+  // ranges, and each record keeps its apparent size, so the size sort reads the same
+  // two values and the order is the file's own either way.
+  test('does not order the selected records by range', () => {
+    const view = {
+      camera: [0, 0, 0] as [number, number, number],
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
       canvasWidthCss: CANVAS_WIDTH,
+    };
+    const exchanged = buildNebulaSet({
+      records: [
+        [0, 0, 5000, 100, 0, 0, 0, 0, 'far'],
+        [0, 0, 10000, 200, 1, 0, 0, 0, 'near'],
+      ],
     });
-    expect(result.instances).toHaveLength(2);
-    expect(result.instances[0]?.range).toBeGreaterThan(
-      result.instances[1]?.range as number,
+    const first = selectNebulae(pairSet(), view);
+    const second = selectNebulae(exchanged, view);
+
+    expect(first.instances).toHaveLength(2);
+    expect(second.instances).toHaveLength(2);
+    // The two records hold one apparent size, which is what makes the reading one of
+    // the range alone.
+    expect(first.instances[0]?.pixels).toBeCloseTo(
+      first.instances[1]?.pixels as number,
+      12,
     );
-    expect(result.instances[0]?.index).toBe(0);
+    // The ranges did change, so this reads two selections and not one twice.
+    expect(first.instances[0]?.range).not.toBe(second.instances[0]?.range);
+    // The order is the file's own, whichever record is the further one.
+    expect(first.instances.map((one) => one.index)).toEqual([0, 1]);
+    expect(second.instances.map((one) => one.index)).toEqual([0, 1]);
   });
 
   // The two fades a record can still take are the floor fade and the budget fade. The

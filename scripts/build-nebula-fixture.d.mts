@@ -100,7 +100,7 @@ export declare function marchRay(
   direction: readonly [number, number, number],
   stepRate: number,
   lightGain: readonly number[],
-): { colour: number[]; alpha: number } | null;
+): { colour: number[]; transmittance: number } | null;
 
 export declare function marchFixture(options: {
   set: FixtureRecords;

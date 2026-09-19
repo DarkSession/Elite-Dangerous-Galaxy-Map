@@ -183,12 +183,12 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
 ## 3. The swap
 
-- [ ] 3.1 Change the record blend in `src/render/nebula-pass.ts` from
+- [x] 3.1 Change the record blend in `src/render/nebula-pass.ts` from
       `blendFuncSeparate(ONE, ONE_MINUS_SRC_ALPHA, ZERO, ONE_MINUS_SRC_ALPHA)` to
       `blendFuncSeparate(ONE, ONE, ZERO, SRC_ALPHA)`. The clear and the composite shader do
       not change. Verify a unit test over the fake context reads both blend states — the
       record blend and the composite blend — and the order they are set in.
-- [ ] 3.2 Change the last statement of `src/render/shaders/nebulae.frag` to write the
+- [x] 3.2 Change the last statement of `src/render/shaders/nebulae.frag` to write the
       transmittance in the alpha channel: `1.0 - (1.0 - transmittance.a) * mean * vWeight` in
       place of `(1.0 - transmittance.a) * mean * vWeight`. The three colour channels do not
       change. The source check in `src/render/nebula-pass.test.ts` reads
@@ -198,7 +198,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       to 1 on every asset at 25, 32 and 64 steps still passes, reading the transmittance
       instead — the same bound the other way, and the spec's modified march requirement now
       says why it matters.
-- [ ] 3.3 Remove the range sort from `src/scene-data/nebulae.ts`: the line
+- [x] 3.3 Remove the range sort from `src/scene-data/nebulae.ts`: the line
       `kept.sort((a, b) => b.range - a.range)` goes, with the three comments that say the
       order is furthest first because the blend depends on it — the field comment on
       `instances`, the function comment on `selectNebulae`, and the comment above the
@@ -208,7 +208,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       Verify that assertion still passes, and that the unit test `gives the selected records
       furthest first` in `src/scene-data/nebulae.test.ts` is replaced by the spec's scenario
       **The selection does not order by range**.
-- [ ] 3.4 Change the composite in `scripts/build-nebula-fixture.mjs` to match the pass. The
+- [x] 3.4 Change the composite in `scripts/build-nebula-fixture.mjs` to match the pass. The
       one edit it needs is dropping the `held` factor from the scene accumulation, so it
       reads `hit.colour[channel] * weight`. `alphaLeft` already accumulates the product of
       the record transmittances, because `1 - hit.alpha * weight` is one of them, and the
@@ -219,13 +219,21 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       committed ones are 0.0083 for `barnards-loop` against a bound of 0.02 and 0.0058 for
       `cats-eye` against 0.01. A reading that rose towards its bound is a finding for task
       4.2, not a bound to move.
-- [ ] 3.5 Replace the unit test `draws from the furthest to the nearest` in
+
+      **The readings.** The two RMSE figures **fell** against the rebuilt reference:
+      `barnards-loop` reads **0.0018745** where it read 0.0083255, against a bound of
+      0.02, and `cats-eye` reads **0.0036028** where it read 0.0058001, against a bound
+      of 0.01. Both draw the same record counts as before, 105 and 109. Neither rose, so
+      neither is a finding for task 4.2. The GPU and the CPU now state the same composite
+      as well as the same integral, and the source-over the reference applied by hand was
+      the larger part of the difference the two readings held.
+- [x] 3.5 Replace the unit test `draws from the furthest to the nearest` in
       `src/render/nebula-pass.test.ts`. It asserts `uPosition` arrives as
       `[[0,0,-600],[0,0,-400],[0,0,-200]]` over three records of equal radius, which the
       largest-first sort now reverses. Its two comments, at the test and at the draw-call
       test above it, state the same contract. Verify the replacement reads what the spec now
       states: the order does not follow the range.
-- [ ] 3.6 Rewrite the comments in `src/render/nebula-pass.ts` and `src/render/renderer.ts`
+- [x] 3.6 Rewrite the comments in `src/render/nebula-pass.ts` and `src/render/renderer.ts`
       that state the old contract: the file header, the comment above the blend call, the
       comment above the draw loop, the function comment on `createNebulaPass`, and the
       renderer's comment above the nebula block, which says the blend is source-over so a
@@ -237,6 +245,14 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
 ## 4. The decision
 
+
+      **The reading. The sweep does not reach the bound of 8, and the cause is not the
+      draw order.** It reads a worst pair of **26**, down from 71, with **163 of its 720
+      windows** above 8, down from 167. Task 4.1 holds the reading and the three probes
+      that explain it.
+
+      `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass: 81 files
+      and 1,148 unit tests.
 - [ ] 4.1 Re-run the sweep of task 2.1 on the finished tree and record the worst pair beside
       this task, for the record. Task 3.7 already ran it; this is the reading the change is
       presented with. **If it is above 8**, something other than the blend still depends on

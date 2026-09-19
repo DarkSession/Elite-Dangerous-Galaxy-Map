@@ -352,10 +352,10 @@ describe('the nebula pass', () => {
     expect(context.of('drawArrays').at(-1)?.args.slice(1)).toEqual([0, 3]);
   });
 
-  // The records blend source-over in the colour channels, and the alpha channel takes
-  // the product of one minus each record's alpha. The composite then turns that product
-  // into the attenuation source-over applies to the scene. Plain `blendFunc` on the
-  // records would set all four channels and leave the alpha channel at 1.
+  // The records add their emissions and multiply their transmittances, so neither the
+  // colour nor the alpha of the target depends on the draw order. The composite then
+  // applies the target to the scene with source-over. Plain `blendFunc` on the records
+  // would set all four channels and leave the alpha channel at 1.
   test('sets the record blend first and the composite blend second', () => {
     const context = fakeContext();
     const gl = context.gl;
@@ -366,9 +366,9 @@ describe('the nebula pass', () => {
     expect(context.of('blendFuncSeparate')).toHaveLength(1);
     expect(context.of('blendFuncSeparate')[0]?.args).toEqual([
       gl.ONE,
-      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
       gl.ZERO,
-      gl.ONE_MINUS_SRC_ALPHA,
+      gl.SRC_ALPHA,
     ]);
     expect(context.of('blendFunc')).toHaveLength(1);
     expect(context.of('blendFunc')[0]?.args).toEqual([gl.ONE, gl.ONE_MINUS_SRC_ALPHA]);
@@ -531,8 +531,8 @@ describe('the nebula pass', () => {
       .of('bindTexture')
       .map((call) => (call.args[1] as { name?: string } | null)?.name)
       .filter((name) => name?.startsWith('density') === true);
-    // Furthest first: the record at 400 light years draws before the one at 200.
-    expect(bound).toEqual(['density-7', 'density-2']);
+    // Largest first: the two records hold one radius, so the nearer one draws first.
+    expect(bound).toEqual(['density-2', 'density-7']);
   });
 
   // The march reads the transfer table with `texelFetch`, so the three samplers each
@@ -567,10 +567,17 @@ describe('the nebula pass', () => {
     expect(nebulaFragmentSource).toContain(
       'emission += colour * uLightGain * transmittance.rgb * density * step;',
     );
+    // The alpha is the record's transmittance, which the pass multiplies the
+    // accumulated alpha by. The match is exact: the text of the alpha the shader wrote
+    // before this change is inside the new one, so a loose match would check nothing.
     const alpha = nebulaFragmentSource.slice(
       nebulaFragmentSource.indexOf('fragColour = vec4('),
     );
-    expect(alpha).toContain('(1.0 - transmittance.a) * mean * vWeight');
+    expect(alpha).toBe(
+      'fragColour = vec4(\n' +
+        '    emission * vTransmittance * vWeight,\n' +
+        '    1.0 - (1.0 - transmittance.a) * mean * vWeight);\n}\n',
+    );
     expect(alpha).not.toContain('uLightGain');
   });
 
@@ -620,7 +627,8 @@ describe('the nebula pass', () => {
       .of('bindTexture')
       .map((call) => (call.args[1] as { name?: string } | null)?.name)
       .filter((name) => name?.startsWith('density') === true);
-    // The same asset, once per record, furthest first.
+    // The same asset, once per record. The two hold one apparent size, so the order is
+    // the file's own.
     expect(bound).toEqual(['density-3', 'density-3']);
     expect(pass.drawCalls).toBe(2);
 
@@ -650,9 +658,10 @@ describe('the nebula pass', () => {
     expect(matrices[0]).not.toEqual(matrices[1]);
   });
 
-  // Source-over depends on the order, so the pass draws from the furthest to the
-  // nearest. The set below puts its records on the `z` axis in the wrong order.
-  test('draws from the furthest to the nearest', () => {
+  // The frame does not read the draw order, so the pass draws the records in the order
+  // the selection gives them, which is largest first. The three records below hold one
+  // radius, so the nearest is the largest.
+  test('does not order the records by range', () => {
     const context = fakeContext();
     const set = buildNebulaSet({
       records: [
@@ -666,9 +675,9 @@ describe('the nebula pass', () => {
     pass.draw(frameOf(6000));
 
     expect(everyValueOf(context, 'uPosition')).toEqual([
-      [0, 0, -600],
-      [0, 0, -400],
       [0, 0, -200],
+      [0, 0, -400],
+      [0, 0, -600],
     ]);
   });
 

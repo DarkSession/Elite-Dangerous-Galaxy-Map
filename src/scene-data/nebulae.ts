@@ -242,7 +242,7 @@ export interface NebulaSelection {
   readonly coveredArea: number;
   /** The zoom weight of the frame, 0 to 1. */
   readonly weight: number;
-  /** The selected records, furthest from the camera first. */
+  /** The selected records, largest first, which is the order the budget reads. */
   readonly instances: readonly NebulaInstance[];
 }
 
@@ -253,8 +253,9 @@ export interface NebulaSelection {
  * each well inside the frame budget, and a spatial index would be more code than the
  * set is worth.
  *
- * The order is furthest first, because the pass composites with source-over, which
- * depends on the draw order.
+ * The order is largest first, which is the order the covered-area budget needs. The
+ * selection does not order by range: the pass adds the emissions and multiplies the
+ * transmittances, so the frame does not read the draw order.
  */
 export function selectNebulae(set: NebulaSet, view: NebulaViewInput): NebulaSelection {
   const weight = nebulaZoomWeight(view.distance);
@@ -283,7 +284,7 @@ export function selectNebulae(set: NebulaSet, view: NebulaViewInput): NebulaSele
   if (weight <= 0)
     return { aboveFloor: above.length, coveredArea: 0, weight, instances: [] };
 
-  // Largest first for the budget, then furthest first for the blend.
+  // Largest first, which is the order the budget reads.
   above.sort((a, b) => b.pixels - a.pixels);
   const kept: NebulaInstance[] = [];
   let coveredArea = 0;
@@ -296,7 +297,6 @@ export function selectNebulae(set: NebulaSet, view: NebulaViewInput): NebulaSele
     coveredArea = through;
     kept.push({ ...one, fade: one.fade * nebulaBudgetFade(through) });
   }
-  kept.sort((a, b) => b.range - a.range);
   return { aboveFloor: above.length, coveredArea, weight, instances: kept };
 }
 

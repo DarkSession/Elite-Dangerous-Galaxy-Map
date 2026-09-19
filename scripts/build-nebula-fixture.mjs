@@ -151,7 +151,7 @@ export function focalPixels(canvasHeightCss, fieldOfView) {
 }
 
 /**
- * The records one frame draws, furthest first. It repeats `selectNebulae`, and
+ * The records one frame draws, largest first. It repeats `selectNebulae`, and
  * `tests/nebula-fixture.test.ts` holds the two answers together.
  */
 export function selectRecords(set, view) {
@@ -184,7 +184,6 @@ export function selectRecords(set, view) {
     area = through;
     kept.push({ ...one, fade: one.fade * budgetFade(through) });
   }
-  kept.sort((a, b) => b.range - a.range);
   return { weight, instances: kept };
 }
 
@@ -389,8 +388,8 @@ const densityOut = new Float64Array(1);
 const colourOut = new Float64Array(4);
 
 /**
- * One ray through one record's box, in that record's object space. It gives the
- * premultiplied colour and alpha the fragment shader writes, before the record's weight.
+ * One ray through one record's box, in that record's object space. It gives the emission
+ * and the transmittance the fragment shader writes, before the record's weight.
  */
 export function marchRay(asset, matrix, eye, direction, stepRate, lightGain) {
   const inverse = [1 / direction[0], 1 / direction[1], 1 / direction[2]];
@@ -455,7 +454,7 @@ export function marchRay(asset, matrix, eye, direction, stepRate, lightGain) {
       break;
     }
   }
-  return { colour: emission, alpha: 1 - transmittance[3] };
+  return { colour: emission, transmittance: transmittance[3] };
 }
 
 // --- The frame ------------------------------------------------------------------
@@ -555,10 +554,10 @@ export function marchFixture(options) {
   const firstX = (half.width - crop) >> 1;
   const firstY = (half.height - crop) >> 1;
 
-  // The half-resolution target the nebulae draw into, cleared to zero and blended with
-  // source-over, which is what `ONE, ONE_MINUS_SRC_ALPHA` gives on premultiplied colour.
+  // The accumulation target the nebulae draw into. The pass adds the emissions and
+  // multiplies the transmittances, and the fixture composites over black, so the sum of
+  // the emissions is the whole of the frame.
   const scene = new Float64Array(crop * crop * 3);
-  const alphaLeft = new Float64Array(crop * crop).fill(1);
 
   for (const one of selection.instances) {
     const weight = selection.weight * one.fade;
@@ -593,11 +592,9 @@ export function marchFixture(options) {
         const hit = marchRay(asset, matrix, eye, direction, stepRate, lightGain);
         if (hit === null) continue;
         const at = row * crop + column;
-        const held = alphaLeft[at];
         for (let channel = 0; channel < 3; channel += 1) {
-          scene[at * 3 + channel] += hit.colour[channel] * weight * held;
+          scene[at * 3 + channel] += hit.colour[channel] * weight;
         }
-        alphaLeft[at] = held * (1 - hit.alpha * weight);
       }
     }
   }

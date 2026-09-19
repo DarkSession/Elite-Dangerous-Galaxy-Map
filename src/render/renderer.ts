@@ -607,8 +607,11 @@ export function createRenderer(
 
     // The nebulae join the volume and the clouds in the half-resolution target, after
     // the cloud sprites. The glow then reads them with the rest of the source, and the
-    // tone map reads them with the rest of the scene. The blend is source-over, so a
-    // dark nebula attenuates what the two passes before it drew.
+    // tone map reads them with the rest of the scene.
+    //
+    // The pass draws the records into a target of its own and composites that target
+    // here, so a dark nebula attenuates what the two passes before it drew at the
+    // composite and not during the record loop.
     nebulaDrawn = 0;
     nebulaCalls = 0;
     nebulaAboveFloor = 0;

@@ -1,9 +1,14 @@
 // Draws the selected nebulae as marched boxes into an accumulation target of its own,
 // then composites that target over the half-resolution target the renderer bound.
 //
-// The records blend with premultiplied source-over in the colour channels. The alpha
-// channel takes the product of one minus each record's alpha, and the composite turns
-// that product into the attenuation source-over applies to the scene.
+// The blend of the records adds their emissions and multiplies their transmittances, so
+// the frame does not depend on the order they draw in. The composite then adds the
+// emission sum to the scene and multiplies what the scene held by the transmittance
+// product.
+//
+// The cost of that independence is the overlap: a record takes no light from another, so
+// two records that overlap on the screen both give their full emission. The error does
+// not move as the camera moves, and a browser test holds the light it leaves.
 //
 // The draw chooses the records itself, from the frame the renderer hands it. The
 // renderer therefore holds no selection call and no record type, which is what keeps the
@@ -177,8 +182,8 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
  * none of them, which is what keeps the nebulae out of the main entry point's chunk.
  *
  * One record is one draw call, because each carries its own three textures and its own
- * rotation. The records draw into the accumulation target, and one composite draw then
- * applies that target to the target the renderer bound.
+ * rotation. The records draw into the accumulation target in any order, and one
+ * composite draw then applies that target to the target the renderer bound.
  */
 export function createNebulaPass(
   gl: WebGL2RenderingContext,
@@ -349,28 +354,24 @@ export function createNebulaPass(
       gl.uniform1i(program.uniforms['uNebulaTransfer'] ?? null, TRANSFER_UNIT);
 
       gl.enable(gl.BLEND);
-      // Premultiplied source-over in the colour channels, and the product of one minus
-      // each record's alpha in the alpha channel. One blend serves a bright nebula and a
-      // dark one: the march writes the emission and one minus the transmittance.
+      // The colour channels add and the alpha channel multiplies, so the target holds
+      // the sum of the emissions and the product of the transmittances. Neither depends
+      // on the order the records draw in.
       //
-      // The alpha factors are separate because plain `blendFunc` sets all four channels.
-      // From a clear of 1 the alpha channel would then read
-      // `src.a + (1 - src.a) * 1 = 1` after every record, the composite would write an
-      // alpha of 0 and a dark nebula would stop dimming the scene.
-      gl.blendFuncSeparate(
-        gl.ONE,
-        gl.ONE_MINUS_SRC_ALPHA,
-        gl.ZERO,
-        gl.ONE_MINUS_SRC_ALPHA,
-      );
+      // One blend serves a bright nebula and a dark one: the march writes the emission
+      // and the transmittance, so a dark volume lowers the product and the composite
+      // attenuates the scene behind the whole selection.
+      gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.SRC_ALPHA);
       // The back faces draw, not the front ones, so a camera inside a box still gets a
       // fragment for every ray. The march clamps its near end at 0 for the same reason.
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.FRONT);
       gl.bindVertexArray(vertexArray);
 
-      // Furthest first, as the selection gives them, because the colour channels blend
-      // source-over. One record is one draw call: each carries its own three textures.
+      // Largest first, as the selection gives them. The order is the budget's and the
+      // frame does not read it: the blend adds the emissions and multiplies the
+      // transmittances, and neither depends on the order. One record is one draw call:
+      // each carries its own three textures.
       for (const instance of selection.instances) {
         const asset = volumes.assets[set.assets[instance.index] as number];
         if (asset === undefined) continue;
@@ -423,8 +424,8 @@ export function createNebulaPass(
       }
 
       // One composite draw, whatever the count of records. The shader writes the
-      // accumulated emission and one minus the accumulated alpha, and this blend gives
-      // `scene = accumulated.rgb + accumulated.a * scene`.
+      // accumulated emission and one minus the accumulated transmittance, and this blend
+      // gives `scene = accumulated.rgb + accumulated.a * scene`.
       gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFramebuffer);
       gl.useProgram(compositeProgram.program);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
