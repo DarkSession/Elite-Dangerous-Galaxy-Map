@@ -6,8 +6,12 @@ the record's centre. Two records swap rank when the camera crosses the plane hal
 between their centres, and the frame changes in one step at that crossing.
 
 The step is measured. A probe took 6,480 camera windows over 9 viewpoints, each window
-0.004 degrees wide, so the camera moves about a twentieth of a pixel and an order flip is
-the only thing that can change the frame. Five of the nine are below. **Every figure in
+0.004 degrees wide. The camera orbits the cursor, so a window turns it and also carries
+it sideways: at 3,000 light years the translation is 0.21 light years, and a record at
+range `r` moves by `turn * (1 - 3000 / r)`. That is nothing at the cursor's own range, a
+twentieth of a pixel far beyond it and about a third of a pixel at 400 light years. A
+window therefore reads the motion plus any step, and the worst pair of a sweep is a step
+only where it stands above what the motion alone gives. Five of the nine are below. **Every figure in
 this section is a probe reading and none of it is in the tree**; the probe was a throwaway
 spec file. Task 2.1 puts the Orion sweep in the suite and task 2.1a re-takes its two
 figures. The other four rows are not reproduced, and the argument does not need them:
@@ -22,7 +26,9 @@ figures. The other four rows are not reproduced, and the argument does not need 
 
 The step is the sum of the three channel differences of one pixel, out of 765. The floor
 with no flip read 3 to 7 over the nine viewpoints, which is the camera move and the
-half-resolution upsample. So the
+half-resolution upsample. **That figure is a typical window and not a bound on the worst
+pixel**: the same sweep with no order dependence at all reads a worst pair of 26 at the
+Orion viewpoint, against a mean window of 6.93. So the
 worst flip in the set changes a pixel by about 9 percent of one channel, over 159 pixels
 of a 921,600-pixel frame, and the usual flip changes it by 3 to 5 percent.
 
@@ -49,8 +55,12 @@ instanced call. Order independence is a precondition for that change, not part o
   covered-area budget needs and drops the second sort by range. The draw order stops
   changing the frame.
 - The spec's requirement that the pass draws from the furthest to the nearest is replaced
-  by a requirement that the frame does not depend on the order, with a **measured
-  continuity bound** on the step at a flip.
+  by a requirement that the frame does not depend on the order. Two scenarios read it: one
+  draws the same camera with the record order reversed and holds the two frames together,
+  which is the statement of the requirement; and one sweeps the camera and holds a
+  **measured continuity bound**, which reads the motion as well as the step.
+- The renderer gains a **probe that reverses the draw order**, off in the map and out of
+  the supported surface, so the first of those two scenarios can be written at all.
 - The spec gains a second bound, on the artefact this change **introduces**: the light at
   three named cameras, which rises where records overlap. Task 4.2 measures the rise and
   writes the figure into the test, so the overlap cannot grow later without a reading
@@ -115,11 +125,24 @@ renderer the suite asserts.
 
 **Code.** `src/render/nebula-pass.ts` (the accumulation target, the clear, the blend state,
 the draw loop and the composite draw), `src/render/shaders/nebulae.frag` (the alpha it
-writes), `src/render/nebula-slot.ts` (`NebulaFrame` gains the number format of the target),
-`src/scene-data/nebulae.ts` (the range sort goes), `scripts/build-nebula-fixture.mjs` (its
-copy of the sort and its hand-written composite), `e2e/fixtures/` (the two `.bin` files it
-rebuilds), and the unit and browser tests that read any of them, named in the tasks. A new
-composite shader pair joins `src/render/shaders/`.
+writes), `src/render/nebula-slot.ts` (`NebulaFrame` gains the number format of the target
+and the order probe), `src/scene-data/nebulae.ts` (the range sort goes),
+`scripts/build-nebula-fixture.mjs` (its copy of the sort and its hand-written composite),
+`e2e/fixtures/` (the two `.bin` files it rebuilds), and the unit and browser tests that
+read any of them, named in the tasks. A new composite shader pair joins
+`src/render/shaders/`. The order probe runs from `src/render/global.ts` through
+`src/app/main.ts`, `src/app/create-map.ts` and `src/render/renderer.ts` to the frame, in
+the manner of `setNebulaOcclusion`.
+
+**Three tests the task list does not name, which the change moves as well.**
+`src/render/renderer.test.ts` reads the framebuffer the nebulae draw into, and that is the
+composite's framebuffer now and not the first record's, so the test names the composite
+and its fake context answers `getParameter(FRAMEBUFFER_BINDING)` with the framebuffer it
+holds. `src/render/nebula-pass.test.ts` holds a two-record set of one radius at 400 and
+200 light years and reads them furthest first, which the largest-first sort reverses.
+`src/render/nebula-march.test.ts` reads the output alpha, so it reads the transmittance
+now, and its two hand-computed constants become their complements: 0.43896963 becomes
+0.56103037 and 0.22833131 becomes 0.77166869.
 
 `src/render/renderer.ts` gets comment edits alone. The target, the clear and the composite
 all live in the pass, because the import rule of `src/nebulae/` keeps the nebula graph out

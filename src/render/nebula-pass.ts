@@ -372,7 +372,13 @@ export function createNebulaPass(
       // frame does not read it: the blend adds the emissions and multiplies the
       // transmittances, and neither depends on the order. One record is one draw call:
       // each carries its own three textures.
-      for (const instance of selection.instances) {
+      //
+      // The reverse order is the probe of that independence. A browser test draws one
+      // camera both ways and reads one frame.
+      const instances = frame.reverseOrder
+        ? [...selection.instances].reverse()
+        : selection.instances;
+      for (const instance of instances) {
         const asset = volumes.assets[set.assets[instance.index] as number];
         if (asset === undefined) continue;
         gl.uniform3f(

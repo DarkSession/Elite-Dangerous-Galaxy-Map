@@ -60,6 +60,11 @@ export interface GalaxyMapGlobal {
    */
   setNebulaOcclusion?: (value: number) => void;
   /**
+   * Draws the nebula records in the reverse order. The pass composites without an
+   * order, so the frame does not change, and one browser test reads that.
+   */
+  setNebulaOrderReversed?: (value: boolean) => void;
+  /**
    * Holds the close fade at a value from 0 to 1, or gives it back to the zoom distance
    * with `null`. A test holds it at 1 to read the invented field at a close view.
    */

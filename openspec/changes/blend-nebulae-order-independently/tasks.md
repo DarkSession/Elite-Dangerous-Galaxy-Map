@@ -240,19 +240,19 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       dark nebula attenuates what the two passes before it drew. That sentence is false after
       this group: a dark nebula attenuates the scene at the composite and not during the
       loop. Verify by reading each one; no test covers a comment.
-- [ ] 3.7 Verify the test of task 2.1 now passes, and that `pnpm lint`,
+- [x] 3.7 Verify the test of task 2.1 now passes, and that `pnpm lint`,
       `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass.
+
+      **The reading.** The sweep reads a worst pair of **26**, down from 71. It did not
+      reach the bound of **8** the scenario first stated, and task 4.1 shows the cause is
+      the camera move and not the draw order. The author read that against the artifact and
+      restated the bound at **30**, which group 6 carries, and the sweep passes against it.
+
+      `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass: 81 files
+      and 1,148 unit tests at this point, and 1,149 after group 6.
 
 ## 4. The decision
 
-
-      **The reading. The sweep does not reach the bound of 8, and the cause is not the
-      draw order.** It reads a worst pair of **26**, down from 71, with **163 of its 720
-      windows** above 8, down from 167. Task 4.1 holds the reading and the three probes
-      that explain it.
-
-      `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass: 81 files
-      and 1,148 unit tests.
 - [x] 4.1 Re-run the sweep of task 2.1 on the finished tree and record the worst pair beside
       this task, for the record. Task 3.7 already ran it; this is the reading the change is
       presented with. **If it is above 8**, something other than the blend still depends on
@@ -282,17 +282,20 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       step rate rises from 32 to 64, 128 and 256, so it is not the march's step count.
 
       **The residual is the camera move.** The camera orbits the cursor, so 0.004 degrees
-      at 3,000 light years also moves it 0.21 light years sideways. The records sit about
-      1,000 light years away, so the parallax moves the image about a sixth of a pixel,
-      not a twentieth. On a frame of sharp nebula structure at half resolution, the worst
-      pixel of 720 such moves reads 26.
+      at 3,000 light years also moves it 0.21 light years sideways. A record at range `r`
+      then moves by `turn * (1 - 3000 / r)` on the screen: nothing at the cursor's own
+      range, a twentieth of a pixel far beyond it and about a third of a pixel at 400
+      light years. The records nearest the camera move most and cover the most pixels. On
+      a frame of sharp nebula structure at half resolution, the worst pixel of 720 such
+      moves reads 26.
 
       **The proposal is wrong about the floor, and the bound of 8 is not reachable.** The
       mean step over the 720 windows is 6.93, which is the "3 to 7" the probe reported;
       that figure is the typical step and not the worst pixel, which is what the scenario
-      bounds. The test of task 2.1 therefore still fails on the finished tree. **The bound
-      is not moved**: the reading is written down and the spec's own figure is left for a
-      human to restate.
+      bounds. The test of task 2.1 therefore still fails on the finished tree. **The
+      implementation did not move the bound**: it wrote the reading down and presented the
+      change with the test failing. The author then read the artifact, found the defect in
+      it and restated the bound at **30**, which group 6 carries.
 - [x] 4.2 Read the overlap error against the frames task 2.4 captured, at the same three
       cameras and the same conditions. For each, record the mean frame luminance before and
       after, the largest per-pixel rise and the count of pixels that rose by more than 8.
@@ -396,7 +399,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       **Not taken.** Task 4.2 reads a largest rise of 5.96 percent, under the tenth, and
       task 4.3 finds no committed bound that breaks. Both halves of the gate pass, so the
       change lands.
-- [ ] 4.6 If the change lands: verify `pnpm lint`, `pnpm exec tsc --noEmit`,
+- [x] 4.6 If the change lands: verify `pnpm lint`, `pnpm exec tsc --noEmit`,
       `pnpm exec vitest run` and `pnpm test:e2e` all pass, and that the two CPU fixture
       comparisons read inside their committed bounds against the reference rebuilt in task
       3.4 — 0.02 for `barnards-loop` and 0.01 for `cats-eye`. Those two readings no longer
@@ -407,11 +410,12 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 ## 5. The review gate
 
 
-      **The state of the finished tree.** `pnpm lint`, `pnpm exec tsc --noEmit` and
-      `pnpm exec vitest run` pass, the last over 81 files and 1,148 tests. `pnpm test:e2e`
-      reports **one failure in 612 tests**: the sweep of task 2.1, against the bound of 8
-      the spec states, which task 4.1 shows the camera move alone cannot meet. Every
-      other browser test passes.
+      **The state of the finished tree**, after group 6. `pnpm lint`,
+      `pnpm exec tsc --noEmit` and `pnpm exec vitest run` pass, the last over 81 files and
+      **1,149** tests. `pnpm test:e2e` passes in full: **614 tests**, 553 in the parallel
+      pass and 61 in the timed one, with no failure. Before group 6 restated the sweep
+      bound, the same tree read one failure in 612 tests: the sweep of task 2.1 against the
+      bound of 8, which task 4.1 shows the camera move alone cannot meet.
 
       The two CPU fixture comparisons read **0.0018745** for `barnards-loop` against 0.02
       and **0.0036028** for `cats-eye` against 0.01, both against the reference rebuilt
@@ -423,3 +427,48 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       blocked change to a human with the objections attached as caveats.
 - [ ] 5.3 Present the change: state the verdict, the findings, the readings of tasks 4.1 to
       4.4, and any finding you decided against acting on with the reason.
+
+## 6. The restated bound and the scenario with teeth
+
+The author read the sweep reading of task 4.1 against the artifact and found the defect in
+the artifact. The scenario asserted that no pair differs at any pixel by more than 8, while
+its own note recorded 167 of its 720 pairs above 8 before the change. If the change removes
+only the order dependence, the pairs the camera move drives stay where they were, so the
+two sentences cannot both hold.
+
+- [x] 6.1 Restate the sweep bound at **30**, the worst pair of task 4.1 rounded up in the
+      idiom the capability uses. Rewrite the scenario's note to say what is true: the camera
+      orbits, so the image of a record at range `r` moves by `turn * (1 - 3000 / r)`, which
+      is nothing at the cursor's range and about a third of a pixel at 400 light years; the
+      sweep therefore reads the camera move plus any step, and never a step alone; the **71**
+      the ordered blend reads at the same sweep is what the bound falsifies; and the count of
+      windows above the bound leaves the assertion. Drop the twentieth-of-a-pixel sentence
+      from the proposal, the design and the tasks.
+
+      **The reading.** The sweep reads a worst pair of **26** against the bound of 30, at a
+      yaw of 5 degrees, with **0 of its 720 windows** above 30.
+- [x] 6.2 Add the scenario **The frame does not change when the order is reversed**, which
+      states the requirement the sweep cannot state sharply, and the probe it needs:
+      `NebulaFrame.reverseOrder`, set through `src/render/global.ts`, `src/app/main.ts`,
+      `src/app/create-map.ts` and `src/render/renderer.ts` in the manner of
+      `setNebulaOcclusion`, and false in the map. The browser test draws each of the three
+      cameras of task 2.4 twice, in the selection's order and in the reverse. A unit test
+      reads that the probe reverses the draw and changes nothing else.
+
+      **The readings.** The Orion frame at 3,000 light years, of 87 records, is identical
+      byte for byte. The frame at 800, of 110 records, differs at **7 pixels of 921,600**,
+      and the Barnard's Loop frame, of 120 records, at **40**, each by **1** of 255 in one
+      channel. The two means differ by 4.6e-9 in 0.0432 and by 6.1e-9 in 0.1933.
+
+      The test holds the mean to seven places and the worst pixel to one step of the display
+      range, and not to ten places, because addition in `RGBA16F` is not associative: a sum
+      of 120 emissions lands one step of the format either side of the same sum added
+      backwards. Ten places of the mean is below what the target carries.
+- [x] 6.3 Record in `design.md` why the first bound was wrong, so the next reader does not
+      repeat it: a median of the worst pixel of each window is not a floor on the worst
+      pixel, and a camera that orbits translates as well as turns. Record the
+      `FRAMEBUFFER_BINDING` ordering trap in the design decision that covers it, and the
+      three tests the task list did not name in the proposal's impact list.
+- [x] 6.4 Verify `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run` and
+      `pnpm test:e2e` all pass. They do: 1,149 unit tests over 81 files, and 614 browser
+      tests with no failure.

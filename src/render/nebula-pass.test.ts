@@ -200,6 +200,7 @@ function frameOf(distance: number, march: Partial<NebulaFrame> = {}): NebulaFram
     absorption: DEFAULT_ABSORPTION,
     detailScale: 1 / 127,
     occlusion: DEFAULT_NEBULA_OCCLUSION,
+    reverseOrder: false,
     ...march,
   };
 }
@@ -679,6 +680,39 @@ describe('the nebula pass', () => {
       [0, 0, -400],
       [0, 0, -600],
     ]);
+  });
+
+  // The probe of the order independence: the same frame with `reverseOrder` draws the
+  // same records in the opposite order, and issues the same count of draw calls.
+  test('draws the records in the reverse order when the frame asks', () => {
+    const records = [
+      [0, 0, 200, 200, 0, 0, 0, 0],
+      [0, 0, 600, 200, 1, 0, 0, 0],
+      [0, 0, 400, 200, 2, 0, 0, 0],
+    ];
+    const forward = fakeContext();
+    const first = createNebulaPass(
+      forward.gl,
+      fakeProgram(),
+      buildNebulaSet({ records }),
+      volumesOf(),
+    );
+    first.draw(frameOf(6000));
+
+    const backward = fakeContext();
+    const second = createNebulaPass(
+      backward.gl,
+      fakeProgram(),
+      buildNebulaSet({ records }),
+      volumesOf(),
+    );
+    second.draw(frameOf(6000, { reverseOrder: true }));
+
+    expect(everyValueOf(backward, 'uPosition')).toEqual(
+      [...everyValueOf(forward, 'uPosition')].reverse(),
+    );
+    expect(second.drawCalls).toBe(first.drawCalls);
+    expect(compositeDraws(backward)).toHaveLength(1);
   });
 
   // A record naming an asset the set does not hold draws nothing rather than throwing.

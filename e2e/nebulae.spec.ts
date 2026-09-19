@@ -869,24 +869,37 @@ const SWEEP_STEP_DEGREES = 0.004;
 
 /**
  * The largest step the sweep accepts, summed over the three channels on a 0 to 255
- * scale. It is the no-flip floor, which the same sweep reads at 3 to 7.
+ * scale. It is the worst pair this blend reads, 26, rounded up.
+ *
+ * The bound is not a floor on the camera move: the sweep carries the move as well as any
+ * step, and the move alone puts many windows above any figure near its own size. What the
+ * bound falsifies is the 71 the ordered blend reads at the same sweep.
  */
-const SWEEP_BOUND = 8;
+const SWEEP_BOUND = 30;
 
-// The spec's scenario **The frame does not step when two records change rank**. The
-// blend of the records does not depend on their order, so the frame holds still across a
-// camera window that changes their rank. The sweep reads pixels and not time, so it runs
-// in the parallel pass.
+// The spec's scenario **The frame does not step when two records change rank**. It is the
+// continuity reading beside the reversed-order test below, which is the one that states
+// the requirement. The sweep reads pixels and not time, so it runs in the parallel pass.
 //
-// The same sweep on the blend that ordered the records reads a worst pair of 71, at a
-// yaw of 54.5 degrees, with 167 of its 720 windows above the floor. This blend reads a
-// worst pair of 26, with 163 windows above 8.
+// The camera orbits the cursor, so a window turns it and also carries it 0.21 light years
+// sideways. A record at range `r` therefore moves by `turn * (1 - 3000 / r)`: nothing at
+// the cursor's own range, a twentieth of a pixel far beyond it and about a third of a
+// pixel at 400 light years. The sweep measures that motion plus any step, never a step
+// alone, so its bound is the worst pair this blend reads and not a floor on the motion.
 //
-// That residual is the camera move and not a flip. It falls with the width of the
-// window, reading 28 at 0.008 degrees, 19 at 0.004, 15 at 0.002, 6 at 0.001 and 0 at 0,
-// over 180 windows, and a step at a flip does not shrink with the window. The drawn set
-// holds at 87 records over every window, and the step does not fall when the step rate
-// rises to 256, so neither the selection nor the quadrature is the cause.
+// The blend that ordered the records reads a worst pair of 71 at this sweep, at a yaw of
+// 54.5 degrees. This blend reads 26, at a yaw of 5 degrees.
+//
+// The residual is the camera move and not a flip. It falls with the width of the window,
+// reading 28 at 0.008 degrees, 19 at 0.004, 15 at 0.002, 6 at 0.001 and 0 at 0, over 180
+// windows, and a step at a flip does not shrink with the window. The drawn set holds at
+// 87 records over every window, the covered area of 0.011 leaves every budget fade at 1,
+// and the step does not fall when the step rate rises to 256, so neither the selection
+// nor the fade nor the quadrature is the cause.
+//
+// The count of windows above the bound is therefore not asserted: 163 of the 720 sit
+// above 8 under this blend and 167 under the ordered one, because the motion alone puts
+// them there.
 test('the frame does not step when two records change rank', async ({ page }) => {
   await openMap(page, '');
   await nebulaeAlone(page);
@@ -944,8 +957,98 @@ test('the frame does not step when two records change rank', async ({ page }) =>
   expect(report).not.toBeNull();
   // The positive control: the camera draws records at every window it reads.
   expect(report?.drawn ?? 0).toBeGreaterThan(0);
-  expect(report?.above).toBe(0);
   expect(report?.worst ?? 765).toBeLessThanOrEqual(SWEEP_BOUND);
+});
+
+// The spec's scenario **The frame does not change when the order is reversed**. This is
+// the reading with teeth: the sweep above carries the camera move as well as any step,
+// and this one carries nothing else. The probe draws the same selection backwards, so
+// the two frames differ in the draw order and in nothing at all besides.
+//
+// The three cameras are the ones the overlap reading uses, from 120 records overlapping
+// at 1.18 covered areas down to 87 records at 0.011.
+//
+// The Orion frame at 3,000 light years, of 87 records, comes back byte for byte
+// identical. The frame at 800, of 110 records, differs at 7 pixels of 921,600, and the
+// Barnard's Loop frame, of 120 records, at 40, each by 1 of 255 in one channel. The two
+// means differ by 4.6e-9 in 0.0432 and by 6.1e-9 in 0.1933.
+//
+// That is the accumulation target and not the blend: addition in `RGBA16F` is not
+// associative, so a sum of 120 terms can land one step of the format either side. Ten
+// places of the mean is below what the target carries, and the bound states what it
+// does carry: the same frame to one step of the display range, at every pixel.
+test('the frame does not change when the order is reversed', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+  expect(
+    await page.evaluate(
+      () => typeof window.__galaxyMap?.setNebulaOrderReversed === 'function',
+    ),
+  ).toBe(true);
+
+  for (const camera of OVERLAP_CAMERAS) {
+    const report = await page.evaluate((where) => {
+      const map = window.__galaxyMap;
+      if (map?.readRect === undefined) return null;
+      const read = map.readRect;
+      const frameAt = (reversed: boolean): Uint8Array => {
+        map.setNebulaOrderReversed?.(reversed);
+        map.setView?.({
+          cursor: where.cursor,
+          distance: where.distance,
+          pitch: 0,
+          yaw: 0,
+        });
+        map.drawNow?.();
+        return read(0, 0, 1280, 720);
+      };
+      const forward = frameAt(false);
+      const backward = frameAt(true);
+      map.setNebulaOrderReversed?.(false);
+      let worst = 0;
+      let differing = 0;
+      const meanOf = (bytes: Uint8Array): number => {
+        let sum = 0;
+        for (let index = 0; index < bytes.length; index += 4) {
+          sum +=
+            0.2126 * (bytes[index] as number) +
+            0.7152 * (bytes[index + 1] as number) +
+            0.0722 * (bytes[index + 2] as number);
+        }
+        return (4 * sum) / (255 * bytes.length);
+      };
+      for (let at = 0; at < forward.length; at += 4) {
+        const difference =
+          Math.abs((forward[at] as number) - (backward[at] as number)) +
+          Math.abs((forward[at + 1] as number) - (backward[at + 1] as number)) +
+          Math.abs((forward[at + 2] as number) - (backward[at + 2] as number));
+        if (difference > 0) differing += 1;
+        if (difference > worst) worst = difference;
+      }
+      return {
+        forward: meanOf(forward),
+        backward: meanOf(backward),
+        worst,
+        differing,
+        drawn: map.nebulaDrawnCount?.() ?? -1,
+      };
+    }, camera);
+    console.log('the reversed order', { camera: camera.name, ...report });
+
+    expect(report).not.toBeNull();
+    // The positive control: the camera draws the records the reading is of, and more
+    // than one of them, so there is an order to reverse.
+    expect(report?.drawn ?? 0, `${camera.name} drew too few records`).toBeGreaterThan(
+      1,
+    );
+    expect(report?.backward ?? -1, `${camera.name} changed with the order`).toBeCloseTo(
+      report?.forward ?? -2,
+      7,
+    );
+    // No pixel moves by more than one step of the display range, which is the rounding
+    // of the accumulation target and not a change in the frame.
+    expect(report?.worst ?? 765, `${camera.name} moved a pixel`).toBeLessThanOrEqual(1);
+  }
 });
 
 /**
