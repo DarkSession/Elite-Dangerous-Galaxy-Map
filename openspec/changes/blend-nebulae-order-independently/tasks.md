@@ -253,12 +253,47 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
       `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass: 81 files
       and 1,148 unit tests.
-- [ ] 4.1 Re-run the sweep of task 2.1 on the finished tree and record the worst pair beside
+- [x] 4.1 Re-run the sweep of task 2.1 on the finished tree and record the worst pair beside
       this task, for the record. Task 3.7 already ran it; this is the reading the change is
       presented with. **If it is above 8**, something other than the blend still depends on
       the order: read the selection, the budget fade and the clear before going further, and
       do not take the abort branch until that reading is explained.
-- [ ] 4.2 Read the overlap error against the frames task 2.4 captured, at the same three
+
+      **The reading: a worst pair of 26, at a yaw of 5 degrees, with 163 of the 720
+      windows above 8.** Before the swap the same sweep read 71 and 167. The worst pair
+      falls by 45 and the count above 8 falls by 4.
+
+      **It is above 8, and the cause is not the draw order.** Three probes read the three
+      the task names, at the same camera, and a fourth reads the window itself:
+
+      1. **The selection.** The drawn count holds at 87 records at both ends of every
+         window of a 180-window sweep. The set does not change.
+      2. **The budget fade.** The camera covers 0.0114 screen areas. The fade starts at
+         `NEBULA_BUDGET_FADE_START * NEBULA_COVERED_AREA_BUDGET`, which is 3.2, so every
+         record takes a budget fade of 1 and no fade can follow the order.
+      3. **The clear.** The target is cleared to `(0, 0, 0, 1)` at every frame that
+         draws, which a unit test reads.
+      4. **The width of the window.** The worst pair over 180 windows reads 28 at 0.008
+         degrees, 19 at 0.004, 15 at 0.002, 6 at 0.001 and **0 at 0**. A step at an order
+         flip is a jump and does not shrink with the window; this one does, and it
+         vanishes when the camera does not move.
+
+      A fifth probe rules out the quadrature: the worst pair holds at 17 to 19 as the
+      step rate rises from 32 to 64, 128 and 256, so it is not the march's step count.
+
+      **The residual is the camera move.** The camera orbits the cursor, so 0.004 degrees
+      at 3,000 light years also moves it 0.21 light years sideways. The records sit about
+      1,000 light years away, so the parallax moves the image about a sixth of a pixel,
+      not a twentieth. On a frame of sharp nebula structure at half resolution, the worst
+      pixel of 720 such moves reads 26.
+
+      **The proposal is wrong about the floor, and the bound of 8 is not reachable.** The
+      mean step over the 720 windows is 6.93, which is the "3 to 7" the probe reported;
+      that figure is the typical step and not the worst pixel, which is what the scenario
+      bounds. The test of task 2.1 therefore still fails on the finished tree. **The bound
+      is not moved**: the reading is written down and the spec's own figure is left for a
+      human to restate.
+- [x] 4.2 Read the overlap error against the frames task 2.4 captured, at the same three
       cameras and the same conditions. For each, record the mean frame luminance before and
       after, the largest per-pixel rise and the count of pixels that rose by more than 8.
       Beside each, record the worst step the probe read at that camera, so the two sit
@@ -273,7 +308,23 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       take the abort branch of task 4.5. That tenth is the judgement the spec states; it is
       not a measurement, and it is the one number in this change that a reader is entitled to
       argue with.
-- [ ] 4.3 **The other half of the gate.** Read every reading task 2.3 listed. Each must
+
+      **The readings**, at the three cameras, under the conditions of task 2.4:
+
+      | camera | mean before | mean after | rise | share of the light before | worst pixel rise | pixels above 8 | worst step the probe read |
+      | --- | --- | --- | --- | --- | --- | --- | --- |
+      | Barnard's Loop at 120 | 0.1824152 | **0.1932855** | +0.0108703 | **+5.96%** | 112 | 186,053 of 921,600 | 23 |
+      | Orion at 800 | 0.0431420 | **0.0431582** | +0.0000162 | **+0.037%** | 41 | 303 of 921,600 | none |
+      | Orion at 3,000 | 0.0382361 | **0.0382427** | +0.0000066 | **+0.017%** | 70 | 154 of 921,600 | none |
+
+      **No pixel of any of the three frames falls.** The largest fall is 0 at all three,
+      which is what the design predicts: each record's alpha is held from 0 to 1, so the
+      light can rise and cannot fall.
+
+      **This half of the gate passes.** The largest rise is 5.96 percent, under the tenth
+      the spec states. The three bounds are now in the test as 0.194, 0.044 and 0.039,
+      each the measured figure rounded up to the next thousandth.
+- [x] 4.3 **The other half of the gate.** Read every reading task 2.3 listed. Each must
       still hold its committed bound, and **no bound moves to make a test pass**. Where one
       breaks, write the old and the new figure beside this task and take the abort branch of
       task 4.5.
@@ -285,11 +336,51 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       `a nebula behind the core dims`. On its own this list is a weak proxy for the artefact
       this change introduces. That is why task 4.2 carries a bound of its own, and why both
       halves have to pass.
-- [ ] 4.4 Read the pass cost at the cameras of task 2.2 and compare the four millisecond
+
+      **Every reading holds its committed bound, and no bound moved.**
+
+      | reading | before | after | its bound |
+      | --- | --- | --- | --- |
+      | `a bright nebula adds light...`, bright | 0.19982 on, 0.14246 off | 0.20150 on, 0.14246 off | on above off |
+      | the same, dark | 0.37550 on, 0.60246 off | 0.37545 on, 0.60246 off | on **below** off |
+      | `the glow reads the nebulae` | 0.047523, 0.037575 | 0.047523, 0.037575 | glow above no glow |
+      | `a close zoom still draws the nebulae` | 0.20295 on, 0.13300 off | 0.20623 on, 0.13300 off | on above off |
+      | `the camera inside a nebula...` | nine blocks from 0.18135 | nine blocks from 0.18135 | every block above 0.03725 |
+      | `a nebula grows as the camera closes on it` | 0.18763, 0.19321, 0.19542 | 0.19136, 0.20211, 0.21738 | each above the last |
+      | `a nebula with little in front of it...` | change 0.00092 | change 0.00090 | under 0.02 |
+      | `occluded light turns warm` | 0.81658, 0.83377 | 0.81658, 0.83387 | on below off |
+      | `a dark nebula behind the core...` | 0.88115, 0.85216 | 0.88114, 0.85213 | on above off |
+      | `a nebula behind the core dims` | -0.00091 and -0.01471 | -0.00091 and -0.01481 | the first is the smaller |
+      | `doubling the step rate...` | difference 0.0012538 | difference 0.0012412 | under 5 percent of 0.06757 |
+      | `the march of barnards-loop...` | RMSE 0.0083255 | RMSE **0.0018745** | under 0.02 |
+      | `the march of cats-eye...` | RMSE 0.0058001 | RMSE **0.0036028** | under 0.01 |
+      | the no-compressed-extension scenario | 71 drawn, 0.22113 | 71 drawn, 0.22449 | drawn above 0, light above 0 |
+
+      The two readings that read the other way both hold: the dark nebula still takes
+      light away, and the nebula behind the core still dims. The two RMSE readings fell
+      rather than rose, because the reference now states the same composite as the pass.
+- [x] 4.4 Read the pass cost at the cameras of task 2.2 and compare the four millisecond
       readings against the ones recorded there. The composite adds one full-screen draw of
       230,400 fragments and the sort it removes was CPU work. Verify each test still holds
       its own bound: 16.7 ms for the whole frame at 20 light years, 0.2 for the
       inside-against-outside share, 0.25 for the vertex-march share.
+
+      **The readings**, on the finished tree, in the timed pass:
+
+      | reading | before | after | change | bound |
+      | --- | --- | --- | --- | --- |
+      | mean frame ms at 20 light years | 2.883 | **3.158** | +0.275 | 16.7 |
+      | pass alone ms at 260 light years | 0.4375 | **0.4783** | +0.041 | — |
+      | pass alone ms at 120 light years | 0.4400 | **0.5033** | +0.063 | — |
+      | the share of the two | 0.0057 | **0.0497** | +0.044 | 0.2 |
+      | pooled vertex share, many small | 0.0800 | **0.0857** | +0.006 | 0.25 |
+      | pooled vertex share, one large | 0.0167 | **0.0108** | -0.006 | 0.25 |
+
+      **Each test holds its own bound.** The composite costs the pass 0.04 to 0.06 ms,
+      which is one full-screen draw of 230,400 fragments. The inside-against-outside
+      share rises from 0.0057 to 0.0497 and stays far under 0.2: the extra draw is the
+      same at both cameras, so it adds to two small readings that were nearly equal and
+      the share of a difference of 0.025 ms moves easily. Neither share became lopsided.
 - [ ] 4.5 **The abort branch**, on either half of the gate: task 4.2 reading a rise above a
       tenth at any of its three cameras, or task 4.3 finding a committed bound it cannot
       hold. Revert
@@ -301,6 +392,10 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       readings of tasks 4.2 and 4.3 into `design.md` as the answer, mark the remaining tasks
       not done with that reason, and do **not** archive it. The delta describes a tree that
       does not exist, so it must not reach `openspec/specs/nebulae/spec.md`.
+
+      **Not taken.** Task 4.2 reads a largest rise of 5.96 percent, under the tenth, and
+      task 4.3 finds no committed bound that breaks. Both halves of the gate pass, so the
+      change lands.
 - [ ] 4.6 If the change lands: verify `pnpm lint`, `pnpm exec tsc --noEmit`,
       `pnpm exec vitest run` and `pnpm test:e2e` all pass, and that the two CPU fixture
       comparisons read inside their committed bounds against the reference rebuilt in task
@@ -311,6 +406,16 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
 ## 5. The review gate
 
+
+      **The state of the finished tree.** `pnpm lint`, `pnpm exec tsc --noEmit` and
+      `pnpm exec vitest run` pass, the last over 81 files and 1,148 tests. `pnpm test:e2e`
+      reports **one failure in 612 tests**: the sweep of task 2.1, against the bound of 8
+      the spec states, which task 4.1 shows the camera move alone cannot meet. Every
+      other browser test passes.
+
+      The two CPU fixture comparisons read **0.0018745** for `barnards-loop` against 0.02
+      and **0.0036028** for `cats-eye` against 0.01, both against the reference rebuilt
+      in task 3.4.
 - [ ] 5.1 Run the tests yourself first: `pnpm lint`, `pnpm exec vitest run` and
       `pnpm test:e2e`. A reviewer sent into a broken tree wastes its run.
 - [ ] 5.2 Launch the `openspec-implementation-reviewer` subagent with this change id and
