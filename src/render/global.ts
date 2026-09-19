@@ -26,6 +26,7 @@ export interface GalaxyMapGlobal {
   setPasses?: (passes: {
     volume?: boolean;
     clouds?: boolean;
+    nebulae?: boolean;
     points?: boolean;
     stars?: boolean;
     glow?: boolean;
@@ -42,6 +43,12 @@ export interface GalaxyMapGlobal {
   starSuppressedCount?: () => number;
   /** How many markers the last frame drew. */
   systemMarkerCount?: () => number;
+  /** How many nebula instances the last frame drew. */
+  nebulaDrawnCount?: () => number;
+  /** How many draw calls the last frame's nebula pass issued: one, or none. */
+  nebulaDrawCalls?: () => number;
+  /** Whether the nebula records and the atlas reached the renderer. */
+  nebulaeAttached?: () => boolean;
   /**
    * Holds the close fade at a value from 0 to 1, or gives it back to the zoom distance
    * with `null`. A test holds it at 1 to read the invented field at a close view.

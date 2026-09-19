@@ -71,8 +71,16 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * and a bound that follows every reading upward guards less each time. The room is now
  * thin, so the next change that touches this chunk moves the bound to the next round
  * figure above its own reading and says why.
+ *
+ * The nebula pass takes the reading to **266,996 bytes**, and the bound moves to
+ * **270,000**, the next round figure above it, as the entry above asked. The two nebula
+ * data files stay out of the chunk: both load as fetched assets, and the test above
+ * holds that. What entered is code. A shader pair reaches this chunk as text, and the
+ * chunk already held 26 shader sources; the nebula pair, the pass, the record set and
+ * the wiring come to about 12 kB. The guard still holds: a chunk that pulled the 199 KiB
+ * region cell table in reads over 370,000 bytes, far above this figure.
  */
-const ENTRY_CHUNK_LIMIT = 254_000;
+const ENTRY_CHUNK_LIMIT = 270_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first
@@ -288,6 +296,45 @@ describe('the library build', () => {
       expect(
         text.includes('galaxy-map-ready'),
         `${nameOf(path)} holds the page event`,
+      ).toBe(false);
+    }
+  });
+
+  // The record set and the sprite atlas load as fetched assets. `?url&no-inline` is
+  // what keeps them files: a plain `?url` lets the library build inline an asset as a
+  // data URI, which would put 14,626 bytes of records and 811,762 bytes of art in the
+  // entry chunk.
+  test('emits the nebula records and the atlas as files, not as chunk text', () => {
+    const names = files.map(nameOf);
+    expect(names.filter((name) => name.endsWith('.webp'))).toHaveLength(1);
+    expect(
+      names.filter((name) => name.startsWith('nebulae') && name.endsWith('.json')),
+    ).toHaveLength(1);
+
+    const file = readFileSync(join(root, 'src', 'scene-data', 'nebulae.json'), 'utf8');
+    const records = JSON.parse(file) as {
+      records: [number, number, number, number, number, string?][];
+    };
+    const recordName = records.records[0]?.[5] as string;
+    // The text of the first record row, which nothing but the data file holds.
+    const firstRow = file.slice(
+      file.indexOf('"records":[[') + 11,
+      file.indexOf(']', file.indexOf('"records":[[') + 12) + 1,
+    );
+    expect(recordName.length).toBeGreaterThan(0);
+    expect(firstRow.length).toBeGreaterThan(20);
+
+    for (const path of scripts) {
+      const text = readFileSync(path, 'utf8');
+      expect(text.includes(recordName), `${nameOf(path)} holds a nebula record`).toBe(
+        false,
+      );
+      expect(text.includes(firstRow), `${nameOf(path)} holds the record rows`).toBe(
+        false,
+      );
+      expect(
+        text.includes('data:image/webp'),
+        `${nameOf(path)} holds the atlas as a data URI`,
       ).toBe(false);
     }
   });

@@ -37,6 +37,12 @@ describe('the third-party notices', () => {
     }
   });
 
+  test('names the nebula records and the sprite atlas', () => {
+    for (const source of ['nebulae.json', 'nebula-art.webp']) {
+      expect(notices, `the notices name ${source}`).toContain(source);
+    }
+  });
+
   test('names the non-commercial terms of the game data', () => {
     expect(notices).toContain('non-commercial');
     expect(notices).toContain('media-usage rules');

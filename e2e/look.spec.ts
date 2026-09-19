@@ -300,10 +300,13 @@ test('the bulge has a soft top', async ({ page }) => {
     // fades in, and the camera looks along the plane. The boundary lines then cross
     // the column this test reads, and a 4 CSS pixel line makes a step of its own. The
     // reading is about the top of the bulge, so the overlay goes off with the other
-    // passes that do not belong to the volume.
+    // passes that do not belong to the volume. The nebula band is closed at 25,000
+    // light years, so the switch below states what the frame holds rather than
+    // changing it.
     window.__galaxyMap?.setPasses?.({
       points: false,
       clouds: false,
+      nebulae: false,
       glow: false,
       regions: false,
     });

@@ -195,9 +195,13 @@ test('the star shaders compile', async ({ page }) => {
 test('the field alone rises above the background', async ({ page }) => {
   await openMap(page, CLOSE_SOL);
   await setCloseFade(page, 1);
+  // The nebula band has no near end, so a record draws at 500 light years and its
+  // sprite is a bright patch. This reading is about the field alone, so it goes off
+  // with every other pass that does not belong to the field.
   await setPasses(page, {
     volume: false,
     clouds: false,
+    nebulae: false,
     glow: false,
     points: false,
     regions: false,
@@ -219,6 +223,7 @@ test('the field adds no light at the close zoom distances', async ({ page }) => 
   await setPasses(page, {
     volume: false,
     clouds: false,
+    nebulae: false,
     glow: false,
     points: false,
     regions: false,
@@ -247,6 +252,7 @@ test('the switch removes the field', async ({ page }) => {
   await setPasses(page, {
     volume: false,
     clouds: false,
+    nebulae: false,
     glow: false,
     points: false,
     regions: false,

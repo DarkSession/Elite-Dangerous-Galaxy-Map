@@ -58,6 +58,19 @@ which permit non-commercial use only:
 > endorsed by nor reflects the views or opinions of Frontier Developments and no
 > employee of Frontier Developments was involved in the making of it.
 
+## The nebula records and the sprite atlas
+
+`src/scene-data/nebulae.json` holds 358 nebula records: a position, a radius, a tile
+index and, for 190 of them, a name. `src/render/nebula-art.webp` holds the sprite art
+those records draw, as 34 tiles of 256 by 256 texels.
+
+The nebulae are of the game's galaxy, so the Frontier Developments terms above apply to
+both files, and those terms permit non-commercial use only. The atlas is the stronger
+case of the two, because it carries art and not a table of numbers.
+
+The maintainer reviews these terms before a release carries either file. This notice
+records what the files are; it does not settle whether they may ship.
+
 ## The galaxy density model
 
 The density model in `src/galaxy-model/` is this project's own work. It carries no

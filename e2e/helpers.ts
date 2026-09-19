@@ -1,4 +1,5 @@
 import { gzipSync } from 'node:zlib';
+import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /** The event the page sends once it has drawn the scene data for the first time. */
@@ -80,6 +81,13 @@ export interface OpenOptions {
    * reads the demo site's own start state passes it.
    */
   readonly demoData?: boolean;
+  /**
+   * False opens the map without a wait for the nebulae. The default waits for them,
+   * because they attach after the first frame: a test that draws before the upload
+   * reads one picture with the sprites and one without. Only a test that holds or
+   * breaks a nebula asset passes false.
+   */
+  readonly nebulae?: boolean;
 }
 
 /** Opens the map and waits for the first frame. */
@@ -92,6 +100,23 @@ export async function openMap(
   await waitForReady(page);
   if (options.demoData !== true) await startState(page);
   if (options.hud !== true) await removeHud(page);
+  if (options.nebulae !== false) await settleNebulae(page);
+}
+
+/**
+ * Waits until the nebula sprites are on the map, then draws one frame.
+ *
+ * The map starts before the nebula records and the sprite atlas arrive, so the first
+ * frames carry no sprites. Every test that reads the canvas waits here first, or the
+ * upload lands in the middle of the test and moves the light it measures.
+ */
+export async function settleNebulae(page: Page, timeout = 10000): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => window.__galaxyMap?.nebulaeAttached?.() ?? false), {
+      timeout,
+    })
+    .toBe(true);
+  await page.evaluate(() => window.__galaxyMap?.drawNow?.());
 }
 
 /**
