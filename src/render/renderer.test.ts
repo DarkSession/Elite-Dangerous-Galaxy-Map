@@ -13,7 +13,7 @@ import {
   DEFAULT_NEBULA_OCCLUSION,
   DEFAULT_NEBULA_STEP_RATE,
 } from './nebula-slot';
-import type { NebulaDraw } from './nebula-slot';
+import type { NebulaDraw, NebulaFrame } from './nebula-slot';
 import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
@@ -562,6 +562,44 @@ describe('the nebula pass in the frame', () => {
     expect(targets.get('nebula-composite')).toBe(targets.get('volume'));
     expect(targets.get('nebulae')).not.toBe(targets.get('clouds'));
     renderer.dispose();
+  });
+
+  // The accumulation target of the nebula pass has to hold what the half-resolution
+  // target holds, so the renderer names the flag it built that target with and the pass
+  // does not read the context again.
+  test('gives the nebulae the number format it built its own targets with', () => {
+    for (const float of [true, false]) {
+      (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+      const context = fakeContext(
+        float ? ['EXT_color_buffer_float', 'EXT_float_blend'] : [],
+      );
+      const frames: NebulaFrame[] = [];
+      const renderer = createRenderer(context.gl, fakeCanvas());
+      renderer.setNebulae({
+        draw(frame: NebulaFrame): void {
+          frames.push(frame);
+        },
+        drawnCount: 0,
+        drawCalls: 0,
+        aboveFloorCount: 0,
+        coveredArea: 0,
+        dispose: (): void => undefined,
+      });
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+
+      expect(frames[0]?.floatTarget).toBe(float);
+      // The first image the renderer allocates is the half-resolution target, at the
+      // 2 by 2 it starts from. The frame names the format of that image.
+      // The first four-channel image the renderer allocates is the half-resolution
+      // target, at the 2 by 2 it starts from. The range buffer is one channel and comes
+      // before it, so the search names the format as well as the size.
+      const half = context
+        .of('texImage2D')
+        .find((call) => call.args[6] === context.gl.RGBA)?.args;
+      expect([half?.[3], half?.[4]]).toEqual([2, 2]);
+      expect(half?.[2]).toBe(float ? context.gl.RGBA16F : context.gl.RGBA8);
+      renderer.dispose();
+    }
   });
 
   test('reports the drawn count and the one draw call', () => {

@@ -28,7 +28,7 @@ import type { Program } from './program';
 import { withVolumeDensity } from './volume-density';
 import vertexSource from './shaders/nebulae.vert?raw';
 import fragmentSource from './shaders/nebulae.frag?raw';
-import compositeVertexSource from './shaders/nebula-composite.vert?raw';
+import compositeVertexSource from './shaders/fullscreen.vert?raw';
 import compositeFragmentSource from './shaders/nebula-composite.frag?raw';
 
 /**
@@ -266,7 +266,19 @@ export function createNebulaPass(
       // default view and the close view cost nothing. The target, the clear and the
       // composite go with the record draws: a frame that draws no record pays for none
       // of the three.
-      if (selection.weight <= 0 || selection.instances.length < 1) return;
+      if (selection.weight <= 0) return;
+
+      // A selected record still draws nothing where the set names an asset the volume
+      // set does not hold. The count is therefore of the records the pass can draw and
+      // not of the records the selection gave, so a frame that can draw none of them
+      // returns here and pays for no target, no clear and no composite.
+      let drawable = 0;
+      for (const instance of selection.instances) {
+        if (volumes.assets[set.assets[instance.index] as number] !== undefined) {
+          drawable += 1;
+        }
+      }
+      if (drawable < 1) return;
 
       // The renderer hands the draw a frame and no framebuffer, so the draw keeps the
       // binding it found and puts it back before the composite. The read comes before

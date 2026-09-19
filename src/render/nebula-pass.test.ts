@@ -26,7 +26,7 @@ import densitySource from './shaders/volume-density.glsl?raw';
 import nebulaVertexSource from './shaders/nebulae.vert?raw';
 import nebulaFragmentSource from './shaders/nebulae.frag?raw';
 import volumeFragmentSource from './shaders/volume.frag?raw';
-import compositeVertexSource from './shaders/nebula-composite.vert?raw';
+import compositeVertexSource from './shaders/fullscreen.vert?raw';
 import compositeFragmentSource from './shaders/nebula-composite.frag?raw';
 
 /** One call the pass made on the context. */
@@ -468,6 +468,59 @@ describe('the nebula pass', () => {
 
     pass.dispose();
     expect(context.of('deleteFramebuffer')).toHaveLength(1);
+  });
+
+  // The selection can hold records the pass cannot draw, because the set names an asset
+  // index the volume set does not hold. A frame of nothing but those records draws no
+  // record, so it pays for no target, no clear and no composite either.
+  test('builds nothing where the set holds no asset for any record', () => {
+    const context = fakeContext();
+    const set = buildNebulaSet({
+      records: [
+        [0, 0, 400, 200, 98, 0, 0, 0],
+        [0, 0, 200, 200, 99, 0, 0, 0],
+      ],
+    });
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf(4));
+
+    pass.draw(frameOf(6000));
+
+    expect(pass.drawCalls).toBe(0);
+    expect(context.of('createFramebuffer')).toHaveLength(0);
+    expect(context.of('clear')).toHaveLength(0);
+    expect(compositeDraws(context)).toHaveLength(0);
+  });
+
+  // The emission sum starts at 0 and the transmittance product at 1. The alpha channel
+  // holds that product, so the clear puts 1 there and not 0.
+  test('clears the accumulation target to no emission and full transmittance', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), volumesOf());
+
+    pass.draw(frameOf(6000));
+
+    expect(context.of('clearColor').map((call) => call.args)).toEqual([[0, 0, 0, 1]]);
+  });
+
+  // The accumulation target holds the number format the frame names, which is the format
+  // the renderer built its own colour targets with. A card that gives no float target
+  // therefore draws the nebulae as it draws the rest of the scene.
+  test('builds the accumulation target in the number format the frame names', () => {
+    const float = fakeContext();
+    createNebulaPass(float.gl, fakeProgram(), manySet(4), volumesOf()).draw(
+      frameOf(6000),
+    );
+    const floatImage = float.of('texImage2D')[0]?.args;
+    expect(floatImage?.[2]).toBe(float.gl.RGBA16F);
+    expect(floatImage?.[7]).toBe(float.gl.HALF_FLOAT);
+
+    const byte = fakeContext();
+    createNebulaPass(byte.gl, fakeProgram(), manySet(4), volumesOf()).draw(
+      frameOf(6000, { floatTarget: false }),
+    );
+    const byteImage = byte.of('texImage2D')[0]?.args;
+    expect(byteImage?.[2]).toBe(byte.gl.RGBA8);
+    expect(byteImage?.[7]).toBe(byte.gl.UNSIGNED_BYTE);
   });
 
   // The record draws go into the accumulation target and the composite goes into the

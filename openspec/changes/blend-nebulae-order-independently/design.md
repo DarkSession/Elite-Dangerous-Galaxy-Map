@@ -118,6 +118,21 @@ additively, and both `.bin` fixtures are rebuilt in the same commit as the shade
   says the march still agrees with an independent statement of the same integral and the
   same composite, which is what the requirement asks of it. The check that the frame did
   not change elsewhere is task 4.3, over the readings of `e2e/nebulae.spec.ts`.
+- _On what the two RMSE bounds do not guard, which is sharper than the paragraph above:_
+  the rebuilt reference sums the emissions over black and drops the transmittance it
+  carried, and the browser frame the fixture is read against also draws on black. The
+  accumulated transmittance therefore multiplies zero on both sides. The comparison is
+  blind to the output alpha — the one expression this change moves — and that, and not the
+  composite in general, is why both readings fell: 0.0083255 to 0.0018745 for
+  `barnards-loop` and 0.0058001 to 0.0036028 for `cats-eye`. The bounds guard the march
+  and the emission sum. They do not guard the transmittance.
+
+  The transmittance keeps its coverage in two other places. The 33-asset range test in
+  `src/render/nebula-march.test.ts` reads the output alpha of every asset against a
+  hand-computed pair of constants, which is why those two constants became their
+  complements. And the browser test **a dark nebula behind the core stops cutting a hole**
+  draws a record of negative extinction over the lit core, where the transmittance is the
+  only thing the frame shows.
 - _Rejected:_ keeping the old reference and widening the bound. That hides the size of the
   change in the bound and leaves the next reader unable to tell a march error from this
   one.
@@ -179,15 +194,21 @@ backwards when it is set, and the switch runs from `src/render/global.ts` throug
 - _What the probe cannot reach:_ the bound is one step of the display range and not zero,
   because `RGBA16F` addition is not associative. The reading is in the spec's scenario.
 
-### The composite is its own shader pair
+### The composite is its own fragment shader, over the shared vertex stage
 
-**Chosen:** a full-screen triangle with a two-line fragment shader, in
-`src/render/shaders/`, and the draw in `src/render/nebula-pass.ts`.
+**Chosen:** a two-line fragment shader in `src/render/shaders/`, over the
+`fullscreen.vert` the other full-screen passes use, and the draw in
+`src/render/nebula-pass.ts`.
 
 - _Why:_ the pass owns its target and its composite, so the renderer keeps one call and
   the whole graph stays behind `src/nebulae/`. The import rule that keeps the nebula art
   out of a host that asks for no nebulae is what decides this: a composite shader in the
   renderer would be in the main chunk.
+- _Why the vertex stage is shared:_ the first draft copied `fullscreen.vert` to a
+  `nebula-composite.vert` that differed in its comment alone. Sharing it costs the entry
+  chunk nothing, because six core passes already import that file: the string moves into
+  the chunk both entries load, and `dist/index.js` falls by 310 bytes and `dist/nebulae.js`
+  by 296 while the shared chunk gains 339.
 - _Rejected:_ reusing `src/render/composite-pass.ts`. It reads the scene target and tone
   maps it, which is a different draw at a different place in the frame.
 

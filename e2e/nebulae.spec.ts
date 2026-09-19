@@ -72,13 +72,14 @@ test('the nebula shaders compile', async ({ page }) => {
   );
   expect(error).toBeNull();
 
-  // The composite pair the pass applies its accumulation target with. The test names
-  // the shaders it compiles one by one, so a new pair needs this line.
+  // The composite pair the pass applies its accumulation target with. Its vertex stage
+  // is the one the other full-screen passes use. The test names the shaders it compiles
+  // one by one, so a new pair needs this line.
   const compositeError = await page.evaluate(
     (sources) =>
       window.__galaxyMap?.compileTestProgram?.(sources.vertex, sources.fragment),
     {
-      vertex: shaderSource('nebula-composite.vert'),
+      vertex: shaderSource('fullscreen.vert'),
       fragment: shaderSource('nebula-composite.frag'),
     },
   );
@@ -862,8 +863,11 @@ const BARNARDS_LOOP: [number, number, number] = [624.4, -425.9, -1229.5];
 const SWEEP_WINDOWS = 720;
 
 /**
- * How far the camera turns inside one window, in degrees. It moves the image about a
- * twentieth of a pixel, so a difference above the floor is a step and not a move.
+ * How far the camera turns inside one window, in degrees.
+ *
+ * The camera orbits, so a window turns it and also carries it sideways. The image of a
+ * record therefore moves by more than the turn alone gives, and the block comment below
+ * the bound holds the arithmetic. A window reads that move plus any step.
  */
 const SWEEP_STEP_DEGREES = 0.004;
 

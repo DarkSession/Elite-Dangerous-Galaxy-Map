@@ -472,3 +472,45 @@ two sentences cannot both hold.
 - [x] 6.4 Verify `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run` and
       `pnpm test:e2e` all pass. They do: 1,149 unit tests over 81 files, and 614 browser
       tests with no failure.
+
+## 7. The findings of the implementation gate
+
+The gate returned APPROVE WITH NOTES. These are the findings it raised that the tree had
+to answer.
+
+- [x] 7.1 Rewrite the doc comment on `SWEEP_STEP_DEGREES` in `e2e/nebulae.spec.ts`. It
+      still carried the retracted claim that the camera moves the image about a twentieth
+      of a pixel, twenty lines above the corrected block comment, and it is the sentence a
+      reader meets first. `grep -rn twentieth` over `src/` and `e2e/` now finds one
+      instance, inside the corrected arithmetic.
+- [x] 7.2 Return before the target where the pass can draw no record. The early return
+      counted the records the selection gave, but a record is skipped later where the set
+      names an asset the volume set does not hold. A frame of nothing but those records
+      built the target, cleared it and composited with no draw call, against the spec. The
+      pass now counts the records it can draw. A unit test reads that such a frame builds
+      no framebuffer, clears nothing and composites nothing.
+- [x] 7.3 Add the two tests the task text claims. Nothing read the clear colour, which
+      probe 3 of task 4.1 names, and nothing read that the number format of the frame
+      reaches the accumulation target. `src/render/nebula-pass.test.ts` now reads the clear
+      colour, and reads `RGBA16F` with `HALF_FLOAT` against `RGBA8` with `UNSIGNED_BYTE` as
+      the frame names one or the other. `src/render/renderer.test.ts` reads that the flag
+      in the frame is the flag the renderer built its half-resolution target with, over a
+      context that gives `EXT_color_buffer_float` and over one that does not.
+- [x] 7.4 Share the full-screen vertex stage. `nebula-composite.vert` was a byte for byte
+      copy of `fullscreen.vert` apart from its comment. The copy is gone and the pass reads
+      the shared file, which costs the entry chunk nothing: six core passes already import
+      it, so the string moves into the chunk both entries load. `dist/index.js` falls by
+      310 bytes and `dist/nebulae.js` by 296 while the shared chunk gains 339.
+- [x] 7.5 Correct the proposal's impact list. It said `src/render/renderer.ts` gets comment
+      edits alone, nine lines after the same section says the order probe runs through it.
+      The renderer gains `nebulaOrderReversed`, `setNebulaOrderReversed` and the
+      `floatTarget` it puts in the frame. The published surface paragraph said `NebulaFrame`
+      gains one member where it gains two.
+- [x] 7.6 Record in `design.md` what the two CPU fixture bounds do and do not guard. The
+      rebuilt reference sums the emissions over black and the browser frame draws on black,
+      so the accumulated transmittance multiplies zero on both sides. The comparison is
+      blind to the output alpha, which is the expression this change moves, and that is the
+      sharpest reading of why both RMSEs fell. The design names where the transmittance
+      keeps its coverage: the 33-asset range test of `src/render/nebula-march.test.ts` and
+      the browser test **a dark nebula behind the core stops cutting a hole**.
+

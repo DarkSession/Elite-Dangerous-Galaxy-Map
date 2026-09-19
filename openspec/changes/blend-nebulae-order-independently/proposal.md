@@ -129,8 +129,9 @@ writes), `src/render/nebula-slot.ts` (`NebulaFrame` gains the number format of t
 and the order probe), `src/scene-data/nebulae.ts` (the range sort goes),
 `scripts/build-nebula-fixture.mjs` (its copy of the sort and its hand-written composite),
 `e2e/fixtures/` (the two `.bin` files it rebuilds), and the unit and browser tests that
-read any of them, named in the tasks. A new composite shader pair joins
-`src/render/shaders/`. The order probe runs from `src/render/global.ts` through
+read any of them, named in the tasks. A composite fragment shader joins
+`src/render/shaders/`; its vertex stage is `fullscreen.vert`, which the other full-screen
+passes already use. The order probe runs from `src/render/global.ts` through
 `src/app/main.ts`, `src/app/create-map.ts` and `src/render/renderer.ts` to the frame, in
 the manner of `setNebulaOcclusion`.
 
@@ -144,14 +145,16 @@ holds. `src/render/nebula-pass.test.ts` holds a two-record set of one radius at 
 now, and its two hand-computed constants become their complements: 0.43896963 becomes
 0.56103037 and 0.22833131 becomes 0.77166869.
 
-`src/render/renderer.ts` gets comment edits alone. The target, the clear and the composite
-all live in the pass, because the import rule of `src/nebulae/` keeps the nebula graph out
+`src/render/renderer.ts` gains the order probe named above: `nebulaOrderReversed`,
+`setNebulaOrderReversed` and the `floatTarget` it puts in the frame. It gains no drawing:
+the target, the clear and the composite all live in the pass, because the import rule of `src/nebulae/` keeps the nebula graph out
 of the build of a host that asks for no nebulae, and a composite shader in the renderer
 would sit in the main chunk. `src/render/buffers.ts` needs nothing new: `createRenderTarget`
 already makes what the pass wants.
 
-**Published surface.** `NebulaFrame` gains one member, the number format the renderer
-built its own target with, so the pass can match it. The type is reachable from
+**Published surface.** `NebulaFrame` gains two members: the number format the renderer
+built its own target with, so the pass can match it, and the order probe, which the map
+leaves false and one browser test sets. The type is reachable from
 `NebulaSource` and therefore from `dist/types`. No host writes a `NebulaFrame` — the
 renderer builds it — so nothing outside the package breaks. `NebulaSource`, the `./nebulae`
 subpath and every other published type keep their shape.
