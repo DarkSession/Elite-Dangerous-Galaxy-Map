@@ -74,7 +74,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
 ## 2. The readings the decision rests on
 
-- [ ] 2.1 Add the browser test for the spec's scenario **The frame does not step when two
+- [x] 2.1 Add the browser test for the spec's scenario **The frame does not step when two
       records change rank** to `e2e/nebulae.spec.ts`. It orbits the Orion viewpoint
       `[-60, -80, -1100]` at 3,000 light years with every pass but the nebulae off and the
       occlusion at 0, reads 720 pairs of frames 0.004 degrees apart, and asserts no pair
@@ -82,11 +82,16 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       scale. It runs in the parallel pass: it reads pixels and not time, so it does not
       belong in the timed pass. Verify it **fails** on the tree of group 1, which is what
       says it measures the artefact.
-- [ ] 2.1a Record the failing reading beside this task. **The probe read a worst pair of
+- [x] 2.1a Record the failing reading beside this task. **The probe read a worst pair of
       71**, with 167 of the 720 pairs above 8, and a no-flip floor of 3 to 7. If the worst
       pair differs by more than a fifth, restate it in the proposal's table and in the
       spec's scenario, which both quote it as the before figure.
-- [ ] 2.2 Record the pass cost before the change, in the timed pass. Name the reading with
+
+      **The reading.** The sweep reads a worst pair of **71**, at a yaw of 54.5 degrees,
+      with **167 of its 720 windows** above 8. The camera draws 87 records. The figures
+      are the probe's own, so neither the proposal's table nor the spec's scenario moves.
+      The test prints the floor with them: the windows below 8 read 3 to 7.
+- [x] 2.2 Record the pass cost before the change, in the timed pass. Name the reading with
       the test it comes from, because `e2e/nebula-cost.spec.ts` uses three instruments and
       not one: `a near view holds the budget` reads the **whole frame** at Barnard's Loop at
       20 light years against 16.7 ms; `the box costs the same from inside as from outside`
@@ -99,7 +104,21 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       cost, so record its share alone. The two share bounds barely move under a uniform extra
       draw, so the millisecond figures are what task 4.4 compares, and the shares are a check
       that nothing became lopsided.
-- [ ] 2.3 Record the light these readings of `e2e/nebulae.spec.ts` measure on the tree of
+
+      **The readings**, on the tree of group 1, in the timed pass, on the hardware
+      renderer:
+
+      | reading | test | figure | bound |
+      | --- | --- | --- | --- |
+      | mean frame ms at 20 light years | `a near view holds the budget` | **2.883** | 16.7 |
+      | pass alone ms at 260 light years | `the box costs the same from inside as from outside` | **0.4375** | — |
+      | pass alone ms at 120 light years | the same test | **0.4400** | — |
+      | the share of the two | the same test | **0.0057** | 0.2 |
+      | pooled vertex share, many small | `the vertex march is a small share of the pass` | **0.0800** | 0.25 |
+      | pooled vertex share, one large | the same test | **0.0167** | 0.25 |
+
+      The near view draws 120 records at 1.558 covered areas and drops none.
+- [x] 2.3 Record the light these readings of `e2e/nebulae.spec.ts` measure on the tree of
       group 1. The list is named and not left as "every test", because task 4.3 reads the
       same list back: `a bright nebula adds light and a dark one takes it away`,
       `the glow reads the nebulae`, `a close zoom still draws the nebulae`,
@@ -112,13 +131,46 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       the format of the **art** and not of the render target: it is not the non-floating
       target path, which no committed test reaches, because `e2e/00-renderer.spec.ts` asserts
       `EXT_color_buffer_float` on every run.
-- [ ] 2.4 Capture the before-frames task 4.2 measures the overlap error against: the whole
+
+      **The readings**, on the tree of group 1:
+
+      | reading | figure |
+      | --- | --- |
+      | `a bright nebula adds light and a dark one takes it away` | bright 0.19982 on against 0.14246 off; dark 0.37550 on against 0.60246 off |
+      | `the glow reads the nebulae` | 0.047523 with the glow against 0.037575 without |
+      | `a close zoom still draws the nebulae` | 0.20295 on against 0.13300 off, 105 records |
+      | `the camera inside a nebula is surrounded by it` | nine blocks from 0.18135 to 0.20852, against 0.03725 off |
+      | `a nebula grows as the camera closes on it` | 0.18763 at three radii, 0.19321 at two, 0.19542 at 1.2 |
+      | `a nebula with little in front of it barely changes` | 0.21571 at occlusion 1 against 0.21591 at 0, a change of 0.00092 |
+      | `occluded light turns warm` | blue to red 0.81658 at 1 against 0.83377 at 0 |
+      | `a dark nebula behind the core stops cutting a hole` | 0.88115 at 1 against 0.85216 at 0 |
+      | `a nebula behind the core dims` | the block reads 0.88944 off, and the nebula adds -0.00091 at occlusion 1 against -0.01471 at 0 |
+      | `doubling the step rate moves nothing visible` | 0.067217 at 32 steps against 0.068471 at 64, a share of 0.01865 |
+      | `the march of barnards-loop reproduces the reference integral` | RMSE **0.0083255** against a bound of 0.02 |
+      | `the march of cats-eye reproduces the reference integral` | RMSE **0.0058001** against a bound of 0.01 |
+      | the no-compressed-extension scenario | 71 records drawn, block light 0.22113 |
+- [x] 2.4 Capture the before-frames task 4.2 measures the overlap error against: the whole
       canvas at Barnard's Loop at 120 light years, and at the Orion viewpoint at 800 and at
       3,000, with every pass but the nebulae off and the occlusion at 0. Record the mean
       frame luminance of each, and keep the three frames as files under the scratch directory
       so task 4.2 can difference them pixel by pixel. Record beside this task what each
       camera draws: the probe read 124 records at 1.84 covered areas at the first.
-- [ ] 2.4a Add the browser test for the spec's scenario **The overlap stays inside the
+
+      **The readings**, on the tree of group 1, with every pass but the nebulae off and
+      the occlusion at 0, at 1,280 by 720:
+
+      | camera | mean frame luminance | records drawn | covered area |
+      | --- | --- | --- | --- |
+      | Barnard's Loop at 120 | **0.1824152** | 120 | 1.184 |
+      | Orion at 800 | **0.0431420** | 110 | 0.060 |
+      | Orion at 3,000 | **0.0382361** | 87 | 0.011 |
+
+      The three frames sit in the scratch directory as `before-barnards-loop-120.bin`,
+      `before-orion-800.bin` and `before-orion-3000.bin`, 1,280 by 720 of four bytes a
+      pixel. The first camera reads 120 records at 1.184 covered areas, where the probe
+      read 124 at 1.84. The probe gave no pitch or yaw for the camera and this one reads
+      both at 0, which is the likely difference. The records still overlap there.
+- [x] 2.4a Add the browser test for the spec's scenario **The overlap stays inside the
       light it was measured at** to `e2e/nebulae.spec.ts`, beside the readings it sits with.
       It reads the mean frame luminance at the three cameras of task 2.4, under the same
       conditions: every pass but the nebulae off, the occlusion at 0, 1,280 by 720. It runs
@@ -126,7 +178,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       time. Write the three before-figures of task 2.4 in as the bounds for now, so the test
       passes on this tree and states what it measures; task 4.2 replaces them with the
       figures it reads, rounded up to the next thousandth. Verify it passes here.
-- [ ] 2.5 Verify `pnpm test:e2e` passes apart from the new test of task 2.1, which is
+- [x] 2.5 Verify `pnpm test:e2e` passes apart from the new test of task 2.1, which is
       expected to fail until group 3.
 
 ## 3. The swap

@@ -845,3 +845,145 @@ test('a nebula grows as the camera closes on it', async ({ page }) => {
   expect(middle).toBeGreaterThan(far);
   expect(near).toBeGreaterThan(middle);
 });
+
+/**
+ * The Orion viewpoint of the two readings below, in game coordinates. The camera sits
+ * among the Orion records, where 87 of them draw at 3,000 light years.
+ */
+const ORION_VIEWPOINT: [number, number, number] = [-60, -80, -1100];
+
+/** Barnard's Loop, the largest record in the set, for the reading at 120 light years. */
+const BARNARDS_LOOP: [number, number, number] = [624.4, -425.9, -1229.5];
+
+/**
+ * How many camera windows the continuity sweep reads. 720 windows put one every half a
+ * degree of the orbit.
+ */
+const SWEEP_WINDOWS = 720;
+
+/**
+ * How far the camera turns inside one window, in degrees. It moves the image about a
+ * twentieth of a pixel, so a difference above the floor is a step and not a move.
+ */
+const SWEEP_STEP_DEGREES = 0.004;
+
+/**
+ * The largest step the sweep accepts, summed over the three channels on a 0 to 255
+ * scale. It is the no-flip floor, which the same sweep reads at 3 to 7.
+ */
+const SWEEP_BOUND = 8;
+
+// The spec's scenario **The frame does not step when two records change rank**. The
+// blend of the records does not depend on their order, so the frame holds still across a
+// camera window that changes their rank. The sweep reads pixels and not time, so it runs
+// in the parallel pass.
+//
+// The same sweep on the blend that ordered the records reads a worst pair of 71, at a
+// yaw of 54.5 degrees, with 167 of its 720 windows above the floor.
+test('the frame does not step when two records change rank', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+
+  const report = await page.evaluate(
+    (sweep) => {
+      const map = window.__galaxyMap;
+      if (map?.readRect === undefined) return null;
+      const read = map.readRect;
+      const frameAt = (yaw: number): Uint8Array => {
+        map.setView?.({
+          cursor: sweep.cursor,
+          distance: sweep.distance,
+          pitch: 0,
+          yaw,
+        });
+        map.drawNow?.();
+        return read(0, 0, sweep.width, sweep.height);
+      };
+      let worst = 0;
+      let worstYaw = 0;
+      let above = 0;
+      for (let index = 0; index < sweep.windows; index += 1) {
+        const yaw = (index * 360) / sweep.windows;
+        const first = frameAt(yaw);
+        const second = frameAt(yaw + sweep.stepDegrees);
+        let step = 0;
+        for (let at = 0; at < first.length; at += 4) {
+          const difference =
+            Math.abs((first[at] as number) - (second[at] as number)) +
+            Math.abs((first[at + 1] as number) - (second[at + 1] as number)) +
+            Math.abs((first[at + 2] as number) - (second[at + 2] as number));
+          if (difference > step) step = difference;
+        }
+        if (step > worst) {
+          worst = step;
+          worstYaw = yaw;
+        }
+        if (step > sweep.bound) above += 1;
+      }
+      return { worst, worstYaw, above, drawn: map.nebulaDrawnCount?.() ?? -1 };
+    },
+    {
+      cursor: ORION_VIEWPOINT,
+      distance: 3000,
+      windows: SWEEP_WINDOWS,
+      stepDegrees: SWEEP_STEP_DEGREES,
+      bound: SWEEP_BOUND,
+      width: 1280,
+      height: 720,
+    },
+  );
+  console.log('the order sweep', { ...report, windows: SWEEP_WINDOWS });
+
+  expect(report).not.toBeNull();
+  // The positive control: the camera draws records at every window it reads.
+  expect(report?.drawn ?? 0).toBeGreaterThan(0);
+  expect(report?.above).toBe(0);
+  expect(report?.worst ?? 765).toBeLessThanOrEqual(SWEEP_BOUND);
+});
+
+/**
+ * The three cameras of the spec's scenario **The overlap stays inside the light it was
+ * measured at**, with the mean frame luminance each one draws.
+ *
+ * The bound is the measured figure rounded up to the next thousandth, so a reader can
+ * tell a near miss from the rounding. The blend adds no light where the records do not
+ * overlap and the light can only rise where they do, so the reading is one-sided and the
+ * bound is an upper one.
+ *
+ * The blend that ordered the records read 0.1824 at the first camera, 0.0431 at the
+ * second and 0.0382 at the third, under the same conditions.
+ */
+const OVERLAP_CAMERAS = [
+  { name: "Barnard's Loop at 120", cursor: BARNARDS_LOOP, distance: 120, bound: 0.183 },
+  { name: 'Orion at 800', cursor: ORION_VIEWPOINT, distance: 800, bound: 0.044 },
+  { name: 'Orion at 3000', cursor: ORION_VIEWPOINT, distance: 3000, bound: 0.039 },
+] as const;
+
+// The cost of the order independence: a record takes no light from another, so the
+// frame is brighter where two records overlap. The bound holds that overlap where it was
+// measured, and it does not move to fit a change that raises it.
+test('the overlap stays inside the light it was measured at', async ({ page }) => {
+  await openMap(page, '');
+  await nebulaeAlone(page);
+
+  for (const camera of OVERLAP_CAMERAS) {
+    const reading = await page.evaluate((where) => {
+      window.__galaxyMap?.setView?.({
+        cursor: where.cursor,
+        distance: where.distance,
+        pitch: 0,
+        yaw: 0,
+      });
+      window.__galaxyMap?.drawNow?.();
+      return window.__galaxyMap?.nebulaDrawnCount?.() ?? -1;
+    }, camera);
+    const mean = await meanLuminanceFrame(page);
+    console.log('the overlap light', { camera: camera.name, mean, drawn: reading });
+
+    // The positive control: the camera draws the records the reading is of.
+    expect(reading, `${camera.name} drew no record`).toBeGreaterThan(0);
+    expect(mean, `${camera.name} is brighter than its reading`).toBeLessThanOrEqual(
+      camera.bound,
+    );
+  }
+});
