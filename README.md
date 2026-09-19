@@ -80,11 +80,17 @@ helper, so a test that does not ask for a set opens an empty map. Open
 
 ## The entry point
 
-The package entry is [src/index.ts](src/index.ts), which `package.json` names in
-`exports`. It exports `createGalaxyMap`, the three fragment calls `encodeView`,
-`decodeView` and `decodeGrid`, and the types the public calls name, so a host imports
-from the package root and reaches no module the list leaves out. `pnpm build`
-writes the module to `dist/index.js` and its declarations to `dist/types/`.
+The package has two entries, and `package.json` names both in `exports`. The main one is
+[src/index.ts](src/index.ts). It exports `createGalaxyMap`, the three fragment calls
+`encodeView`, `decodeView` and `decodeGrid`, and the types the public calls name, so a
+host imports from the package root and reaches no module the list leaves out. The second
+one is [src/nebulae/index.ts](src/nebulae/index.ts), at the subpath
+`elite-dangerous-galaxy-map/nebulae`. It exports one name, `nebulae`, which is the
+nebula source of **[The nebulae](#the-nebulae)**. `pnpm build` writes the two modules to
+`dist/index.js` and `dist/nebulae.js`, and their declarations to `dist/types/`.
+
+A host that imports the package root alone reaches no nebula module, so its bundler
+leaves the nebula code, the record file and the sprite art out of its build.
 
 `createGalaxyMap(canvas, options)` in
 [src/app/create-map.ts](src/app/create-map.ts) builds a map. It returns a handle in the
@@ -249,6 +255,36 @@ of a real system is not drawn. That rule runs in the finest drawn size class alo
 covers the systems near the camera, so a coarser class can still draw a star beside a
 marker further out.
 
+## The nebulae
+
+The map draws 358 nebulae as sprites, 190 of them named, from a record file of 14,626
+bytes and one sprite atlas of 811,762 bytes. They are an **opt-in**, because a host pays for that art
+in its own build. A host that wants them imports the source from the subpath and passes
+it in the options:
+
+```ts
+import { createGalaxyMap } from 'elite-dangerous-galaxy-map';
+import { nebulae } from 'elite-dangerous-galaxy-map/nebulae';
+
+const map = createGalaxyMap(canvas, { nebulae });
+```
+
+The source names the record file and the art, and the map loads both after the first
+frame. The sprites appear when the pair arrives, so nothing holds the first frame behind
+them. A failed load leaves the map drawing every other pass.
+
+Three handle members drive them. `hasNebulae()` answers whether the map holds a source it
+can read. `setNebulaeVisible(on)` takes the sprites off the frame and gives them back,
+and `areNebulaeVisible()` reads that state. The switch keeps the records and the art on
+the GPU, so the sprites come back without a second download. A map with no source reads
+`false` from `hasNebulae()` and from `areNebulaeVisible()`, and `setNebulaeVisible` then
+changes nothing.
+
+The options object takes the source by value and not by name: the map calls `loadSet`,
+`loadAtlas` and `createDraw` on the object the host gives it. An option that is not an
+object, or that does not carry the three calls, turns the nebulae off and reports
+nothing.
+
 ## Selection and the HUD
 
 `setSelection(identity)` selects a system. The identity is the `id64` when the record
@@ -335,7 +371,10 @@ before the call. `hud.refresh()` rebuilds them at once.
 The HUD is plain DOM in one `div.gm-hud`, and every one of its rules sits under that
 class. It shows the region name and the zoom distance in the top bar, a category browser
 with a search box, the map option switches, and an information panel for the selected
-system with its fields, description, thumbnails and a lightbox.
+system with its fields, description, thumbnails and a lightbox. The options panel holds
+four switches, and a fifth one, **Nebulae**, where `hasNebulae()` answers true. A map
+with no nebula source builds no fifth switch, because a switch that turned on a feature
+the map cannot draw would do nothing.
 
 **The category browser has two tabs.** SYSTEMS lists the categories that hold records and
 SHAPES lists the ones that hold shapes, each with its own search box. ALL and NONE act on
@@ -547,6 +586,7 @@ src/scene-data/     the point cloud, the density volume, the workers
 src/render/         the WebGL2 context, the passes, the shaders
 src/camera/         the view state, the projection, the controls
 src/hud/            the heads-up display, its styles and the bundled fonts
+src/nebulae/        the nebula subpath entry, which is one source
 e2e/                the Playwright tests and the baseline image
 tests/fixtures/     the model fixture and the detail fixture
 docs/               the model formulas
@@ -556,4 +596,7 @@ docs/               the model formulas
 holds that line, so a different density source can replace the data layers without a
 change in the renderer. A second rule stops `src/hud/` importing `src/render/`,
 `src/scene-data/` or `src/camera/`, so the HUD reads the map through the public handle
-alone.
+alone. A third rule stops every module but `src/nebulae/`, `src/render/nebula-pass.ts`
+and `src/render/nebula-atlas.ts` value-importing a nebula module, so the main entry
+reaches the nebula code through the source the host passes and a build without that
+source carries none of it.

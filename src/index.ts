@@ -28,6 +28,10 @@ export type {
 } from './app/create-map';
 export type { BrowseBounds } from './camera/view';
 export type { InteractionSwitches } from './camera/controls';
+// The type of the `nebulae` option, so a host can name the option in typed code. Its
+// value is the single export of the `./nebulae` subpath, and its members are not part of
+// the supported surface: a host passes the value it imported.
+export type { NebulaSource } from './render/nebula-slot';
 export type {
   AddReport,
   CategoryInput,

@@ -30,6 +30,7 @@ const PUBLIC_TYPES = [
   'LineInput',
   'LinePoint',
   'MapView',
+  'NebulaSource',
   'RealSystem',
   'Reject',
   'ShapeInfo',

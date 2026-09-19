@@ -1,4 +1,5 @@
 import type { GalaxyMap, GalaxyMapOptions } from '../src/app/create-map';
+import type { NebulaSource } from '../src/render/nebula-slot';
 import type { GalaxyMapGlobal } from '../src/render/global';
 
 /** One long task the browser reported. */
@@ -17,6 +18,8 @@ declare global {
       canvas: HTMLCanvasElement,
       options?: GalaxyMapOptions,
     ) => GalaxyMap;
+    /** The nebula source, so a test can build a map with it and a map without it. */
+    galaxyMapNebulae?: NebulaSource;
     /** The long tasks the page collected, for the scene-data test. */
     __longTasks?: LongTaskRecord[];
     /** When the ready event arrived, in milliseconds after navigation start. */
@@ -35,6 +38,8 @@ declare global {
     __touchMap?: GalaxyMap;
     /** The second map the dataset tests build, with a catalog of their own. */
     __datasetMap?: GalaxyMap;
+    /** The second map the nebula tests build, with no nebula source. */
+    __plainMap?: GalaxyMap;
     /** The ids of the entries whose `load()` the dataset tests' catalog called. */
     __datasetLoads?: string[];
     /** The systems the HUD footer action was called with. */

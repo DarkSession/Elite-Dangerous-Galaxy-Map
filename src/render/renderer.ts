@@ -6,8 +6,6 @@ import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
 import { galaxyModel } from '../galaxy-model/model';
 import type { GalaxyModel } from '../galaxy-model/model';
-import { nebulaFocalPixels, selectNebulae } from '../scene-data/nebulae';
-import type { NebulaSet } from '../scene-data/nebulae';
 import type { RealSystemSet } from '../scene-data/real-systems';
 import type { ShapeSet } from '../scene-data/shapes';
 import { createStarField } from '../scene-data/star-field';
@@ -19,12 +17,10 @@ import type {
   RegionLines,
   SurfaceDetail,
 } from '../scene-data/types';
-import type { NebulaAtlasImage } from './buffers';
 import {
   createCloudBuffers,
   createDetailTexture,
   createFullScreenTriangle,
-  createNebulaAtlasTexture,
   createRangeBuffer,
   createRenderTarget,
   createShapeTexture,
@@ -47,13 +43,8 @@ import {
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
-import {
-  createNebulaPass,
-  createNebulaProgram,
-  DEFAULT_NEBULA_BRIGHTNESS,
-  DEFAULT_NEBULA_OCCLUSION,
-} from './nebula-pass';
-import type { NebulaPass } from './nebula-pass';
+import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import type { NebulaDraw } from './nebula-slot';
 import {
   createGridPass,
   createGridProgram,
@@ -223,10 +214,14 @@ export interface Renderer {
   /** Uploads the cloud set. Call it in its own animation frame. */
   setCloudSet(set: CloudSet): void;
   /**
-   * Takes the nebula record set and its sprite atlas. Call it in its own animation
-   * frame. Before it is called the nebula pass draws nothing.
+   * Takes the draw a nebula source built. Call it in its own animation frame. Before it
+   * is called the slot is empty and no sprite draws.
+   *
+   * The renderer holds the slot and the source fills it. The renderer therefore imports
+   * no nebula pass, no record set and no sprite atlas, and a host that asks for no
+   * nebulae carries none of the three.
    */
-  setNebulae(set: NebulaSet, atlas: NebulaAtlasImage): void;
+  setNebulae(draw: NebulaDraw): void;
   /** How many nebula instances the last frame drew. */
   nebulaDrawnCount(): number;
   /** How many draw calls the last frame's nebula pass issued: one, or none. */
@@ -395,7 +390,6 @@ export function createRenderer(
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const shapePrograms: ShapePrograms = createShapePrograms(gl);
   const cloudProgram: Program = createCloudProgram(gl);
-  const nebulaProgram: Program = createNebulaProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
 
@@ -446,8 +440,7 @@ export function createRenderer(
   let shapeCalls = 0;
   let markerCalls = 0;
   let cloudPass: CloudPass | null = null;
-  let nebulaPass: NebulaPass | null = null;
-  let nebulaSet: NebulaSet | null = null;
+  let nebulaDraw: NebulaDraw | null = null;
   let nebulaDrawn = 0;
   let nebulaCalls = 0;
   let volumePass: VolumePass | null = null;
@@ -598,16 +591,8 @@ export function createRenderer(
     // dark nebula attenuates what the two passes before it drew.
     nebulaDrawn = 0;
     nebulaCalls = 0;
-    if (passes.nebulae && nebulaPass !== null && nebulaSet !== null) {
+    if (passes.nebulae && nebulaDraw !== null) {
       const area = viewport();
-      // The size floor and the cap are stated in CSS pixels, so the selection reads
-      // the canvas and not the half-resolution target it draws into.
-      const selection = selectNebulae(nebulaSet, {
-        camera: [camera[0], camera[1], camera[2]],
-        distance: view.distance,
-        focalPixels: nebulaFocalPixels(area.height, FIELD_OF_VIEW_DEGREES),
-        canvasHeightCss: area.height,
-      });
       const halfFocal =
         halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
       // The march reads the volume the volume pass draws. Where the volume pass does
@@ -616,14 +601,19 @@ export function createRenderer(
       const marched = passes.volume && volumeTexture !== null && volumeBox !== null;
       const detail = detailTexture;
       const box = volumeBox;
-      nebulaPass.draw({
+      // The draw chooses the records from this frame. The size floor and the cap are
+      // stated in CSS pixels, so the frame carries the canvas height and the field of
+      // view beside the size of the target the sprites draw into.
+      nebulaDraw.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
+        camera: [camera[0], camera[1], camera[2]],
+        distance: view.distance,
         targetSize: [halfTarget.width, halfTarget.height],
+        canvasHeightCss: area.height,
+        fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
         spriteScale: halfFocal,
         brightness: look.nebulaBrightness,
-        weight: selection.weight,
-        instances: selection.instances,
         volume: marched && volumeTexture !== null ? volumeTexture.texture : null,
         detail: detail === null ? null : detail.texture,
         boxMin:
@@ -655,8 +645,8 @@ export function createRenderer(
         // gone around by a write to `debug.look`.
         occlusion: marched ? nebulaOcclusionOf(look.nebulaOcclusion) : 0,
       });
-      nebulaDrawn = nebulaPass.drawnCount;
-      nebulaCalls = nebulaPass.drawCalls;
+      nebulaDrawn = nebulaDraw.drawnCount;
+      nebulaCalls = nebulaDraw.drawCalls;
     }
 
     // The scene target holds the sum of the scene passes.
@@ -897,22 +887,12 @@ export function createRenderer(
         shapeTexture,
       );
     },
-    setNebulae(set: NebulaSet, atlas: NebulaAtlasImage): void {
-      // Everything that can throw runs before the old pass is disposed. The texture
-      // throws on an atlas the tile grid cannot hold, and the pass throws where the
-      // context gives no buffer. A dispose before either would leave the frame drawing
-      // through a freed vertex array on a second call that fails.
-      const texture = createNebulaAtlasTexture(gl, atlas);
-      let pass: NebulaPass;
-      try {
-        pass = createNebulaPass(gl, nebulaProgram, set, texture);
-      } catch (reason: unknown) {
-        texture.dispose();
-        throw reason;
-      }
-      nebulaPass?.dispose();
-      nebulaSet = set;
-      nebulaPass = pass;
+    setNebulae(draw: NebulaDraw): void {
+      // The source builds the draw and throws on an atlas the tile grid cannot hold or
+      // on a context that gives no buffer. The old draw is disposed after the new one
+      // arrives, so a call that throws leaves the frame drawing the draw it had.
+      nebulaDraw?.dispose();
+      nebulaDraw = draw;
     },
     nebulaDrawnCount(): number {
       return nebulaDrawn;
@@ -1156,7 +1136,7 @@ export function createRenderer(
       regionPass?.dispose();
       shapePass.dispose();
       cloudPass?.dispose();
-      nebulaPass?.dispose();
+      nebulaDraw?.dispose();
       volumeTexture?.dispose();
       detailTexture?.dispose();
       shapeTexture.dispose();
@@ -1174,7 +1154,6 @@ export function createRenderer(
       gl.deleteProgram(shapePrograms.lines.program);
       gl.deleteProgram(shapePrograms.composite.program);
       gl.deleteProgram(cloudProgram.program);
-      gl.deleteProgram(nebulaProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();
       triangle.dispose();

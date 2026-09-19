@@ -23,6 +23,12 @@ interface HudBuild {
    * catalog itself; here the dialog is only an element to measure.
    */
   readonly datasets?: boolean;
+  /**
+   * True builds the map with the nebula source the demo page holds, so the options
+   * panel carries the fifth switch. The default gives no source, which is the state a
+   * host that never asks for the nebulae is in.
+   */
+  readonly nebulae?: boolean;
 }
 
 /**
@@ -75,10 +81,12 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
             },
           ]
         : undefined;
+    const source = options.nebulae === true ? window.galaxyMapNebulae : undefined;
     const map = factory(canvas, {
       hud,
       regions: options.regions,
       ...(datasets === undefined ? {} : { datasets }),
+      ...(source === undefined ? {} : { nebulae: source }),
     } as never);
     window.__hudMap = map;
     await map.ready;
@@ -1997,6 +2005,88 @@ test.describe('the map options panel', () => {
     ]);
   });
 
+  /**
+   * The view Barnard's Loop fills, at a zoom distance inside the nebula band. It is the
+   * `BRIGHT_VIEW` of `e2e/nebulae.spec.ts`, written as a view rather than a fragment,
+   * because the HUD tests drive a map of their own and not the page URL.
+   */
+  const NEBULA_VIEW = {
+    cursor: [624.4, -425.9, -1229.5] as const,
+    distance: 6000,
+    pitch: 35,
+    yaw: 0,
+  };
+
+  test('the nebulae switch removes the sprites', async ({ page }) => {
+    await openHud(page, { nebulae: true });
+    await expect
+      .poll(() => page.evaluate(() => window.__hudMap?.debug.nebulaeAttached() ?? false))
+      .toBe(true);
+    await setView(page, NEBULA_VIEW);
+    const drawn = async (): Promise<number> =>
+      page.evaluate(() => {
+        window.__hudMap?.debug.drawNow();
+        return window.__hudMap?.debug.nebulaDrawnCount() ?? -1;
+      });
+
+    const before = await drawn();
+    await hud(page).locator('.gm-hud__toggle[data-name="nebulae"]').click();
+    const after = await drawn();
+    console.log('the drawn count before and after the click', { before, after });
+
+    expect(before).toBeGreaterThan(0);
+    expect(after).toBe(0);
+    await expect(
+      hud(page).locator('.gm-hud__toggle[data-name="nebulae"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('the panel holds a fifth switch with a nebula source', async ({ page }) => {
+    await openHud(page, { nebulae: true });
+    const switches = await hud(page)
+      .locator('.gm-hud__options-panel .gm-hud__toggle')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset['name'] ?? ''));
+    console.log('the switches with a nebula source', switches);
+    expect(switches).toEqual([
+      'galactic-regions',
+      'system-names',
+      'coordinate-grid',
+      'shapes',
+      'nebulae',
+    ]);
+    await expect(hud(page).locator('.gm-hud__toggle[data-name="nebulae"]')).toContainText(
+      'Nebulae',
+    );
+  });
+
+  test('the panel holds no nebulae switch with no source', async ({ page }) => {
+    await openHud(page);
+    const labels = await hud(page)
+      .locator('.gm-hud__options-panel .gm-hud__toggle')
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+    console.log('the switch labels with no nebula source', labels);
+    expect(await hud(page).locator('.gm-hud__toggle[data-name="nebulae"]').count()).toBe(
+      0,
+    );
+    expect(labels.some((label) => label.includes('Nebulae'))).toBe(false);
+  });
+
+  test('the nebulae switch calls the map and reads the state', async ({ page }) => {
+    await openHud(page, { nebulae: true });
+    const nebulae = hud(page).locator('.gm-hud__toggle[data-name="nebulae"]');
+    await expect(nebulae).toHaveAttribute('aria-pressed', 'true');
+
+    await nebulae.click();
+    expect(await page.evaluate(() => window.__hudMap?.areNebulaeVisible())).toBe(false);
+    await expect(nebulae).toHaveAttribute('aria-pressed', 'false');
+
+    // A change through the handle moves the control, as it does for the other four.
+    await page.evaluate(() => {
+      window.__hudMap?.setNebulaeVisible(true);
+    });
+    await expect(nebulae).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('the shapes switch draws with no shape on the map', async ({ page }) => {
     await openHud(page);
     const shapes = hud(page).locator('.gm-hud__toggle[data-name="shapes"]');
@@ -3113,6 +3203,25 @@ test.describe('the keyboard', () => {
     for (const entry of wanted) {
       expect(seen.filter((name) => name === entry)).toHaveLength(1);
     }
+    // This map holds no nebula source, so the panel builds no fifth switch and the ring
+    // reaches none.
+    expect(seen).not.toContain('gm-hud__toggle|nebulae');
+  });
+
+  test('Tab reaches the nebulae switch where the map holds one', async ({ page }) => {
+    await openHud(page, { nebulae: true });
+    await hud(page).locator('.gm-hud__toggle[data-name="shapes"]').focus();
+    await page.keyboard.press('Tab');
+    const after = await page.evaluate(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return '';
+      return `${active.className}|${active.dataset['name'] ?? ''}`;
+    });
+    console.log('the control after the shapes switch', after);
+
+    // The fifth switch follows the fourth one, so a keyboard user reaches it in the
+    // order the panel shows.
+    expect(after).toBe('gm-hud__toggle|nebulae');
   });
 
   test('the controls carry their state and their names', async ({ page }) => {

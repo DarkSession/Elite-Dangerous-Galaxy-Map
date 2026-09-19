@@ -9,10 +9,10 @@ set at the top of the file. Three costs follow.
    start, whether or not the nebulae ever draw. A host that opens the map at the default
    60,000 light years never sees one.
 2. Every host that bundles the library carries the nebula code in its main chunk. The
-   pass, the record set and the shader pair are **up to 13,476 bytes** of the entry
-   chunk's 266,996 — the whole of what `add-nebulae` added, from a reading of 253,520
-   before it. The fall will be smaller, because that difference also holds the wiring this
-   change keeps. The two assets sit in the host's build output as well.
+   pass, the record set, the shader pair and the volume march are **up to 22,389 bytes**
+   of the entry chunk's 275,909 — the whole of what `add-nebulae` and
+   `add-nebula-occlusion` added, from a reading of 253,520 before them. The two assets sit
+   in the host's build output as well.
 3. A host cannot turn the nebulae off, and the user cannot either. The renderer has a
    pass switch, but nothing on the map handle or in the HUD reaches it.
 
@@ -30,7 +30,7 @@ data. How they are turned on sets the pattern for the next one.
 - **The renderer stops importing the nebulae.** `src/render/renderer.ts` keeps the
   half-resolution slot the sprites draw into and takes what draws into it from outside.
   It reaches the nebulae through `src/render/nebula-slot.ts` alone: the three slot types,
-  which the build erases, and the one look default that module holds. It imports neither
+  which the build erases, and the two look defaults that module holds. It imports neither
   the nebula pass nor the record set. After task 5.3 it needs neither `NebulaPass` nor
   `NebulaSet`, and `noUnusedLocals` in `tsconfig.json` would force those type imports out
   in any case.
@@ -91,17 +91,17 @@ data. How they are turned on sets the pattern for the next one.
 **Depends on `add-nebulae`.** That change is committed as `63184db` and archived as
 `2026-09-19-add-nebulae`, so the `nebulae` capability is live in `openspec/specs/`. Every file this change edits is a file that change writes.
 
-**The reading is 266,996 bytes, measured.** The comment block of
-`tests/main-bundle.test.ts` records that figure and the tree builds to it, so the two
-agree. `add-nebulae` is now committed, so the figure is stable — re-read it anyway rather
-than trusting the one written here.
+**The reading is 275,909 bytes, measured, against a bound of 280,000.** The comment block
+of `tests/main-bundle.test.ts` records that figure and the tree builds to it, so the two
+agree. `add-nebulae` gave the reading of 266,996 and the bound of 270,000, and
+`add-nebula-occlusion` moved both; this change starts from the pair above. Re-read them
+rather than trusting the figures written here.
 
 **This change repairs a spec `add-nebulae` left behind.** `add-nebulae` moved
 `ENTRY_CHUNK_LIMIT` from 254,000 to 270,000 in `tests/main-bundle.test.ts` and carried no
-`library-package` delta, so that spec still records 254,000. The `library-package` delta
-of this change writes the 266,996 reading and the 270,000 step into the requirement as
-well as its own reading. If `add-nebulae` is corrected before this change is applied, the
-two deltas both rewrite that requirement and this one must be re-based on it.
+`library-package` delta, so that spec still records 254,000. `add-nebula-occlusion` then
+moved the bound again, to 280,000, and carried no delta either. The `library-package`
+delta of this change writes both steps into the requirement, as well as its own reading.
 
 `openspec validate --strict` passes clean. It reported one INFO while `add-nebulae` was
 still in flight — the `nebulae` delta modified a capability `openspec/specs/` did not hold
@@ -130,9 +130,10 @@ uniforms and the shared density include across the boundary.
 | Path                                | What changes                                              |
 | ----------------------------------- | --------------------------------------------------------- |
 | `src/nebulae/index.ts`              | New. The subpath entry. It exports the source              |
-| `src/render/nebula-slot.ts`         | New. The slot types, and the brightness default             |
+| `src/render/nebula-slot.ts`         | New. The slot types, and the two look defaults              |
 | `src/render/renderer.ts`            | Takes the draw from outside, through `nebula-slot.ts` alone |
 | `src/render/nebula-atlas.ts`        | New. The atlas URL, its loader and its texture upload      |
+| `src/render/volume-density.ts`      | New. The shared density rule, which two passes compile      |
 | `src/render/buffers.ts`             | Gives up the atlas half and the `NebulaError` value import |
 | `src/render/nebula-pass.ts`         | Takes the selection over from the renderer                 |
 | `src/app/create-map.ts`             | The `nebulae` option, the three handle members             |
@@ -152,7 +153,8 @@ uniforms and the shared density include across the boundary.
 
 **Scale.** The record count, the budget of 256 drawn sprites and the one draw call are
 unchanged. What changes is what a host downloads: **826,388 bytes** of records and art
-and up to 13,476 bytes of code, from every start to no start at all unless the host asks. The
+and **21,851 bytes** of code, measured, from every start to no start at all unless the
+host asks. The
 galaxy is about 400 billion systems; the nebulae are 358 records either way.
 
 **The rendering stays hardware accelerated.** This change moves the nebula draw out of the

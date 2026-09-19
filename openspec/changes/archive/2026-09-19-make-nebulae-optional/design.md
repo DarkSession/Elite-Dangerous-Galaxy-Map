@@ -100,8 +100,8 @@ size becomes the problem, the subpath is the seam the split would follow.
 ### The renderer holds a slot, and the feature fills it
 
 **Chosen**: a new `src/render/nebula-slot.ts` holds the slot contract: what one nebula
-draw needs per frame, what the renderer calls, and the one look default the renderer keeps
-whether or not a source is given. It is types and a single number literal, with no import
+draw needs per frame, what the renderer calls, and the look defaults the renderer keeps
+whether or not a source is given. It is types and two number literals, with no import
 of its own — see "Where `DEFAULT_NEBULA_BRIGHTNESS` lives after the cut" above.
 
 ```

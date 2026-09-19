@@ -2,10 +2,9 @@
 import type { VolumeTexture } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
-import { putVolumeDensity } from './shader-include';
+import { withVolumeDensity } from './volume-density';
 import vertexSource from './shaders/volume.vert?raw';
 import fragmentSource from './shaders/volume.frag?raw';
-import densitySource from './shaders/volume-density.glsl?raw';
 
 /** The emission per unit of compressed density per light year. */
 export const DEFAULT_EMISSION = 8.0e-3;
@@ -34,16 +33,6 @@ export interface VolumePassFrame {
 /** The volume pass. */
 export interface VolumePass {
   draw(frame: VolumePassFrame): void;
-}
-
-/**
- * Puts the shared density rule into a shader that carries the marker line. The volume
- * shader and the nebula vertex shader both read one file, so neither holds a copy.
- * `shaders/volume-density.glsl` holds the rule and `shader-include.ts` holds the marker,
- * so a caller that reads the shader files itself composes what the passes compile.
- */
-export function withVolumeDensity(source: string): string {
-  return putVolumeDensity(source, densitySource);
 }
 
 /** Compiles the volume program. Call it before the volume arrives. */

@@ -17,6 +17,7 @@
 //    surface.
 import { execFileSync } from 'node:child_process';
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -88,14 +89,30 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * rest. The guard still holds at 280,000: a chunk that pulled the 199 KiB region cell
  * table in reads over 370,000 bytes. The next change that touches this chunk must read
  * the bound again.
+ *
+ * Taking the nebulae out of the main entry point takes the reading **down** to
+ * **254,058 bytes**, and the bound moves down with it, to **260,000**. This is the first
+ * reading of two: the package now has a second entry point, and `src/render/program.ts`
+ * is reached from both, so the build puts it in a chunk of its own that `index.js`
+ * imports at load. The entry chunk and that chunk hold **259,581 bytes** together, which
+ * is the figure to compare with the 275,909 above. A bound that only ever rises guards
+ * less each time, and a reading that falls is the one moment it can be tightened without
+ * guessing. The guard still holds: a chunk that pulled the 199 KiB region cell table in
+ * reads over 370,000 bytes.
  */
-const ENTRY_CHUNK_LIMIT = 280_000;
+const ENTRY_CHUNK_LIMIT = 260_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first
  * library build and **47,360 bytes** after the dataset field, the dataset library dialog
  * and their style rules joined it. The bound is a guard against the HUD pulling in a data
  * layer, not a budget: the HUD reaches the map through the public handle alone.
+ *
+ * The reading is **53,023 bytes** with the nebulae switch, which the panel builds where
+ * the map holds a nebula source. The switch is 247 bytes of it. The bound stays at
+ * 56,000, which leaves 2,977 bytes of room: no room under that figure absorbs a data
+ * layer, so the guard holds. The comment above recorded 47,360 as the last reading and
+ * the tree had already moved past it; this entry is the reading of the tree.
  */
 const HUD_CHUNK_LIMIT = 56_000;
 
@@ -115,6 +132,16 @@ const SMOOTHED_PACKER = 'packRegionLines';
 
 /** The fields the region worker's message carries: one boundary set, the grid, the flow. */
 const REGION_MESSAGE_FIELDS = ['lines', 'grid', 'flow'];
+
+/**
+ * Text the nebula shaders alone hold. `vTileUv` is the varying the vertex shader writes
+ * and the fragment shader reads, and no other file of `src/` names it, so a chunk that
+ * holds this word carries the nebula shader pair as text.
+ */
+const NEBULA_SHADER_TERM = 'vTileUv';
+
+/** The package name a host imports. The host builds resolve it to the fresh build. */
+const PACKAGE_NAME = 'elite-dangerous-galaxy-map';
 
 /** The files of `public/`, which the library build must not copy. */
 const PUBLIC_FILES = ['EDLoader1.svg', 'ruins-site.svg', 'structure-site.svg'];
@@ -155,6 +182,7 @@ const PUBLIC_TYPES = [
   'FlightOutcome',
   'BrowseBounds',
   'InteractionSwitches',
+  'NebulaSource',
 ];
 
 /**
@@ -178,6 +206,28 @@ function listFiles(directory: string): string[] {
 /** The name of a file, without its directory. */
 function nameOf(path: string): string {
   return path.split('/').pop() ?? path;
+}
+
+/**
+ * Every name an emitted chunk exports. A library build writes one `export { a as b }`
+ * list at the end of a chunk, so the reader takes the name after `as` where there is one
+ * and the name itself where there is not.
+ */
+function exportedNames(text: string): string[] {
+  const found: string[] = [];
+  const pattern = /export\s*\{([^}]*)\}\s*;/g;
+  let match = pattern.exec(text);
+  while (match !== null) {
+    for (const part of (match[1] as string).split(',')) {
+      const name = part
+        .trim()
+        .split(/\s+as\s+/)
+        .pop();
+      if (name !== undefined && name.length > 0) found.push(name);
+    }
+    match = pattern.exec(text);
+  }
+  return found.sort();
 }
 
 /** Every module specifier an emitted chunk imports, static and dynamic. */
@@ -229,14 +279,153 @@ function chunksAtLoad(start: string): string[] {
   return reached;
 }
 
+/** What one host build emitted: the name of every file and the text of every chunk. */
+interface HostBuild {
+  readonly names: string[];
+  readonly text: string;
+}
+
+/**
+ * The Vite config of one host build. The two aliases resolve the package name to the
+ * **fresh** build in the temporary directory.
+ *
+ * Neither a self-reference through `exports` nor a path into `dist/` works here.
+ * `exports` names `./dist/index.js`, `dist/` is git-ignored, and the pipeline runs the
+ * tests before the build, so on a runner there is no `dist/` to read. A host build that
+ * read one would report on the bytes of an earlier build.
+ *
+ * The subpath alias comes first: a string `find` matches the start of a specifier, so
+ * the package name alone would match the subpath as well.
+ *
+ * The build is an **application** build and not a library build. A library build inlines
+ * every asset as a data URI, which hides the two file names the reading looks for; an
+ * application build writes them beside the chunk, as a host's own build does.
+ * `preserveEntrySignatures: 'strict'` keeps the entry's export, because Rollup shakes
+ * away the whole of an application entry whose exports nothing reads.
+ */
+function hostConfig(dir: string): string {
+  const subpath = JSON.stringify(`${PACKAGE_NAME}/nebulae`);
+  return [
+    "import { defineConfig } from 'vite';",
+    'export default defineConfig({',
+    '  publicDir: false,',
+    "  logLevel: 'silent',",
+    '  resolve: {',
+    '    alias: [',
+    `      { find: ${subpath}, replacement: ${JSON.stringify(join(outDir, 'nebulae.js'))} },`,
+    `      { find: ${JSON.stringify(PACKAGE_NAME)}, replacement: ${JSON.stringify(join(outDir, 'index.js'))} },`,
+    '    ],',
+    '  },',
+    '  build: {',
+    "    target: 'es2022',",
+    `    outDir: ${JSON.stringify(join(dir, 'out'))},`,
+    '    emptyOutDir: true,',
+    '    rollupOptions: {',
+    `      input: ${JSON.stringify(join(dir, 'entry.js'))},`,
+    "      preserveEntrySignatures: 'strict',",
+    "      output: { entryFileNames: 'host.js' },",
+    '    },',
+    '  },',
+    '});',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Builds one host application against the fresh library build, and reads what it made.
+ *
+ * The host directory sits inside the temporary build directory, which sits inside the
+ * repository, because the host build resolves `gl-matrix` and
+ * `@elite-dangerous-almanac/core` by walking up to `node_modules/`. The host bundles
+ * both, as a host application does.
+ */
+function buildHost(name: string, entry: string): HostBuild {
+  const dir = join(outDir, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'entry.js'), entry, 'utf8');
+  writeFileSync(join(dir, 'vite.config.mjs'), hostConfig(dir), 'utf8');
+  const started = Date.now();
+  execFileSync(
+    'pnpm',
+    ['exec', 'vite', 'build', '--config', join(dir, 'vite.config.mjs')],
+    {
+      cwd: root,
+      stdio: 'pipe',
+    },
+  );
+  // The three builds of this file share one hook timeout, so each one reports its cost.
+  console.log(`the ${name} build took`, Date.now() - started, 'ms');
+  const made = listFiles(join(dir, 'out'));
+  return {
+    names: made.map(nameOf),
+    text: made
+      .filter((path) => path.endsWith('.js'))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n'),
+  };
+}
+
+/**
+ * What a host build carries where it carries the nebulae. Each one is a pattern and not
+ * a name, because a host bundler hashes the two files again under names of its own.
+ */
+const NEBULA_NEEDLES: readonly { readonly what: string; readonly pattern: RegExp }[] = [
+  { what: 'the record file', pattern: /nebulae-[\w-]+\.json/ },
+  { what: 'the sprite atlas', pattern: /nebula-art-[\w-]+\.webp/ },
+  { what: 'the nebula shaders', pattern: new RegExp(NEBULA_SHADER_TERM) },
+];
+
+/**
+ * True where a host build carries one needle, as an emitted file or as text of a chunk.
+ * A bundler can hold an asset either way: it can copy the file and name it, or it can
+ * inline it. Both are the host paying for the asset, so the reading takes both.
+ */
+function carries(build: HostBuild, needle: RegExp): boolean {
+  return build.names.some((name) => needle.test(name)) || needle.test(build.text);
+}
+
+/** The host that imports the map alone. It asks for no nebula module. */
+const PLAIN_HOST = [
+  `import { createGalaxyMap } from '${PACKAGE_NAME}';`,
+  'export function start(canvas) {',
+  '  return createGalaxyMap(canvas, {});',
+  '}',
+  '',
+].join('\n');
+
+/** The host that adds the subpath and passes the source. */
+const NEBULA_HOST = [
+  `import { createGalaxyMap } from '${PACKAGE_NAME}';`,
+  `import { nebulae } from '${PACKAGE_NAME}/nebulae';`,
+  'export function start(canvas) {',
+  '  return createGalaxyMap(canvas, { nebulae });',
+  '}',
+  '',
+].join('\n');
+
+/** The name the library build gave the nebula record file, with its hash. */
+function recordFileName(): string {
+  return files
+    .map(nameOf)
+    .find((name) => name.startsWith('nebulae') && name.endsWith('.json')) as string;
+}
+
+/** The name the library build gave the sprite atlas, with its hash. */
+function atlasFileName(): string {
+  return files.map(nameOf).find((name) => name.endsWith('.webp')) as string;
+}
+
 let outDir = '';
 let files: string[] = [];
 let scripts: string[] = [];
+let plainHost: HostBuild = { names: [], text: '' };
+let nebulaHost: HostBuild = { names: [], text: '' };
 
 beforeAll(() => {
   // The directory sits in the repository and not in the system temporary directory,
   // because one test imports the built module and node resolves `gl-matrix` and
   // `@elite-dangerous-almanac/core` by walking up to `node_modules/`.
+  const started = Date.now();
   outDir = mkdtempSync(join(root, '.library-build-'));
   // This repository uses pnpm. `npx` is npm tooling and would fetch from the registry
   // outside the 7-day release hold if the local binary were ever missing.
@@ -259,8 +448,14 @@ beforeAll(() => {
     ['exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', join(outDir, 'types')],
     { cwd: root, stdio: 'pipe' },
   );
+  console.log('the library build took', Date.now() - started, 'ms');
   files = listFiles(outDir);
   scripts = files.filter((path) => path.endsWith('.js'));
+  // The two host builds run here and not in each test, so the three Vite builds of this
+  // file run once between them. They come after the reading above, so the files they
+  // write inside the temporary directory are no part of `files`.
+  plainHost = buildHost('host-plain', PLAIN_HOST);
+  nebulaHost = buildHost('host-nebulae', NEBULA_HOST);
 }, 300000);
 
 afterAll(() => {
@@ -348,6 +543,103 @@ describe('the library build', () => {
     }
   });
 
+  test('a host that imports the map alone carries no nebula file and no nebula code', () => {
+    console.log('the host with no subpath emitted', plainHost.names);
+
+    for (const needle of NEBULA_NEEDLES) {
+      expect(
+        carries(plainHost, needle.pattern),
+        `the host carries ${needle.what}`,
+      ).toBe(false);
+    }
+    expect(plainHost.text.includes('data:image/webp')).toBe(false);
+  });
+
+  // The positive control of the test above. Without it a needle that appears nowhere —
+  // a renamed uniform, a file the build stopped emitting — passes that test for the
+  // wrong reason.
+  test('a host that imports the subpath carries the records, the art and the shaders', () => {
+    console.log('the host with the subpath emitted', nebulaHost.names);
+
+    for (const needle of NEBULA_NEEDLES) {
+      expect(carries(nebulaHost, needle.pattern), `the host drops ${needle.what}`).toBe(
+        true,
+      );
+    }
+  });
+
+  // The second entry is the seam of this change. A host reaches it by name, at
+  // `<package>/nebulae`, and the main entry must not reach it at all: an import of it in
+  // the entry chunk, static or dynamic, would put the nebula code back in every build.
+  test('the second entry chunk exports one name and the entry chunk never imports it', () => {
+    const second = scripts.find((path) => nameOf(path) === 'nebulae.js') as string;
+    const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
+    const exported = exportedNames(readFileSync(second, 'utf8'));
+    const asked = importsOf(readFileSync(entry, 'utf8')).map(nameOf);
+    console.log('the second entry chunk exports', exported);
+    console.log('the entry chunk imports', asked);
+
+    expect(exported).toEqual(['nebulae']);
+    expect(asked).not.toContain('nebulae.js');
+  });
+
+  // The library's own entry chunk, and not a host's. The nebula code left it, so the
+  // shader pair, the record file name and the atlas file name must be gone from it and
+  // from every chunk it loads with. The nebula entry chunk is the positive control: the
+  // same needle is there.
+  test('the chunks that load with the entry chunk carry no nebula code', () => {
+    const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
+    const second = scripts.find((path) => nameOf(path) === 'nebulae.js') as string;
+    const recordFile = recordFileName();
+    const atlasFile = atlasFileName();
+    expect(recordFile.length).toBeGreaterThan(0);
+    expect(atlasFile.length).toBeGreaterThan(0);
+
+    const atLoad = chunksAtLoad(entry);
+    console.log('the chunks the entry chunk loads with', atLoad.map(nameOf));
+
+    for (const path of atLoad) {
+      const text = readFileSync(path, 'utf8');
+      const name = nameOf(path);
+      expect(
+        text.includes(NEBULA_SHADER_TERM),
+        `${name} holds the nebula shaders`,
+      ).toBe(false);
+      expect(text.includes(recordFile), `${name} names the record file`).toBe(false);
+      expect(text.includes(atlasFile), `${name} names the atlas`).toBe(false);
+    }
+
+    const secondText = readFileSync(second, 'utf8');
+    expect(secondText.includes(NEBULA_SHADER_TERM)).toBe(true);
+    expect(secondText.includes(recordFile)).toBe(true);
+    expect(secondText.includes(atlasFile)).toBe(true);
+  });
+
+  // What `"sideEffects": false` in `package.json` claims: no module of the library does
+  // work by being imported. A stylesheet import is the one such module a bundler cannot
+  // drop safely, and the HUD holds its rules in a string and its fonts behind
+  // `?url&no-inline`, so `src/` imports none.
+  test('no module of src imports a stylesheet', () => {
+    const isStylesheet = (specifier: string): boolean =>
+      specifier.split('?')[0]?.endsWith('.css') === true;
+    // The controls: the reader finds a stylesheet import where there is one, and the
+    // walk reads the whole of `src/`. Without them a broken reader or an empty walk
+    // passes the reading below for the wrong reason.
+    expect(importsOf("import './styles.css';\n").some(isStylesheet)).toBe(true);
+    const modules = listFiles(join(root, 'src')).filter((path) => path.endsWith('.ts'));
+    expect(modules.length).toBeGreaterThan(50);
+
+    const carriers: string[] = [];
+    for (const path of modules) {
+      if (importsOf(readFileSync(path, 'utf8')).some(isStylesheet)) {
+        carriers.push(path.slice(root.length));
+      }
+    }
+    console.log('the modules of src that import a stylesheet', carriers);
+
+    expect(carriers).toEqual([]);
+  });
+
   test('keeps the region cell lookup out of the chunks that load with the map', () => {
     const carriers: string[] = [];
     for (const path of scripts) {
@@ -380,7 +672,19 @@ describe('the library build', () => {
     const hud = scripts.find((path) => nameOf(path).startsWith('hud-')) as string;
     const entryBytes = statSync(entry).size;
     const hudBytes = statSync(hud).size;
+    // Two figures, because the entry chunk is no longer the whole of what the main entry
+    // loads: a module both entry points reach sits in a chunk of its own, which the entry
+    // chunk imports at load. The bound below reads `index.js`, as it always has.
+    const loadBytes = chunksAtLoad(entry).reduce(
+      (sum, path) => sum + statSync(path).size,
+      0,
+    );
     console.log('the entry chunk holds', entryBytes, 'bytes');
+    console.log(
+      'the entry chunk and the chunks it loads with hold',
+      loadBytes,
+      'bytes',
+    );
     console.log('the HUD chunk holds', hudBytes, 'bytes');
 
     expect(
@@ -443,6 +747,7 @@ describe('the library build', () => {
       types?: string;
       files?: string[];
       version?: string;
+      sideEffects?: boolean;
       exports?: Record<string, Record<string, string>>;
     } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as never;
 
@@ -452,20 +757,48 @@ describe('the library build', () => {
     // They reached its shapes as well, so a host that called them to clear both keeps its
     // shapes on the screen and calls `setShapeCategoryVisible` for them. The call still
     // compiles, so the break is in what the map draws, and the minor number moves.
-    expect(manifest.version).toBe('0.4.0');
-    const named = [
-      manifest.types as string,
-      manifest.exports?.['.']?.['types'] as string,
-      manifest.exports?.['.']?.['import'] as string,
-    ];
+    //
+    // 0.5.0: the nebulae drew with no option and now need one. A host that built a map
+    // with no options saw them and now does not, and the call still compiles, so the
+    // break is again in what the map draws.
+    expect(manifest.version).toBe('0.5.0');
+
+    // Every entry of `exports`, and not the `.` entry alone. The `./nebulae` entry names
+    // two more paths, and a reading of the main entry alone would leave them unchecked.
+    const named = [manifest.types as string];
+    const exported = manifest.exports ?? {};
+    expect(Object.keys(exported).sort()).toEqual(['.', './nebulae']);
+    for (const entry of Object.keys(exported)) {
+      const condition = exported[entry] as Record<string, string>;
+      expect(Object.keys(condition).sort(), `${entry} names no types`).toEqual([
+        'import',
+        'types',
+      ]);
+      named.push(condition['types'] as string, condition['import'] as string);
+    }
+
     for (const path of named) {
-      expect(path.startsWith('./dist/')).toBe(true);
+      expect(path.startsWith('./dist/'), `${path} is outside dist/`).toBe(true);
       // The build wrote to a directory of its own, so the reading drops the `dist/`
       // the package names and reads the same file under it.
       const inside = join(outDir, path.slice('./dist/'.length));
       expect(statSync(inside).isFile(), `${path} is not in the build output`).toBe(
         true,
       );
+    }
+  });
+
+  // The build has two entry points, and `lib.fileName` is left out so the entry keys
+  // name the files. A string there would send both entries to `index.js`, so the test
+  // reads the emitted names rather than assuming them.
+  test('emits a file and a declaration for each of the two entry points', () => {
+    const names = files.map(nameOf);
+    expect(names).toContain('index.js');
+    expect(names).toContain('nebulae.js');
+
+    for (const path of ['index.d.ts', join('nebulae', 'index.d.ts')]) {
+      const declaration = join(outDir, 'types', path);
+      expect(statSync(declaration).isFile(), `${path} is not declared`).toBe(true);
     }
   });
 
@@ -539,6 +872,34 @@ describe('the library build', () => {
         'void info?.centre[0];\n' +
         'void info?.reach;\n' +
         'void info?.drawn;\n',
+      'utf8',
+    );
+    expect(typeCheck(host)).toBe('');
+  }, 60_000);
+
+  // The nebula source is a value a host passes in the options, and the three members
+  // drive the sprites. The test reads them through `GalaxyMap` and through the options,
+  // so it fails if the option ever stops naming `NebulaSource`.
+  //
+  // It imports the **built** source from the second declaration rather than declaring one,
+  // which is what the scenario asks. The second entry point declares
+  // `NebulaSource<NebulaSet, NebulaAtlasImage>` and the option takes
+  // `NebulaSource<unknown, unknown>`, so a declared value would pass while the real one
+  // failed. A later change to the source's type parameters is the fault this catches.
+  test('the nebula option and the three members are declared', () => {
+    const host = join(outDir, 'reads-the-nebulae.ts');
+    writeFileSync(
+      host,
+      "import type { GalaxyMap, NebulaSource } from './types/index';\n" +
+        "import { createGalaxyMap } from './types/index';\n" +
+        "import { nebulae } from './types/nebulae/index';\n" +
+        'declare const canvas: HTMLCanvasElement;\n' +
+        'const source: NebulaSource = nebulae;\n' +
+        'const map: GalaxyMap = createGalaxyMap(canvas, { nebulae: source });\n' +
+        'const held: boolean = map.hasNebulae();\n' +
+        'map.setNebulaeVisible(!held);\n' +
+        'const on: boolean = map.areNebulaeVisible();\n' +
+        'void on;\n',
       'utf8',
     );
     expect(typeCheck(host)).toBe('');

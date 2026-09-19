@@ -629,10 +629,11 @@ never selected.
   emulates `prefers-reduced-motion: reduce`, rebuilds the HUD and reads it again
 - **THEN** the first reading is 140 ms and the second is 0
 
-### Requirement: The map options panel carries four switches
+### Requirement: The map options panel carries the map switches
 
-The map options panel SHALL hold four switches and no segmented control. Each one SHALL be
-a switch of the shape the panel already uses, with its label and its track.
+The map options panel SHALL hold four switches and no segmented control, **and a fifth
+switch where the map holds nebulae**. Each one SHALL be a switch of the shape the panel
+already uses, with its label and its track.
 
 **Galactic regions** SHALL call `setRegionsVisible`, which `galactic-regions` defines. It
 SHALL open on the state the map is in, which is on unless the options named `regions:
@@ -648,6 +649,15 @@ site names it, so the switch opens on there, and a map built with no options ope
 **Shapes** SHALL call `setShapesVisible`, which `map-shapes` defines. It SHALL open on the
 state the map is in, which is on unless the options named `shapes: false`. It SHALL draw
 whether or not the map holds a shape, because a host can add one at any time.
+
+**Nebulae** SHALL call `setNebulaeVisible`, which `nebulae` defines. The panel SHALL build
+this switch only where `hasNebulae()` returns true, and SHALL build four switches
+otherwise. A switch that turned on a feature the map cannot draw would be a control that
+does nothing, and the other four are not in that position: each of them moves a feature
+every map holds. The switch SHALL open on the state the map is in, which is on.
+
+The HUD SHALL reach all five through the public handle and through nothing else, which is
+the boundary `AGENTS.md` holds and the lint rules enforce.
 
 The three buttons **NONE**, **SIMPLIFIED** and **ACCURATE** are gone with the region mode
 they set. The overlay now has one state the user chooses, so it takes the control every
@@ -687,6 +697,20 @@ the handle moves the control with it.
 - **WHEN** a browser test builds a map with `hud: true` and adds no shape, and reads the
   map options panel
 - **THEN** the panel holds a **Shapes** switch and it reads on
+
+#### Scenario: The nebulae switch appears only where the map holds them
+
+- **WHEN** a browser test builds a map with `hud: true` and the nebula source and counts
+  the switches, and a second builds one with `hud: true` and no `nebulae` option and
+  counts them
+- **THEN** the first holds five switches with a **Nebulae** switch that reads on, and the
+  second holds four and no switch labelled **Nebulae**
+
+#### Scenario: The nebulae switch removes the sprites
+
+- **WHEN** the browser test opens a map with the HUD and the nebula source inside the zoom
+  band, reads the drawn count, clicks the **Nebulae** switch and reads it again
+- **THEN** the first reading is above 0, the second is 0, and the switch reads off
 
 ### Requirement: The information panel shows the selected system
 
@@ -1059,8 +1083,8 @@ name a screen reader can read: its own text, or an `aria-label` where the contro
 icon alone.
 
 A control that holds a state the user can see SHALL report that state: the **colour dot**
-of a category row, the two tabs of the category panel and the four switches of the map
-options panel SHALL carry `aria-pressed`, and the rest of a category row SHALL carry
+of a category row, the two tabs of the category panel and **every switch the map options
+panel holds** SHALL carry `aria-pressed`, and the rest of a category row SHALL carry
 `aria-expanded`. The dot SHALL carry an `aria-label` that names its category, because it
 shows a colour alone.
 
@@ -1096,8 +1120,10 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
   the shapes tab is not disabled, focuses the search box, and presses `Tab` through the
   panels, reading the focused element at each step
 - **THEN** the two tabs, every category dot, every category row, the ALL and NONE buttons,
-  the four switches, the two copy buttons, the dataset field and the reset view button are
-  each focused once
+  every switch the panel holds, the two copy buttons, the dataset field and the reset
+  view button are each focused once. Where the map holds nebulae the panel holds five
+  switches and the **Nebulae** switch is one of them; where it does not, the panel holds
+  four and no focus step lands on a nebulae switch
 
 #### Scenario: Enter and Space work a control
 
@@ -1107,8 +1133,8 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
 
 #### Scenario: The controls carry their state and their names
 
-- **WHEN** the browser test reads the four switches, the two tabs and a category row with
-  the HUD on
+- **WHEN** the browser test reads every switch the panel holds, the two tabs and a
+  category row with the HUD on
 - **THEN** each switch and each tab reports its state in `aria-pressed`, the row's dot
   reports its state in `aria-pressed` and names its category, the rest of the row reports
   `aria-expanded`, and every control has a readable name

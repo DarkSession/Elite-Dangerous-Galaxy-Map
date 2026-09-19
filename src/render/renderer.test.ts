@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRangeBuffer, RANGE_EMPTY, readsFloatTargets } from './buffers';
-import type { NebulaAtlasImage } from './buffers';
+import type { NebulaAtlasImage } from './nebula-atlas';
 import { createFrameAccumulator, createRenderer } from './renderer';
 import { createShapeSet } from '../scene-data/shapes';
 import { createSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
 import { buildNebulaSet } from '../scene-data/nebulae';
 import type { NebulaSet } from '../scene-data/nebulae';
-import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-pass';
+import { createNebulaPass, createNebulaProgram } from './nebula-pass';
+import { createNebulaAtlasTexture } from './nebula-atlas';
+import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import type { NebulaDraw } from './nebula-slot';
 import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
@@ -431,6 +434,35 @@ function atlasImage(): NebulaAtlasImage {
   return { width: 384, height: 384 } as unknown as NebulaAtlasImage;
 }
 
+/** A draw that draws nothing and counts how many times it was freed. */
+function countingDraw(): NebulaDraw & { disposals(): number } {
+  let freed = 0;
+  return {
+    draw: (): void => undefined,
+    drawnCount: 0,
+    drawCalls: 0,
+    dispose(): void {
+      freed += 1;
+    },
+    disposals(): number {
+      return freed;
+    },
+  };
+}
+
+/**
+ * The draw a nebula source builds. The renderer takes the draw and not the records and
+ * the atlas, so the test builds it here the way `src/nebulae/index.ts` builds it.
+ */
+function nebulaDrawOf(gl: WebGL2RenderingContext): NebulaDraw {
+  return createNebulaPass(
+    gl,
+    createNebulaProgram(gl),
+    oneNebula(),
+    createNebulaAtlasTexture(gl, atlasImage()),
+  );
+}
+
 /** The pass a draw belongs to, read from the shaders its program was linked from. */
 function scenePassOf(sources: readonly string[]): string {
   const source = sources.join('\n');
@@ -456,7 +488,7 @@ describe('the nebula pass in the frame', () => {
     const renderer = createRenderer(context.gl, fakeCanvas());
     renderer.setVolume(tinyVolume());
     renderer.setCloudSet(oneCloud());
-    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setNebulae(nebulaDrawOf(context.gl));
     renderer.render({ cursor: [0, 0, 0], distance, yaw: 0, pitch: 30 });
     const order = context
       .drawSources()
@@ -539,13 +571,36 @@ describe('the nebula pass in the frame', () => {
     const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
     const renderer = createRenderer(context.gl, fakeCanvas());
     renderer.setVolume(tinyVolume());
-    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setNebulae(nebulaDrawOf(context.gl));
     renderer.setPasses({ nebulae: false });
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
     const order = context.drawSources().map(scenePassOf);
     expect(order).not.toContain('nebulae');
     expect(renderer.nebulaDrawnCount()).toBe(0);
     renderer.dispose();
+  });
+
+  // The renderer owns the draw the source built and frees it. A second `setNebulae`
+  // replaces the draw, so the first one must be freed there as well: the draw holds a
+  // program, a texture, two buffers and a vertex array.
+  test('frees the draw it holds, on a second call and on dispose', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    const first = countingDraw();
+    const second = countingDraw();
+
+    renderer.setNebulae(first);
+    expect(first.disposals()).toBe(0);
+
+    renderer.setNebulae(second);
+    expect(first.disposals()).toBe(1);
+    expect(second.disposals()).toBe(0);
+
+    renderer.dispose();
+    expect(second.disposals()).toBe(1);
+    // The old draw is freed once and not again.
+    expect(first.disposals()).toBe(1);
   });
 
   // The glow reads the half-resolution target, so it must run in a frame where the
@@ -555,7 +610,7 @@ describe('the nebula pass in the frame', () => {
     const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
     const renderer = createRenderer(context.gl, fakeCanvas());
     renderer.setVolume(tinyVolume());
-    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setNebulae(nebulaDrawOf(context.gl));
     renderer.setPasses({ volume: false, clouds: false, nebulae: true, glow: true });
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
     const glowDraws = context
@@ -580,7 +635,7 @@ describe('the volume texture the renderer owns', () => {
     const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
     const renderer = createRenderer(context.gl, fakeCanvas());
     renderer.setVolume(tinyVolume());
-    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setNebulae(nebulaDrawOf(context.gl));
     return { context, renderer };
   }
 
@@ -669,7 +724,7 @@ describe('the volume texture the renderer owns', () => {
     (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
     const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
     const renderer = createRenderer(context.gl, fakeCanvas());
-    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.setNebulae(nebulaDrawOf(context.gl));
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
 
     expect(renderer.nebulaDrawnCount()).toBe(1);

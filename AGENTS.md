@@ -21,6 +21,7 @@ Application code goes in **`src/`**, in these directories:
 | `src/render/`       | The WebGL2 context, the passes, the shaders      |
 | `src/camera/`       | The view state, the projection, the controls     |
 | `src/hud/`          | The opt-in DOM HUD, its panels and its styles    |
+| `src/nebulae/`      | The nebula subpath entry, which is one source    |
 
 Playwright tests go in `e2e/`, with the baseline image beside them. Unit tests sit next
 to the code they check, as `*.test.ts`.
@@ -33,6 +34,16 @@ breach. The first rule lets a different density source replace the data layers w
 change in the renderer. The second holds the HUD to the public handle of
 [src/app/create-map.ts](src/app/create-map.ts), so a host can build its own chrome from
 the same members the HUD uses.
+
+**`src/nebulae/` is the seam, and it may import both layers.** It is the package's second
+entry point, and it holds the whole nebula import graph: the record set of
+`src/scene-data/`, and the pass, the sprite atlas and the two shaders of `src/render/`.
+No other directory may import `src/render/nebula-pass`, `src/render/nebula-atlas` or
+`src/scene-data/nebulae` **as a value**, and a third ESLint rule fails the lint on one. A
+type import is allowed, because the build erases it. The renderer reaches the sprites
+through `src/render/nebula-slot.ts` alone, which holds types and two look defaults. The
+rule is what keeps 811,762 bytes of art and the nebula code out of the build of a host
+that asks for no nebulae.
 
 ## Stack
 

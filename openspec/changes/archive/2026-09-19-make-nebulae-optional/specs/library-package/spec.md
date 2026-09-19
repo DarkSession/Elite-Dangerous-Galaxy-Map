@@ -100,20 +100,22 @@ cell lookup adds about 199 KiB and takes the chunk over 370,000 bytes.
 **The implementation SHALL read the built size and write it here**, as the rule this
 capability already holds says. The readings so far are 236,815, then 252,975, then
 253,520, then **266,996** when `add-nebulae` put the nebula pass, the record set and a
-shader pair into the chunk, which is when the bound moved from 254,000 to **270,000**.
+shader pair into the chunk, which is when the bound moved from 254,000 to 270,000, and
+then **275,909** when `add-nebula-occlusion` added the volume march, which is when the
+bound moved from 270,000 to **280,000**. 280,000 is the bound this change starts from.
 
-This change takes the nebula code back out of the chunk, into the second entry point. The
-expected fall is **up to 13,476 bytes** — the whole of what `add-nebulae` added, 266,996
-less the 253,520 before it — and in practice smaller, because that difference also holds
-the wiring this change keeps, and the change adds an option check, three handle members
-and a null slot. The `index.js` reading alone can fall further than that, because a module
-both entry points reach may move into a shared chunk; that is why the implementation
-records two figures. The implementation SHALL measure the chunk, write **both the
-reading and the new bound** here, and move the bound **down** to the next round figure
-above the reading. Recording only the reading would leave the scenario below with no
-number to read. A bound
-that only ever rises guards less each time, and a reading that falls is the one moment
-the bound can be tightened without guessing.
+This change takes the nebula code back out of the chunk, into the second entry point.
+
+**The measured readings are 254,058 and 259,581 bytes, and the bound is 260,000.** The
+first figure is `index.js` alone and the second is `index.js` with every chunk it imports
+at load. The two differ because the package now has two entry points and
+`src/render/program.ts` is reached from both, so the build puts it in a shared chunk of
+5,523 bytes that `index.js` imports at load. The fall against the 275,909 the tree read
+before is **21,851 bytes** for the entry chunk alone and **16,328 bytes** for the pair,
+and the second figure is the one to compare. The bound moves **down** from 280,000 to
+**260,000**, the next round figure above the reading, and leaves 5,942 bytes of room. A
+bound that only ever rises guards less each time, and a reading that falls is the one
+moment the bound can be tightened without guessing.
 
 The bound still catches the one fault it is for at any figure in this range, because the
 region cell table is 199 KiB.
