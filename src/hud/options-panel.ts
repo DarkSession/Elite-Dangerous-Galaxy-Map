@@ -1,6 +1,11 @@
 // The map options panel: the galactic regions switch, the system names switch, the
-// coordinate grid switch and the shapes switch. Each control shows the state the map is
-// in, so a host that changes a setting through the handle moves the control with it.
+// coordinate grid switch, the shapes switch and, where the map holds nebulae, the
+// nebulae switch. Each control shows the state the map is in, so a host that changes a
+// setting through the handle moves the control with it.
+//
+// The panel holds four switches on a map with no nebula source and five on a map with
+// one. A switch that turned on a feature the map cannot draw would do nothing, and the
+// other four are not in that position: each one moves a feature every map holds.
 import type { GalaxyMap } from '../app/create-map';
 import { make, makeButton, setPressed } from './dom';
 
@@ -64,7 +69,17 @@ export function createOptionsPanel(doc: Document, map: GalaxyMap): OptionsPanel 
     update();
   });
 
+  // The fifth switch is built only where the map holds a source it can read, which
+  // `hasNebulae` answers. The panel reads the three nebula members through the public
+  // handle, as it reads every other control.
+  const nebulae = map.hasNebulae() ? makeToggle(doc, 'nebulae', 'Nebulae') : null;
+  nebulae?.button.addEventListener('click', () => {
+    map.setNebulaeVisible(!map.areNebulaeVisible());
+    update();
+  });
+
   body.append(regions.button, names.button, grid.button, shapes.button);
+  if (nebulae !== null) body.append(nebulae.button);
   element.append(header, body);
 
   function update(): void {
@@ -72,6 +87,7 @@ export function createOptionsPanel(doc: Document, map: GalaxyMap): OptionsPanel 
     setPressed(names.button, map.areSystemNamesVisible());
     setPressed(grid.button, map.isGridVisible());
     setPressed(shapes.button, map.areShapesVisible());
+    if (nebulae !== null) setPressed(nebulae.button, map.areNebulaeVisible());
   }
 
   update();

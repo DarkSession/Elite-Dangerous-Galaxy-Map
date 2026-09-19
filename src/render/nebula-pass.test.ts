@@ -3,21 +3,22 @@ import {
   buildNebulaSet,
   NEBULA_CAP_FRACTION,
   NEBULA_MAX_DRAWN,
+  nebulaFocalPixels,
   selectNebulae,
 } from '../scene-data/nebulae';
-import type { NebulaInstance, NebulaSet } from '../scene-data/nebulae';
-import { createNebulaAtlasTexture, NEBULA_ATLAS_COLUMNS } from './buffers';
-import type { NebulaAtlasImage } from './buffers';
+import type { NebulaInstance, NebulaSelection, NebulaSet } from '../scene-data/nebulae';
+import { createNebulaAtlasTexture, NEBULA_ATLAS_COLUMNS } from './nebula-atlas';
+import type { NebulaAtlasImage } from './nebula-atlas';
 import {
   createNebulaPass,
-  DEFAULT_NEBULA_BRIGHTNESS,
-  DEFAULT_NEBULA_OCCLUSION,
   NEBULA_INSTANCE_FLOATS,
   writeNebulaInstances,
 } from './nebula-pass';
-import type { NebulaPassFrame } from './nebula-pass';
+import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import type { NebulaFrame } from './nebula-slot';
 import type { Program } from './program';
-import { DEFAULT_ABSORPTION, withVolumeDensity } from './volume-pass';
+import { DEFAULT_ABSORPTION } from './volume-pass';
+import { withVolumeDensity } from './volume-density';
 import densitySource from './shaders/volume-density.glsl?raw';
 import nebulaVertexSource from './shaders/nebulae.vert?raw';
 import volumeFragmentSource from './shaders/volume.frag?raw';
@@ -118,26 +119,42 @@ function manySet(count: number): NebulaSet {
 const VOLUME_TEXTURE = { name: 'volume' } as unknown as WebGLTexture;
 const DETAIL_TEXTURE = { name: 'detail' } as unknown as WebGLTexture;
 
-function frameOf(
+/** The canvas and the camera the frames of this file are drawn with. */
+const CANVAS_HEIGHT_CSS = 720;
+const FIELD_OF_VIEW_DEGREES = 60;
+
+/**
+ * The selection the draw makes from the frame below. The draw chooses the records
+ * itself, so a test that reads the instance count reads it here.
+ */
+function selectionOf(
   set: NebulaSet,
   distance: number,
-  brightness = DEFAULT_NEBULA_BRIGHTNESS,
-  march: Partial<NebulaPassFrame> = {},
-): NebulaPassFrame {
-  const selection = selectNebulae(set, {
-    camera: [0, 0, 0],
+  camera: readonly [number, number, number] = [0, 0, 0],
+): NebulaSelection {
+  return selectNebulae(set, {
+    camera,
     distance,
-    focalPixels: 623.5382907247958,
-    canvasHeightCss: 720,
+    focalPixels: nebulaFocalPixels(CANVAS_HEIGHT_CSS, FIELD_OF_VIEW_DEGREES),
+    canvasHeightCss: CANVAS_HEIGHT_CSS,
   });
+}
+
+function frameOf(
+  distance: number,
+  brightness = DEFAULT_NEBULA_BRIGHTNESS,
+  march: Partial<NebulaFrame> = {},
+): NebulaFrame {
   return {
     viewProjection: new Float32Array(16),
     chunkOffset: [0, 0, 0],
+    camera: [0, 0, 0],
+    distance,
     targetSize: [640, 360],
+    canvasHeightCss: CANVAS_HEIGHT_CSS,
+    fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
     spriteScale: 311.7691453623979,
     brightness,
-    weight: selection.weight,
-    instances: selection.instances,
     volume: VOLUME_TEXTURE,
     detail: DETAIL_TEXTURE,
     boxMin: [-100, -100, -100],
@@ -211,7 +228,7 @@ describe('the nebula atlas texture', () => {
     const context = fakeContext();
     const atlas = atlasOf(context, 1536);
     const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), atlas);
-    pass.draw(frameOf(manySet(4), 6000));
+    pass.draw(frameOf(6000));
     const floats = new Map(
       context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
     );
@@ -278,10 +295,9 @@ describe('the nebula pass', () => {
     const gl = context.gl;
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(gl, fakeProgram(), set, atlasOf(context));
-    const frame = frameOf(set, 12000);
-    expect(frame.instances.length).toBe(NEBULA_MAX_DRAWN);
+    expect(selectionOf(set, 12000).instances.length).toBe(NEBULA_MAX_DRAWN);
 
-    pass.draw(frame);
+    pass.draw(frameOf(12000));
 
     const draws = context.of('drawArraysInstanced');
     expect(draws).toHaveLength(1);
@@ -299,7 +315,7 @@ describe('the nebula pass', () => {
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
     const before = context.calls.length;
 
-    pass.draw(frameOf(set, 60000));
+    pass.draw(frameOf(60000));
 
     expect(pass.drawCalls).toBe(0);
     expect(pass.drawnCount).toBe(0);
@@ -315,7 +331,7 @@ describe('the nebula pass', () => {
     const context = fakeContext();
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(set, 12000));
+    pass.draw(frameOf(12000));
 
     const cap = context.of('uniform1f').find((call) => call.args[0] === 'uMaxRadius');
     expect(cap?.args[1]).toBe(NEBULA_CAP_FRACTION * 360);
@@ -326,7 +342,7 @@ describe('the nebula pass', () => {
     const context = fakeContext();
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(set, 12000));
+    pass.draw(frameOf(12000));
 
     const floats = new Map(
       context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
@@ -345,7 +361,7 @@ describe('the nebula pass', () => {
     for (const brightness of [1, 2]) {
       const context = fakeContext();
       const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-      pass.draw(frameOf(set, 12000, brightness));
+      pass.draw(frameOf(12000, brightness));
       const sent = context
         .of('uniform1f')
         .find((call) => call.args[0] === 'uBrightness');
@@ -366,8 +382,7 @@ describe('the nebula pass', () => {
     const context = fakeContext();
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    const frame = frameOf(set, 12000);
-    pass.draw(frame);
+    pass.draw(frameOf(12000));
 
     const data = context.of('bufferSubData')[0]?.args[2] as Float32Array;
     let previous = Infinity;
@@ -389,7 +404,7 @@ describe('the march uniforms', () => {
       const context = fakeContext();
       const set = manySet(OVER_BUDGET);
       const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-      pass.draw(frameOf(set, 12000, DEFAULT_NEBULA_BRIGHTNESS, { volume }));
+      pass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { volume }));
 
       const units = new Map(
         context.of('uniform1i').map((call) => [call.args[0], call.args[1]]),
@@ -405,7 +420,7 @@ describe('the march uniforms', () => {
     const context = fakeContext();
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(set, 12000));
+    pass.draw(frameOf(12000));
 
     const floats = new Map(
       context.of('uniform1f').map((call) => [call.args[0], call.args[1]]),
@@ -431,7 +446,7 @@ describe('the march uniforms', () => {
     const context = fakeContext();
     const set = manySet(OVER_BUDGET);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
-    pass.draw(frameOf(set, 12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0.25 }));
+    pass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0.25 }));
 
     const sent = context.of('uniform1f').find((call) => call.args[0] === 'uOcclusion');
     expect(sent?.args[1]).toBe(0.25);
@@ -448,11 +463,11 @@ describe('the march uniforms', () => {
       set,
       atlasOf(without),
     );
-    withoutPass.draw(frameOf(set, 12000, DEFAULT_NEBULA_BRIGHTNESS, { volume: null }));
+    withoutPass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { volume: null }));
 
     const off = fakeContext();
     const offPass = createNebulaPass(off.gl, fakeProgram(), set, atlasOf(off));
-    offPass.draw(frameOf(set, 12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0 }));
+    offPass.draw(frameOf(12000, DEFAULT_NEBULA_BRIGHTNESS, { occlusion: 0 }));
 
     const sent = without.of('uniform1f').find((call) => call.args[0] === 'uOcclusion');
     expect(sent?.args[1]).toBe(0);
@@ -507,7 +522,9 @@ describe('the march in the nebula vertex shader', () => {
   // assertion is on the source. The browser suite reads the drawn count and the frame
   // cost, which is where the behaviour shows.
   test('runs after the early-out that collapses a sprite', () => {
-    const collapse = nebulaVertexSource.indexOf('gl_Position = vec4(0.0, 0.0, 2.0, 1.0);');
+    const collapse = nebulaVertexSource.indexOf(
+      'gl_Position = vec4(0.0, 0.0, 2.0, 1.0);',
+    );
     const earlyReturn = nebulaVertexSource.indexOf('return;', collapse);
     const march = nebulaVertexSource.indexOf('vTransmittance = marchTransmittance(');
     expect(collapse).toBeGreaterThan(-1);
@@ -516,7 +533,9 @@ describe('the march in the nebula vertex shader', () => {
   });
 
   test('writes a transmittance of 1 for a collapsed sprite', () => {
-    const collapse = nebulaVertexSource.indexOf('gl_Position = vec4(0.0, 0.0, 2.0, 1.0);');
+    const collapse = nebulaVertexSource.indexOf(
+      'gl_Position = vec4(0.0, 0.0, 2.0, 1.0);',
+    );
     const earlyReturn = nebulaVertexSource.indexOf('return;', collapse);
     const block = nebulaVertexSource.slice(collapse, earlyReturn);
     expect(block).toContain('vTransmittance = vec3(1.0);');
@@ -529,5 +548,76 @@ describe('the march in the nebula vertex shader', () => {
     expect(nebulaVertexSource).toContain('out vec3 vTransmittance;');
     expect(nebulaVertexSource).toContain('vec3 depth = vec3(0.0);');
     expect(nebulaVertexSource).toContain('depth += DUST * (density * uAbsorption');
+  });
+});
+
+/**
+ * Three cameras inside the zoom band, at three distances from the records. The set below
+ * puts its records on the `z` axis, so a camera further along it selects a different
+ * group of them and sorts them in a different order.
+ */
+const BAND_VIEWS: { distance: number; camera: readonly [number, number, number] }[] = [
+  { distance: 2000, camera: [0, 0, 0] },
+  { distance: 6000, camera: [0, 0, 4000] },
+  { distance: 12000, camera: [0, 500, 8000] },
+];
+
+/** The instance array one draw uploaded, cut to the floats the draw sent. */
+function uploadedInstances(context: FakeContext, count: number): Float32Array {
+  const call = context.of('bufferSubData')[0];
+  const data = call?.args[2] as Float32Array;
+  return data.slice(0, count * NEBULA_INSTANCE_FLOATS);
+}
+
+// The renderer chose the records before this change and handed the pass a list. The draw
+// chooses them now, from the frame it is given. The two paths must give one picture, so
+// this test runs the old path beside the new one and compares what reaches the card.
+describe('the selection the draw makes', () => {
+  test('matches the selection the caller made before, at three views in the band', () => {
+    for (const view of BAND_VIEWS) {
+      const context = fakeContext();
+      const set = manySet(OVER_BUDGET);
+      const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
+
+      // The old path: the caller selects, then writes the instances itself.
+      const selection = selectionOf(set, view.distance, view.camera);
+      const expected = new Float32Array(NEBULA_MAX_DRAWN * NEBULA_INSTANCE_FLOATS);
+      const count = writeNebulaInstances(set, selection.instances, expected);
+
+      pass.draw(
+        frameOf(view.distance, DEFAULT_NEBULA_BRIGHTNESS, { camera: view.camera }),
+      );
+
+      expect(count).toBeGreaterThan(0);
+      expect(pass.drawnCount, `${view.distance} ly drew a different count`).toBe(count);
+      // The floats carry the order as well as the values: each slot holds the position,
+      // the radius, the tile and the fade of one record, in the draw order.
+      expect(
+        [...uploadedInstances(context, count)],
+        `${view.distance} ly sent different instances`,
+      ).toEqual([...expected.slice(0, count * NEBULA_INSTANCE_FLOATS)]);
+      expect(pass.drawCalls).toBe(1);
+    }
+  });
+
+  // The figures the pass read before this change, at the views the tests above use.
+  // A selection that moved into the draw and changed what it chose would read here.
+  test('reads the drawn count and the draw call count it read before', () => {
+    const context = fakeContext();
+    const set = manySet(OVER_BUDGET);
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, atlasOf(context));
+
+    pass.draw(frameOf(12000));
+    expect(pass.drawnCount).toBe(NEBULA_MAX_DRAWN);
+    expect(pass.drawCalls).toBe(1);
+
+    pass.draw(frameOf(6000));
+    expect(pass.drawnCount).toBe(NEBULA_MAX_DRAWN);
+    expect(pass.drawCalls).toBe(1);
+
+    // Above the far end of the band the weight is 0, so nothing draws.
+    pass.draw(frameOf(60000));
+    expect(pass.drawnCount).toBe(0);
+    expect(pass.drawCalls).toBe(0);
   });
 });

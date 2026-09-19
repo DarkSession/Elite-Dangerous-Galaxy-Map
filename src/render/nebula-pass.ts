@@ -1,29 +1,28 @@
 // Draws the selected nebulae as screen-aligned sprites over the half-resolution
 // target, with premultiplied source-over blending.
-import { NEBULA_CAP_FRACTION, NEBULA_MAX_DRAWN } from '../scene-data/nebulae';
+//
+// The draw chooses the records itself, from the frame the renderer hands it. The
+// renderer therefore holds no selection call and no record type, which is what keeps the
+// record set out of the main entry point's chunk.
+//
+// The two look defaults the sprites draw with sit in `nebula-slot.ts`, because the
+// renderer keeps them whether or not a host asks for the nebulae and must not import
+// this module.
+import {
+  NEBULA_CAP_FRACTION,
+  NEBULA_MAX_DRAWN,
+  nebulaFocalPixels,
+  selectNebulae,
+} from '../scene-data/nebulae';
 import type { NebulaInstance, NebulaSet } from '../scene-data/nebulae';
-import { NEBULA_ATLAS_COLUMNS } from './buffers';
-import type { NebulaAtlasTexture } from './buffers';
+import { NEBULA_ATLAS_COLUMNS } from './nebula-atlas';
+import type { NebulaAtlasTexture } from './nebula-atlas';
+import type { NebulaDraw, NebulaFrame } from './nebula-slot';
 import { createProgram } from './program';
 import type { Program } from './program';
-import { withVolumeDensity } from './volume-pass';
+import { withVolumeDensity } from './volume-density';
 import vertexSource from './shaders/nebulae.vert?raw';
 import fragmentSource from './shaders/nebulae.frag?raw';
-
-/**
- * How bright one nebula sprite draws. It scales the colour channels alone. The value is
- * set by eye: at 2 a bright nebula reads as almost nothing, and at 16 the edge of the
- * sprite quad shows against the background. A browser test pins it.
- */
-export const DEFAULT_NEBULA_BRIGHTNESS = 8;
-
-/**
- * How much of the volume's own extinction a sprite takes. 0 is the look before the
- * march, and 1 is the extinction the volume pass would have carried to the record's
- * centre. The default is 1: the frame already dims its own light by the dust it marches
- * through, so a nebula that did not would contradict it.
- */
-export const DEFAULT_NEBULA_OCCLUSION = 1;
 
 /**
  * The texture units the three samplers read. Each one takes a unit of its own and every
@@ -66,62 +65,9 @@ export function writeNebulaInstances(
   return count;
 }
 
-/** What one nebula pass draw needs. */
-export interface NebulaPassFrame {
-  /** The combined projection and view matrix, with no translation. */
-  readonly viewProjection: Float32Array;
-  /** The chunk origin minus the camera position, in the world frame. */
-  readonly chunkOffset: readonly [number, number, number];
-  /** The size of the target the pass draws into, in pixels. */
-  readonly targetSize: readonly [number, number];
-  /** Target pixels per light year of sprite radius at one light year of range. */
-  readonly spriteScale: number;
-  /** The brightness of one sprite. It scales the colour channels alone. */
-  readonly brightness: number;
-  /** The zoom band weight, 0 to 1. At 0 the pass draws nothing. */
-  readonly weight: number;
-  /** The records the frame draws, furthest from the camera first. */
-  readonly instances: readonly NebulaInstance[];
-  /**
-   * The density volume the march reads, or null before it arrives. The pass takes it per
-   * frame and not at construction, because the nebulae may attach before the volume does
-   * and the volume may be replaced.
-   */
-  readonly volume: WebGLTexture | null;
-  /** The surface detail texture, or null when the grid has not arrived. */
-  readonly detail: WebGLTexture | null;
-  /** The low corner of the volume box minus the camera, in the world frame. */
-  readonly boxMin: readonly [number, number, number];
-  /** The size of the volume box in the world frame. */
-  readonly boxSize: readonly [number, number, number];
-  /** The galactic centre minus the camera, in the world frame. */
-  readonly centre: readonly [number, number, number];
-  /** The low bound of the stored density logarithm. */
-  readonly lo: number;
-  /** The span of the stored density logarithm. */
-  readonly span: number;
-  /** The offset the stored density logarithm carries. */
-  readonly epsilon: number;
-  /** The absorption per unit of compressed density per light year. */
-  readonly absorption: number;
-  /** The scale one stored detail step stands for. It is 0 without a grid. */
-  readonly detailScale: number;
-  /** How much of the volume's extinction a sprite takes, 0 to 1. */
-  readonly occlusion: number;
-}
-
-/** The nebula pass. */
-export interface NebulaPass {
-  draw(frame: NebulaPassFrame): void;
-  /** How many instances the last draw issued. */
-  readonly drawnCount: number;
-  /** How many draw calls the last draw issued: one, or none where nothing drew. */
-  readonly drawCalls: number;
-  dispose(): void;
-}
-
 /**
- * Compiles the nebula program. Call it before the record set arrives.
+ * Compiles the nebula program. The source compiles it when the records and the art have
+ * arrived, and the draw frees it.
  *
  * The vertex shader carries the marker line of the shared density rule, so the pass puts
  * the rule in place of it here. The volume shader reads the same file.
@@ -154,7 +100,11 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
 }
 
 /**
- * Gives back the pass that draws the selected nebulae.
+ * Gives back the draw that puts the selected nebulae on the screen.
+ *
+ * The draw owns the program, the atlas texture and its own two buffers, and frees all
+ * four on `dispose`. The renderer holds the draw and knows none of the four, which is
+ * what keeps the nebulae out of the main entry point's chunk.
  *
  * The instance buffer is written each frame, because the selection changes with the
  * camera. It holds at most 256 instances of six floats, which is 6,144 bytes, so the
@@ -165,7 +115,7 @@ export function createNebulaPass(
   program: Program,
   set: NebulaSet,
   atlas: NebulaAtlasTexture,
-): NebulaPass {
+): NebulaDraw {
   const vertexArray = gl.createVertexArray();
   const instanceBuffer = gl.createBuffer();
   const cornerBuffer = gl.createBuffer();
@@ -211,14 +161,22 @@ export function createNebulaPass(
     get drawCalls(): number {
       return drawCalls;
     },
-    draw(frame: NebulaPassFrame): void {
+    draw(frame: NebulaFrame): void {
       drawnCount = 0;
       drawCalls = 0;
+      // The size floor and the cap are stated in CSS pixels, so the selection reads the
+      // canvas height and not the half-resolution target the sprites draw into.
+      const selection = selectNebulae(set, {
+        camera: frame.camera,
+        distance: frame.distance,
+        focalPixels: nebulaFocalPixels(frame.canvasHeightCss, frame.fieldOfViewDegrees),
+        canvasHeightCss: frame.canvasHeightCss,
+      });
       // At a weight of 0 the pass draws nothing and issues no draw call, so the
       // default view and the close view cost nothing.
-      if (frame.weight <= 0 || frame.instances.length < 1) return;
+      if (selection.weight <= 0 || selection.instances.length < 1) return;
 
-      const count = writeNebulaInstances(set, frame.instances, instanceData);
+      const count = writeNebulaInstances(set, selection.instances, instanceData);
       if (count < 1) return;
 
       gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
@@ -255,7 +213,7 @@ export function createNebulaPass(
         program.uniforms['uMaxRadius'] ?? null,
         NEBULA_CAP_FRACTION * frame.targetSize[1],
       );
-      gl.uniform1f(program.uniforms['uWeight'] ?? null, frame.weight);
+      gl.uniform1f(program.uniforms['uWeight'] ?? null, selection.weight);
       // The atlas states its own texel sizes, so a pack at a different tile size needs
       // no change here.
       gl.uniform1f(program.uniforms['uTileSide'] ?? null, atlas.tileSide);
@@ -331,6 +289,7 @@ export function createNebulaPass(
       gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
       atlas.dispose();
+      gl.deleteProgram(program.program);
     },
   };
 }

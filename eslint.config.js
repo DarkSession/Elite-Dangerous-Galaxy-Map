@@ -36,6 +36,33 @@ function importGroupsFor(directory) {
   ];
 }
 
+/**
+ * The nebula modules the main entry point must not reach as a value. The list holds each
+ * form a module of `src/` can write, because a pattern of one shape does not match the
+ * others: `src/render/` writes `./nebula-pass`, `src/app/` writes `../render/nebula-pass`
+ * and a path from the root reads `src/render/nebula-pass`.
+ *
+ * `src/render/nebula-slot.ts` is not in the list. It is the module the renderer imports,
+ * and it holds types and two number literals and nothing else.
+ */
+const nebulaImportGroups = [
+  './nebula-pass',
+  './nebula-atlas',
+  '../render/nebula-pass',
+  '../render/nebula-atlas',
+  '../../render/nebula-pass',
+  '../../render/nebula-atlas',
+  'src/render/nebula-pass',
+  'src/render/nebula-atlas',
+  '**/render/nebula-pass',
+  '**/render/nebula-atlas',
+  '../scene-data/nebulae',
+  '../../scene-data/nebulae',
+  './nebulae',
+  'src/scene-data/nebulae',
+  '**/scene-data/nebulae',
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -146,6 +173,46 @@ export default tseslint.config(
           property: 'location',
           message:
             'The library must not read or write window.location. The page owns the URL.',
+        },
+      ],
+    },
+  },
+  {
+    // The nebulae are the optional feature, and the main entry point must not reach
+    // them. A value import pulls the pass, the two shaders, the sprite atlas and the
+    // record set into the chunk every host downloads; a type import costs nothing,
+    // because the build erases it. The renderer therefore reaches the nebulae through
+    // `src/render/nebula-slot.ts` alone, which this rule does not name.
+    //
+    // Three files keep these imports by design and are ignored here: `src/nebulae/`,
+    // which is the seam and holds the whole nebula import graph, and the two nebula
+    // modules of `src/render/`, which import each other and the record set. A test is
+    // ignored as well: it runs in Node and ships in no build.
+    //
+    // The rule is the typescript-eslint one and not the base rule, because the base rule
+    // cannot tell a type import from a value import. It is a block of its own, so the
+    // `no-restricted-imports` rules of the blocks above keep working: the two rule names
+    // differ, so neither replaces the other.
+    files: ['src/**/*.ts'],
+    ignores: [
+      'src/nebulae/**',
+      'src/render/nebula-pass.ts',
+      'src/render/nebula-atlas.ts',
+      '**/*.test.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: nebulaImportGroups,
+              allowTypeImports: true,
+              message:
+                'Only src/nebulae/ may import the nebulae as a value. The renderer ' +
+                'reaches them through src/render/nebula-slot.ts.',
+            },
+          ],
         },
       ],
     },

@@ -1,7 +1,7 @@
 import { ESLint } from 'eslint';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { NO_WEBGL2_MESSAGE } from '../render/context';
-import { createGalaxyMap } from './create-map';
+import { createGalaxyMap, readNebulaSource } from './create-map';
 
 /** A canvas that gives no context, as a browser with no WebGL2 does. */
 function refusingCanvas(): HTMLCanvasElement {
@@ -449,5 +449,168 @@ describe('the grid change notification', () => {
     map.setGridVisible(true);
     expect(moves).toEqual([true, false]);
     expect(map.isGridVisible()).toBe(true);
+  });
+});
+
+/**
+ * A canvas that gives a context good enough for the start chain to read. The map refuses
+ * a software renderer, so the stub names a card, and `start` then runs as far as the
+ * scene loaders before the fake context fails it.
+ */
+function acceptingCanvas(): HTMLCanvasElement {
+  const gl = {
+    getExtension: (): null => null,
+    getParameter: (): string => 'Test GPU',
+    RENDERER: 1,
+  };
+  return {
+    getContext: () => gl,
+    clientWidth: 800,
+    clientHeight: 600,
+    width: 800,
+    height: 600,
+    style: {},
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  } as unknown as HTMLCanvasElement;
+}
+
+/** A source of spies the map can read, with a draw that draws nothing. */
+function spySource(): {
+  loadSet: ReturnType<typeof vi.fn>;
+  loadAtlas: ReturnType<typeof vi.fn>;
+  createDraw: ReturnType<typeof vi.fn>;
+} {
+  return {
+    loadSet: vi.fn(() => new Promise(() => undefined)),
+    loadAtlas: vi.fn(() => new Promise(() => undefined)),
+    createDraw: vi.fn(() => ({
+      draw: () => undefined,
+      drawnCount: 0,
+      drawCalls: 0,
+      dispose: () => undefined,
+    })),
+  };
+}
+
+// The map reads the nebula source at run time, because the type is public as a name and
+// not as a shape. A value the map cannot read turns the nebulae off and reports nothing.
+//
+// The readings of the three unreadable values pass whether or not the check exists, so
+// the readable source is the control: it is the one that must call the two loaders.
+//
+// No map here is disposed. The fake context fails the start before it reads the scene
+// data, so a dispose would cancel a load nothing is waiting on and leave the rejection
+// with no reader. No map here reaches the frame loop either, so none holds a frame.
+describe('the nebula option', () => {
+  const scope = globalThis as unknown as {
+    window?: unknown;
+    requestAnimationFrame?: unknown;
+    Worker?: unknown;
+  };
+  let hadWindow = false;
+  let heldFetch: typeof fetch;
+
+  beforeEach(() => {
+    hadWindow = 'window' in scope;
+    scope.window = {
+      addEventListener: (): void => undefined,
+      removeEventListener: (): void => undefined,
+    };
+    scope.requestAnimationFrame = (call: (time: number) => void): number => {
+      setTimeout(() => call(0), 0);
+      return 1;
+    };
+    // The scene data and the detail grid are not under test here. Both are held open, so
+    // neither leaves a rejected promise behind after the map has failed on its context.
+    heldFetch = globalThis.fetch;
+    globalThis.fetch = (() => new Promise(() => undefined)) as never;
+    scope.Worker = class {
+      postMessage(): void {}
+      terminate(): void {}
+      addEventListener(): void {}
+    };
+  });
+
+  afterEach(() => {
+    if (!hadWindow) delete scope.window;
+    delete scope.requestAnimationFrame;
+    delete scope.Worker;
+    globalThis.fetch = heldFetch;
+  });
+
+  test('reads a source that carries the three members, and no other value', () => {
+    const source = spySource();
+    expect(readNebulaSource(source)).toBe(source);
+    expect(readNebulaSource(true)).toBeNull();
+    expect(readNebulaSource(null)).toBeNull();
+    expect(readNebulaSource(undefined)).toBeNull();
+    expect(readNebulaSource({})).toBeNull();
+    // Two of the three members, which is the near miss a hand-written source makes.
+    const { loadSet, loadAtlas } = spySource();
+    expect(readNebulaSource({ loadSet, loadAtlas })).toBeNull();
+    expect(readNebulaSource({ loadSet, createDraw: () => undefined })).toBeNull();
+  });
+
+  test('loads nothing and reports nothing on a value it cannot read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const partial = spySource();
+    const unreadable: unknown[] = [
+      true,
+      null,
+      {},
+      { loadSet: partial.loadSet, loadAtlas: partial.loadAtlas },
+    ];
+
+    for (const value of unreadable) {
+      const map = createGalaxyMap(acceptingCanvas(), {
+        nebulae: value as never,
+      });
+      await map.ready.catch(() => undefined);
+
+      expect(map.hasNebulae(), `${String(value)} reads as a source`).toBe(false);
+      expect(map.areNebulaeVisible()).toBe(false);
+      // The call does nothing and throws nothing on a map that holds no source.
+      expect(() => {
+        map.setNebulaeVisible(true);
+      }).not.toThrow();
+      expect(map.areNebulaeVisible()).toBe(false);
+    }
+
+    expect(partial.loadSet).not.toHaveBeenCalled();
+    expect(partial.loadAtlas).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  // The control. Without it the readings above pass on a map that loads nothing whatever
+  // the option says.
+  test('loads the records and the art from a source it can read', async () => {
+    const source = spySource();
+    const map = createGalaxyMap(acceptingCanvas(), { nebulae: source as never });
+    await map.ready.catch(() => undefined);
+
+    expect(source.loadSet).toHaveBeenCalledTimes(1);
+    expect(source.loadAtlas).toHaveBeenCalledTimes(1);
+    expect(map.hasNebulae()).toBe(true);
+    // The sprites open visible on a map that holds a source.
+    expect(map.areNebulaeVisible()).toBe(true);
+    map.setNebulaeVisible(false);
+    expect(map.areNebulaeVisible()).toBe(false);
+    map.setNebulaeVisible(true);
+    expect(map.areNebulaeVisible()).toBe(true);
+  });
+
+  test('holds no nebulae with no option at all', async () => {
+    const map = createGalaxyMap(acceptingCanvas());
+    await map.ready.catch(() => undefined);
+
+    expect(map.hasNebulae()).toBe(false);
+    expect(map.areNebulaeVisible()).toBe(false);
+    map.setNebulaeVisible(true);
+    expect(map.areNebulaeVisible()).toBe(false);
   });
 });

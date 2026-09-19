@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { meanLuminanceBlock, meanLuminanceFrame, openMap, readRect } from './helpers';
 import { putVolumeDensity } from '../src/render/shader-include';
 
@@ -460,7 +461,7 @@ test('the map starts when the nebula art never answers', async ({ page }) => {
   });
 
   // The open does not wait for the attach here: the atlas never arrives.
-  await openMap(page, '', { nebulae: false });
+  await openMap(page, '', { waitForNebulae: false });
 
   const report = await page.evaluate(() => ({
     attached: window.__galaxyMap?.nebulaeAttached?.() ?? true,
@@ -621,4 +622,108 @@ test('a nebula behind the core dims', async ({ page }) => {
   // against 0.01505 at 0, both of them negative: the sprite reads as a hole here, and
   // the march makes that hole shallower.
   expect(Math.abs(added1)).toBeLessThan(Math.abs(added0));
+});
+
+/** The record file and the sprite atlas, as the build names them. */
+const NEBULA_FILES = /nebula[\w-]*\.(json|webp)/i;
+
+/** Collects the URL of every request the page makes for one of the two files. */
+function watchNebulaFiles(page: Page): string[] {
+  const asked: string[] = [];
+  page.on('request', (request) => {
+    if (NEBULA_FILES.test(request.url())) asked.push(request.url());
+  });
+  return asked;
+}
+
+/** Draws one frame on the demo page and reads how many sprites it drew. */
+async function drawnNow(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    window.__galaxyMap?.drawNow?.();
+    return window.__galaxyMap?.nebulaDrawnCount?.() ?? -1;
+  });
+}
+
+test('the switch removes the sprites and gives them back', async ({ page }) => {
+  await openMap(page, BRIGHT_VIEW);
+  // The open waits for the attach, so every request for the two files is already made.
+  // The watch below therefore counts the requests of the switch alone.
+  const asked = watchNebulaFiles(page);
+
+  const before = await drawnNow(page);
+  await page.evaluate(() => {
+    window.galaxyMap?.setNebulaeVisible(false);
+  });
+  const off = await drawnNow(page);
+  await page.evaluate(() => {
+    window.galaxyMap?.setNebulaeVisible(true);
+  });
+  const on = await drawnNow(page);
+  const visible = await page.evaluate(() => window.galaxyMap?.areNebulaeVisible());
+  console.log('the switch', { before, off, on, visible, asked });
+
+  expect(before).toBeGreaterThan(0);
+  expect(off).toBe(0);
+  // The records and the art stay on the GPU, so the sprites come back as they were and
+  // the map downloads neither file a second time.
+  expect(on).toBe(before);
+  expect(visible).toBe(true);
+  expect(asked).toEqual([]);
+});
+
+test('a map with no nebula option downloads neither file', async ({ page }) => {
+  await openMap(page, BRIGHT_VIEW);
+  const asked = watchNebulaFiles(page);
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') failures.push(message.text());
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+  page.on('pageerror', (error) => {
+    failures.push(error.message);
+  });
+
+  // The second map is built with no `nebulae` option, which is the state a host that
+  // never asks for the sprites is in. The demo map comes down first, so its own frames
+  // do not draw beside the second map's.
+  const report = await page.evaluate(async () => {
+    const factory = window.galaxyMapFactory;
+    if (factory === undefined) throw new Error('The page has no map factory.');
+    window.galaxyMap?.dispose();
+    const canvas = document.createElement('canvas');
+    canvas.id = 'no-nebulae';
+    canvas.style.cssText = 'display: block; width: 1280px; height: 720px;';
+    document.body.appendChild(canvas);
+    const map = factory(canvas, {});
+    window.__plainMap = map;
+    await map.ready;
+    map.setView({
+      cursor: [624.4, -425.9, -1229.5],
+      distance: 6000,
+      pitch: 35,
+      yaw: 0,
+    } as never);
+    map.debug.drawNow();
+    return {
+      has: map.hasNebulae(),
+      visible: map.areNebulaeVisible(),
+      attached: map.debug.nebulaeAttached(),
+      drawn: map.debug.nebulaDrawnCount(),
+      calls: map.debug.nebulaDrawCalls(),
+      meanMs: map.debug.measureFrames(10),
+    };
+  });
+  console.log('the map with no source', { ...report, asked, failures, warnings });
+
+  expect(asked).toEqual([]);
+  expect(report.has).toBe(false);
+  expect(report.visible).toBe(false);
+  expect(report.attached).toBe(false);
+  // The view is the one that draws the most sprites, and this map draws none of them.
+  expect(report.drawn).toBe(0);
+  expect(report.calls).toBe(0);
+  // The map keeps drawing, and it reports nothing to the console.
+  expect(report.meanMs).toBeGreaterThan(0);
+  expect(failures).toEqual([]);
 });

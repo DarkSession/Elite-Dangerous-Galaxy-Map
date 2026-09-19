@@ -86,8 +86,12 @@ export interface OpenOptions {
    * because they attach after the first frame: a test that draws before the upload
    * reads one picture with the sprites and one without. Only a test that holds or
    * breaks a nebula asset passes false.
+   *
+   * The name states the wait and not the map option. `nebulae` is the option a host
+   * gives `createGalaxyMap` to turn the sprites on, so one word would carry two
+   * opposite meanings in one suite.
    */
-  readonly nebulae?: boolean;
+  readonly waitForNebulae?: boolean;
 }
 
 /** Opens the map and waits for the first frame. */
@@ -100,7 +104,7 @@ export async function openMap(
   await waitForReady(page);
   if (options.demoData !== true) await startState(page);
   if (options.hud !== true) await removeHud(page);
-  if (options.nebulae !== false) await settleNebulae(page);
+  if (options.waitForNebulae !== false) await settleNebulae(page);
 }
 
 /**
@@ -109,13 +113,23 @@ export async function openMap(
  * The map starts before the nebula records and the sprite atlas arrive, so the first
  * frames carry no sprites. Every test that reads the canvas waits here first, or the
  * upload lands in the middle of the test and moves the light it measures.
+ *
+ * A map that holds no nebula source attaches nothing, and that is a supported state and
+ * not a failure. The helper asks the handle first and waits only where the map holds a
+ * source. The demo page holds one, so every test of that page reads what it read before.
  */
 export async function settleNebulae(page: Page, timeout = 10000): Promise<void> {
-  await expect
-    .poll(() => page.evaluate(() => window.__galaxyMap?.nebulaeAttached?.() ?? false), {
-      timeout,
-    })
-    .toBe(true);
+  const holdsNebulae = await page.evaluate(
+    () => window.galaxyMap?.hasNebulae() ?? false,
+  );
+  if (holdsNebulae) {
+    await expect
+      .poll(
+        () => page.evaluate(() => window.__galaxyMap?.nebulaeAttached?.() ?? false),
+        { timeout },
+      )
+      .toBe(true);
+  }
   await page.evaluate(() => window.__galaxyMap?.drawNow?.());
 }
 

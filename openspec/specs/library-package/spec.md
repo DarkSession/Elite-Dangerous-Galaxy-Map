@@ -11,9 +11,9 @@ also states the types the library puts on its public calls.
 ### Requirement: The library build emits a package and no page
 
 `pnpm build` SHALL run the TypeScript check and then build the library. It SHALL write to
-**`dist/`**. The output SHALL hold an ES module entry point, a type declaration for the
-public surface, and the worker and asset chunks the library loads at run time. It SHALL
-hold no HTML file, no demo page module and no demo data.
+**`dist/`**. The output SHALL hold **two ES module entry points**, a type declaration for
+the public surface, and the worker and asset chunks the library loads at run time. It
+SHALL hold no HTML file, no demo page module and no demo data.
 
 **It SHALL copy no file of `public/`.** Vite copies the public directory into the output by
 default, and `public/` holds the demo site's pictures: the two demo thumbnails and
@@ -26,7 +26,7 @@ The two builds SHALL write to two directories, because the check job runs them o
 the other and the Pages job uploads one of them. A shared directory would leave the second
 build's output where the first one's is looked for.
 
-The entry point SHALL export `createGalaxyMap`, the three view calls `encodeView`,
+**The main entry point** SHALL export `createGalaxyMap`, the three view calls `encodeView`,
 `decodeView` and `decodeGrid`, and the types the public surface names:
 `GalaxyMapOptions`, `GalaxyMap`, `MapView`, `Category`, `RealSystem`, `SystemImage`,
 `CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
@@ -34,9 +34,10 @@ The entry point SHALL export `createGalaxyMap`, the three view calls `encodeView
 dataset types the catalog names: `DatasetEntry`, `DatasetContent`, `DatasetInfo` and
 `DatasetLoadResult`, the **nine** shape types `map-shapes` names: `SphereInput`,
 `LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport`, `ShapeReject`, `ShapeInfo` and
-`ShapeKind`, and the six
-camera types this change names: `StartView`, `FlyToTarget`, `FlyToOptions`,
-`FlightOutcome`, `BrowseBounds` and `InteractionSwitches`. A host writes
+`ShapeKind`, the six
+camera types: `StartView`, `FlyToTarget`, `FlyToOptions`,
+`FlightOutcome`, `BrowseBounds` and `InteractionSwitches`, and **`NebulaSource`**, which
+this change names. A host writes
 the catalog itself, so it needs `DatasetEntry` in a
 type position; a list that left the four out would make the `datasets` option unwritable
 in typed code. The same holds for `SphereInput` and `LineInput`, which a host needs to
@@ -44,6 +45,17 @@ write the argument of `addSpheres` and `addLines`, and for the six camera types,
 host needs to write `startView`, `bounds`, `interaction`, the argument of `flyTo` and the
 parameter of an `onFlightEnd` listener. It
 SHALL NOT export the `debug` hook type as part of the supported surface.
+
+**`NebulaSource` joins the list** because `nebulae` is an option a host writes. Its value
+is the single export of the second entry point, and a host that names the option in a
+typed configuration object needs the type. The members of `NebulaSource` are not part of
+the supported surface: a host passes the value it imported and writes no source of its
+own.
+
+**The second entry point** SHALL be the nebula source, reached at the subpath
+**`./nebulae`**. It SHALL export one value and nothing else. It SHALL be a chunk of its
+own, and the main entry chunk SHALL NOT import it, at load or on demand. `nebulae` states
+what it carries.
 
 **The two shape category members add no type.** `setShapeCategoryVisible(name, visible)`
 and `isShapeCategoryVisible(name)` take a string and a boolean, so the declaration carries
@@ -58,20 +70,30 @@ the HUD boundary rule that `AGENTS.md` holds.
 **`RegionMode` is gone from the list.** The region overlay took three modes and now takes
 one switch, which `galactic-regions` states, so the type it named no longer exists.
 
-**The package moves to version 0.4.0.** `setCategoryVisible` and `isCategoryVisible` change
-what they reach. They moved the markers **and** the shapes of a category, and they now move
-its markers alone. A host that called `setCategoryVisible(name, false)` to clear both keeps
-its shapes on the screen, and it calls `setShapeCategoryVisible` as well to get the frame it
-had. The call still compiles, so the break is in what the map draws and not in the
-declaration, which is why it takes a minor version of its own.
+**The three nebula members add no type.** `hasNebulae()`, `areNebulaeVisible()` and
+`setNebulaeVisible(on)` take and give a boolean, so the declaration carries them on
+`GalaxyMap` and the export list does not move for them.
 
-The surface keeps the two breaks 0.3.0 carried. `Sphere.color` and `Line.color` are
+**The package moves to version 0.5.0.** The nebulae drew with no option and now need one.
+A host that built a map with no options saw them and now does not, and the call still
+compiles, so the break is in what the map draws and not in the declaration.
+
+The surface keeps the breaks 0.3.0 and 0.4.0 carried. `Sphere.color` and `Line.color` are
 optional, because a shape that names a category takes that category's colour, which
 `map-shapes` states. A sphere washes the markers inside it and behind it rather than every
-marker it covers.
+marker it covers. `setCategoryVisible` moves a category's markers alone, and
+`setShapeCategoryVisible` moves its shapes.
 
-`package.json` SHALL name the entry point in `exports` and `types`, SHALL name the built
-files in `files`, and SHALL stop being `private`.
+`package.json` SHALL name **both** entry points in `exports`, SHALL name the main one in
+`types`, SHALL name the built files in `files`, and SHALL stop being `private`.
+
+`package.json` SHALL carry **`"sideEffects": false`**, so a host's bundler may drop a
+module the host does not reach. The claim SHALL be true: no module of the library SHALL
+import a stylesheet. No module should rely on being evaluated for its effect either, but
+that half is guidance, not a SHALL: no test can fail it, and the scenario below covers the
+stylesheet half alone. The library injects its
+HUD style from a module the HUD calls, and imports its fonts as URLs, so no module needs
+evaluating for its effect today.
 
 The library SHALL NOT read `window.location`, which `real-systems` already holds with a
 lint rule, and SHALL NOT read an element by id.
@@ -79,23 +101,32 @@ lint rule, and SHALL NOT read an element by id.
 The HUD SHALL stay a chunk of its own, loaded on demand, so a host that does not ask for
 the HUD downloads none of it.
 
-The library's own entry chunk SHALL stay under **254,000 bytes**. The bound is the guard
-`tests/main-bundle.test.ts` already holds, and it is a guard against one fault: a
-main-thread import of the region cell lookup adds about 199 KiB and takes the chunk over
-370,000 bytes.
+**The entry chunk bound.** The bound sits in `tests/main-bundle.test.ts` as
+`ENTRY_CHUNK_LIMIT`. It is a guard against one fault: a main-thread import of the region
+cell lookup adds about 199 KiB and takes the chunk over 370,000 bytes.
 
 **The implementation SHALL read the built size and write it here**, as the rule this
-capability already holds says. The chunk read 252,975 bytes before this change, against
-the 236,815 of the change before it. **The chunk reads 253,520 bytes with this change
-in**, which leaves **480 bytes** of room under the bound. The two shape category members,
-the shape visibility map and the shape visibility version are the parts of this change
-that reach the library; the HUD is a chunk of its own and the demo data is the demo
-site's.
+capability already holds says. The readings so far are 236,815, then 252,975, then
+253,520, then **266,996** when `add-nebulae` put the nebula pass, the record set and a
+shader pair into the chunk, which is when the bound moved from 254,000 to 270,000, and
+then **275,909** when `add-nebula-occlusion` added the volume march, which is when the
+bound moved from 270,000 to **280,000**. 280,000 is the bound this change starts from.
 
-The bound stays at **254,000**, because the reading is under it. The room under it is now
-thin. It still catches the one fault it is for, because the region cell lookup is 199 KiB
-and no amount of room under 254,000 absorbs that. A later change that needs the room SHALL
-move the bound and say so, and the next one to touch this chunk will be that change.
+This change takes the nebula code back out of the chunk, into the second entry point.
+
+**The measured readings are 254,058 and 259,581 bytes, and the bound is 260,000.** The
+first figure is `index.js` alone and the second is `index.js` with every chunk it imports
+at load. The two differ because the package now has two entry points and
+`src/render/program.ts` is reached from both, so the build puts it in a shared chunk of
+5,523 bytes that `index.js` imports at load. The fall against the 275,909 the tree read
+before is **21,851 bytes** for the entry chunk alone and **16,328 bytes** for the pair,
+and the second figure is the one to compare. The bound moves **down** from 280,000 to
+**260,000**, the next round figure above the reading, and leaves 5,942 bytes of room. A
+bound that only ever rises guards less each time, and a reading that falls is the one
+moment the bound can be tightened without guessing.
+
+The bound still catches the one fault it is for at any figure in this range, because the
+region cell table is 199 KiB.
 
 #### Scenario: The library build carries no page and no demo data
 
@@ -111,6 +142,12 @@ move the bound and say so, and the next one to touch this chunk will be that cha
 - **THEN** `createGalaxyMap` is a function, and the module imports with no error under
   Node with no DOM
 
+#### Scenario: The second entry point exports the source alone
+
+- **WHEN** a test imports the built `./nebulae` entry point and reads its exported names
+- **THEN** it holds exactly one export, and the main entry chunk names that chunk in no
+  static and no dynamic import
+
 #### Scenario: The declaration names the public surface
 
 - **WHEN** a test compiles a file that imports every type the requirement lists from the
@@ -118,11 +155,18 @@ move the bound and say so, and the next one to touch this chunk will be that cha
 - **THEN** the compile is clean, and a file that imports `GalaxyMapDebug` from it fails to
   compile
 
+#### Scenario: The nebula option is writable in typed code
+
+- **WHEN** a test type-checks a host module that imports the source from the built
+  `./nebulae` declaration, imports `NebulaSource` from the main declaration, and writes
+  `createGalaxyMap(canvas, { nebulae: source })`
+- **THEN** the check passes with no error
+
 #### Scenario: The entry chunk stays under the bound
 
 - **WHEN** a test runs the library build and reads the size of the entry chunk
-- **THEN** the size is under 254,000 bytes, and the region cell lookup is in **no entry
-  chunk** and in **no chunk the entry chunk imports at load**.
+- **THEN** the size is under the bound this requirement records, and the region cell
+  lookup is in **no entry chunk** and in **no chunk the entry chunk imports at load**.
 
   **How many chunks carry it follows the build, and the scenario SHALL NOT assert a fixed
   count.** `vite.config.lib.ts` marks `@elite-dangerous-almanac/core` and its subpaths
@@ -141,6 +185,13 @@ move the bound and say so, and the next one to touch this chunk will be that cha
   of the entry chunk, which is what the bound is for: a host that never asks for an exact
   region never fetches it, and the entry chunk is the same size it was.
 
+#### Scenario: The entry chunk holds no nebula code
+
+- **WHEN** a test runs the library build and reads the entry chunk and every chunk the
+  entry chunk imports at load
+- **THEN** none of them holds the nebula shader text, the record file name or the sprite
+  atlas file name
+
 #### Scenario: The entry point exports the camera surface
 
 - **WHEN** a test imports the built entry point and reads its named exports
@@ -158,16 +209,29 @@ move the bound and say so, and the next one to touch this chunk will be that cha
   and reads `isShapeCategoryVisible('A')` into a boolean, against the built type declaration
 - **THEN** the check passes with no error
 
+#### Scenario: The declaration names the three nebula members
+
+- **WHEN** a test type-checks a host module that calls `setNebulaeVisible(false)` and reads
+  `areNebulaeVisible()` and `hasNebulae()` into booleans, against the built type
+  declaration
+- **THEN** the check passes with no error
+
 #### Scenario: The shape types are declared
 
 - **WHEN** a test type-checks a host module that reads `getShapeInfo('sphere', 0)` into a
   `ShapeInfo` and writes a `ShapeKind` against the built type declaration
 - **THEN** the check passes with no error
 
+#### Scenario: The package declares no side effect
+
+- **WHEN** a test reads `sideEffects` from `package.json`, and searches every source file
+  of `src/` for an import of a `.css` file
+- **THEN** `sideEffects` is `false` and the search finds none
+
 #### Scenario: The package names its version
 
 - **WHEN** a test reads `version` from `package.json`
-- **THEN** it is `0.4.0`
+- **THEN** it is `0.5.0`
 
 ### Requirement: The demo site builds apart from the library
 

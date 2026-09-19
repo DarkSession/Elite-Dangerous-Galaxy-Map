@@ -6,6 +6,7 @@ import type { LineInput, SphereInput } from '../scene-data/shapes';
 import { createGalaxyMap } from './create-map';
 import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
 import { fetchMultifactionRecords, MULTIFACTION_CATEGORIES } from './multifaction';
+import { nebulae } from '../nebulae';
 import { createFragmentWriter, decodeGrid, decodeView } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
@@ -221,6 +222,10 @@ function start(target: HTMLCanvasElement): void {
     // library dialog.
     datasets: DEMO_DATASETS,
     dataset: 'guardian-ruins',
+    // The nebulae are a source a host asks for by name. The demo site draws them, so
+    // it imports the source and passes it here. A host that gives no source builds a
+    // map that holds no nebula code and downloads no nebula file.
+    nebulae,
     // The demo site starts with the coordinate grid on, unless the fragment says `g=0`.
     // That is this page's own option: a host that gives no `grid` still gets no grid.
     grid: decodeGrid(window.location.hash) !== false,
@@ -254,6 +259,9 @@ function start(target: HTMLCanvasElement): void {
   // The entry point itself, so a browser test can build a second map with a canvas of
   // its own and check what the library makes when the host gives no options.
   window.galaxyMapFactory = createGalaxyMap;
+  // The nebula source, so a browser test can build one map with the nebulae and one
+  // without them on the same page.
+  window.galaxyMapNebulae = nebulae;
 
   // The page parses the fragment, gives the view to the handle, and writes it back.
   //
