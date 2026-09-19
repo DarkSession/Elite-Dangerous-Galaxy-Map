@@ -7,7 +7,7 @@ import { createSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
 import { buildNebulaSet } from '../scene-data/nebulae';
 import type { NebulaSet } from '../scene-data/nebulae';
-import { DEFAULT_NEBULA_BRIGHTNESS } from './nebula-pass';
+import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-pass';
 import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
@@ -82,6 +82,10 @@ function fakeContext(extensions: readonly string[]): FakeContext {
       case 'shaderSource':
         shaders.set(args[0], args[1] as string);
         return null;
+      // The location of a uniform is its own name, so a test can read the value a pass
+      // sent for one name rather than reading a list of calls to null.
+      case 'getUniformLocation':
+        return args[1];
       case 'attachShader': {
         const held = programs.get(args[0]) ?? [];
         held.push(shaders.get(args[1]) ?? '');
@@ -558,6 +562,118 @@ describe('the nebula pass in the frame', () => {
       .drawSources()
       .filter((sources) => sources.join('\n').includes('uClamp')).length;
     expect(glowDraws).toBeGreaterThan(0);
+    renderer.dispose();
+  });
+});
+
+describe('the volume texture the renderer owns', () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  /** A renderer with the volume, the detail grid and one nebula in place. */
+  function withVolume(): {
+    context: FakeContext;
+    renderer: ReturnType<typeof createRenderer>;
+  } {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setVolume(tinyVolume());
+    renderer.setNebulae(oneNebula(), atlasImage());
+    return { context, renderer };
+  }
+
+  /** The value one uniform name carried in the last call that set it. */
+  function uniformOf(context: FakeContext, name: string): unknown {
+    const calls = context.calls.filter(
+      (call) => call.name.startsWith('uniform') && call.args[0] === name,
+    );
+    return calls[calls.length - 1]?.args[1];
+  }
+
+  test('uploads the volume once and gives the one texture to both passes', () => {
+    const { context, renderer } = withVolume();
+    expect(context.of('texStorage3D')).toHaveLength(1);
+
+    const before = context.calls.length;
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+    const gl = context.gl;
+    const bound = context.calls
+      .slice(before)
+      .filter(
+        (call) =>
+          call.name === 'bindTexture' &&
+          call.args[0] === gl.TEXTURE_3D &&
+          call.args[1] !== null,
+      )
+      .map((call) => call.args[1]);
+    // The volume pass binds it and the nebula pass binds it, and it is one texture.
+    expect(bound.length).toBe(2);
+    expect(new Set(bound).size).toBe(1);
+    renderer.dispose();
+  });
+
+  test('frees the old texture when the volume is replaced', () => {
+    const { context, renderer } = withVolume();
+    const before = context.of('deleteTexture').length;
+    renderer.setVolume(tinyVolume());
+
+    expect(context.of('texStorage3D')).toHaveLength(2);
+    expect(context.of('deleteTexture').length).toBe(before + 1);
+    renderer.dispose();
+  });
+
+  // A nebula must not be dimmed by material the frame does not draw.
+  test('sends an occlusion of 0 while the volume pass is off', () => {
+    const { context, renderer } = withVolume();
+    renderer.setPasses({ volume: false });
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+
+    expect(uniformOf(context, 'uOcclusion')).toBe(0);
+    renderer.dispose();
+  });
+
+  test('carries an occlusion of its own, at 1, which the caller may change', () => {
+    const { context, renderer } = withVolume();
+    expect(renderer.look.nebulaOcclusion).toBe(DEFAULT_NEBULA_OCCLUSION);
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+    expect(uniformOf(context, 'uOcclusion')).toBe(1);
+
+    renderer.setNebulaOcclusion(0.25);
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+    expect(uniformOf(context, 'uOcclusion')).toBe(0.25);
+    renderer.dispose();
+  });
+
+  // The look settings are a handle the caller may write to in place, so the rule runs
+  // where the uniform is set. A rule in the setter alone is gone around by a write
+  // straight onto `debug.look`.
+  test('takes the default for a value outside the range, by either route', () => {
+    const { context, renderer } = withVolume();
+    for (const value of [-0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      renderer.setNebulaOcclusion(value);
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+      expect(uniformOf(context, 'uOcclusion')).toBe(DEFAULT_NEBULA_OCCLUSION);
+
+      renderer.look.nebulaOcclusion = value;
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+      expect(uniformOf(context, 'uOcclusion')).toBe(DEFAULT_NEBULA_OCCLUSION);
+    }
+    renderer.dispose();
+  });
+
+  // The nebulae may attach before the volume arrives, so the pass takes the texture per
+  // frame and a frame without one sends no extinction.
+  test('sends an occlusion of 0 before the volume arrives', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setNebulae(oneNebula(), atlasImage());
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+
+    expect(renderer.nebulaDrawnCount()).toBe(1);
+    expect(uniformOf(context, 'uOcclusion')).toBe(0);
     renderer.dispose();
   });
 });

@@ -28,10 +28,17 @@ import {
   createRangeBuffer,
   createRenderTarget,
   createShapeTexture,
+  createVolumeTexture,
   RANGE_EMPTY,
   readsFloatTargets,
 } from './buffers';
-import type { DetailTexture, RangeBuffer, RenderTarget, ShapeTexture } from './buffers';
+import type {
+  DetailTexture,
+  RangeBuffer,
+  RenderTarget,
+  ShapeTexture,
+  VolumeTexture,
+} from './buffers';
 import {
   cloudFade,
   createCloudPass,
@@ -44,6 +51,7 @@ import {
   createNebulaPass,
   createNebulaProgram,
   DEFAULT_NEBULA_BRIGHTNESS,
+  DEFAULT_NEBULA_OCCLUSION,
 } from './nebula-pass';
 import type { NebulaPass } from './nebula-pass';
 import {
@@ -160,6 +168,17 @@ export function createFrameAccumulator(): FrameAccumulator {
   };
 }
 
+/**
+ * How much of the volume's extinction the frame sends for one nebula sprite. A value
+ * outside 0 to 1, and a value that is not a number, take the default. The look settings
+ * are a mutable handle, so the rule runs each frame, where the uniform is set.
+ */
+export function nebulaOcclusionOf(value: number): number {
+  return Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : DEFAULT_NEBULA_OCCLUSION;
+}
+
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
@@ -180,6 +199,12 @@ export interface LookSettings {
   absorption: number;
   cloudBrightness: number;
   nebulaBrightness: number;
+  /**
+   * How much of the volume's own extinction a nebula sprite takes, 0 to 1. At 0 the
+   * pass draws what it drew before the march. A value outside the range, and a value
+   * that is not a number, take the default.
+   */
+  nebulaOcclusion: number;
   pointBrightness: number;
   exposure: number;
   glowWeight: number;
@@ -322,6 +347,12 @@ export interface Renderer {
   measureFrames(view: View, count: number): number;
   /** Chooses which passes draw. */
   setPasses(passes: Partial<PassSwitches>): void;
+  /**
+   * Sets how much of the volume's extinction a nebula sprite takes. It writes the same
+   * field as `look.nebulaOcclusion`, and the frame holds the range, so the two routes
+   * give the same picture.
+   */
+  setNebulaOcclusion(value: number): void;
   /** Reads the look settings, which the caller may change in place. */
   readonly look: LookSettings;
   /** The drawing area in CSS pixels. */
@@ -420,6 +451,7 @@ export function createRenderer(
   let nebulaDrawn = 0;
   let nebulaCalls = 0;
   let volumePass: VolumePass | null = null;
+  let volumeTexture: VolumeTexture | null = null;
   let volumeBox: DensityVolume | null = null;
   let detailTexture: DetailTexture | null = null;
 
@@ -440,6 +472,7 @@ export function createRenderer(
     absorption: DEFAULT_ABSORPTION,
     cloudBrightness: DEFAULT_CLOUD_BRIGHTNESS,
     nebulaBrightness: DEFAULT_NEBULA_BRIGHTNESS,
+    nebulaOcclusion: DEFAULT_NEBULA_OCCLUSION,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
     glowWeight: DEFAULT_GLOW_WEIGHT,
@@ -577,6 +610,12 @@ export function createRenderer(
       });
       const halfFocal =
         halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+      // The march reads the volume the volume pass draws. Where the volume pass does
+      // not draw, the sprite takes no extinction: a nebula must not be dimmed by
+      // material the frame does not show.
+      const marched = passes.volume && volumeTexture !== null && volumeBox !== null;
+      const detail = detailTexture;
+      const box = volumeBox;
       nebulaPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
@@ -585,6 +624,36 @@ export function createRenderer(
         brightness: look.nebulaBrightness,
         weight: selection.weight,
         instances: selection.instances,
+        volume: marched && volumeTexture !== null ? volumeTexture.texture : null,
+        detail: detail === null ? null : detail.texture,
+        boxMin:
+          box === null
+            ? [0, 0, 0]
+            : [
+                box.origin[0] - camera[0],
+                box.origin[1] - camera[1],
+                camera[2] - (box.origin[2] + box.extent[2]),
+              ],
+        // A box of zero size would divide by zero in the shader. The march never runs
+        // without a volume, and the value is a placeholder for the frame that has none.
+        boxSize: box === null ? [1, 1, 1] : [box.extent[0], box.extent[1], box.extent[2]],
+        centre:
+          box === null
+            ? [0, 0, 0]
+            : [
+                box.origin[0] + 0.5 * box.extent[0] - camera[0],
+                box.origin[1] + 0.5 * box.extent[1] - camera[1],
+                camera[2] - (box.origin[2] + 0.5 * box.extent[2]),
+              ],
+        lo: box === null ? 0 : box.lo,
+        span: box === null ? 0 : box.hi - box.lo,
+        epsilon: box === null ? 0 : box.epsilon,
+        absorption: look.absorption,
+        detailScale: detail === null ? 0 : detail.detail.scale / 127,
+        // The rule sits here, where the uniform is set, and not in a setter: `look` is
+        // a handle the caller may write to in place, so a clamp in the setter alone is
+        // gone around by a write to `debug.look`.
+        occlusion: marched ? nebulaOcclusionOf(look.nebulaOcclusion) : 0,
       });
       nebulaDrawn = nebulaPass.drawnCount;
       nebulaCalls = nebulaPass.drawCalls;
@@ -803,9 +872,17 @@ export function createRenderer(
   return {
     resize,
     setVolume(volume: DensityVolume): void {
-      volumePass?.dispose();
+      // The renderer owns the texture, because the volume pass draws it and the nebula
+      // pass marches it. One upload serves both.
+      volumeTexture?.dispose();
       volumeBox = volume;
-      volumePass = createVolumePass(gl, volumeProgram, volume, triangle.vertexArray);
+      volumeTexture = createVolumeTexture(gl, volume);
+      volumePass = createVolumePass(
+        gl,
+        volumeProgram,
+        volumeTexture,
+        triangle.vertexArray,
+      );
     },
     setPointCloud(cloud: PointCloud): void {
       pointPass?.dispose();
@@ -987,6 +1064,9 @@ export function createRenderer(
       }
       return total / count;
     },
+    setNebulaOcclusion(value: number): void {
+      look.nebulaOcclusion = value;
+    },
     setPasses(next: Partial<PassSwitches>): void {
       if (next.volume !== undefined) passes.volume = next.volume;
       if (next.clouds !== undefined) passes.clouds = next.clouds;
@@ -1077,7 +1157,7 @@ export function createRenderer(
       shapePass.dispose();
       cloudPass?.dispose();
       nebulaPass?.dispose();
-      volumePass?.dispose();
+      volumeTexture?.dispose();
       detailTexture?.dispose();
       shapeTexture.dispose();
       glowPass.dispose();
