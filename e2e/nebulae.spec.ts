@@ -71,6 +71,18 @@ test('the nebula shaders compile', async ({ page }) => {
     { vertex: nebulaVertex(), fragment: shaderSource('nebulae.frag') },
   );
   expect(error).toBeNull();
+
+  // The composite pair the pass applies its accumulation target with. The test names
+  // the shaders it compiles one by one, so a new pair needs this line.
+  const compositeError = await page.evaluate(
+    (sources) =>
+      window.__galaxyMap?.compileTestProgram?.(sources.vertex, sources.fragment),
+    {
+      vertex: shaderSource('nebula-composite.vert'),
+      fragment: shaderSource('nebula-composite.frag'),
+    },
+  );
+  expect(compositeError).toBeNull();
 });
 
 // The march reads a `sampler3D` in the vertex stage. WebGL2 guarantees at least 16

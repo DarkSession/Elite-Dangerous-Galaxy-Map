@@ -1,5 +1,9 @@
-// Draws the selected nebulae as marched boxes over the half-resolution target, with
-// premultiplied source-over blending.
+// Draws the selected nebulae as marched boxes into an accumulation target of its own,
+// then composites that target over the half-resolution target the renderer bound.
+//
+// The records blend with premultiplied source-over in the colour channels. The alpha
+// channel takes the product of one minus each record's alpha, and the composite turns
+// that product into the attenuation source-over applies to the scene.
 //
 // The draw chooses the records itself, from the frame the renderer hands it. The
 // renderer therefore holds no selection call and no record type, which is what keeps the
@@ -12,11 +16,15 @@ import { nebulaFocalPixels, selectNebulae } from '../scene-data/nebulae';
 import type { NebulaSet } from '../scene-data/nebulae';
 import type { NebulaVolumeTextures } from './nebula-volumes';
 import type { NebulaDraw, NebulaFrame } from './nebula-slot';
+import { createRenderTarget } from './buffers';
+import type { RenderTarget } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
 import { withVolumeDensity } from './volume-density';
 import vertexSource from './shaders/nebulae.vert?raw';
 import fragmentSource from './shaders/nebulae.frag?raw';
+import compositeVertexSource from './shaders/nebula-composite.vert?raw';
+import compositeFragmentSource from './shaders/nebula-composite.frag?raw';
 
 /**
  * The texture units the five samplers read. Each one takes a unit of its own and every
@@ -29,6 +37,16 @@ const COLOUR_UNIT = 1;
 const TRANSFER_UNIT = 2;
 const VOLUME_UNIT = 3;
 const DETAIL_UNIT = 4;
+
+/**
+ * The unit the composite reads the accumulation target on. It is the unit the density
+ * sampler takes, which the draw unbinds before the composite runs, so the two never sit
+ * on one unit at once.
+ */
+const ACCUMULATED_UNIT = 0;
+
+/** How many vertices the composite draws: one triangle over the screen. */
+const COMPOSITE_VERTICES = 3;
 
 /**
  * How the renderer's world frame reaches the game frame the art was authored in. The
@@ -154,12 +172,13 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
 /**
  * Gives back the draw that puts the selected nebulae on the screen.
  *
- * The draw owns the program, the volume textures and its own buffers, and frees them all
- * on `dispose`. The renderer holds the draw and knows none of them, which is what keeps
- * the nebulae out of the main entry point's chunk.
+ * The draw owns the two programs, the volume textures, the accumulation target and its
+ * own buffers, and frees them all on `dispose`. The renderer holds the draw and knows
+ * none of them, which is what keeps the nebulae out of the main entry point's chunk.
  *
  * One record is one draw call, because each carries its own three textures and its own
- * rotation. The order is furthest first, because the pass composites with source-over.
+ * rotation. The records draw into the accumulation target, and one composite draw then
+ * applies that target to the target the renderer bound.
  */
 export function createNebulaPass(
   gl: WebGL2RenderingContext,
@@ -167,13 +186,26 @@ export function createNebulaPass(
   set: NebulaSet,
   volumes: NebulaVolumeTextures,
 ): NebulaDraw {
+  // The composite program compiles first, so a throw here frees nothing and leaks
+  // nothing. The caller frees the record program and the textures it made.
+  const compositeProgram = createProgram(
+    gl,
+    'nebula-composite',
+    compositeVertexSource,
+    compositeFragmentSource,
+    ['uAccumulated'],
+  );
   const vertexArray = gl.createVertexArray();
   const cornerBuffer = gl.createBuffer();
-  if (vertexArray === null || cornerBuffer === null) {
-    // One of the two can arrive while the other does not, and the caller gets no handle
-    // to the one that did, so free it here.
+  // The composite reads no attribute, so its vertex array stays empty.
+  const compositeArray = gl.createVertexArray();
+  if (vertexArray === null || cornerBuffer === null || compositeArray === null) {
+    // One of the three can arrive while the others do not, and the caller gets no
+    // handle to the ones that did, so free them here.
     if (vertexArray !== null) gl.deleteVertexArray(vertexArray);
     if (cornerBuffer !== null) gl.deleteBuffer(cornerBuffer);
+    if (compositeArray !== null) gl.deleteVertexArray(compositeArray);
+    gl.deleteProgram(compositeProgram.program);
     throw new Error('The context gave no buffer for the nebula set.');
   }
 
@@ -186,6 +218,9 @@ export function createNebulaPass(
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   const rotation = new Float32Array(9);
+  // The accumulation target. The pass builds it at the first frame that draws a record,
+  // so a map that never reaches the zoom band pays for no target at all.
+  let accumulation: RenderTarget | null = null;
   let drawnCount = 0;
   let drawCalls = 0;
   let aboveFloorCount = 0;
@@ -223,8 +258,33 @@ export function createNebulaPass(
       aboveFloorCount = selection.aboveFloor;
       coveredArea = selection.coveredArea;
       // At a weight of 0 the pass draws nothing and issues no draw call, so the
-      // default view and the close view cost nothing.
+      // default view and the close view cost nothing. The target, the clear and the
+      // composite go with the record draws: a frame that draws no record pays for none
+      // of the three.
       if (selection.weight <= 0 || selection.instances.length < 1) return;
+
+      // The renderer hands the draw a frame and no framebuffer, so the draw keeps the
+      // binding it found and puts it back before the composite. The read comes before
+      // the target is built, because building one leaves no framebuffer bound.
+      const sceneFramebuffer = gl.getParameter(
+        gl.FRAMEBUFFER_BINDING,
+      ) as WebGLFramebuffer | null;
+
+      const width = Math.max(1, frame.targetSize[0]);
+      const height = Math.max(1, frame.targetSize[1]);
+      if (accumulation === null) {
+        accumulation = createRenderTarget(gl, width, height, frame.floatTarget);
+      } else {
+        accumulation.resize(width, height);
+      }
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, accumulation.framebuffer);
+      // The accumulation target holds the size of the target the renderer bound, so
+      // this is the viewport the renderer had already set.
+      gl.viewport(0, 0, accumulation.width, accumulation.height);
+      // The records start from an emission of 0 and a transmittance of 1.
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
 
       gl.useProgram(program.program);
       gl.uniformMatrix4fv(
@@ -289,18 +349,28 @@ export function createNebulaPass(
       gl.uniform1i(program.uniforms['uNebulaTransfer'] ?? null, TRANSFER_UNIT);
 
       gl.enable(gl.BLEND);
-      // Premultiplied source-over. One blend serves a bright nebula and a dark one: the
-      // march writes the emission and one minus the transmittance, so a dark volume
-      // attenuates what is already in the target without a second blend state.
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      // Premultiplied source-over in the colour channels, and the product of one minus
+      // each record's alpha in the alpha channel. One blend serves a bright nebula and a
+      // dark one: the march writes the emission and one minus the transmittance.
+      //
+      // The alpha factors are separate because plain `blendFunc` sets all four channels.
+      // From a clear of 1 the alpha channel would then read
+      // `src.a + (1 - src.a) * 1 = 1` after every record, the composite would write an
+      // alpha of 0 and a dark nebula would stop dimming the scene.
+      gl.blendFuncSeparate(
+        gl.ONE,
+        gl.ONE_MINUS_SRC_ALPHA,
+        gl.ZERO,
+        gl.ONE_MINUS_SRC_ALPHA,
+      );
       // The back faces draw, not the front ones, so a camera inside a box still gets a
       // fragment for every ray. The march clamps its near end at 0 for the same reason.
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.FRONT);
       gl.bindVertexArray(vertexArray);
 
-      // Furthest first, as the selection gives them, because the blend depends on the
-      // order. One record is one draw call: each carries its own three textures.
+      // Furthest first, as the selection gives them, because the colour channels blend
+      // source-over. One record is one draw call: each carries its own three textures.
       for (const instance of selection.instances) {
         const asset = volumes.assets[set.assets[instance.index] as number];
         if (asset === undefined) continue;
@@ -343,7 +413,6 @@ export function createNebulaPass(
 
       gl.bindVertexArray(null);
       gl.disable(gl.CULL_FACE);
-      gl.disable(gl.BLEND);
       for (const unit of [DENSITY_UNIT, COLOUR_UNIT, VOLUME_UNIT]) {
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_3D, null);
@@ -352,6 +421,21 @@ export function createNebulaPass(
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_2D, null);
       }
+
+      // One composite draw, whatever the count of records. The shader writes the
+      // accumulated emission and one minus the accumulated alpha, and this blend gives
+      // `scene = accumulated.rgb + accumulated.a * scene`.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFramebuffer);
+      gl.useProgram(compositeProgram.program);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.activeTexture(gl.TEXTURE0 + ACCUMULATED_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, accumulation.texture);
+      gl.uniform1i(compositeProgram.uniforms['uAccumulated'] ?? null, ACCUMULATED_UNIT);
+      gl.bindVertexArray(compositeArray);
+      gl.drawArrays(gl.TRIANGLES, 0, COMPOSITE_VERTICES);
+      gl.bindVertexArray(null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.disable(gl.BLEND);
       gl.activeTexture(gl.TEXTURE0 + DENSITY_UNIT);
 
       drawnCount = drawCalls;
@@ -359,8 +443,12 @@ export function createNebulaPass(
     dispose(): void {
       gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
+      gl.deleteVertexArray(compositeArray);
+      accumulation?.dispose();
+      accumulation = null;
       volumes.dispose();
       gl.deleteProgram(program.program);
+      gl.deleteProgram(compositeProgram.program);
     },
   };
 }

@@ -630,6 +630,9 @@ export function createRenderer(
         camera: [camera[0], camera[1], camera[2]],
         distance: view.distance,
         targetSize: [halfTarget.width, halfTarget.height],
+        // The pass builds its accumulation target with the flag the half-resolution
+        // target was built with, so the two hold one number format.
+        floatTarget: float,
         canvasHeightCss: area.height,
         canvasWidthCss: area.width,
         fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,

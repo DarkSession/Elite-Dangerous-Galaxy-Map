@@ -26,6 +26,8 @@ import densitySource from './shaders/volume-density.glsl?raw';
 import nebulaVertexSource from './shaders/nebulae.vert?raw';
 import nebulaFragmentSource from './shaders/nebulae.frag?raw';
 import volumeFragmentSource from './shaders/volume.frag?raw';
+import compositeVertexSource from './shaders/nebula-composite.vert?raw';
+import compositeFragmentSource from './shaders/nebula-composite.frag?raw';
 
 /** One call the pass made on the context. */
 interface Call {
@@ -60,6 +62,9 @@ function fakeContext(): FakeContext {
       }
       return (...args: unknown[]): unknown => {
         calls.push({ name: key, args });
+        // The pass compiles its own composite program, so the two status reads answer
+        // true. Every other call gives a handle for a `create` and null otherwise.
+        if (key === 'getShaderParameter' || key === 'getProgramParameter') return true;
         return key.startsWith('create') ? { name: key } : null;
       };
     },
@@ -178,6 +183,7 @@ function frameOf(distance: number, march: Partial<NebulaFrame> = {}): NebulaFram
     camera: [0, 0, 0],
     distance,
     targetSize: [640, 360],
+    floatTarget: true,
     canvasHeightCss: CANVAS_HEIGHT_CSS,
     canvasWidthCss: CANVAS_WIDTH_CSS,
     fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
@@ -206,6 +212,18 @@ function uniformsOf(context: FakeContext): Map<unknown, unknown> {
     sent.set(call.args[0], JSON.stringify(call.args.slice(1)));
   }
   return sent;
+}
+
+/** The draw calls of the records alone: 36 vertices each. */
+function recordDraws(context: FakeContext): Call[] {
+  return context
+    .of('drawArrays')
+    .filter((call) => call.args[2] === NEBULA_BOX_VERTICES);
+}
+
+/** The composite draw calls: one full-screen triangle each. */
+function compositeDraws(context: FakeContext): Call[] {
+  return context.of('drawArrays').filter((call) => call.args[2] === 3);
 }
 
 /** Every value one uniform took over a draw, in the order the draw sent them. */
@@ -316,7 +334,7 @@ describe('the rotation matrix', () => {
 });
 
 describe('the nebula pass', () => {
-  test('draws one call per selected record, with source-over blending', () => {
+  test('draws one call per selected record, and one composite over them', () => {
     const context = fakeContext();
     const set = manySet(MANY);
     const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
@@ -324,13 +342,41 @@ describe('the nebula pass', () => {
 
     pass.draw(frameOf(12000));
 
-    const draws = context.of('drawArrays');
+    const draws = recordDraws(context);
     expect(draws).toHaveLength(expected);
     expect(draws[0]?.args.slice(1)).toEqual([0, NEBULA_BOX_VERTICES]);
     expect(pass.drawCalls).toBe(expected);
     expect(pass.drawnCount).toBe(expected);
+    // The composite is one draw call and it is the last of the draw.
+    expect(compositeDraws(context)).toHaveLength(1);
+    expect(context.of('drawArrays').at(-1)?.args.slice(1)).toEqual([0, 3]);
+  });
+
+  // The records blend source-over in the colour channels, and the alpha channel takes
+  // the product of one minus each record's alpha. The composite then turns that product
+  // into the attenuation source-over applies to the scene. Plain `blendFunc` on the
+  // records would set all four channels and leave the alpha channel at 1.
+  test('sets the record blend first and the composite blend second', () => {
+    const context = fakeContext();
     const gl = context.gl;
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), volumesOf());
+
+    pass.draw(frameOf(6000));
+
+    expect(context.of('blendFuncSeparate')).toHaveLength(1);
+    expect(context.of('blendFuncSeparate')[0]?.args).toEqual([
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ZERO,
+      gl.ONE_MINUS_SRC_ALPHA,
+    ]);
+    expect(context.of('blendFunc')).toHaveLength(1);
     expect(context.of('blendFunc')[0]?.args).toEqual([gl.ONE, gl.ONE_MINUS_SRC_ALPHA]);
+    // The record blend is set before the records draw and the composite blend after
+    // them.
+    const names = context.calls.map((call) => call.name);
+    expect(names.indexOf('blendFuncSeparate')).toBeLessThan(names.indexOf('blendFunc'));
+    expect(names.indexOf('blendFunc')).toBeGreaterThan(names.lastIndexOf('uniform3f'));
   });
 
   // The camera can be inside a box, so the front faces are the ones that go.
@@ -363,6 +409,96 @@ describe('the nebula pass', () => {
     expect(context.of('drawArrays')).toHaveLength(0);
     expect(pass.drawnCount).toBe(0);
     expect(pass.drawCalls).toBe(0);
+  });
+
+  // The spec's scenario **The composite runs once whatever the count**. The zero case is
+  // the one that matters: the default view is at 60,000 light years, where the zoom
+  // weight is 0, so a composite that ran anyway would cost the commonest frame the map
+  // draws.
+  test('clears once and composites once, whatever the count of records', () => {
+    for (const count of [1, 100]) {
+      const context = fakeContext();
+      const set = manySet(count);
+      const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+
+      pass.draw(frameOf(12000));
+
+      expect(recordDraws(context).length, `${count} records drew none`).toBe(
+        pass.drawCalls,
+      );
+      expect(pass.drawCalls, `${count} records drew no record`).toBeGreaterThan(0);
+      expect(context.of('clear'), `${count} records cleared twice`).toHaveLength(1);
+      expect(compositeDraws(context), `${count} records composited twice`).toHaveLength(
+        1,
+      );
+    }
+
+    const empty = fakeContext();
+    const none = createNebulaPass(empty.gl, fakeProgram(), manySet(MANY), volumesOf());
+    none.draw(frameOf(60000));
+
+    expect(none.drawCalls).toBe(0);
+    expect(empty.of('clear')).toHaveLength(0);
+    expect(compositeDraws(empty)).toHaveLength(0);
+    // The target is not built either, so a map that never reaches the band pays for no
+    // target at all.
+    expect(empty.of('createFramebuffer')).toHaveLength(0);
+  });
+
+  // The accumulation target follows the half-resolution target: one target, built at the
+  // first frame that draws, resized where the size changes and freed on `dispose`.
+  test('builds the accumulation target once and resizes it with the frame', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), volumesOf());
+
+    pass.draw(frameOf(6000));
+    expect(context.of('createFramebuffer')).toHaveLength(1);
+    const first = context.of('texImage2D').length;
+
+    // The same size again builds nothing and allocates nothing.
+    pass.draw(frameOf(6000));
+    expect(context.of('createFramebuffer')).toHaveLength(1);
+    expect(context.of('texImage2D')).toHaveLength(first);
+
+    // A different size allocates the image again, and still builds no second target.
+    pass.draw(frameOf(6000, { targetSize: [960, 540] }));
+    expect(context.of('createFramebuffer')).toHaveLength(1);
+    expect(context.of('texImage2D').length).toBe(first + 1);
+
+    pass.dispose();
+    expect(context.of('deleteFramebuffer')).toHaveLength(1);
+  });
+
+  // The record draws go into the accumulation target and the composite goes into the
+  // target the renderer bound, which the draw reads and puts back.
+  test('draws the records into its own target and composites into the one it found', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(context.gl, fakeProgram(), manySet(4), volumesOf());
+
+    pass.draw(frameOf(6000));
+
+    // The draw reads the binding it found rather than taking one from the frame, and it
+    // reads it before it builds the target: building one leaves no framebuffer bound,
+    // so a read after it would give null and the composite would go to the canvas.
+    expect(context.of('getParameter')[0]?.args).toEqual([
+      context.gl.FRAMEBUFFER_BINDING,
+    ]);
+    const order = context.calls.map((call) => call.name);
+    expect(order.indexOf('getParameter')).toBeLessThan(
+      order.indexOf('createFramebuffer'),
+    );
+    const bound = context.of('bindFramebuffer').map((call) => call.args[1]);
+    // The last bind puts back what `getParameter` gave, which is null on this context.
+    expect(bound.at(-1)).toBeNull();
+    // The clear and every record draw run against the pass's own target, and the
+    // composite runs after the binding goes back.
+    const names = context.calls.map((call) => call.name);
+    expect(names.lastIndexOf('bindFramebuffer')).toBeGreaterThan(
+      names.indexOf('clear'),
+    );
+    expect(names.lastIndexOf('bindFramebuffer')).toBeLessThan(
+      names.lastIndexOf('drawArrays'),
+    );
   });
 
   // The record is in game coordinates and the pass draws in the world frame.
@@ -568,8 +704,10 @@ describe('the nebula pass', () => {
 
     expect(freed).toBe(1);
     expect(context.of('deleteBuffer')).toHaveLength(1);
-    expect(context.of('deleteVertexArray')).toHaveLength(1);
-    expect(context.of('deleteProgram')).toHaveLength(1);
+    // The box vertex array and the composite's empty one.
+    expect(context.of('deleteVertexArray')).toHaveLength(2);
+    // The record program and the composite program.
+    expect(context.of('deleteProgram')).toHaveLength(2);
   });
 });
 
@@ -805,5 +943,26 @@ describe('the selection the draw makes', () => {
     pass.draw(frameOf(60000));
     expect(pass.drawnCount).toBe(0);
     expect(pass.drawCalls).toBe(0);
+  });
+});
+
+describe('the nebula composite', () => {
+  // The composite applies the accumulation target to the scene. The colour channels hold
+  // the sum of the emissions and the alpha channel the product of the transmittances,
+  // and the blend is `ONE, ONE_MINUS_SRC_ALPHA`, so the fragment writes one minus that
+  // product and the scene reads `accumulated.rgb + accumulated.a * scene`.
+  test('writes the accumulated colour and one minus the accumulated alpha', () => {
+    expect(compositeFragmentSource).toContain(
+      'fragColour = vec4(accumulated.rgb, 1.0 - accumulated.a);',
+    );
+    expect(compositeFragmentSource).toContain('uniform sampler2D uAccumulated;');
+  });
+
+  // One triangle over the screen, from the vertex index alone, so the draw needs no
+  // attribute and no buffer.
+  test('builds its triangle from the vertex index', () => {
+    expect(compositeVertexSource).toContain('gl_VertexID');
+    expect(compositeVertexSource).toContain('out vec2 vTexture;');
+    expect(compositeVertexSource).not.toContain('in vec');
   });
 });

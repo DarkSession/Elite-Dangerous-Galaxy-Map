@@ -23,7 +23,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
 
 ## 1. The target and the composite
 
-- [ ] 1.1 Add the accumulation target to `src/render/nebula-pass.ts`. Build it with
+- [x] 1.1 Add the accumulation target to `src/render/nebula-pass.ts`. Build it with
       `createRenderTarget` from `src/render/buffers.ts`, at the size the draw already
       receives in `targetSize`. Add one member to `NebulaFrame` in
       `src/render/nebula-slot.ts` for the number format, and pass through what
@@ -32,14 +32,14 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       test over the fake context makes it once, resizes it when the size changes, and
       deletes it on `dispose`, and that `pnpm exec tsc --noEmit` passes over the published
       types.
-- [ ] 1.2 Add the composite shader pair to `src/render/shaders/`: a full-screen triangle
+- [x] 1.2 Add the composite shader pair to `src/render/shaders/`: a full-screen triangle
       vertex shader, and a fragment shader that reads the accumulation target and writes
       `vec4(accumulated.rgb, 1.0 - accumulated.a)`. **Neither changes again in this change.**
       Add both to the browser test `the nebula shaders compile` in `e2e/nebulae.spec.ts`,
       which names the shaders it compiles one by one and does not enumerate the pass's set,
       so it needs the edit and not only a re-run. Verify a unit test reads the fragment
       source for that expression and that the browser test compiles both.
-- [ ] 1.3 Change the draw in `src/render/nebula-pass.ts`: read `FRAMEBUFFER_BINDING` and
+- [x] 1.3 Change the draw in `src/render/nebula-pass.ts`: read `FRAMEBUFFER_BINDING` and
       keep it, bind the accumulation target, clear it to `(0, 0, 0, 1)`, draw the records,
       bind the saved framebuffer back, then draw the composite with the
       `ONE, ONE_MINUS_SRC_ALPHA` blend the pass already uses, which gives
@@ -57,7 +57,7 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       Verify the whole unit suite and the whole browser suite pass with **no reading moved**,
       which is the check that this group is inert, and read the two CPU fixture comparisons
       in particular: they draw 105 and 109 records and would show any change first.
-- [ ] 1.4 Verify the spec's scenario **The composite runs once whatever the count** with a
+- [x] 1.4 Verify the spec's scenario **The composite runs once whatever the count** with a
       unit test over the fake context, in **three** cases: a frame selecting 1 record and a
       frame selecting 100 each clear once and composite once, and **a frame selecting 0
       records does neither**. The zero case is the one that matters, because the base spec
@@ -66,10 +66,10 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       weight is 0, so a composite that ran anyway would cost the commonest frame the map
       draws. The browser test `the pass issues no draw call outside the band` reads
       `nebulaDrawCalls()`, which counts record draws alone, so it does not cover this.
-- [ ] 1.5 Verify the nebula switch skips the target, the clear and the composite together,
+- [x] 1.5 Verify the nebula switch skips the target, the clear and the composite together,
       which the spec requires, and that the browser test `the switch removes the nebulae`
       still matches its own capture to ten places.
-- [ ] 1.6 Verify `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run` and
+- [x] 1.6 Verify `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run` and
       `pnpm test:e2e` all pass.
 
 ## 2. The readings the decision rests on

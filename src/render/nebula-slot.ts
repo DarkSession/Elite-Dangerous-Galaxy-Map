@@ -55,6 +55,12 @@ export interface NebulaFrame {
   readonly distance: number;
   /** The size of the target the draw draws into, in pixels. */
   readonly targetSize: readonly [number, number];
+  /**
+   * Whether the renderer's own colour targets hold a floating point number format. The
+   * pass builds its accumulation target with the same flag, so a card that gives no
+   * floating point target draws the nebulae as it draws the rest of the scene.
+   */
+  readonly floatTarget: boolean;
   /** The height of the canvas in CSS pixels. The size rules are stated in those. */
   readonly canvasHeightCss: number;
   /**
