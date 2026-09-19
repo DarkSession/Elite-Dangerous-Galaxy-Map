@@ -970,10 +970,12 @@ frame budget uses, so it holds that CPU work and the GPU work together.
   frustum at that zoom, so this scenario measures the largest sprites and not the largest
   number of them. The other half, all 10,000 sprites forced to the cap together, which
   writes 16 million fragments over a frame of 2 million pixels, was measured once before
-  the curve was written, to decide whether the cap of 16 could stand. That reading is in
-  `docs/roadmap.md` and no test holds it. The old rule reached its 30 CSS pixel cap at a range of
-  about 1,560 light years, so the old worst case put the systems within 10,000 light years
-  of Sol
+  the curve was written, to decide whether the cap of 16 could stand: 10,000 forced 40
+  CSS pixel glow markers within 10 light years of Sol at 1920 by 1080 drew in a mean of
+  1.617 ms against the 16.7 ms budget, so the close cap stayed at 16. No test holds that
+  reading; this scenario is its record. The old rule reached its 30 CSS pixel cap at a
+  range of about 1,560 light years, so the old worst case put the systems within 10,000
+  light years of Sol
 
 ### Requirement: A marker draws in one of two styles
 

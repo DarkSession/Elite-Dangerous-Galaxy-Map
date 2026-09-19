@@ -141,14 +141,17 @@ The boxel SHALL place `min(256, round(count))` stars. That number is the boxel's
 SHALL be the placed count less the stars a real system suppresses. A boxel whose count
 rounds to zero SHALL place no star.
 
+The calibration is held against two measurements of Sol's neighbourhood: **3.8 systems
+per 1,000 cubic light years** at Sol, and **16,000 systems within 100 light years**.
+This requirement is the record of both figures.
+
 #### Scenario: The count at Sol matches the neighbourhood measurement
 
 - **WHEN** a unit test reads the system count per 1,000 cubic light years at Sol, the
   count of the 20 light year boxel that holds Sol, and the count within 100 light years
   of Sol by numeric integration
-- **THEN** the first is 3.80 within 0.05, against the roadmap's measured 3.8; the
-  second is 30 within 1; and the third is within 5 percent of 15,650, against the
-  roadmap's measured 16,000
+- **THEN** the first is 3.80 within 0.05, against the measured 3.8; the second is 30
+  within 1; and the third is within 5 percent of 15,650, against the measured 16,000
 
 #### Scenario: The calibration falls with the density
 
