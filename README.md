@@ -729,6 +729,19 @@ The run then checks the registry and the tag, runs every check, builds, packs, c
 the digest of the tarball it made, publishes with OIDC and provenance and no token, and
 tags the commit after the publish succeeds.
 
+### The first version went up by hand
+
+**0.6.0 is published**, from a maintainer's machine on 2026-09-20. The workflow could not
+do it: it publishes through npm Trusted Publishing, a publisher is set **on a package**,
+and the registry held nothing under this name to attach one to. That publish carries no
+provenance, because provenance needs the OIDC token a GitHub runner holds and a laptop
+does not. Every release from here goes through the workflow and carries it.
+
+The steps were: `pnpm test:e2e`, then `pnpm build` and `pnpm test:package`, then
+`npm pack` in `packages/galaxy-map/`, then `npm publish <tarball> --access public`. They
+are here in case the same bootstrap is ever needed for another package of this
+repository.
+
 **Three things live outside this repository, and no workflow step can create them.** The
 first dispatch fails at its last step without them:
 
@@ -738,6 +751,11 @@ first dispatch fails at its last step without them:
    to hold a release behind an approval.
 3. The package's place in the **`@elite-dangerous-almanac`** npm organisation, which must
    allow this package to be published.
+
+**Then read the first dispatch.** It releases 0.6.1, which is what the version rule
+computes against a registry holding 0.6.0 alone. No test can run the workflow, so that
+run is where its guards run for the first time. Watch it to its last step, and read the
+published version afterwards.
 
 The terms are [LICENSE.md](LICENSE.md), the PolyForm Noncommercial License 1.0.0. The
 tarball carries a copy of it, the package's own `README.md` and

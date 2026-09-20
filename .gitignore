@@ -17,6 +17,9 @@ dist-ssr/
 # The copy of the licence the library package's `prepack` makes. `LICENSE.md` at the
 # repository root is the one committed source.
 packages/galaxy-map/LICENSE.md
+# The tarball `npm pack` writes for a publish by hand. `npm publish` reads it from the
+# package directory and the repository does not carry it.
+packages/*/*.tgz
 # The directory `tests/main-bundle.test.ts` builds into. It is removed after the run.
 .library-build-*/
 *.local
