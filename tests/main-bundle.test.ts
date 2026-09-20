@@ -398,12 +398,42 @@ function buildHost(name: string, entry: string): HostBuild {
 }
 
 /**
+ * The volume index as a host carries it, base64 encoded.
+ *
+ * The index is 2,625 bytes, which is under the 4,096-byte inline threshold Vite applies
+ * by default, so a host that re-bundles the package holds it as a `data:` URI in a chunk
+ * rather than as a file. The `?url&no-inline` query of `src/render/nebula-volumes.ts`
+ * keeps it a file in this package's own build, but the library build writes a plain
+ * `new URL(...)` and the marker does not reach the host.
+ *
+ * The needle therefore takes either form. Reading the base64 from the file means a
+ * repacked index cannot make this needle go stale. `+` is the one regular-expression
+ * character the base64 alphabet holds, so it is the one to escape.
+ */
+const VOLUME_INDEX_BASE64 = readFileSync(
+  join(root, 'src/render/nebula-art/nebula-volumes.json'),
+)
+  .toString('base64')
+  .replace(/\+/g, '\\+');
+
+/**
+ * The data URIs an inlined volume takes. A `.ktx2` file reads as `image/ktx2`, not as
+ * `application/octet-stream`, so a guard on the second alone never fires on a volume.
+ * The transfer file is the one that reads as `application/octet-stream`.
+ */
+const VOLUME_DATA_URIS = ['data:image/ktx', 'data:application/octet-stream'];
+
+/**
  * What a host build carries where it carries the nebulae. Each one is a pattern and not
- * a name, because a host bundler hashes the files again under names of its own.
+ * a name, because a host bundler hashes the files again under names of its own, and
+ * inlines the ones under its threshold under no name at all.
  */
 const NEBULA_NEEDLES: readonly { readonly what: string; readonly pattern: RegExp }[] = [
   { what: 'the record file', pattern: /nebulae-[\w-]+\.json/ },
-  { what: 'the volume index', pattern: /nebula-volumes-[\w-]+\.json/ },
+  {
+    what: 'the volume index',
+    pattern: new RegExp(`nebula-volumes-[\\w-]+\\.json|${VOLUME_INDEX_BASE64}`),
+  },
   { what: 'the transfer file', pattern: /transfer-[\w-]+\.bin/ },
   { what: 'a density volume', pattern: /-density-[\w-]+\.ktx2/ },
   { what: 'a colour volume', pattern: /-colour-[\w-]+\.ktx2/ },
@@ -605,7 +635,7 @@ describe('the library build', () => {
         false,
       );
       expect(
-        text.includes('data:application/octet-stream'),
+        VOLUME_DATA_URIS.some((mime) => text.includes(mime)),
         `${nameOf(path)} holds a volume as a data URI`,
       ).toBe(false);
     }
@@ -620,7 +650,9 @@ describe('the library build', () => {
         `the host carries ${needle.what}`,
       ).toBe(false);
     }
-    expect(plainHost.text.includes('data:application/octet-stream')).toBe(false);
+    for (const mime of VOLUME_DATA_URIS) {
+      expect(plainHost.text.includes(mime), `the host inlines ${mime}`).toBe(false);
+    }
   });
 
   // The positive control of the test above. Without it a needle that appears nowhere —

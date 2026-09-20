@@ -34,7 +34,7 @@ interface Marched {
 }
 
 function assetOf(entry: NebulaVolumeEntry, slot: number): Marched {
-  const side = entry.density.size;
+  const side = entry.density;
   const blocks = readNebulaKtx2(
     readFileSync(`${artDir}${entry.name}-density.ktx2`),
     `density ${entry.name}`,

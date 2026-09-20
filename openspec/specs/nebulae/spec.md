@@ -245,10 +245,14 @@ the 13 the procedural pool draws from take `bright-01` to `bright-04`, `dark-01`
 `dark-05` and `planetary-01` to `planetary-04`.
 
 **The index SHALL carry what the map reads and nothing else.** It SHALL hold one key: an
-ordered list of assets. Each entry SHALL hold a name, a density side, a colour side and the
-per-axis compaction error. It SHALL NOT carry a digest: every host that asks for the nebulae
-downloads the index, no code reads a digest at run time, and 67 of them cost 5,778 bytes on
-the wire for a check that runs in a unit test. The digests SHALL sit in
+ordered list of assets. Each entry SHALL hold a name, a density side and a colour side, and
+nothing else. Each side SHALL be a plain number and SHALL NOT be wrapped in an object: a
+wrapper of one key states the key 66 times over the set for no reader.
+
+**It SHALL NOT carry a figure that only a test reads.** Every host that asks for the
+nebulae downloads the index, so a figure no run-time code reads is bytes on the wire for a
+check that runs on disk. Two figures meet that description. The 67 digests cost 5,778 bytes
+and the 99 per-axis compaction errors cost 4,244. Both SHALL sit in
 `tests/fixtures/nebulae.json` instead, which ships in no build. It SHALL NOT carry a path, a
 name from another source, a note about where the art came from, or a figure the packing
 step produced for itself. It SHALL NOT carry a field a reader can derive: no asset
@@ -370,17 +374,36 @@ the density and four for the colour.
 The video memory figures SHALL count the transfer tables as well as the volumes: 33 tables
 of 256 entries of four 32-bit values is 132 KiB, which is small but is not nothing.
 
-The on-disk reading SHALL count **every file the set serves**: the 66 `.ktx2` volumes, which
-are 2,774,432 bytes, the 132 KiB transfer file and the index, for 2,918,185 bytes in
-all. It is the bound a reader can check
-without trusting the index, because the files are served as they are stored and a serving
-path may or may not compress them. The assets SHALL
-load as fetched assets and SHALL NOT be bundled modules, so no chunk carries them.
+The on-disk reading SHALL count **every file the set serves**: the 66 `.ktx2` volumes,
+which are 2,774,432 bytes, the 132 KiB transfer file and the index, for 2,912,225 bytes in
+all. It is the bound a reader can check without trusting the index, because the files are
+served as they are stored and a serving path may or may not compress them.
+
+**The rule on bundling SHALL read in bytes and not in files.** An asset above the inline
+threshold a bundler applies SHALL load as a fetched asset and SHALL NOT be a bundled
+module, so no chunk carries it. An asset under that threshold MAY ride in a chunk as a
+`data:` URI. The loader SHALL read both forms the same way, because `fetch` reads a
+`data:` URI.
+
+Against the 4,096-byte threshold a bundler applies by default, **39 files of the set are
+above it and 29 are under**: the index at 2,625 bytes, 16 colour volumes at 464 and 12
+at 2,256. Those 29 are **37,121 bytes**, which is 1.27 percent of the set, so the 2.742
+MiB a chunk must not carry stays out of every chunk. The rule holds a host to not parsing
+the art to start the map, and 37 KiB does not reach that.
+
+The package SHALL NOT be able to set the threshold for a host. `src/render/nebula-volumes.ts`
+asks for `?url&no-inline`, which keeps every file a file in this package's own build, but
+the library build writes a plain `new URL(...)` and the marker does not reach a host that
+re-bundles it. A host that wants every asset as a file SHALL set its own threshold to 0.
 
 Each asset's compaction error SHALL be at most **0.03 emission RMSE over peak** against
-its full-resolution original, measured on the **worst of its three axes**. The index SHALL
-carry the per-axis figures, and a reader SHALL be able to check the bound without the
-originals.
+its full-resolution original, measured on the **worst of its three axes**.
+`tests/fixtures/nebulae.json` SHALL carry the per-axis figures, and a reader SHALL be able
+to check the bound without the originals.
+
+The figures sit in the fixture and not in the index because no run-time code reads them.
+The packing step is the only writer, so a repack SHALL write the fixture as well as the
+art.
 
 0.03 is the budget the pack was made to, and the worst asset in the set sits at exactly
 0.03. The test is therefore a guard against a later pack that loosens the budget, not an
@@ -499,15 +522,18 @@ the pass SHALL then draw nothing. This is the same handling the record file alre
 
 #### Scenario: The compaction error holds on every axis
 
-- **WHEN** a unit test reads the per-axis error of all 33 assets from the index
-- **THEN** every figure on every axis is at most 0.03
+- **WHEN** a unit test reads the per-axis error of all 33 assets from
+  `tests/fixtures/nebulae.json`
+- **THEN** every figure on every axis is at most 0.03, and the fixture names exactly the 33
+  assets the index holds, so a repack cannot drop an asset's error unseen
 
 #### Scenario: The index carries no field the map does not read
 
 - **WHEN** a unit test reads the index
-- **THEN** its one key is the asset list, every entry holds exactly a name, a density side, a
-  colour side and the per-axis error, and no entry and no top level key names a digest, a
-  path, a name from another source or a total
+- **THEN** its one key is the asset list, every entry holds exactly a name, a density side
+  and a colour side, each side is a plain number rather than an object, and no entry and no
+  top level key names a digest, a compaction error, a path, a name from another source or a
+  total
 
 #### Scenario: Every asset name is the library's own
 

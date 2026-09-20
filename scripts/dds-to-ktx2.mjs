@@ -70,7 +70,7 @@ function main() {
   let bytes = 0;
   for (const entry of index.assets) {
     for (const volume of VOLUMES) {
-      const side = entry[volume.kind].size;
+      const side = entry[volume.kind];
       const file = `${entry.name}-${volume.kind}`;
       const blocks = ddsBlocks(`${file}.dds`);
       const out = writeNebulaKtx2({ format: volume.format, side, blocks });

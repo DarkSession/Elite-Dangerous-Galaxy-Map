@@ -260,8 +260,8 @@ marker further out.
 ## The nebulae
 
 The map draws 358 nebulae as ray-marched volumes, 190 of them named, from a record file
-of 18,411 bytes and 33 volume assets. The art directory holds 2,918,185 bytes: 2,774,432
-of volume files, 135,168 of transfer tables and 8,585 of the index. Each record names an asset, a
+of 18,411 bytes and 33 volume assets. The art directory holds 2,912,225 bytes: 2,774,432
+of volume files, 135,168 of transfer tables and 2,625 of the index. Each record names an asset, a
 radius and three rotation angles, so two records over one asset can differ. They are an
 **opt-in**, because a host pays for that art in its own build. A host that wants them imports the source from the subpath and passes
 it in the options:

@@ -149,7 +149,7 @@ describe('the round trip over the committed art', () => {
     let checked = 0;
     for (const asset of index.assets) {
       for (const volume of VOLUMES) {
-        const side = asset[volume.kind].size;
+        const side = asset[volume.kind];
         const file = `${asset.name}-${volume.kind}.ktx2`;
         const source = readFileSync(`${artDir}${file}`);
         const read = readNebulaKtx2(source, file);
