@@ -9,7 +9,12 @@
 // `src/app/main.ts`, `index.html` and the demo data reach this module from nowhere, so
 // the library build carries no page and no data.
 export { createGalaxyMap } from './app/create-map';
-export { decodeGrid, decodeView, encodeView } from './app/url-view';
+export {
+  createFragmentWriter,
+  decodeGrid,
+  decodeView,
+  encodeView,
+} from './app/url-view';
 export type {
   Category,
   DatasetContent,
@@ -26,6 +31,9 @@ export type {
   StartView,
   SystemImage,
 } from './app/create-map';
+// The fragment writer and its two types. It is a host helper: it takes a `write`
+// callback, so the library never touches `window.location`.
+export type { FragmentWriter, FragmentWriterOptions } from './app/url-view';
 export type { BrowseBounds } from './camera/view';
 export type { InteractionSwitches } from './camera/controls';
 // The type of the `nebulae` option, so a host can name the option in typed code. Its

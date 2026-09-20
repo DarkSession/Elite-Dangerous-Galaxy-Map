@@ -20,6 +20,8 @@ const PUBLIC_TYPES = [
   'FlightOutcome',
   'FlyToOptions',
   'FlyToTarget',
+  'FragmentWriter',
+  'FragmentWriterOptions',
   'GalaxyMap',
   'GalaxyMapOptions',
   'HudAction',
@@ -69,15 +71,22 @@ function exportedNames(text: string): string[] {
 }
 
 /** The calls the barrel exports as values, which the requirement names. */
-const PUBLIC_CALLS = ['createGalaxyMap', 'decodeGrid', 'decodeView', 'encodeView'];
+const PUBLIC_CALLS = [
+  'createFragmentWriter',
+  'createGalaxyMap',
+  'decodeGrid',
+  'decodeView',
+  'encodeView',
+];
 
 describe('the library entry point', () => {
-  test('exports the four calls and no other value', () => {
+  test('exports the five calls and no other value', () => {
     expect(Object.keys(library).sort()).toEqual([...PUBLIC_CALLS].sort());
     expect(typeof library.createGalaxyMap).toBe('function');
     expect(typeof library.encodeView).toBe('function');
     expect(typeof library.decodeView).toBe('function');
     expect(typeof library.decodeGrid).toBe('function');
+    expect(typeof library.createFragmentWriter).toBe('function');
   });
 
   test('exports the calls and the listed types, and nothing else', () => {

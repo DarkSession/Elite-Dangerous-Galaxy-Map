@@ -1,12 +1,20 @@
 ## 0. Before anything
 
-- [ ] 0.1 Confirm `add-nebulae` and `make-nebulae-optional` have landed. This change
+- [x] 0.1 Confirm `add-nebulae` and `make-nebulae-optional` have landed. This change
       writes the `exports` map that carries the `./nebulae` subpath
-- [ ] 0.2 Run `pnpm lint`, `pnpm test` and `pnpm test:e2e` on the tree as it stands and
+
+      Both are archived: `openspec/changes/archive/2026-09-19-add-nebulae` and
+      `openspec/changes/archive/2026-09-19-make-nebulae-optional`.
+- [x] 0.2 Run `pnpm lint`, `pnpm test` and `pnpm test:e2e` on the tree as it stands and
       record the results here, with the test file count and the pass and fail counts.
       They are the **before** reading. A restructure is only correct if the after reading
       matches it
-- [ ] 0.3 Record the entry chunk reading from the `the entry chunk holds N bytes` line.
+
+      **Before reading, 2026-09-20.** `pnpm lint`: clean, no output. `pnpm test`: 82 test
+      files, 1193 tests, 82 passed and 0 failed, 1193 passed and 0 failed.
+      `pnpm test:e2e`: the parallel pass 556 passed and 0 failed, the timed pass 66 passed
+      and 0 failed.
+- [x] 0.3 Record the entry chunk reading from the `the entry chunk holds N bytes` line.
       **Expect the after reading to differ.** Task 1.2 exports `createFragmentWriter` from
       the barrel, and that function is tree-shaken out of the library entry chunk today —
       `dist/index.js` holds none of its body, while the demo bundle does, because only the
@@ -16,18 +24,22 @@
       shared chunk. The bound is not at risk — the writer is a few hundred bytes — but the
       reading is
 
+      **Before reading.** The entry chunk holds **245,616** bytes. The entry chunk and the
+      chunks it loads with hold 260,724 bytes. The HUD chunk holds 62,293 bytes. The bound
+      `ENTRY_CHUNK_LIMIT` is 260,000 and reads `index.js` alone.
+
 ## 1. The public surface widens, before any file moves
 
 The demo reaches five library members the entry point does not carry. Settle all five
 first, so the move is a move and not a move plus a redesign.
 
-- [ ] 1.1 Change `src/app/main.ts` to import `MapView` from `./create-map` in place of
+- [x] 1.1 Change `src/app/main.ts` to import `MapView` from `./create-map` in place of
       `View` from `../camera/view`. The two are structurally identical, so no other line
       changes; verify `pnpm exec tsc --noEmit` is clean
-- [ ] 1.2 Change `createFragmentWriter` in `src/app/url-view.ts` to take `MapView`, and
+- [x] 1.2 Change `createFragmentWriter` in `src/app/url-view.ts` to take `MapView`, and
       export `createFragmentWriter`, `FragmentWriter` and `FragmentWriterOptions` from
       `src/index.ts`
-- [ ] 1.2a Change `encodeView` and `decodeView` in `src/app/url-view.ts` to name `MapView`
+- [x] 1.2a Change `encodeView` and `decodeView` in `src/app/url-view.ts` to name `MapView`
       as well, importing it type-only from `./create-map` — `create-map.ts` does not import
       `url-view`, so there is no cycle. `decodeView` returns `View`, which `src/index.ts` does not export, so the
       built declaration references a name a host cannot import. The two types are
@@ -39,13 +51,13 @@ first, so the move is a move and not a move plus a redesign.
       so a check on it passes today, before the fix. Compiling
       `const v: MapView = decodeView(fragment)` is not a check either: it passes today,
       because TypeScript matches the two by shape
-- [ ] 1.3 Add `src/testing.ts`, which re-exports `galaxyMapGlobal`, `GalaxyMapGlobal` and
+- [x] 1.3 Add `src/testing.ts`, which re-exports `galaxyMapGlobal`, `GalaxyMapGlobal` and
       `TestView` from `src/render/global.ts`, and add `./testing` to `exports` and a third
       entry to the library build pointing at it.
       Add the comment that says it is not the supported surface and why: `context.ts`
       writes the renderer string there, and that write is what makes a software fallback
       fail the browser suite
-- [ ] 1.3a Update `src/index.test.ts`, which task 1.2 breaks. Task 1.3 does not: that
+- [x] 1.3a Update `src/index.test.ts`, which task 1.2 breaks. Task 1.3 does not: that
       file imports `./index` and reads `./index.ts` alone, and task 1.3 adds a separate
       `src/testing.ts` it never looks at. That file is the
       guard that holds the barrel to the export list this capability states, and it asserts
@@ -58,7 +70,7 @@ first, so the move is a move and not a move plus a redesign.
       `make-nebulae-optional` task 4.4a-i owns adding `NebulaSource` to `PUBLIC_TYPES` in
       this same file and lands first, so **check it is there rather than adding it twice**,
       the same split as task 5.4c
-- [ ] 1.4 Verify the `./testing` entry point **both** ways, which is the scenario "The
+- [x] 1.4 Verify the `./testing` entry point **both** ways, which is the scenario "The
       testing entry point carries the probe object". The negative half: the main entry point
       does not re-export `galaxyMapGlobal`, by a test that imports it from the built main
       declaration and expects the compile to fail. The positive half: the built `./testing`
@@ -68,19 +80,33 @@ first, so the move is a move and not a move plus a redesign.
       `galaxyMapGlobal` **with a stub window** — the function takes
       `scope: Window = window`, so it accepts one — and reads back `renderer`, `ready` and
       `error`. Write that call, not only the type check
-- [ ] 1.5 `git mv src/app/demo-systems.test.ts tests/demo-systems.test.ts` and fix its
+- [x] 1.5 `git mv src/app/demo-systems.test.ts tests/demo-systems.test.ts` and fix its
       **seven** distinct relative paths, over ten import lines: five `demo-data/*.json`
       files and two `scene-data/` modules, one of which is imported on three lines and the
       other on two; verify it passes. Its two `scene-data/` reaches then need no
       export, because `tests/` reaches package source by relative path
-- [ ] 1.6 Run `pnpm test` and `pnpm lint`; verify both pass with no file moved yet. This
+- [x] 1.6 Run `pnpm test` and `pnpm lint`; verify both pass with no file moved yet. This
       is the checkpoint that separates the surface change from the restructure
+
+      Clean: `pnpm lint` no output, `pnpm exec tsc --noEmit` no output, `pnpm test`
+      82 files and **1196** tests passed. The three added tests are the fragment writer
+      compile, the `./testing` entry point and the `url-view` declaration reading. The
+      entry chunk reads **245,833** bytes after group 1, 217 bytes over the before
+      reading, which is the fragment writer entering the chunk.
 
 ## 2. The workspace, before any file moves
 
-- [ ] 2.1 Change `pnpm-workspace.yaml` to name `packages/*` and `apps/*`, keeping
+- [x] 2.1 Change `pnpm-workspace.yaml` to name `packages/*` and `apps/*`, keeping
       `minimumReleaseAge: 10080` and its comment block unchanged
-- [ ] 2.2a Name which root scripts delegate and which stay, because "every script
+
+      The file also gains a `minimumReleaseAgeExclude` naming
+      `@elite-dangerous-almanac/core`, which the maintainer asked for during this change.
+      The hold guards against a hijacked **third-party** maintainer account, and that
+      package is the project's own, so the week of distance buys nothing and costs a week
+      on every fix. `AGENTS.md` asks for the reason to sit in the change proposal rather
+      than for the hold to be lowered for everything, and proposal.md now carries it. The
+      hold stays at 10080 minutes for every other package.
+- [x] 2.2a Name which root scripts delegate and which stay, because "every script
       delegates" is wrong for four of the nine. The five that delegate with `pnpm --filter`
       are `dev`, `build`, `build:demo-site`, `build:demo-data` and `preview`. The four that
       **stay at the root** are `test`, `test:e2e`, `lint` and `format`: `tests/` and `e2e/`
@@ -89,7 +115,12 @@ first, so the move is a move and not a move plus a redesign.
       add their own — and the 8 fixture tests, and `test:e2e` runs `node scripts/e2e.mjs` at the root. This matches
       design.md's "One root Vitest run, one root tsconfig, one root ESLint" and task 4.8's
       `vitest.config.ts` include list
-- [ ] 2.2 Make the root `package.json` private, keep `packageManager`, and delegate **the
+
+      Decided as written. Five delegate: `dev`, `build`, `build:demo-site`,
+      `build:demo-data` and `preview`. Four stay at the root: `test`, `test:e2e`, `lint`
+      and `format`. Two more are new and stay at the root: `test:package` (task 7.1) and
+      `audit` (task 9.6).
+- [x] 2.2 Make the root `package.json` private, keep `packageManager`, and delegate **the
       five scripts task 2.2a names** with `pnpm --filter`. The other four stay at the root,
       for the reason 2.2a gives: `tests/` and `e2e/` belong to no package. Keep the names `dev`, `build`, `build:demo-site`,
       `build:demo-data`, `preview`, `test`, `test:e2e`, `lint` and `format`, because the
@@ -103,25 +134,31 @@ first, so the move is a move and not a move plus a redesign.
       rather than pick the next one. If a flag does not cross, set the option in the
       demo's `vite.config.ts` and repoint the three callers. Task 10.3 calls `.vscode/`
       clean, which is true of its paths but not of this
-- [ ] 2.3 Add `packages/galaxy-map/package.json`, named
+- [x] 2.3 Add `packages/galaxy-map/package.json`, named
       `@elite-dangerous-almanac/galaxy-map` at version `0.5.0`, with `type`, `exports`
       carrying all three entry points, `types`, `files`, `sideEffects`, `publishConfig`,
       `description`, `author`, `license`, `repository`, `homepage`, `bugs` and `keywords`
-- [ ] 2.4 Put `gl-matrix` and `@elite-dangerous-almanac/core` in the library's
+- [x] 2.4 Put `gl-matrix` and `@elite-dangerous-almanac/core` in the library's
       `dependencies` and the **two** `@fontsource` packages — `chakra-petch` and
       `ibm-plex-mono` — in its `devDependencies`. They are two packages, and
       `src/hud/styles.ts` imports three `.woff2` files from them. Verify by test that
       `dependencies` holds those two and nothing else
-- [ ] 2.4a Decide and record where the tooling `devDependencies` live — `vite`, `vitest`,
+- [x] 2.4a Decide and record where the tooling `devDependencies` live — `vite`, `vitest`,
       `typescript`, `eslint`, `prettier` and `@playwright/test`. They can stay in the root
       manifest, because pnpm puts the workspace root's `node_modules/.bin` on the PATH of a
       package script, and the library package's own `build` script calls `vite`. Task 2.4
       settles only the four run-time packages, so say the decision was made rather than
       leaving it to whoever runs the install
-- [ ] 2.5 Add `apps/demo/package.json`, private, named
+
+      **Decided: the tooling stays in the root manifest.** `vite`, `vitest`,
+      `typescript`, `eslint`, `prettier`, `@playwright/test` and the ESLint plugins are
+      root `devDependencies`. pnpm puts the workspace root's `node_modules/.bin` on the
+      PATH of a package script, so the library package's `build` calls `vite` and `tsc`
+      with no manifest of its own for them. One copy, one version, one place to move it.
+- [x] 2.5 Add `apps/demo/package.json`, private, named
       `@elite-dangerous-almanac/galaxy-map-demo`, depending on the library with
       `workspace:*`, and holding the `build:demo-data` script
-- [ ] 2.5a Write the tests for the three package-identity scenarios this change adds. In
+- [x] 2.5a Write the tests for the three package-identity scenarios this change adds. In
       `tests/` (beside the other manifest tests): one reads
       `packages/galaxy-map/package.json` and asserts the published identity fields of task
       2.3, and one asserts the demo's manifest depends on the library at `workspace:*` and
@@ -132,10 +169,17 @@ first, so the move is a move and not a move plus a redesign.
       `tests/main-bundle.test.ts` at lines 488-510. Task 5.4c puts the three names into
       `PUBLIC_TYPES` there, which is what makes that compile cover them. Each scenario of
       the delta gets a test, which is what `rules.tasks` in `openspec/config.yaml` asks for
-- [ ] 2.6 Run `pnpm install` and commit the regenerated `pnpm-lock.yaml`; verify no
+- [x] 2.6 Run `pnpm install` and commit the regenerated `pnpm-lock.yaml`; verify no
       dependency version moved, by comparing the resolved versions with the ones before
       the change. A version that moved means the 7-day hold resolved something new, and
       that is a separate decision
+
+      `pnpm install` reported "Already up to date" over 3 workspace projects. The
+      lockfile diff is 22 added and 13 removed lines, all of them in `importers`: the
+      four run-time packages move off the root importer and on to `packages/galaxy-map`,
+      split between `dependencies` and `devDependencies`, and `apps/demo` gains the
+      `workspace:*` link. **No resolved version moved**: the sorted list of every
+      `resolution: {integrity: ...}` line is identical before and after.
 
 ## 3. The move, with no content change
 

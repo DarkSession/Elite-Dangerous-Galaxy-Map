@@ -6,7 +6,11 @@
 // restricted the browsable space passes a decoded view to `setView`, which applies the
 // bounds as every other view change does.
 import { createDefaultView, normaliseView } from '../camera/view';
-import type { View } from '../camera/view';
+// `MapView` and not `View`, because the entry point exports `MapView` and not `View`. A
+// signature that named `View` would put a name a host cannot import into the built
+// declaration. The two are structurally identical. `create-map.ts` does not import this
+// module, so the type import makes no cycle.
+import type { MapView } from './create-map';
 
 /** The shortest time between two writes to the fragment, in milliseconds. */
 export const FRAGMENT_THROTTLE_MS = 500;
@@ -29,7 +33,7 @@ function readNumber(value: string | undefined, fallback: number): number {
  * gives a boolean, so a page that does not use the grid writes the four view fields
  * alone and no reader of the old format breaks.
  */
-export function encodeView(view: View, grid?: boolean): string {
+export function encodeView(view: MapView, grid?: boolean): string {
   const cursor = view.cursor.map(format).join(',');
   const fields = `c=${cursor}&d=${format(view.distance)}&p=${format(view.pitch)}&y=${format(view.yaw)}`;
   if (typeof grid !== 'boolean') return fields;
@@ -58,7 +62,7 @@ export function decodeGrid(fragment: string): boolean | null {
  *
  * It applies no map's browsable bounds, because it holds no map.
  */
-export function decodeView(fragment: string): View {
+export function decodeView(fragment: string): MapView {
   const view = createDefaultView();
   const text = fragment.startsWith('#') ? fragment.slice(1) : fragment;
   if (text.length === 0) return view;
@@ -113,7 +117,7 @@ export interface FragmentWriterOptions {
  * fragment at most once every 500 ms.
  */
 export function createFragmentWriter(
-  view: View,
+  view: MapView,
   options: FragmentWriterOptions,
 ): FragmentWriter {
   const write = options.write;

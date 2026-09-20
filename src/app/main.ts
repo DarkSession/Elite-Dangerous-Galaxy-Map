@@ -1,10 +1,9 @@
 // The demo page: build the map, own the URL fragment, and expose the test hooks.
-import type { View } from '../camera/view';
 import { galaxyMapGlobal } from '../render/global';
 import type { CategoryInput, SystemRecordInput } from '../scene-data/real-systems';
 import type { LineInput, SphereInput } from '../scene-data/shapes';
 import { createGalaxyMap } from './create-map';
-import type { DatasetContent, DatasetEntry, GalaxyMap } from './create-map';
+import type { DatasetContent, DatasetEntry, GalaxyMap, MapView } from './create-map';
 import { fetchMultifactionRecords, MULTIFACTION_CATEGORIES } from './multifaction';
 import { nebulae } from '../nebulae';
 import { createFragmentWriter, decodeGrid, decodeView } from './url-view';
@@ -297,7 +296,7 @@ function start(target: HTMLCanvasElement): void {
   map.setView(decodeView(window.location.hash));
   // The writer formats the object it was given at every write, so the page keeps this
   // one current from the handle's own view changes.
-  const pageView: View = map.getView();
+  const pageView: MapView = map.getView();
   // The writer reads the grid switch at each write, because a write may come 500 ms
   // after the move that asked for it.
   const writer = createFragmentWriter(pageView, {

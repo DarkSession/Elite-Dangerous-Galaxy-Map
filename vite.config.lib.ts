@@ -36,10 +36,12 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     lib: {
-      // Two entry points. The main one is the map; the second one is the nebula source,
-      // which a host imports at `<package>/nebulae` to turn the nebulae on. A host that
-      // imports the main one alone reaches no nebula module, so its build carries no
-      // nebula code, no record file and no volume art.
+      // Three entry points. The main one is the map; the second one is the nebula
+      // source, which a host imports at `<package>/nebulae` to turn the nebulae on. A
+      // host that imports the main one alone reaches no nebula module, so its build
+      // carries no nebula code, no record file and no volume art. The third one is
+      // `<package>/testing`, the probe object the browser tests read, which is not the
+      // supported surface.
       //
       // The keys name the emitted files, and `fileName` is left out on purpose: Vite's
       // `resolveLibFilename` answers `${fileName}.js` for a string whatever the entry
@@ -47,6 +49,7 @@ export default defineConfig({
       entry: {
         index: fileURLToPath(new URL('src/index.ts', import.meta.url)),
         nebulae: fileURLToPath(new URL('src/nebulae/index.ts', import.meta.url)),
+        testing: fileURLToPath(new URL('src/testing.ts', import.meta.url)),
       },
       // One format, so code splitting stays on: the HUD stays a chunk a host downloads
       // only when it asks for the HUD, and each worker stays a file of its own.

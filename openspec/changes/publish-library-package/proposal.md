@@ -46,6 +46,15 @@ split needs to be a fact of the layout rather than a set of rules over one tree.
   tarball's digest, publishes through **npm Trusted Publishing with OIDC and provenance**,
   then creates the tag and the GitHub release. It is the same shape as the workflow
   `@elite-dangerous-almanac/core` already uses.
+- **`@elite-dangerous-almanac/core` leaves the 7-day hold.** `pnpm-workspace.yaml` gains
+  a `minimumReleaseAgeExclude` naming it, which the maintainer asked for. The hold is a
+  measure against a hijacked **third-party** maintainer account. That package is this
+  project's own, released from the same organisation this package publishes to, so the
+  week of distance buys nothing and costs a week on every fix. `AGENTS.md` asks for the
+  reason to be in the change proposal rather than for the hold to be lowered for
+  everything, and this is that reason. The hold stays at 10080 minutes for every other
+  package.
+
 - **The publish workflow pins an npm client version**, which is a registry fetch outside
   the 7-day pnpm hold. Trusted Publishing with OIDC needs a client new enough to send the
   token, so the hold cannot apply to it. It is pinned by exact version with the reason in a

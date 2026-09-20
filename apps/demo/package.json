@@ -1,0 +1,16 @@
+{
+  "name": "@elite-dangerous-almanac/galaxy-map-demo",
+  "version": "0.6.0",
+  "private": true,
+  "description": "The demo site of the galaxy map, which the repository publishes to GitHub Pages.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:demo-site": "vite build",
+    "build:demo-data": "node scripts/build-demo-systems.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@elite-dangerous-almanac/galaxy-map": "workspace:*"
+  }
+}

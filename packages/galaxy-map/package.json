@@ -1,0 +1,63 @@
+{
+  "name": "@elite-dangerous-almanac/galaxy-map",
+  "version": "0.6.0",
+  "description": "An interactive 3D map of the Elite Dangerous galaxy, drawn in the browser with WebGL2.",
+  "author": "Dark Session",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map.git",
+    "directory": "packages/galaxy-map"
+  },
+  "homepage": "https://darksession.github.io/Elite-Dangerous-Galaxy-Map/",
+  "bugs": {
+    "url": "https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map/issues"
+  },
+  "keywords": [
+    "elite-dangerous",
+    "galaxy-map",
+    "webgl",
+    "webgl2",
+    "3d",
+    "starmap",
+    "visualisation"
+  ],
+  "type": "module",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./nebulae": {
+      "types": "./dist/types/nebulae/index.d.ts",
+      "import": "./dist/nebulae.js"
+    },
+    "./testing": {
+      "types": "./dist/types/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "cp ../../LICENSE.md LICENSE.md",
+    "build": "tsc --noEmit -p ../../tsconfig.json && vite build --config vite.config.ts && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@elite-dangerous-almanac/core": "0.2.8",
+    "gl-matrix": "^3.4.4"
+  },
+  "devDependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0"
+  }
+}
