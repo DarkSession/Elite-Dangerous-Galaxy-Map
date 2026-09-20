@@ -37,6 +37,7 @@ import {
 } from './regions';
 import { regionLinesTransferables, regionResponseTransferables } from './messages';
 import type { CoarseRegionGrid, RegionLines } from './types';
+import { TIMED_TEST } from '../../tests/timed';
 
 /** The departure bound the spec states, in light years. It is one cell. */
 const DEPARTURE_LIMIT = REGION_DEPARTURE_LY;
@@ -1129,7 +1130,7 @@ describe('the region flow field', () => {
     expect(transfers).toContain(data.grid.ids.buffer);
   }, 240000);
 
-  test('the field costs the build nothing measurable', () => {
+  test('the field costs the build nothing measurable', TIMED_TEST, () => {
     const started = performance.now();
     const field = buildRegionFlow(coarse);
     const spent = performance.now() - started;

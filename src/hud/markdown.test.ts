@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { parseMarkdown } from './markdown';
 import type { MdBlock, MdInline } from './markdown';
+import { TIMED_TEST } from '../../tests/timed';
 
 /** The text of a run of parts, with a hard line break read as a newline. */
 function textOf(parts: readonly MdInline[]): string {
@@ -196,7 +197,7 @@ function timeParse(text: string): number {
 }
 
 describe('the time bound', () => {
-  test('a long description parses inside the bound', () => {
+  test('a long description parses inside the bound', TIMED_TEST, () => {
     const text = textOfLength(50_000);
     expect(text).toHaveLength(50_000);
     expect(timeParse(text)).toBeLessThanOrEqual(50);
@@ -218,7 +219,7 @@ describe('the time bound', () => {
   });
 
   // The bound fails a parser whose cost grows with the square of the length.
-  test('the parse cost follows the length', () => {
+  test('the parse cost follows the length', TIMED_TEST, () => {
     const short = textOfLength(10_000);
     const long = short.repeat(8);
     // One parse of each first, so neither timing pays for the first run of the code.
