@@ -972,6 +972,37 @@ describe('the fragment march', () => {
   // The stored volume runs opposite to object-space y.
   test('samples at (u, 1 - v, w)', () => {
     expect(nebulaFragmentSource).toContain('uvw.y = 1.0 - uvw.y;');
+    expect(nebulaFragmentSource).toContain('sampleVolume(uDensity, uvw).r;');
+    // BC1 carries no alpha and the fallback uploads 255. The march reads `.rgb`, so
+    // the block path and the decoding path agree.
+    expect(nebulaFragmentSource).toContain('sampleVolume(uColour, uvw).rgb;');
+  });
+
+  // The two volumes are slice arrays, because WebGL exposes no compressed format for
+  // `TEXTURE_3D`. GLSL ES 3.00 gives `sampler2DArray` no default precision in the
+  // fragment language, so the shader does not compile without the precision line.
+  test('reads the two volumes as arrays and declares their precision', () => {
+    expect(nebulaFragmentSource).toContain('precision highp sampler2DArray;');
+    expect(nebulaFragmentSource).toContain('uniform sampler2DArray uDensity;');
+    expect(nebulaFragmentSource).toContain('uniform sampler2DArray uColour;');
+    expect(nebulaFragmentSource).not.toContain('sampler3D');
+  });
+
+  // An array filters inside a layer and not across layers, so the march reads two
+  // layers and mixes them itself, with the half-texel offset and the clamp a 3D
+  // texture's LINEAR filter gives. The layer count comes from the texture.
+  test('filters the third axis itself', () => {
+    expect(nebulaFragmentSource).toContain(
+      'float layers = float(textureSize(volume, 0).z);',
+    );
+    expect(nebulaFragmentSource).toContain(
+      'float t = clamp(uvw.z * layers - 0.5, 0.0, layers - 1.0);',
+    );
+    expect(nebulaFragmentSource).toContain('float low = floor(t);');
+    expect(nebulaFragmentSource).toContain(
+      'float high = min(low + 1.0, layers - 1.0);',
+    );
+    expect(nebulaFragmentSource).toContain('t - low);');
   });
 
   // The emission takes the transmittance after the step, as the integral asks.

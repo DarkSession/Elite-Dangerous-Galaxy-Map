@@ -64,7 +64,7 @@ which permit non-commercial use only:
 index, three rotation angles and, for 190 of them, a name. `src/render/nebula-art/` holds
 the art those records draw, as 33 volume assets. Each asset is a pair of files: a
 one-channel density volume of 32, 48 or 64 texels a side, and a three-channel colour
-volume of 8, 16 or 32 texels a side, both in `.dds` block form. `src/render/nebula-art/nebula-volumes.json` indexes the pairs and
+volume of 8, 16 or 32 texels a side, both as KTX2 arrays of BC4 and BC1 blocks. `src/render/nebula-art/nebula-volumes.json` indexes the pairs and
 `src/render/nebula-art/transfer.bin` holds one 256-entry transfer function per asset.
 
 The nebulae are of the game's galaxy, so the Frontier Developments terms above apply to

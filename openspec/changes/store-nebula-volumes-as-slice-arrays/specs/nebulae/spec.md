@@ -94,7 +94,7 @@ the density and four for the colour.
 
 |                                  | bound   | the committed set |
 | -------------------------------- | ------- | ----------------- |
-| over the wire, brotli            | 1.3 MiB | 1.10 MiB          |
+| over the wire, brotli            | 1.3 MiB | 1.11 MiB          |
 | on disk, as served               | 3.0 MiB | 2.78 MiB          |
 | in video memory, blocks uploaded | 3.0 MiB | 2.76 MiB          |
 | in video memory, decoded         | 6.5 MiB | 6.03 MiB          |
@@ -229,26 +229,28 @@ most expensive, then 60. At 120 the camera is inside a record of radius 200, far
 that the box fills the frame and far enough back that a ray crosses most of it. A camera
 deeper in is cheaper, because the segment from the eye to the far face is shorter.
 
-`e2e/nebula-cost.spec.ts` already reads the pass alone at 120 and at 260 light years, under
-the same camera, viewport, pass switches and occlusion, and records **0.655 ms** and
-**0.614 ms**. Those two are **means of one run** of 120 frames, which is what `measureFrames`
-returns, and not medians of five. They are indicative and they are not the baseline.
+`e2e/nebula-cost.spec.ts` read the pass alone at 120 and at 260 light years before this
+change and recorded **0.655 ms** and **0.614 ms**. Those two are **means of one run** of 120
+frames, which is what `measureFrames` returns, and not medians of five. They are indicative
+and they are not the baseline.
 
-**The implementation SHALL take all three baselines under the rule above** — median of five
-runs of 120 frames, at 60, 120 and 260 light years — before it changes the shader, and SHALL
-write the three figures and their 1.5 bounds into this requirement. Until then the bounds
-stand at **0.98 ms** at 120 light years and **0.92 ms** at 260, which are 1.5 times the
-indicative pair, and 60 light years has none.
+**The baselines are the three readings taken under the rule above**, on the tree that still
+drew from the 3D textures: **0.523 ms** at 60 light years, **0.512 ms** at 120 and
+**0.485 ms** at 260. The bounds are 1.5 times those three, rounded down to two places:
+**0.78 ms** at 60 light years, **0.76 ms** at 120 and **0.72 ms** at 260.
+
+Both indicative figures moved by more than a tenth against the baseline of the same camera,
+so all three baselines and all three bounds are stated from the readings in hand.
 
 The whole frame at the near view SHALL stay inside the 16.7 ms budget `far-view-rendering`
-states; it reads 1.25 ms today.
+states; it reads 1.17 ms today.
 
 The bound is 1.5 and not 2 because only the two volume fetches double: the transfer fetch,
 the recurrence, the emission and the early exit are unchanged. A pass that measured worse
 than 1.5 would mean the two extra fetches cost more than the rest of the step put together,
 which is a reason to keep the 3D textures and their decode.
 
-The 1.5 is measurable against the noise. Five runs at one camera spread by about 7 percent of
+The 1.5 is measurable against the noise. Five runs at one camera spread by 5 to 15 percent of
 the reading, and the gap between 1.0 and 1.5 is 50 percent, so a run cannot cross the bound by
 drift alone.
 
@@ -284,7 +286,6 @@ baseline; the absolute figure is only what the test asserts on the card that rec
 
 - **WHEN** the browser test measures the nebula pass alone at 60, 120 and 260 light years
   from Barnard's Loop, under the conditions above
-- **THEN** the median of five runs is at most 0.98 ms at 120 light years and at most 0.92 ms
-  at 260, each within 1.5 times its recorded baseline, the reading at 60 light years is
-  within 1.5 times the baseline the implementation records for it, and the whole frame at the
-  near view, every pass on, is inside 16.7 ms
+- **THEN** the median of five runs is at most 0.78 ms at 60 light years, at most 0.76 ms at
+  120 and at most 0.72 ms at 260, which are 1.5 times the recorded baselines, and the whole
+  frame at the near view, every pass on, is inside 16.7 ms

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync } from 'node:zlib';
@@ -9,16 +10,37 @@ import {
   decodeBC4,
   nebulaAssetUrl,
   nebulaAssetUrlCount,
-  NEBULA_DDS_HEADER_BYTES,
+  NEBULA_KTX2_BC1,
+  NEBULA_KTX2_BC4,
+  NEBULA_KTX2_HEADER_BYTES,
   NEBULA_TRANSFER_BYTES,
   NEBULA_TRANSFER_ENTRIES,
 } from './nebula-volumes';
 import type { NebulaVolumeEntry, NebulaVolumeSet } from './nebula-volumes';
+import {
+  VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+  VK_FORMAT_BC4_UNORM_BLOCK,
+  writeNebulaKtx2,
+} from '../../scripts/ktx2.mjs';
 
 const artDir = fileURLToPath(new URL('./nebula-art/', import.meta.url));
 const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) as {
   assets: NebulaVolumeEntry[];
 };
+
+/** The digests of the committed art, which ship in no build. */
+const fixture = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../tests/fixtures/nebulae.json', import.meta.url)),
+    'utf8',
+  ),
+) as { volume_blocks_sha256: Record<string, string> };
+
+/** The two volumes of one asset, and the `vkFormat` each one takes. */
+const KINDS = [
+  { kind: 'density', format: NEBULA_KTX2_BC4 },
+  { kind: 'colour', format: NEBULA_KTX2_BC1 },
+] as const;
 
 /** One call the upload made on the context. */
 interface Call {
@@ -31,7 +53,10 @@ interface Call {
  * A context that answers every call. `textureLimit` makes `createTexture` give `null`
  * from that call on, which is what a context out of memory does.
  */
-function fakeContext(textureLimit = Number.POSITIVE_INFINITY): {
+function fakeContext(
+  textureLimit = Number.POSITIVE_INFINITY,
+  blockFormats = false,
+): {
   gl: WebGL2RenderingContext;
   of(name: string): Call[];
 } {
@@ -54,6 +79,16 @@ function fakeContext(textureLimit = Number.POSITIVE_INFINITY): {
         if (key === 'createTexture') {
           textures += 1;
           return textures > textureLimit ? null : { name: key, at: textures };
+        }
+        if (key === 'getExtension') {
+          if (!blockFormats) return null;
+          if (args[0] === 'EXT_texture_compression_rgtc') {
+            return { COMPRESSED_RED_RGTC1_EXT: 0x8dbb };
+          }
+          if (args[0] === 'WEBGL_compressed_texture_s3tc') {
+            return { COMPRESSED_RGB_S3TC_DXT1_EXT: 0x83f0 };
+          }
+          return null;
         }
         return key.startsWith('create') ? { name: key } : null;
       };
@@ -164,19 +199,22 @@ describe('the asset URLs', () => {
     expect(nebulaAssetUrlCount()).toBe(68);
     expect(nebulaAssetUrlCount()).toBe(index.assets.length * 2 + 2);
     for (const asset of index.assets) {
-      expect(nebulaAssetUrl(`${asset.name}-density.dds`)).toContain(asset.name);
-      expect(nebulaAssetUrl(`${asset.name}-colour.dds`)).toContain(asset.name);
+      expect(nebulaAssetUrl(`${asset.name}-density.ktx2`)).toContain(asset.name);
+      expect(nebulaAssetUrl(`${asset.name}-colour.ktx2`)).toContain(asset.name);
     }
     expect(nebulaAssetUrl('transfer.bin')).toContain('transfer');
     expect(nebulaAssetUrl('nebula-volumes.json')).toContain('nebula-volumes');
   });
 
   test('refuse a file the directory does not hold', () => {
-    expect(() => nebulaAssetUrl('no-such-asset-density.dds')).toThrow();
+    expect(() => nebulaAssetUrl('no-such-asset-density.ktx2')).toThrow();
   });
 });
 
 describe('the upload', () => {
+  /** How many bytes of blocks a volume of this side holds. */
+  const blockBytes = (side: number): number => (side / 4) * (side / 4) * side * 8;
+
   /** A set of one asset whose two volumes are different sizes. */
   function oneAsset(densitySide: number, colourSide: number): NebulaVolumeSet {
     return {
@@ -185,8 +223,8 @@ describe('the upload', () => {
           name: 'one',
           densitySide,
           colourSide,
-          density: new Uint8Array(densitySide ** 3),
-          colour: new Uint8Array(colourSide ** 3 * 4),
+          density: new Uint8Array(blockBytes(densitySide)),
+          colour: new Uint8Array(blockBytes(colourSide)),
           transfer: new Float32Array(NEBULA_TRANSFER_ENTRIES * 4),
         },
       ],
@@ -234,18 +272,73 @@ describe('the upload', () => {
     ).toEqual([1, 2, 3, 4]);
   });
 
-  // The march walks out of the box at both ends of every axis.
-  test('clamps every axis to the edge', () => {
+  // The march walks out of the box at both ends of every axis. The layer axis carries
+  // no wrap mode, because the shader picks the layer itself and clamps it itself.
+  test('clamps the two filtered axes to the edge', () => {
     const context = fakeContext();
     const gl = context.gl;
     createNebulaVolumeTextures(gl, oneAsset(8, 4));
     const wraps = context
       .of('texParameteri')
-      .filter((call) => call.args[0] === gl.TEXTURE_3D)
+      .filter((call) => call.args[0] === gl.TEXTURE_2D_ARRAY)
       .filter((call) => call.args[2] === gl.CLAMP_TO_EDGE)
       .map((call) => call.args[1]);
-    expect(new Set(wraps)).toEqual(
-      new Set([gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]),
+    expect(new Set(wraps)).toEqual(new Set([gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]));
+  });
+
+  // Both paths take the array target, so the march reads one sampler type and the
+  // renderer compiles one program.
+  test('uploads both volumes to a 2D array on both paths', () => {
+    for (const blocks of [false, true]) {
+      const context = fakeContext(Number.POSITIVE_INFINITY, blocks);
+      const gl = context.gl;
+      createNebulaVolumeTextures(gl, oneAsset(8, 4));
+      const targets = context.of('texStorage3D').map((call) => call.args[0]);
+      expect(targets, `blocks ${String(blocks)}`).toEqual([
+        gl.TEXTURE_2D_ARRAY,
+        gl.TEXTURE_2D_ARRAY,
+      ]);
+    }
+  });
+
+  // The fast path: both extensions are there, so the blocks reach the card unchanged
+  // and the load does no decode at all.
+  test('uploads the blocks with no decode where both extensions are there', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true);
+    createNebulaVolumeTextures(context.gl, oneAsset(8, 4));
+    const compressed = context.of('compressedTexSubImage3D');
+    expect(compressed).toHaveLength(2);
+    // All layers in one call, and the format the storage took.
+    expect(compressed[0]?.args.slice(5, 9)).toEqual([8, 8, 8, 0x8dbb]);
+    expect(compressed[1]?.args.slice(5, 9)).toEqual([4, 4, 4, 0x83f0]);
+    expect(context.of('texSubImage3D')).toHaveLength(0);
+  });
+
+  // The fallback: one extension or neither, so both volumes decode and upload plain.
+  test('decodes and uploads plain where an extension is missing', () => {
+    const context = fakeContext();
+    const gl = context.gl;
+    createNebulaVolumeTextures(gl, oneAsset(8, 4));
+    expect(context.of('compressedTexSubImage3D')).toHaveLength(0);
+    const plain = context.of('texSubImage3D');
+    expect(plain).toHaveLength(2);
+    expect(plain[0]?.args[8]).toBe(gl.RED);
+    expect(plain[1]?.args[8]).toBe(gl.RGBA);
+    const storage = context.of('texStorage3D').map((call) => call.args[2]);
+    expect(storage).toEqual([gl.R8, gl.RGBA8]);
+  });
+
+  // A side that is not a multiple of 4 cannot be a block texture at all.
+  test('refuses a side the blocks cannot cover', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true);
+    const set = oneAsset(8, 4);
+    const odd = {
+      assets: [
+        { ...(set.assets[0] as NebulaVolumeSet['assets'][number]), colourSide: 6 },
+      ],
+    };
+    expect(() => createNebulaVolumeTextures(context.gl, odd)).toThrow(
+      /holds no blocks/,
     );
   });
 });
@@ -253,15 +346,20 @@ describe('the upload', () => {
 describe('the committed set', () => {
   const files = [
     ...index.assets.flatMap((asset) => [
-      `${asset.name}-density.dds`,
-      `${asset.name}-colour.dds`,
+      `${asset.name}-density.ktx2`,
+      `${asset.name}-colour.ktx2`,
     ]),
     'transfer.bin',
     'nebula-volumes.json',
   ];
 
-  // Three different totals, each with a bound of its own. The committed readings are
-  // 1.05, 2.77 and 6.03 MiB.
+  // Four different totals, each with a bound of its own. The committed readings are
+  // 1.11, 2.78, 2.76 and 6.03 MiB.
+  //
+  // The two video-memory figures differ because the block path holds half a byte a
+  // texel where the decoding path holds one byte for the density and four for the
+  // colour. Both are read, because a context that carries fewer than both extensions
+  // still pays the second one.
   //
   // The test takes its own timeout, because it brotli-compresses the whole art set at
   // the default quality of 11. That reads 3.7 seconds on the development machine, which
@@ -278,19 +376,32 @@ describe('the committed set', () => {
       disk += bytes.byteLength;
       wire += brotliCompressSync(bytes).byteLength;
     }
-    // The density uploads as `R8` and the colour as `RGBA8`, plus one transfer table
-    // of 256 entries of four `float32` an asset.
-    let decoded = index.assets.length * NEBULA_TRANSFER_BYTES;
+    // The transfer tables sit in video memory on both paths: one table of 256 entries
+    // of four `float32` an asset.
+    const tables = index.assets.length * NEBULA_TRANSFER_BYTES;
+    // The block path holds what the files hold, less their headers.
+    let blocks = tables;
+    for (const asset of index.assets) {
+      for (const { kind } of KINDS) {
+        blocks +=
+          readFileSync(`${artDir}${asset.name}-${kind}.ktx2`).byteLength -
+          NEBULA_KTX2_HEADER_BYTES;
+      }
+    }
+    // The decoding path uploads the density as `R8` and the colour as `RGBA8`.
+    let decoded = tables;
     for (const asset of index.assets) {
       decoded += asset.density.size ** 3 + asset.colour.size ** 3 * 4;
     }
     console.log('the volume set', {
       wire: wire / MIB,
       disk: disk / MIB,
+      blocks: blocks / MIB,
       decoded: decoded / MIB,
     });
     expect(wire).toBeLessThanOrEqual(1.3 * MIB);
     expect(disk).toBeLessThanOrEqual(3.0 * MIB);
+    expect(blocks).toBeLessThanOrEqual(3.0 * MIB);
     expect(decoded).toBeLessThanOrEqual(6.5 * MIB);
   }, 120000);
 
@@ -301,27 +412,59 @@ describe('the committed set', () => {
     let disk = 0;
     for (const file of files) disk += readFileSync(`${artDir}${file}`).byteLength;
     expect(files).toHaveLength(68);
-    expect(disk).toBe(2_914_225);
+    expect(disk).toBe(2_918_185);
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(
         fileURLToPath(new URL(`../../${doc}`, import.meta.url)),
         'utf8',
       );
-      expect(text, `${doc} states another total`).toContain('2,914,225');
+      expect(text, `${doc} states another total`).toContain('2,918,185');
     }
   });
 
-  // Every `.dds` is a DX10 file whose payload is 8 bytes a block of 4 by 4 by 1 texels.
-  test('holds a DX10 .dds of the size its side implies', () => {
+  // The spec's scenario **Every shipped file holds the shape the spec fixes**. The
+  // reader takes one shape and one only, and this says every committed file is that
+  // shape. The 208-byte header is what fixes the on-disk total.
+  test('holds a KTX2 array of the shape the spec fixes', () => {
     for (const asset of index.assets) {
-      for (const [kind, side] of [
-        ['density', asset.density.size],
-        ['colour', asset.colour.size],
-      ] as const) {
-        const bytes = readFileSync(`${artDir}${asset.name}-${kind}.dds`);
-        expect(bytes.subarray(0, 4).toString('ascii')).toBe('DDS ');
-        expect(bytes.byteLength).toBe(
-          NEBULA_DDS_HEADER_BYTES + (side / 4) * (side / 4) * side * 8,
+      for (const { kind, format } of KINDS) {
+        const side = asset[kind].size;
+        const file = `${asset.name}-${kind}.ktx2`;
+        const bytes = readFileSync(`${artDir}${file}`);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        expect(view.getUint32(12, true), `${file} vkFormat`).toBe(format);
+        expect(view.getUint32(20, true), `${file} pixelWidth`).toBe(side);
+        expect(view.getUint32(24, true), `${file} pixelHeight`).toBe(side);
+        expect(view.getUint32(28, true), `${file} pixelDepth`).toBe(0);
+        expect(view.getUint32(32, true), `${file} layerCount`).toBe(side);
+        expect(view.getUint32(36, true), `${file} faceCount`).toBe(1);
+        expect(view.getUint32(40, true), `${file} levelCount`).toBe(1);
+        expect(view.getUint32(44, true), `${file} supercompression`).toBe(0);
+        // The one level starts right after the header and runs to the end of the file.
+        expect(Number(view.getBigUint64(80, true)), `${file} level offset`).toBe(
+          NEBULA_KTX2_HEADER_BYTES,
+        );
+        expect(bytes.byteLength, `${file} length`).toBe(
+          NEBULA_KTX2_HEADER_BYTES + (side / 4) * (side / 4) * side * 8,
+        );
+      }
+    }
+  });
+
+  // The spec's scenario **The blocks are the blocks that were packed**. A block payload
+  // has no container, so the digest recorded for the `.dds` file the art arrived in is
+  // the digest the `.ktx2` file carries. This is what makes the conversion provable.
+  test('holds the blocks that were packed', () => {
+    const wanted = fixture.volume_blocks_sha256;
+    expect(Object.keys(wanted)).toHaveLength(index.assets.length * 2);
+    for (const asset of index.assets) {
+      for (const { kind } of KINDS) {
+        const name = `${asset.name}-${kind}`;
+        const blocks = readFileSync(`${artDir}${name}.ktx2`).subarray(
+          NEBULA_KTX2_HEADER_BYTES,
+        );
+        expect(createHash('sha256').update(blocks).digest('hex'), name).toBe(
+          wanted[name],
         );
       }
     }
@@ -377,7 +520,8 @@ describe('a failed load', () => {
     await expect(loadNebulaVolumes()).rejects.toThrow(/transfer file holds/);
   });
 
-  test('refuses a volume file shorter than its side needs', async () => {
+  /** Answers the index, the transfer file and then one volume file of `volume`. */
+  function stubSet(volume: Uint8Array, density = 8, colour = 4): void {
     let call = 0;
     vi.stubGlobal(
       'fetch',
@@ -386,17 +530,48 @@ describe('a failed load', () => {
         if (call === 1) {
           return Promise.resolve(
             new Response(
-              '{"assets":[{"name":"barnards-loop","density":{"size":8},' +
-                '"colour":{"size":4}}]}',
+              `{"assets":[{"name":"barnards-loop","density":{"size":${density}},` +
+                `"colour":{"size":${colour}}}]}`,
             ),
           );
         }
         if (call === 2) {
           return Promise.resolve(new Response(new ArrayBuffer(NEBULA_TRANSFER_BYTES)));
         }
-        return Promise.resolve(new Response(new ArrayBuffer(16)));
+        return Promise.resolve(new Response(volume.slice().buffer));
       }),
     );
-    await expect(loadNebulaVolumes()).rejects.toThrow(/bytes, not the/);
+  }
+
+  test('refuses a volume file that is not a KTX2 file', async () => {
+    stubSet(new Uint8Array(512));
+    await expect(loadNebulaVolumes()).rejects.toThrow(/not a KTX2 file/);
+  });
+
+  // The spec's scenario **A file that disagrees with the index is refused**. The
+  // renderer takes every side from the index, so a file of another size would draw at
+  // the wrong scale rather than fail.
+  test('refuses a volume whose container disagrees with the index', async () => {
+    stubSet(
+      writeNebulaKtx2({
+        format: VK_FORMAT_BC4_UNORM_BLOCK,
+        side: 16,
+        blocks: new Uint8Array(16 * 4 * 4 * 8),
+      }),
+    );
+    await expect(loadNebulaVolumes()).rejects.toThrow(/not the 8 a side/);
+  });
+
+  // The density volume is BC4 and the colour volume BC1, and the index says which is
+  // which. A file of the other format would read the wrong channel count.
+  test('refuses a volume whose format is not the one its channel count needs', async () => {
+    stubSet(
+      writeNebulaKtx2({
+        format: VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+        side: 8,
+        blocks: new Uint8Array(8 * 2 * 2 * 8),
+      }),
+    );
+    await expect(loadNebulaVolumes()).rejects.toThrow(/channel count needs/);
   });
 });

@@ -2,7 +2,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { meanLuminanceBlock, meanLuminanceFrame, openMap, readRect } from './helpers';
+import {
+  meanLuminanceBlock,
+  meanLuminanceFrame,
+  openMap,
+  readRect,
+  removeHud,
+  settleNebulae,
+  startState,
+  waitForReady,
+} from './helpers';
 import { putVolumeDensity } from '../src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
@@ -243,7 +252,7 @@ test('the glow reads the nebulae', async ({ page }) => {
 test('the map starts when the nebula art never answers', async ({ page }) => {
   let asked = false;
   // The handler never fulfils, aborts or continues, so the request stays open.
-  await page.route('**/*-density-*.dds', () => {
+  await page.route('**/*-density-*.ktx2', () => {
     asked = true;
   });
 
@@ -416,7 +425,7 @@ test('a nebula behind the core dims', async ({ page }) => {
  * names them. Every one is hashed, so the pattern reads the stem and the suffix.
  */
 const NEBULA_FILES =
-  /(nebulae[\w-]*\.json|nebula-volumes[\w-]*\.json|transfer[\w-]*\.bin|-(density|colour)[\w-]*\.dds)$/i;
+  /(nebulae[\w-]*\.json|nebula-volumes[\w-]*\.json|transfer[\w-]*\.bin|-(density|colour)[\w-]*\.ktx2)$/i;
 
 /** Collects the URL of every request the page makes for a nebula file. */
 function watchNebulaFiles(page: Page): string[] {
@@ -541,14 +550,17 @@ test('the watcher reports the records, the index, the transfer file and the volu
   expect(names.filter((name) => /^transfer[\w-]*\.bin$/.test(name)).length).toBe(1);
   // The loader reads the index and fetches the pair of every asset it names, so the
   // count is the 33 of the index and not the count the view draws.
-  expect(names.filter((name) => /-density[\w-]*\.dds$/.test(name)).length).toBe(33);
-  expect(names.filter((name) => /-colour[\w-]*\.dds$/.test(name)).length).toBe(33);
+  expect(names.filter((name) => /-density[\w-]*\.ktx2$/.test(name)).length).toBe(33);
+  expect(names.filter((name) => /-colour[\w-]*\.ktx2$/.test(name)).length).toBe(33);
 });
 
-// The volumes are `.dds` block files, and the loader decodes the blocks on the CPU into
-// plain `R8` and `RGBA8` textures. It therefore asks for no compressed-texture extension.
-// The test refuses all three the formats belong to, so a run that started to upload the
-// blocks unchanged would find no format and draw nothing.
+// The volumes are `.ktx2` arrays of BC4 and BC1 blocks, and the map uploads the blocks
+// unchanged where the context carries both `EXT_texture_compression_rgtc` and
+// `WEBGL_compressed_texture_s3tc`. That is the fast path, and it is not a requirement:
+// a context that carries fewer than both decodes the blocks on the CPU and uploads
+// plain `R8` and `RGBA8` to the same array target. The test refuses all three
+// extensions the block formats belong to, so a build that had dropped the CPU decode
+// would find no format and draw nothing.
 test.describe('a card with no compressed-texture extension', () => {
   test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -590,6 +602,102 @@ test.describe('a card with no compressed-texture extension', () => {
     expect(report.drawn).toBeGreaterThan(0);
     expect(light).toBeGreaterThan(0);
   });
+});
+
+/** The three extensions the two block formats and BC7 belong to. */
+const BLOCK_EXTENSIONS = [
+  'WEBGL_compressed_texture_s3tc',
+  'EXT_texture_compression_rgtc',
+  'EXT_texture_compression_bptc',
+];
+
+/** Makes every later navigation of this page refuse the three extensions. */
+async function refuseBlockExtensions(page: Page): Promise<void> {
+  await page.addInitScript((names: string[]) => {
+    const original = WebGL2RenderingContext.prototype.getExtension;
+    WebGL2RenderingContext.prototype.getExtension = function patched(
+      this: WebGL2RenderingContext,
+      name: string,
+    ) {
+      if (names.includes(name)) return null;
+      return (original as (...args: unknown[]) => unknown).call(this, name);
+    } as typeof WebGL2RenderingContext.prototype.getExtension;
+  }, BLOCK_EXTENSIONS);
+}
+
+/** The root mean square difference of two frames, in display units, 0 to 1. */
+function frameRmse(first: number[], second: number[]): number {
+  let sum = 0;
+  let count = 0;
+  for (let at = 0; at < first.length; at += 4) {
+    for (let channel = 0; channel < 3; channel += 1) {
+      const difference =
+        ((first[at + channel] as number) - (second[at + channel] as number)) / 255;
+      sum += difference * difference;
+      count += 1;
+    }
+  }
+  return Math.sqrt(sum / count);
+}
+
+// The spec's scenario **The blocks upload with no decode where the extensions are
+// there**.
+//
+// The development GPU carries both `EXT_texture_compression_rgtc` and
+// `WEBGL_compressed_texture_s3tc`, so the blocks reach the card unchanged and the load
+// records no decode at all. The same page then refuses all three extensions and loads
+// again, which takes the CPU decode, and the two frames are read against each other.
+//
+// The two paths hand the card different bytes: one the blocks, the other what
+// `decodeBC4` and `decodeBC1` made of them. No specification makes a GPU's block decode
+// match a TypeScript one bit for bit, so the bound is 0.01 RMSE and not equality.
+test('the blocks upload with no decode where the extensions are there', async ({
+  page,
+}) => {
+  const read = async (): Promise<number[]> => {
+    await page.evaluate((cursor) => {
+      window.__galaxyMap?.setView?.({ cursor, distance: 260, pitch: 0, yaw: 0 });
+      window.__galaxyMap?.drawNow?.();
+    }, BARNARDS_LOOP);
+    return readRect(page, 440, 160, 400, 400);
+  };
+  const decodes = async (): Promise<number> =>
+    page.evaluate(() => performance.getEntriesByName('nebula-decode').length);
+
+  await openMap(page, BRIGHT_VIEW);
+  const blockDecodes = await decodes();
+  const blockFrame = await read();
+
+  await refuseBlockExtensions(page);
+  // A `goto` to the URL the page already holds changes the fragment and loads nothing,
+  // so the init script above would never run. The reload is the load it needs, and the
+  // four steps after it are what `openMap` does once the page is up.
+  await page.reload();
+  await waitForReady(page);
+  await startState(page);
+  await removeHud(page);
+  await settleNebulae(page);
+  const decodedDecodes = await decodes();
+  const decodedFrame = await read();
+
+  const rmse = frameRmse(blockFrame, decodedFrame);
+  console.log('the block path against the decoding path', {
+    blockDecodes,
+    decodedDecodes,
+    rmse,
+  });
+
+  // The load did no block decode at all on the path this change adds.
+  expect(blockDecodes).toBe(0);
+  // The positive control: the refusal reached the page and the fallback ran.
+  expect(decodedDecodes).toBe(33);
+  expect(blockFrame).toHaveLength(400 * 400 * 4);
+  // The positive control on the frame itself: the block read is not a black rectangle.
+  // A spread of 640,000 arguments overflows the call stack, so the reduce reads it.
+  expect(
+    blockFrame.reduce((worst, value) => Math.max(worst, value), 0),
+  ).toBeGreaterThan(0);
+  expect(rmse).toBeLessThan(0.01);
 });
 
 /**
@@ -658,7 +766,7 @@ function fixtureRmse(frame: number[], reference: Uint8Array, crop: number): numb
 }
 
 // The fidelity reading of this change. The frame marches on the GPU and the fixture
-// marches the same integral on the CPU, from the `.dds` bytes and each record's own
+// marches the same integral on the CPU, from the `.ktx2` bytes and each record's own
 // rotation, through the map's exposure and tone map. A flipped axis, a transposed
 // rotation or a mistaken transfer lookup moves the reading and no other test would
 // catch it.
@@ -666,11 +774,20 @@ function fixtureRmse(frame: number[], reference: Uint8Array, crop: number): numb
 // The occlusion is held at 0, so the galaxy volume's extinction leaves the reading
 // alone and the fixture needs no copy of the volume march. Every other pass is off.
 //
-// The readings on the hardware renderer are barnards-loop 0.0083 and cats-eye 0.0058,
-// against bounds of 0.02 and 0.01. `barnards-loop` is the mildest asset in the set;
-// `cats-eye` carries its largest negative extinction, -193.5, so it is where the
-// transmittance recurrence shows first. Its bound is its reading rounded up to the next
-// hundredth, as the spec asks. A reading above 0.05 means the march is wrong.
+// The readings on the hardware renderer are barnards-loop **0.002374** and cats-eye
+// **0.003860**, against bounds of 0.02 and 0.01.
+//
+// **The pre-change pair is 0.0083 and 0.0058**, read while the march sampled 3D
+// textures. It is kept here because this change cites the move from that pair to the
+// one above as its evidence that the frame improved: the shader's own two-layer mix is
+// closer to the trilinear CPU reference than the card's 3D filter was. Overwriting the
+// old pair would leave that argument citing figures the tree no longer holds. The
+// bounds did not move and neither fixture was regenerated.
+//
+// `barnards-loop` is the mildest asset in the set; `cats-eye` carries its largest
+// negative extinction, -193.5, so it is where the transmittance recurrence shows first.
+// Its bound is the pre-change reading rounded up to the next hundredth, as the spec
+// asks. A reading above 0.05 means the march is wrong.
 for (const [name, bound] of [
   ['barnards-loop', 0.02],
   ['cats-eye', 0.01],
@@ -1064,15 +1181,27 @@ test('the frame does not change when the order is reversed', async ({ page }) =>
  * overlap and the light can only rise where they do, so the reading is one-sided and the
  * bound is an upper one.
  *
- * The three readings are 0.193286, 0.043158 and 0.038243. The blend that ordered the
+ * The three readings are 0.194194, 0.043239 and 0.038257. The blend that ordered the
  * records read 0.182415, 0.043142 and 0.038236 under the same conditions, so the light
- * rises by 5.96 percent at the first camera, by 0.037 percent at the second and by 0.017
- * percent at the third. No pixel of the three frames falls. A change that raises any of
- * the three by more than a tenth is outside what this capability accepts, and the bound
- * does not move to fit it.
+ * is up 6.46 percent at the first camera, 0.23 percent at the second and 0.055 percent
+ * at the third. **Those three figures carry two changes and not one**: the order
+ * independence and, after it, the move to slice arrays. Almost all of each is the order
+ * independence; the paragraph below splits them. A change that raises any of the three
+ * by more than a tenth is outside what this capability accepts, and the bound does not
+ * move to fit it.
+ *
+ * The three readings moved when the volumes became slice arrays: they were 0.193286,
+ * 0.043158 and 0.038243 while the march read 3D textures, so the move to the array and
+ * its own layer interpolation raises the light by 0.47, 0.19 and 0.037 percent. That is
+ * two orders under the tenth, and it is a rise and not a fall because the array filter
+ * is the more faithful of the two: the CPU fixture comparison of the same march fell
+ * from 0.0083 to 0.0024 RMSE on `barnards-loop` and from 0.0058 to 0.0039 on
+ * `cats-eye`, so the frame moved towards the trilinear reference and not away from it.
+ * The first bound is restated from 0.194; the other two round to the same thousandth
+ * they held.
  */
 const OVERLAP_CAMERAS = [
-  { name: "Barnard's Loop at 120", cursor: BARNARDS_LOOP, distance: 120, bound: 0.194 },
+  { name: "Barnard's Loop at 120", cursor: BARNARDS_LOOP, distance: 120, bound: 0.195 },
   { name: 'Orion at 800', cursor: ORION_VIEWPOINT, distance: 800, bound: 0.044 },
   { name: 'Orion at 3000', cursor: ORION_VIEWPOINT, distance: 3000, bound: 0.039 },
 ] as const;
@@ -1084,8 +1213,12 @@ test('the overlap stays inside the light it was measured at', async ({ page }) =
   await openMap(page, '');
   await nebulaeAlone(page);
 
+  // All three cameras are read before any of them is asserted, so one camera over its
+  // bound still leaves the other two readings in the log. A bound that has to be
+  // restated is restated from three readings and not from one.
+  const readings: { name: string; mean: number; drawn: number; bound: number }[] = [];
   for (const camera of OVERLAP_CAMERAS) {
-    const reading = await page.evaluate((where) => {
+    const drawn = await page.evaluate((where) => {
       window.__galaxyMap?.setView?.({
         cursor: where.cursor,
         distance: where.distance,
@@ -1096,12 +1229,16 @@ test('the overlap stays inside the light it was measured at', async ({ page }) =
       return window.__galaxyMap?.nebulaDrawnCount?.() ?? -1;
     }, camera);
     const mean = await meanLuminanceFrame(page);
-    console.log('the overlap light', { camera: camera.name, mean, drawn: reading });
+    readings.push({ name: camera.name, mean, drawn, bound: camera.bound });
+  }
+  console.log('the overlap light', readings);
 
+  for (const reading of readings) {
     // The positive control: the camera draws the records the reading is of.
-    expect(reading, `${camera.name} drew no record`).toBeGreaterThan(0);
-    expect(mean, `${camera.name} is brighter than its reading`).toBeLessThanOrEqual(
-      camera.bound,
-    );
+    expect(reading.drawn, `${reading.name} drew no record`).toBeGreaterThan(0);
+    expect(
+      reading.mean,
+      `${reading.name} is brighter than its reading`,
+    ).toBeLessThanOrEqual(reading.bound);
   }
 });

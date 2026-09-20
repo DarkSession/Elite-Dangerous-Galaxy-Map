@@ -18,7 +18,7 @@ import {
   nebulaFocalPixels,
   selectNebulae,
 } from '../src/scene-data/nebulae';
-import { decodeBC1, decodeBC4 } from '../src/render/nebula-volumes';
+import { decodeBC1, decodeBC4, readNebulaKtx2 } from '../src/render/nebula-volumes';
 import { nebulaRotationMatrix } from '../src/render/nebula-pass';
 import {
   cameraPosition,
@@ -83,24 +83,23 @@ describe('the nebula fixture generator', () => {
     const assets = readAssets();
     expect(assets).toHaveLength(33);
     for (const asset of assets) {
-      const blocks = (file: string): Uint8Array => {
-        const bytes = readFileSync(`${root}src/render/nebula-art/${file}`);
-        return new Uint8Array(bytes.buffer, bytes.byteOffset + 148, bytes.length - 148);
-      };
+      const blocks = (file: string): Uint8Array =>
+        readNebulaKtx2(readFileSync(`${root}src/render/nebula-art/${file}`), file)
+          .blocks;
       // The density runs 32, 48 or 64 texels a side and the colour 8, 16 or 32.
       expect([32, 48, 64], `${asset.name} density side`).toContain(asset.densitySide);
       expect([8, 16, 32], `${asset.name} colour side`).toContain(asset.colourSide);
       expect(
         Buffer.from(asset.density).equals(
           Buffer.from(
-            decodeBC4(blocks(`${asset.name}-density.dds`), asset.densitySide),
+            decodeBC4(blocks(`${asset.name}-density.ktx2`), asset.densitySide),
           ),
         ),
         `${asset.name} density differs`,
       ).toBe(true);
       expect(
         Buffer.from(asset.colour).equals(
-          Buffer.from(decodeBC1(blocks(`${asset.name}-colour.dds`), asset.colourSide)),
+          Buffer.from(decodeBC1(blocks(`${asset.name}-colour.ktx2`), asset.colourSide)),
         ),
         `${asset.name} colour differs`,
       ).toBe(true);

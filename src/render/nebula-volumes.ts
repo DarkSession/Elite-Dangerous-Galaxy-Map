@@ -22,9 +22,6 @@ const assetUrls = import.meta.glob<string>('./nebula-art/*', {
   eager: true,
 });
 
-/** Bytes a DX10 `.dds` header takes before the block payload. */
-export const NEBULA_DDS_HEADER_BYTES = 148;
-
 /** How many entries one transfer table holds. */
 export const NEBULA_TRANSFER_ENTRIES = 256;
 
@@ -41,16 +38,16 @@ export interface NebulaVolumeEntry {
   };
 }
 
-/** One decoded asset, ready to upload. */
+/** One asset as the files carry it, ready to upload. */
 export interface NebulaVolumeAsset {
   readonly name: string;
   /** The density side in texels, as the index carries it. */
   readonly densitySide: number;
   /** The colour side in texels, as the index carries it. */
   readonly colourSide: number;
-  /** One byte a texel, indexed `z * side^2 + y * side + x`. */
+  /** The `BC4_UNORM` blocks of the density volume, slice after slice. */
   readonly density: Uint8Array;
-  /** Four bytes a texel, alpha 255. */
+  /** The `BC1_UNORM` blocks of the colour volume, slice after slice. */
   readonly colour: Uint8Array;
   /** 256 entries of four extinction coefficients the density indexes. */
   readonly transfer: Float32Array;
@@ -61,7 +58,7 @@ export interface NebulaVolumeSet {
   readonly assets: readonly NebulaVolumeAsset[];
 }
 
-/** The 3D textures one asset marches, and the transfer table it reads. */
+/** The slice arrays one asset marches, and the transfer table it reads. */
 export interface NebulaVolumeTexture {
   readonly name: string;
   readonly density: WebGLTexture;
@@ -205,21 +202,142 @@ async function fetchBytes(url: string, what: string): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-/** Reads the block payload of a `.dds` file, and refuses a file that is too short. */
-function blocksOf(bytes: Uint8Array, side: number, what: string): Uint8Array {
-  // BC1 and BC4 both take 8 bytes for a block of 4 by 4 texels, and a volume is a stack
-  // of `side` slices of block grids.
-  const needed = (side / 4) * (side / 4) * side * 8;
+/** How many bytes of blocks a volume of this side holds. */
+function blockBytes(side: number): number {
+  // BC1 and BC4 both take 8 bytes for a block of 4 by 4 by 1 texels, and a volume is a
+  // stack of `side` slices of block grids.
+  return (side / 4) * (side / 4) * side * 8;
+}
+
+/**
+ * Reads one volume file and checks it against the index. The index is what the renderer
+ * takes every side from, so a file that states another side, another layer count or
+ * another payload length is refused rather than drawn at the wrong size.
+ */
+function volumeBlocksOf(
+  bytes: Uint8Array,
+  side: number,
+  format: number,
+  what: string,
+): Uint8Array {
   if (side < 4 || side % 4 !== 0) {
     throw new NebulaError(`The nebula ${what} is ${side} texels a side.`);
   }
-  if (bytes.byteLength < NEBULA_DDS_HEADER_BYTES + needed) {
+  const volume = readNebulaKtx2(bytes, what);
+  if (volume.format !== format) {
     throw new NebulaError(
-      `The nebula ${what} holds ${bytes.byteLength} bytes, not the ` +
-        `${NEBULA_DDS_HEADER_BYTES + needed} a side of ${side} needs.`,
+      `The nebula ${what} holds vkFormat ${volume.format}, not the ${format} its ` +
+        'channel count needs.',
     );
   }
-  return bytes.subarray(NEBULA_DDS_HEADER_BYTES, NEBULA_DDS_HEADER_BYTES + needed);
+  if (volume.side !== side || volume.layers !== side) {
+    throw new NebulaError(
+      `The nebula ${what} is ${volume.side} by ${volume.side} by ${volume.layers} ` +
+        `texels, not the ${side} a side the index states.`,
+    );
+  }
+  const needed = blockBytes(side);
+  if (volume.blocks.byteLength !== needed) {
+    throw new NebulaError(
+      `The nebula ${what} holds ${volume.blocks.byteLength} bytes of blocks, not the ` +
+        `${needed} a side of ${side} needs.`,
+    );
+  }
+  return volume.blocks;
+}
+
+/** Bytes a nebula `.ktx2` header takes before the block payload. */
+export const NEBULA_KTX2_HEADER_BYTES = 208;
+
+/** The `vkFormat` of a colour volume, which is three channels. */
+export const NEBULA_KTX2_BC1 = 131;
+
+/** The `vkFormat` of a density volume, which is one channel. */
+export const NEBULA_KTX2_BC4 = 139;
+
+/** The 12 bytes every KTX2 file starts with. */
+const KTX2_IDENTIFIER = [
+  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+];
+
+/** What one `.ktx2` file of the set carries. */
+export interface NebulaKtx2 {
+  /** 139 for a density volume and 131 for a colour one. */
+  readonly format: number;
+  /** The width and the height of one slice, which are the same number. */
+  readonly side: number;
+  /** How many slices the array holds, which is the volume's third axis. */
+  readonly layers: number;
+  /** The block payload, which is the same bytes whichever container holds it. */
+  readonly blocks: Uint8Array;
+}
+
+/**
+ * Reads one `.ktx2` file of the nebula set.
+ *
+ * This is not a reader for the format at large. It takes the one shape
+ * `scripts/ktx2.mjs` writes — one level, one face, no supercompression, a square BC1 or
+ * BC4 array — and throws the loader's typed error on anything else. A smaller contract
+ * is a stricter one, and the files are ones this repository writes.
+ */
+export function readNebulaKtx2(bytes: Uint8Array, what = 'volume'): NebulaKtx2 {
+  if (bytes.byteLength < NEBULA_KTX2_HEADER_BYTES) {
+    throw new NebulaError(
+      `The nebula ${what} holds ${bytes.byteLength} bytes, which is shorter than its ` +
+        `${NEBULA_KTX2_HEADER_BYTES}-byte header.`,
+    );
+  }
+  for (let at = 0; at < KTX2_IDENTIFIER.length; at += 1) {
+    if (bytes[at] !== KTX2_IDENTIFIER[at]) {
+      throw new NebulaError(`The nebula ${what} is not a KTX2 file.`);
+    }
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const format = view.getUint32(12, true);
+  const width = view.getUint32(20, true);
+  const height = view.getUint32(24, true);
+  const layers = view.getUint32(32, true);
+  const faces = view.getUint32(36, true);
+  const levels = view.getUint32(40, true);
+  const supercompression = view.getUint32(44, true);
+  if (format !== NEBULA_KTX2_BC1 && format !== NEBULA_KTX2_BC4) {
+    throw new NebulaError(`The nebula ${what} holds vkFormat ${format}.`);
+  }
+  if (levels !== 1) {
+    throw new NebulaError(`The nebula ${what} holds ${levels} levels, not 1.`);
+  }
+  if (faces !== 1) {
+    throw new NebulaError(`The nebula ${what} holds ${faces} faces, not 1.`);
+  }
+  if (supercompression !== 0) {
+    throw new NebulaError(
+      `The nebula ${what} uses supercompression scheme ${supercompression}.`,
+    );
+  }
+  if (layers === 0) {
+    throw new NebulaError(`The nebula ${what} holds no layer.`);
+  }
+  if (width !== height) {
+    throw new NebulaError(
+      `The nebula ${what} is ${width} by ${height} texels, which is not square.`,
+    );
+  }
+  // The one level index entry sits after the fixed header: a byte offset, a byte length
+  // and an uncompressed byte length, each of 8 bytes.
+  const offset = Number(view.getBigUint64(80, true));
+  const length = Number(view.getBigUint64(88, true));
+  if (offset + length > bytes.byteLength) {
+    throw new NebulaError(
+      `The nebula ${what} states a level of ${length} bytes at ${offset}, which runs ` +
+        `past its ${bytes.byteLength} bytes.`,
+    );
+  }
+  return {
+    format,
+    side: width,
+    layers,
+    blocks: bytes.subarray(offset, offset + length),
+  };
 }
 
 /**
@@ -240,15 +358,16 @@ function recordDecode(from: number, to: number): void {
 }
 
 /**
- * Fetches, decodes and builds the committed volume set. The index names every asset and
- * carries every side, so a repacked set of a different size is a drop-in.
+ * Fetches and builds the committed volume set. The index names every asset and carries
+ * every side, so a repacked set of a different size is a drop-in.
+ *
+ * The loader does no block decode. It reads each `.ktx2` container, checks the shape it
+ * states against the index, and keeps the block payload as it is. The upload decides
+ * whether those blocks go to the card unchanged or through the CPU decode, because that
+ * choice is the context's and the loader has no context.
  *
  * The transfer tables arrive as one binary file and resolve by position: the table of
  * the asset at index `n` starts at `n * 4096` bytes.
- *
- * The two block decodes of one asset run in one task, and the loader records each one
- * under `NEBULA_DECODE_MEASURE`. Nothing waits on the set, so a long decode shows as a
- * long frame and in no other way, and the reading is what says whether it is long.
  */
 export async function loadNebulaVolumes(): Promise<NebulaVolumeSet> {
   const indexBytes = await fetchBytes(
@@ -281,28 +400,28 @@ export async function loadNebulaVolumes(): Promise<NebulaVolumeSet> {
     entries.map(async (entry, slot): Promise<NebulaVolumeAsset> => {
       const [densityFile, colourFile] = await Promise.all([
         fetchBytes(
-          nebulaAssetUrl(`${entry.name}-density.dds`),
+          nebulaAssetUrl(`${entry.name}-density.ktx2`),
           `density ${entry.name}`,
         ),
-        fetchBytes(nebulaAssetUrl(`${entry.name}-colour.dds`), `colour ${entry.name}`),
+        fetchBytes(nebulaAssetUrl(`${entry.name}-colour.ktx2`), `colour ${entry.name}`),
       ]);
       const at = slot * NEBULA_TRANSFER_BYTES;
-      const started = performance.now();
-      const density = decodeBC4(
-        blocksOf(densityFile, entry.density.size, `density ${entry.name}`),
-        entry.density.size,
-      );
-      const colour = decodeBC1(
-        blocksOf(colourFile, entry.colour.size, `colour ${entry.name}`),
-        entry.colour.size,
-      );
-      recordDecode(started, performance.now());
       return {
         name: entry.name,
         densitySide: entry.density.size,
         colourSide: entry.colour.size,
-        density,
-        colour,
+        density: volumeBlocksOf(
+          densityFile,
+          entry.density.size,
+          NEBULA_KTX2_BC4,
+          `density ${entry.name}`,
+        ),
+        colour: volumeBlocksOf(
+          colourFile,
+          entry.colour.size,
+          NEBULA_KTX2_BC1,
+          `colour ${entry.name}`,
+        ),
         transfer: new Float32Array(
           transferBytes.buffer.slice(
             transferBytes.byteOffset + at,
@@ -315,51 +434,130 @@ export async function loadNebulaVolumes(): Promise<NebulaVolumeSet> {
   return { assets };
 }
 
-function create3D(
+/** The two compressed formats the fast path uploads, where the context carries both. */
+interface BlockFormats {
+  /** `COMPRESSED_RED_RGTC1_EXT`, which carries the density. */
+  readonly density: number;
+  /** `COMPRESSED_RGB_S3TC_DXT1_EXT`, which carries the colour. */
+  readonly colour: number;
+}
+
+/**
+ * The compressed formats of this context, or `null` where it carries fewer than both.
+ *
+ * rgtc carries the density and s3tc the colour, and the fast path needs both. With one
+ * and not the other every volume decodes: mixing them per volume would work, but it
+ * makes four states to test instead of two, for a combination no desktop driver has.
+ */
+export function nebulaBlockFormats(gl: WebGL2RenderingContext): BlockFormats | null {
+  const rgtc = gl.getExtension('EXT_texture_compression_rgtc') as {
+    COMPRESSED_RED_RGTC1_EXT: number;
+  } | null;
+  const s3tc = gl.getExtension('WEBGL_compressed_texture_s3tc') as {
+    COMPRESSED_RGB_S3TC_DXT1_EXT: number;
+  } | null;
+  if (rgtc === null || s3tc === null) return null;
+  return {
+    density: rgtc.COMPRESSED_RED_RGTC1_EXT,
+    colour: s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT,
+  };
+}
+
+/** What one volume uploads: the blocks as they are, or the texels the decode gave. */
+type VolumeSource =
+  | { readonly blocks: Uint8Array }
+  | { readonly texels: Uint8Array; readonly layout: number };
+
+/**
+ * Makes one `TEXTURE_2D_ARRAY` of `side` layers of `side` by `side`.
+ *
+ * WebGL exposes no compressed format for `TEXTURE_3D`, and a BC1 or BC4 block covers
+ * 4 by 4 by **1** texels, so a volume in either format is already a stack of slices.
+ * The array target is what lets the blocks reach the card unchanged, and both paths
+ * take it, so the march reads one sampler type and the renderer compiles one program.
+ */
+function createArray(
   gl: WebGL2RenderingContext,
   format: number,
-  layout: number,
   side: number,
-  texels: Uint8Array,
+  source: VolumeSource,
 ): WebGLTexture {
   const texture = gl.createTexture();
   if (texture === null) {
     throw new Error('The context gave no texture for a nebula volume.');
   }
-  gl.bindTexture(gl.TEXTURE_3D, texture);
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texStorage3D(gl.TEXTURE_3D, 1, format, side, side, side);
-  gl.texSubImage3D(
-    gl.TEXTURE_3D,
-    0,
-    0,
-    0,
-    0,
-    side,
-    side,
-    side,
-    layout,
-    gl.UNSIGNED_BYTE,
-    texels,
-  );
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, side, side, side);
+  if ('blocks' in source) {
+    // Every layer in one call. The payload is the slices in the order the array holds
+    // them, which is the order the file already carries.
+    gl.compressedTexSubImage3D(
+      gl.TEXTURE_2D_ARRAY,
+      0,
+      0,
+      0,
+      0,
+      side,
+      side,
+      side,
+      format,
+      source.blocks,
+    );
+  } else {
+    gl.texSubImage3D(
+      gl.TEXTURE_2D_ARRAY,
+      0,
+      0,
+      0,
+      0,
+      side,
+      side,
+      side,
+      source.layout,
+      gl.UNSIGNED_BYTE,
+      source.texels,
+    );
+  }
+  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   // The march walks out of the box at both ends of every axis, so the edge texel is
-  // what a sample past the end must read.
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-  gl.bindTexture(gl.TEXTURE_3D, null);
+  // what a sample past the end must read. The layer axis carries no wrap mode: the
+  // shader picks the layer with an integer coordinate and clamps it itself.
+  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
   return texture;
 }
 
 /**
- * Uploads the decoded set: one `R8` density volume and one `RGBA8` colour volume per
- * asset, and one `RGBA32F` transfer table of 256 by 1.
+ * Uploads the set: one density array and one colour array per asset, and one `RGBA32F`
+ * transfer table of 256 by 1. Every volume goes to a `TEXTURE_2D_ARRAY`.
  *
- * The blocks decode on the CPU and upload plain, so the context needs none of
- * `WEBGL_compressed_texture_s3tc`, `EXT_texture_compression_rgtc` or
- * `EXT_texture_compression_bptc`, which a WebGL2 context does not guarantee.
+ * Where the context carries both `EXT_texture_compression_rgtc` and
+ * `WEBGL_compressed_texture_s3tc`, the blocks reach the card unchanged and the load
+ * does no decode at all. Otherwise the blocks decode on the CPU and upload as plain
+ * `R8` and `RGBA8`, so the map asks for no compressed-texture extension, which a WebGL2
+ * context does not guarantee.
+ *
+ * On the decoding path the upload records each asset's two decodes under
+ * `NEBULA_DECODE_MEASURE`. A browser test counts those entries: 33 on the decoding path
+ * and none on the block path.
+ *
+ * **Every one of those 33 decodes runs inside this one synchronous call.** Before the
+ * volumes became slice arrays the decode sat in `loadNebulaVolumes`, inside a per-asset
+ * `async` callback, so each asset was a task of its own and the worst task was 2.3 ms.
+ * It cannot sit there any more: the choice between the two paths needs a context, and
+ * `NebulaSource.loadVolumes` takes none. Splitting the decode across tasks again needs
+ * either a context parameter on `loadVolumes` or a `createDraw` that finishes after it
+ * returns, and both are changes to the source interface a host passes.
+ *
+ * The cost of that is one long task on the fallback path, at load, after the first
+ * frame. `e2e/nebula-cost.spec.ts` reads it under `the fallback decode is one task`: it
+ * runs 14.2 to 19.2 ms on the development card, against a 16.7 ms frame budget and a
+ * worst single asset of 2.9 ms. Nothing waits on the set, so it shows as one long frame
+ * and in no other way, but it is the normal path on a GPU that carries ETC or ASTC
+ * rather than S3TC and RGTC, where a slower CPU makes it worse.
  *
  * The transfer table reads with `texelFetch` and `NEAREST`. A `LINEAR` filter on a
  * floating-point texture needs `OES_texture_float_linear`, which WebGL2 does not
@@ -376,6 +574,37 @@ export function createNebulaVolumeTextures(
   const keep = (texture: WebGLTexture): WebGLTexture => {
     made.push(texture);
     return texture;
+  };
+
+  const blockFormats = nebulaBlockFormats(gl);
+
+  /**
+   * What one volume uploads, and in which format: the blocks as they are where the
+   * context takes them, and the texels the CPU decode gave where it does not.
+   *
+   * The decode happens here and the upload happens after it, so the `nebula-decode`
+   * mark covers the decode alone and no part of `texStorage3D` or `texSubImage3D`.
+   */
+  const sourceOf = (
+    kind: 'density' | 'colour',
+    side: number,
+    blocks: Uint8Array,
+  ): { readonly format: number; readonly source: VolumeSource } => {
+    if (blockFormats !== null) {
+      if (side < 4 || side % 4 !== 0) {
+        throw new Error(`A nebula volume of ${side} texels a side holds no blocks.`);
+      }
+      return { format: blockFormats[kind], source: { blocks } };
+    }
+    return kind === 'density'
+      ? {
+          format: gl.R8,
+          source: { texels: decodeBC4(blocks, side), layout: gl.RED },
+        }
+      : {
+          format: gl.RGBA8,
+          source: { texels: decodeBC1(blocks, side), layout: gl.RGBA },
+        };
   };
 
   const build = (asset: NebulaVolumeAsset): NebulaVolumeTexture => {
@@ -403,12 +632,22 @@ export function createNebulaVolumeTextures(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_2D, null);
+    const started = performance.now();
+    const densityFrom = sourceOf('density', asset.densitySide, asset.density);
+    const colourFrom = sourceOf('colour', asset.colourSide, asset.colour);
+    if (blockFormats === null) recordDecode(started, performance.now());
+    const density = keep(
+      createArray(gl, densityFrom.format, asset.densitySide, densityFrom.source),
+    );
+    const colour = keep(
+      createArray(gl, colourFrom.format, asset.colourSide, colourFrom.source),
+    );
     return {
       name: asset.name,
       densitySide: asset.densitySide,
       colourSide: asset.colourSide,
-      density: keep(create3D(gl, gl.R8, gl.RED, asset.densitySide, asset.density)),
-      colour: keep(create3D(gl, gl.RGBA8, gl.RGBA, asset.colourSide, asset.colour)),
+      density,
+      colour,
       transfer,
     };
   };

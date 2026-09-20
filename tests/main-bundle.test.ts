@@ -405,8 +405,8 @@ const NEBULA_NEEDLES: readonly { readonly what: string; readonly pattern: RegExp
   { what: 'the record file', pattern: /nebulae-[\w-]+\.json/ },
   { what: 'the volume index', pattern: /nebula-volumes-[\w-]+\.json/ },
   { what: 'the transfer file', pattern: /transfer-[\w-]+\.bin/ },
-  { what: 'a density volume', pattern: /-density-[\w-]+\.dds/ },
-  { what: 'a colour volume', pattern: /-colour-[\w-]+\.dds/ },
+  { what: 'a density volume', pattern: /-density-[\w-]+\.ktx2/ },
+  { what: 'a colour volume', pattern: /-colour-[\w-]+\.ktx2/ },
   { what: 'the nebula shaders', pattern: new RegExp(NEBULA_SHADER_TERM) },
 ];
 
@@ -552,11 +552,11 @@ describe('the library build', () => {
 
   // The record set and the volume art load as fetched assets. `?url&no-inline` is
   // what keeps them files: a plain `?url` lets the library build inline an asset as a
-  // data URI, which would put 18,411 bytes of records and 2.77 MiB of art in the
+  // data URI, which would put 18,411 bytes of records and 2.78 MiB of art in the
   // entry chunk.
   test('emits the nebula records and the volumes as files, not as chunk text', () => {
     const names = files.map(nameOf);
-    const volumes = names.filter((name) => name.endsWith('.dds'));
+    const volumes = names.filter((name) => name.endsWith('.ktx2'));
     const index = names.filter(
       (name) => name.startsWith('nebula-volumes') && name.endsWith('.json'),
     );
@@ -675,14 +675,14 @@ describe('the library build', () => {
       ).toBe(false);
       expect(text.includes(recordFile), `${name} names the record file`).toBe(false);
       expect(text.includes(indexFile), `${name} names the volume index`).toBe(false);
-      expect(/-density-[\w-]+\.dds/.test(text), `${name} names a volume`).toBe(false);
+      expect(/-density-[\w-]+\.ktx2/.test(text), `${name} names a volume`).toBe(false);
     }
 
     const secondText = readFileSync(second, 'utf8');
     expect(secondText.includes(NEBULA_SHADER_TERM)).toBe(true);
     expect(secondText.includes(recordFile)).toBe(true);
     expect(secondText.includes(indexFile)).toBe(true);
-    expect(/-density-[\w-]+\.dds/.test(secondText)).toBe(true);
+    expect(/-density-[\w-]+\.ktx2/.test(secondText)).toBe(true);
   });
 
   // What `"sideEffects": false` in `package.json` claims: no module of the library does

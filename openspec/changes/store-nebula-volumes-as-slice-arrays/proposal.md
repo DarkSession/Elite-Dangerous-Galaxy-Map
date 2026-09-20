@@ -74,10 +74,12 @@ the bound is stated at, because a standalone run is not the condition the suite 
 
 **The baseline.** `e2e/nebula-cost.spec.ts` already reads the pass alone at two of those
 cameras, in the timed pass of `scripts/e2e.mjs` on one worker, and records **0.655 ms at 120
-light years** and **0.614 ms at 260**. Those are the figures the bound is stated against,
-because they were taken under the condition the test runs in. The whole frame at the near
-view, every pass on, reads 1.25 ms against the 16.7 ms budget. The bound is on the pass, not
-the frame.
+light years** and **0.614 ms at 260**. Those two are means of one run, so the implementation
+re-took all three cameras as medians of five runs before it changed the shader, which is what
+the spec asks for. The medians read **0.523 ms at 60 light years, 0.512 at 120 and 0.485 at
+260**, and the spec states the bounds against those three. The whole frame at the near view,
+every pass on, reads 1.17 ms against the 16.7 ms budget. The bound is on the pass, not the
+frame.
 
 **Sizes**, over the committed 66 volume files:
 
@@ -85,15 +87,16 @@ the frame.
 | --- | --- | --- |
 | block payload | 2,760,704 | 2,760,704 |
 | art directory, on disk | 2,914,225 | 2,918,185 |
-| over the wire, brotli | 1,155,727 | read at task 5.3 |
+| over the wire, brotli | 1,155,727 | 1,160,103 |
 | video memory, block path | 6.03 MiB | **2.76 MiB** |
 | video memory, decoding path | 6.03 MiB | 6.03 MiB |
 | load decode, block path | 16.9 ms | **0** |
 
 The wire figure is `brotliCompressSync` at its defaults, which is the compressor the
-capability's budget is already stated against. The after figure is not predicted here: it
-depends on the exact header bytes, so task 5.3 reads it from the real files. Both sit far
-under the 1.3 MiB bound the capability states.
+capability's budget is already stated against. The after figure was not predicted here,
+because it depends on the exact header bytes; task 5.3 read it from the real files and it
+came out 4,376 bytes above the `.dds` set. Both sit far under the 1.3 MiB bound the
+capability states.
 
 KTX2 costs 60 bytes a file more on disk than DDS for the identical payload: a 208-byte
 header against DDS's fixed 148, so 3,960 bytes over 66 files. The 208 is 12 identifier

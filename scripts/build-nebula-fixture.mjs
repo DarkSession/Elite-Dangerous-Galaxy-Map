@@ -2,7 +2,7 @@
 //
 // The reference marches the same integral as `src/render/shaders/nebulae.frag`, over the
 // same records `src/scene-data/nebulae.ts` selects, and puts the result through the map's
-// own exposure and tone map. It reads the `.dds` bytes and each record's own rotation and
+// own exposure and tone map. It reads the `.ktx2` bytes and each record's own rotation and
 // nothing else, so a wrong decode, a wrong selection or a wrong integral shows as a
 // difference.
 //
@@ -26,8 +26,8 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const artDirectory = join(root, 'src', 'render', 'nebula-art');
 
-/** The header of a `.dds` file with a `DX10` block, in bytes. */
-const DDS_HEADER_BYTES = 148;
+/** The header of a nebula `.ktx2` file, in bytes, before the block payload. */
+const KTX2_HEADER_BYTES = 208;
 
 /** How many entries one asset's transfer table holds, and how many bytes that is. */
 const TRANSFER_ENTRIES = 256;
@@ -278,13 +278,13 @@ export function decodeBC1(blocks, side) {
   return out;
 }
 
-/** The blocks of one `.dds` file, with its header taken off. */
+/** The blocks of one `.ktx2` file, with its header taken off. */
 function readBlocks(file) {
   const bytes = readFileSync(join(artDirectory, file));
   return new Uint8Array(
     bytes.buffer,
-    bytes.byteOffset + DDS_HEADER_BYTES,
-    bytes.length - DDS_HEADER_BYTES,
+    bytes.byteOffset + KTX2_HEADER_BYTES,
+    bytes.length - KTX2_HEADER_BYTES,
   );
 }
 
@@ -300,8 +300,8 @@ export function readAssets() {
   );
   const transferBytes = readFileSync(join(artDirectory, 'transfer.bin'));
   return index.assets.map((entry, slot) => {
-    const densityBlocks = readBlocks(`${entry.name}-density.dds`);
-    const colourBlocks = readBlocks(`${entry.name}-colour.dds`);
+    const densityBlocks = readBlocks(`${entry.name}-density.ktx2`);
+    const colourBlocks = readBlocks(`${entry.name}-colour.ktx2`);
     // 8 bytes a block of 4 by 4 texels, `side / 4` blocks across each of three axes.
     // The two volumes of one asset are not the same size: the density runs 32, 48 or 64
     // texels a side and the colour 8, 16 or 32, so each side is read from its own file.
