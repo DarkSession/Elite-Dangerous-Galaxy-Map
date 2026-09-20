@@ -528,6 +528,13 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       `Required Notice: Copyright 2026 Dark Session (...)`. It names the licensor, which the
       text does not otherwise carry.
 
+      **The file says what the terms cover**, in a section below the published text. It
+      names `THIRD_PARTY_NOTICES.md` and Frontier Developments, and says that a commercial
+      use of the game data and the visuals needs new permission from Frontier. The
+      published text is about the licensor's own software, so a reader of the licence
+      alone would otherwise take it for the terms of everything the tarball carries. The
+      section adds no condition. `tests/packed-tarball.test.ts` reads both names.
+
       **MIT was tried and reverted on 2026-09-20.** The maintainer asked for MIT, read
       what it grants, and put PolyForm back the same day. The reason is the one that chose
       PolyForm first: MIT permits commercial use of this project's code, the tarball also

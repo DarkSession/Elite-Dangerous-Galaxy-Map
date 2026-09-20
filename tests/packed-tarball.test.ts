@@ -154,6 +154,12 @@ describe('the packed tarball', () => {
     expect(terms).toContain('PolyForm Noncommercial License 1.0.0');
     expect(terms).toContain('Any noncommercial purpose is a permitted purpose.');
     expect(manifest.license).toBe('PolyForm-Noncommercial-1.0.0');
+    // The terms are this project's own work. The map also carries data and art of other
+    // holders, which this project cannot license, so the file names the notices and the
+    // holder of the game data. A reader of the licence alone must not read it as terms
+    // over the art.
+    expect(terms).toContain('THIRD_PARTY_NOTICES.md');
+    expect(terms).toContain('Frontier Developments');
     expect(packed).toContain('LICENSE.md');
     expect(readFileSync(join(packDir, 'LICENSE.md'), 'utf8')).toBe(terms);
   });

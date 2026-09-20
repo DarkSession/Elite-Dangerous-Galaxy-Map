@@ -131,3 +131,23 @@ software under these terms.
 
 **Use** means anything you do with the software requiring one
 of your licenses.
+
+---
+
+## What these terms cover
+
+The terms above are this project's own work: the code and the files this project wrote.
+They are the terms of the published package
+`@elite-dangerous-almanac/galaxy-map` and of this repository.
+
+The map also carries data and art from other holders, and this project cannot license
+what it does not own. Those files keep the terms of their own holders, which
+`THIRD_PARTY_NOTICES.md` states one by one. The Elite Dangerous game data and visuals
+are the property of **Frontier Developments plc**, under
+[media-usage rules](https://forums.frontier.co.uk/threads/elite-dangerous-media-usage-rules.510879/)
+that permit non-commercial use only, and a commercial use of them needs new permission
+from Frontier. Several other sources are non-commercial as well.
+
+There are two notices files, because this file ships in two places. The published package
+carries the notices of what it ships, beside this file. The repository carries a second
+file at its root, which covers the demo site, the test fixtures and the design mockup.

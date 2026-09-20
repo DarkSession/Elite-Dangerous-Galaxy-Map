@@ -497,6 +497,12 @@ maintainer's choice and follows from the map's data: `THIRD_PARTY_NOTICES.md` re
 several of the map's sources are non-commercial, and the code and that data ship in one
 tarball.
 
+**The licence file SHALL say what those terms cover and what they do not.** The terms are
+this project's own work, and the project cannot license the data and the art of other
+holders. The file SHALL name `THIRD_PARTY_NOTICES.md` and the holder of the game data, so
+a reader who opens the licence alone does not read it as terms over the art. A test SHALL
+read both.
+
 The **tarball SHALL also carry `LICENSE.md`**, copied from the root by the packaging step
 rather than committed a second time, so that npm and GitHub each read a file where each
 looks. The copy SHALL NOT be committed, so a test SHALL read it from the packed file list
@@ -530,6 +536,12 @@ push.
 
 - **WHEN** a test reads the file list `npm pack --dry-run` reports for the library package
 - **THEN** it holds `LICENSE.md`, `THIRD_PARTY_NOTICES.md` and `README.md`
+
+#### Scenario: The licence names what it does not cover
+
+- **WHEN** a test reads `LICENSE.md`
+- **THEN** it holds the licence text, names `THIRD_PARTY_NOTICES.md` and names Frontier
+  Developments as the holder of the game data and the visuals
 
 #### Scenario: The tarball carries no source and no artifact
 

@@ -381,6 +381,13 @@ project: a ready-made licence has been read by lawyers, is recognised by tools, 
 what a reader already expects it to say. PolyForm Noncommercial 1.0.0 is the obvious
 candidate and carries an SPDX identifier.
 
+**The licence file also says what it does not cover.** A section below the published text
+names `THIRD_PARTY_NOTICES.md` and Frontier Developments. The published text is about the
+licensor's own software, and the tarball carries other holders' data and art beside it. A
+reader who opens `LICENSE.md` alone would otherwise take it for the terms of everything in
+the package. The section is informational and adds no condition, so the SPDX identifier
+still describes the terms.
+
 `license` in `package.json` takes the SPDX identifier where npm accepts it, and
 `SEE LICENSE IN LICENSE.md` otherwise. The task list checks which, rather than assuming.
 
