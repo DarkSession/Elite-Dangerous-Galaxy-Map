@@ -82,7 +82,7 @@ from the active list before task 1.1.
 
 ## 3. The reading that decides the change
 
-- [ ] 3.1 Add `the worst camera holds the fetch bound` to `e2e/nebula-cost.spec.ts`, in the
+- [x] 3.1 Add `the worst camera holds the fetch bound` to `e2e/nebula-cost.spec.ts`, in the
       timed pass, under exactly the conditions the spec's requirement **The march filters the
       third axis itself** states: every other pass off through `nebulaeAlone`, the camera at
       Barnard's Loop at **60, 120 and 260** light years, 1,280 by 720, the median of five runs
@@ -91,21 +91,27 @@ from the active list before task 1.1.
       Also read the whole frame at the near view with every pass on and assert it is inside
       16.7 ms. A nine-camera sweep ranked 120 the worst and 60 the next; the proposal carries
       the ranking.
-- [ ] 3.1a Run task 3.1's test against the tree as it stands, which still draws from the 3D
+- [x] 3.1a Run task 3.1's test against the tree as it stands, which still draws from the 3D
       textures, and record all three readings here beside this task. **The expected medians
       are 0.655 ms at 120 and 0.614 ms at 260**, which are the figures
       `e2e/nebula-cost.spec.ts` already records for those two cameras in the timed pass. 60
       light years has no committed baseline: take it, write it into the spec beside the other
       two, and set its bound at 1.5 times it. If either committed baseline moves by more than
       a tenth, restate all three and their bounds in the spec before going on.
-- [ ] 3.2 Add the unit test for the spec's scenario **The layer interpolation matches a
+      **The readings, on the 3D-texture tree:** 0.523 ms at 60 light years, 0.512 at 120 and
+      0.485 at 260, each the median of five runs of 120 frames. The whole frame at the near
+      view, every pass on, read 1.169 ms. Both committed figures moved by more than a tenth,
+      0.655 to 0.512 and 0.614 to 0.485, so all three baselines and all three bounds are
+      restated in the spec, the proposal and the test: 0.78 ms at 60, 0.76 at 120 and 0.72
+      at 260.
+- [x] 3.2 Add the unit test for the spec's scenario **The layer interpolation matches a
       trilinear filter**: a TypeScript statement of `t = clamp(w * layers - 0.5, 0,
       layers - 1)` with a `mix` by `fract(t)`, a known volume, and a trilinear filter of the
       same data to compare against, at points between layer centres, at both faces and past
       both ends, within one part in 10,000. It passes the day it is written, because it tests
       the arithmetic and not the shader. Record in the test's own comment that it is not an
       oracle for the shader and that the CPU fixture tests are what hold the shader to it.
-- [ ] 3.3 Verify `pnpm test:e2e` and `pnpm exec vitest run` both pass.
+- [x] 3.3 Verify `pnpm test:e2e` and `pnpm exec vitest run` both pass.
 
 ## 4. The swap
 

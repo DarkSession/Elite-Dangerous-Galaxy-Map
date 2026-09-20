@@ -74,10 +74,12 @@ the bound is stated at, because a standalone run is not the condition the suite 
 
 **The baseline.** `e2e/nebula-cost.spec.ts` already reads the pass alone at two of those
 cameras, in the timed pass of `scripts/e2e.mjs` on one worker, and records **0.655 ms at 120
-light years** and **0.614 ms at 260**. Those are the figures the bound is stated against,
-because they were taken under the condition the test runs in. The whole frame at the near
-view, every pass on, reads 1.25 ms against the 16.7 ms budget. The bound is on the pass, not
-the frame.
+light years** and **0.614 ms at 260**. Those two are means of one run, so the implementation
+re-took all three cameras as medians of five runs before it changed the shader, which is what
+the spec asks for. The medians read **0.523 ms at 60 light years, 0.512 at 120 and 0.485 at
+260**, and the spec states the bounds against those three. The whole frame at the near view,
+every pass on, reads 1.17 ms against the 16.7 ms budget. The bound is on the pass, not the
+frame.
 
 **Sizes**, over the committed 66 volume files:
 

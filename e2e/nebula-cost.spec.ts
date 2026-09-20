@@ -111,6 +111,80 @@ test('a near view holds the budget', async ({ page }) => {
   expect(report.meanMs).toBeLessThan(16.7);
 });
 
+// The cost bound of the requirement **The march filters the third axis itself**.
+//
+// A `TEXTURE_2D_ARRAY` does not filter across layers, so the march reads two layers a
+// sample and mixes them itself: four volume fetches a step instead of two, in the
+// fragment stage, which is where the pass spends its time. The bound is 1.5 times the
+// baseline the tree read before the shader changed, and the change does not land if a
+// camera misses it.
+//
+// The conditions are the requirement's own: every other pass off, the nebula occlusion
+// at 0, 1,280 by 720, the timed pass on one worker, and the median of five runs of 120
+// frames. A sweep of nine distances from Barnard's Loop ranked 120 light years the most
+// expensive camera of the set and 60 the next; the proposal carries the ranking.
+//
+// The bounds below are absolutes and not a ratio the test computes, so the test and the
+// spec cannot disagree. They are figures of one card. Whenever a recorded baseline
+// differs from the reading in hand, the rule is to restate both here and in the spec.
+//
+// The baselines, taken on this card on the tree that still drew from the 3D textures,
+// are 0.523 ms at 60 light years, 0.512 at 120 and 0.485 at 260. The bounds are 1.5
+// times those three, rounded down to two places.
+const FETCH_BOUND_MS: Record<number, number> = { 60: 0.78, 120: 0.76, 260: 0.72 };
+
+test('the worst camera holds the fetch bound', async ({ page }) => {
+  await openMap(page, '');
+
+  // The whole frame at the near view, every pass on, against the 16.7 ms budget of
+  // `far-view-rendering`. It is read first, because the pass switches below turn every
+  // other pass off.
+  const frameMs = await page.evaluate((cursor) => {
+    window.__galaxyMap?.setView?.({ cursor, distance: 20, pitch: 0, yaw: 0 });
+    window.__galaxyMap?.drawNow?.();
+    return window.__galaxyMap?.measureFrames?.(120) ?? Number.POSITIVE_INFINITY;
+  }, BARNARDS_LOOP);
+
+  await nebulaeAlone(page);
+  const read = async (distance: number): Promise<number[]> =>
+    page.evaluate(
+      (where) => {
+        window.__galaxyMap?.setView?.({
+          cursor: where.cursor,
+          distance: where.distance,
+          pitch: 0,
+          yaw: 0,
+        });
+        window.__galaxyMap?.drawNow?.();
+        const runs: number[] = [];
+        for (let run = 0; run < 5; run += 1) {
+          runs.push(
+            window.__galaxyMap?.measureFrames?.(120) ?? Number.POSITIVE_INFINITY,
+          );
+        }
+        return runs;
+      },
+      { cursor: BARNARDS_LOOP, distance },
+    );
+
+  const medians: Record<number, number> = {};
+  for (const distance of Object.keys(FETCH_BOUND_MS).map(Number)) {
+    const runs = await read(distance);
+    const sorted = [...runs].sort((a, b) => a - b);
+    const median = sorted[2] as number;
+    medians[distance] = median;
+    console.log(`the fetch bound at ${distance}`, { runs, median });
+  }
+  console.log('the fetch bound', { medians, frameMs });
+
+  for (const [distance, bound] of Object.entries(FETCH_BOUND_MS)) {
+    const median = medians[Number(distance)] as number;
+    expect(median, `${distance} light years read nothing`).toBeGreaterThan(0);
+    expect(median, `${distance} light years costs too much`).toBeLessThan(bound);
+  }
+  expect(frameMs).toBeLessThan(16.7);
+});
+
 // The box is drawn with the front faces culled, so a camera inside it still gets
 // fragments and a camera outside it gets one layer and not two. The failure this guards
 // is the back faces drawing as well as the front, which doubles the fragments.

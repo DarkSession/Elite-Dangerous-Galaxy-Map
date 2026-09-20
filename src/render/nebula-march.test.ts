@@ -393,3 +393,91 @@ describe('the turned volume', () => {
     }
   });
 });
+
+// The spec's scenario **The layer interpolation matches a trilinear filter**.
+//
+// A `sampler2DArray` filters inside a layer and not across layers, so the march reads
+// two layers and mixes them itself. `shaders/nebulae.frag` states the arithmetic below
+// in GLSL, and this is the same arithmetic in TypeScript.
+//
+// **This test is not an oracle for the shader.** Vitest cannot run GLSL, so it cannot
+// see what the shader does; what it catches is a wrong half-texel offset or a wrong
+// clamp in the arithmetic itself. What holds the shader to this arithmetic is the CPU
+// fixture comparison of `e2e/nebulae.spec.ts`, which marches the real shader on the GPU
+// against a reference that filters trilinearly. The two together are the check; neither
+// alone is.
+describe('the layer interpolation', () => {
+  const SIDE = 8;
+
+  /** A volume whose every texel differs, so a wrong layer reads a wrong number. */
+  const volume = new Uint8Array(SIDE * SIDE * SIDE);
+  for (let z = 0; z < SIDE; z += 1) {
+    for (let y = 0; y < SIDE; y += 1) {
+      for (let x = 0; x < SIDE; x += 1) {
+        volume[(z * SIDE + y) * SIDE + x] = (x * 13 + y * 29 + z * 53) % 256;
+      }
+    }
+  }
+
+  /**
+   * The march's own read: the layer axis carries a half-texel offset and clamps at both
+   * ends, and each layer is filtered inside itself, as the texture unit filters it.
+   */
+  function arrayRead(u: number, v: number, w: number): number {
+    const t = Math.min(Math.max(w * SIDE - 0.5, 0), SIDE - 1);
+    const low = Math.floor(t);
+    const high = Math.min(low + 1, SIDE - 1);
+    const centre = (layer: number): number =>
+      sample(volume, 1, 0, SIDE, u, v, (layer + 0.5) / SIDE);
+    const first = centre(low);
+    const second = centre(high);
+    return first + (second - first) * (t - low);
+  }
+
+  test('reads what a trilinear filter of the same data reads', () => {
+    // Between layer centres, at both faces and past both ends of the axis.
+    const points = [
+      0.5 / SIDE,
+      1 / SIDE,
+      1.5 / SIDE,
+      0.3,
+      0.5,
+      0.7,
+      (SIDE - 0.5) / SIDE,
+      0,
+      1,
+      -0.2,
+      1.3,
+    ];
+    for (const w of points) {
+      for (const [u, v] of [
+        [0.5, 0.5],
+        [0.125, 0.875],
+        [0.31, 0.62],
+        [0, 1],
+      ] as const) {
+        expect(arrayRead(u, v, w), `at w ${w}`).toBeCloseTo(
+          sample(volume, 1, 0, SIDE, u, v, w),
+          4,
+        );
+      }
+    }
+  });
+
+  // The half-texel offset is what makes a sample at the volume's face read that face
+  // and not a blend with nothing. Without it the whole volume shifts by half a texel.
+  test('reads the end layers flat at the faces and past them', () => {
+    for (const w of [-0.5, 0, 0.5 / SIDE]) {
+      expect(arrayRead(0.5, 0.5, w)).toBeCloseTo(
+        sample(volume, 1, 0, SIDE, 0.5, 0.5, 0.5 / SIDE),
+        6,
+      );
+    }
+    for (const w of [(SIDE - 0.5) / SIDE, 1, 1.5]) {
+      expect(arrayRead(0.5, 0.5, w)).toBeCloseTo(
+        sample(volume, 1, 0, SIDE, 0.5, 0.5, (SIDE - 0.5) / SIDE),
+        6,
+      );
+    }
+  });
+});
