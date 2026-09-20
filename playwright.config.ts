@@ -36,13 +36,21 @@ const timedSpecs = [
 /**
  * What the Firefox project runs. Chromium and Firefox do not share a paint path:
  * Chromium blurs on the GPU and Firefox blurs on the CPU, so a CSS property that costs
- * Chromium 1 ms a frame can cost Firefox 7 ms. The project reads the card, as every
- * project does, and the paint cost of a camera move. It runs no other spec: the rest of
- * the suite reads behaviour that does not follow the browser, and `e2e/look.spec.ts`
- * holds one committed baseline image, taken in Chromium, that a second browser cannot
- * match pixel for pixel.
+ * Chromium 1 ms a frame can cost Firefox 7 ms. They do not share a WebGL driver either,
+ * and a format one accepts the other can refuse. The project therefore reads the card,
+ * as every project does, the paint cost of a camera move, and one drawn frame of the
+ * nebulae. It runs no other spec: the rest of the suite reads behaviour that does not
+ * follow the browser, and `e2e/look.spec.ts` holds one committed baseline image, taken
+ * in Chromium, that a second browser cannot match pixel for pixel.
+ *
+ * No spec this project runs holds a baseline image, for that same reason.
+ * `tests/browser-suite.test.ts` asserts it.
  */
-const firefoxSpecs = ['00-renderer.spec.ts', 'paint-cost.spec.ts'];
+const firefoxSpecs = [
+  '00-renderer.spec.ts',
+  'paint-cost.spec.ts',
+  'nebulae-firefox.spec.ts',
+];
 
 /**
  * How many spec files run at once in the parallel pass. The container has 32 cores

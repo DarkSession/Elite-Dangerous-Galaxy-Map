@@ -73,7 +73,7 @@ context takes.
 and SHALL NOT read the extension list as proof.** A context can carry an extension and
 still refuse its format on that target. On **2026-09-20**, on one RTX 4080, Firefox
 carried `EXT_texture_compression_rgtc` and refused `COMPRESSED_RED_RGTC1` on a
-`TEXTURE_2D_ARRAY` with `INVALID_ENUM`, while it accepted the same format on a
+`TEXTURE_2D_ARRAY` with `INVALID_OPERATION`, while it accepted the same format on a
 `TEXTURE_2D` and accepted `COMPRESSED_RGB_S3TC_DXT1` on both. Chromium accepted all four.
 
 That reading is **one browser, one driver, one day**, and this requirement does not depend

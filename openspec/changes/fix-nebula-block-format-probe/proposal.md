@@ -18,12 +18,17 @@ warning is the consequence of the first and not a second fault.
 **The rule is wrong, not the browser.** A present extension does not prove the format
 works on every target. A probe on one RTX 4080 reads:
 
-| browser  | format | `TEXTURE_2D` | `TEXTURE_2D_ARRAY` |
-| -------- | ------ | ------------ | ------------------ |
-| Firefox  | BC4    | OK           | **`INVALID_ENUM`** |
-| Firefox  | BC1    | OK           | OK                 |
-| Chromium | BC4    | OK           | OK                 |
-| Chromium | BC1    | OK           | OK                 |
+| browser  | format | `TEXTURE_2D` | `TEXTURE_2D_ARRAY`      |
+| -------- | ------ | ------------ | ----------------------- |
+| Firefox  | BC4    | OK           | **`INVALID_OPERATION`** |
+| Firefox  | BC1    | OK           | OK                      |
+| Chromium | BC4    | OK           | OK                      |
+| Chromium | BC1    | OK           | OK                      |
+
+The browser suite read this table again on 2026-09-20, in the page, with the probe of
+task 4.2. Firefox answered `getError` 1282, which is `INVALID_OPERATION` and not the
+`INVALID_ENUM` the first reading recorded, and 0 for the other three. Chromium answered
+0 for all four. The error code is corrected above; the refusal is the same one.
 
 Firefox refuses BC4 on the array target alone. It accepts BC1 there, and it accepts both
 on a plain 2D texture. The fault is one format on one target.

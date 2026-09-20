@@ -80,7 +80,8 @@ a refusal on every stub context and three passing tests fail. This group comes f
       asserts the two differ and that the load records a block decode. Use `withNebulae`
       and `meanLuminanceFrame`, which `e2e/nebulae.spec.ts` already pairs. **Read:** the
       patch makes `texStorage3D` allocate nothing for that pair and the next `getError`
-      read `INVALID_ENUM`, which is the fault Firefox shows. The run reads
+      read `INVALID_OPERATION`, which is the error Firefox raises for this pair. The run
+      reads
       `on 0.17613, off 0.17379, added 0.00234, decodes 33`, twice with the same figures.
       The bound is 0.001, a little under half the reading.
 - [x] 3.3 Confirm the guard of 3.2 fails against the fault. Comment out the probe of task
@@ -97,28 +98,53 @@ a refusal on every stub context and three passing tests fail. This group comes f
 
 ## 4. The Firefox reading
 
-- [ ] 4.1 Add `e2e/nebulae-firefox.spec.ts`. It opens `CLOSE_VIEW` from `e2e/nebula-views.ts`,
+- [x] 4.1 Add `e2e/nebulae-firefox.spec.ts`. It opens `CLOSE_VIEW` from `e2e/nebula-views.ts`,
       reads the frame with the nebulae on and again with them off, and asserts the two
       differ. It reads pixels and asserts on no draw count, because every count reads
-      correctly in the fault. It calls no `toHaveScreenshot`.
-- [ ] 4.2 Have the same spec log which path the browser took, as a diagnostic and not an
+      correctly in the fault. It calls no `toHaveScreenshot`. **Read:** the one test is
+      "the nebulae draw". It asserts `off > 0` and `on - off > 0.001`, and asserts on no
+      count.
+- [x] 4.2 Have the same spec log which path the browser took, as a diagnostic and not an
       assertion, so a reader of the run learns the answer for the browser in front of them.
       The `nebulae` delta asks for this, because the Firefox reading in the spec is one
-      browser on one day.
-- [ ] 4.3 Add the new spec to the Firefox project's `testMatch` in `playwright.config.ts`.
+      browser on one day. **Read:** the spec logs the decode count, which is the path — 0
+      is the block path and 33 the decode path — the two extensions the context carries,
+      and the `getError` of a 4 by 4 allocation of each format on `TEXTURE_2D` and on
+      `TEXTURE_2D_ARRAY`.
+- [x] 4.3 Add the new spec to the Firefox project's `testMatch` in `playwright.config.ts`.
       Verify with `GALAXY_MAP_E2E_BUILT=1 pnpm exec playwright test
-      e2e/nebulae-firefox.spec.ts --project=firefox`, after a build.
-- [ ] 4.4 Confirm the Firefox spec fails against the fault, by the same method and the same
-      build warning as task 3.3. Record that it fails and how.
-- [ ] 4.5 Run the same spec in Chromium and record that it passes there too, so the reading
-      is not one browser's alone.
-- [ ] 4.6 Update the unit test of `playwright.config.ts` for the Firefox project's
+      e2e/nebulae-firefox.spec.ts --project=firefox`, after a build. **Read:** **3 of 3
+      passed**, on the card `ANGLE (NVIDIA, Vulkan 1.4.341 (NVIDIA GeForce RTX 4080))`.
+      Firefox reads `on 0.17613, off 0.17379, added 0.00234, decodes 33`, so it takes the
+      decode path and draws. Its format probe reads `BC4 on TEXTURE_2D 0`,
+      `BC4 on TEXTURE_2D_ARRAY 1282`, `BC1 on TEXTURE_2D 0`, `BC1 on TEXTURE_2D_ARRAY 0`,
+      where 0 is `NO_ERROR` and 1282 is `INVALID_OPERATION`.
+- [x] 4.4 Confirm the Firefox spec fails against the fault, by the same method and the same
+      build warning as task 3.3. Record that it fails and how. **Read:** with the probe
+      removed and `pnpm build:demo-site` run, Firefox reads
+      `on 0.17379, off 0.17379, added 0, decodes 0` and fails at
+      `expect(on - off).toBeGreaterThan(0.001)` with **0**. The two frames are the same
+      frame, which is the fault. The probe was restored and the tree rebuilt.
+- [x] 4.5 Run the same spec in Chromium and record that it passes there too, so the reading
+      is not one browser's alone. **Read:** **3 of 3 passed** in `chromium-gpu`, with
+      `on 0.17618, off 0.17379, added 0.00239, decodes 0`. Chromium takes the block path
+      and its format probe reads 0 for all four combinations. The spec is not in the
+      `chromium-gpu` project's `testIgnore` list, so that project runs it on every suite
+      run as well.
+- [x] 4.6 Update the unit test of `playwright.config.ts` for the Firefox project's
       `testMatch`, which asserts the renderer spec and the paint budget spec "and nothing
-      else". Verify the file passes.
-- [ ] 4.7 Add the unit scenario "No spec the Firefox project runs holds a baseline image":
+      else". Verify the file passes. **Read:** the test now reads the `firefoxSpecs` list
+      itself and asserts it equals the renderer spec, the paint budget spec and
+      `nebulae-firefox.spec.ts`, in that order. `tests/browser-suite.test.ts` reads
+      **9 of 9 passed**.
+- [x] 4.7 Add the unit scenario "No spec the Firefox project runs holds a baseline image":
       read every spec the project's `testMatch` holds and assert none calls
       `toHaveScreenshot`. Verify it passes, and verify it fails when `e2e/look.spec.ts` is
-      added to the list.
+      added to the list. **Read:** it passes over the three specs, and the positive
+      control asserts `look.spec.ts` does hold one. With `look.spec.ts` added to the list
+      the file reads **2 failed | 7 passed**:
+      `look.spec.ts holds a baseline image: expected true to be false`, and the order
+      assertion of 4.6 fails beside it.
 
 ## 5. The cost spec's own probe
 

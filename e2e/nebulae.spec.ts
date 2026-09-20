@@ -591,12 +591,14 @@ const COMPRESSED_RED_RGTC1 = 0x8dbb;
 /**
  * Makes every later navigation of this page refuse `COMPRESSED_RED_RGTC1` on a
  * `TEXTURE_2D_ARRAY`, which is what Firefox does. The call allocates nothing and the
- * next `getError` on that context reads `INVALID_ENUM`. Every other call passes through.
+ * next `getError` on that context reads `INVALID_OPERATION`, which is the error Firefox
+ * raises for this pair. Every other call passes through.
  */
 async function refuseBlockFormatOnArray(page: Page): Promise<void> {
   await page.addInitScript((format: number) => {
     const TEXTURE_2D_ARRAY = 0x8c1a;
-    const INVALID_ENUM = 0x0500;
+    // The error Firefox raises for this pair on this card, read on 2026-09-20.
+    const INVALID_OPERATION = 0x0502;
     const refused = new WeakSet<WebGL2RenderingContext>();
     const storage = WebGL2RenderingContext.prototype.texStorage3D;
     const error = WebGL2RenderingContext.prototype.getError;
@@ -620,7 +622,7 @@ async function refuseBlockFormatOnArray(page: Page): Promise<void> {
     ): number {
       if (refused.has(this)) {
         refused.delete(this);
-        return INVALID_ENUM;
+        return INVALID_OPERATION;
       }
       return error.call(this);
     };
