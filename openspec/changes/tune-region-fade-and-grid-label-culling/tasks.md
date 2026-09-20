@@ -55,19 +55,19 @@
 
 ## 4. The grid label gate
 
-- [ ] 4.1 Add the unit test for "A label whose crossing is off the frame stays": a frame
+- [x] 4.1 Add the unit test for "A label whose crossing is off the frame stays": a frame
       whose cursor puts a crossing inside the reach past the right edge, with the label's
       own quad still over the viewport, places that label. Verify it fails against the
       gate as it stands today.
-- [ ] 4.2 Take the crossing's viewport test out of `gridLabelPlacements` in
+- [x] 4.2 Take the crossing's viewport test out of `gridLabelPlacements` in
       `src/app/grid-labels.ts`, leaving the near-plane, bounds, Jacobian and alpha gates
       and the `planePlacement` drop. Verify the test from 4.1 now passes.
-- [ ] 4.3 Change the test "drop a candidate outside the viewport" in
+- [x] 4.3 Change the test "drop a candidate outside the viewport" in
       `src/app/grid-labels.test.ts` to read each placement's screen bounding box against
       the viewport rather than its anchor, and add the unit test for "A label goes when no
       part of it is on the frame". Verify
       `pnpm vitest run src/app/grid-labels.test.ts` passes.
-- [ ] 4.4 Hold the background sample point inside the frame where `createGridLabelOverlay`
+- [x] 4.4 Hold the background sample point inside the frame where `createGridLabelOverlay`
       reads it, and add the unit test for "A label at the edge reads the background inside
       the frame". Verify it passes.
 

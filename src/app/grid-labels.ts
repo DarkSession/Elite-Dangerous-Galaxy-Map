@@ -486,6 +486,14 @@ export interface GridLabelPlacement {
  * `GRID_LABEL_MIN_ALPHA`, which `gridLabelAlpha` reads from the two axis scales the
  * crossing sits at and the camera distance band.
  *
+ * A candidate is dropped for the viewport **only when no part of its own label is on the
+ * screen**, which `planePlacement` reads from the label's own quad. The gate does not
+ * read the crossing's own projected point: the crossing is the label's bottom right
+ * corner, so a gate there took the whole label away as the crossing passed the right or
+ * the bottom edge while every digit of it was still in front of the user. The reported
+ * anchor stays the crossing, so the page may report an anchor outside the viewport for a
+ * label the user can see.
+ *
  * The two scales come from the projection's own Jacobian at the crossing: the sweep
  * projects the crossing and two points a small step along the game `x` and `z` axes, and
  * inverts the 2 by 2 matrix those two steps make. The reading is then the light years of
@@ -564,7 +572,13 @@ export function gridLabelPlacements(
       const at = project(gameX, gameZ);
       if (at === null) continue;
       const { x, y } = at;
-      if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) continue;
+      // The crossing's own projected point is not a gate. A label lies in the cell above
+      // and left of its crossing, so the crossing is the label's bottom right corner and
+      // not a point of the text. `planePlacement` below drops a label whose whole quad
+      // lies outside the viewport, which is the reading the spec asks for.
+      //
+      // The near-plane check above stays, because the Jacobian and the alpha gate read
+      // the projected crossing and a point behind the camera has no useful one.
       // The two steps that make the Jacobian of the projection at this crossing.
       const step = spacingLy * JACOBIAN_STEP;
       const alongX = project(gameX + step, gameZ);
@@ -813,11 +827,16 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
         // follow, so a number and the line it sits on never disagree. The reading is
         // taken at the centre of the placement's screen bounding box and not at the
         // crossing, because the box is the picture the text draws over.
+        //
+        // The point is held inside the frame. A label at the edge can carry the centre
+        // of its own box outside the viewport while part of the text is inside it. The
+        // reading has no pixel there, and a label that fell back to no reading would
+        // step in colour and in opacity as its centre crossed the edge.
         const box = placement.placed.box;
         const background = gridLabelBackground(
           frame.background,
-          box.left + box.width / 2,
-          box.top + box.height / 2,
+          Math.min(Math.max(box.left + box.width / 2, 0), frame.viewport.width - 1),
+          Math.min(Math.max(box.top + box.height / 2, 0), frame.viewport.height - 1),
           frame.viewport,
         );
         const opacity = gridLabelOpacity(
