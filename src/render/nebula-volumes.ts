@@ -554,7 +554,7 @@ function createArray(
  *
  * The cost of that is one long task on the fallback path, at load, after the first
  * frame. `e2e/nebula-cost.spec.ts` reads it under `the fallback decode is one task`: it
- * runs 14.5 to 19.2 ms on the development card, against a 16.7 ms frame budget and a
+ * runs 14.2 to 19.2 ms on the development card, against a 16.7 ms frame budget and a
  * worst single asset of 2.9 ms. Nothing waits on the set, so it shows as one long frame
  * and in no other way, but it is the normal path on a GPU that carries ETC or ASTC
  * rather than S3TC and RGTC, where a slower CPU makes it worse.

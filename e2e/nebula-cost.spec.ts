@@ -113,14 +113,14 @@ test('the volume decode holds the frame budget', async ({ page }) => {
 // regression for the owner.
 //
 // The assertion is therefore on the **sum** and not on the per-asset worst, because the
-// sum is what one task costs. Nineteen readings on this card run **14.5 to 19.2 ms**
-// for the sum, with 1.8 to 2.9 ms for the worst single asset, so the one task straddles
-// the 16.7 ms frame budget and the 33 decodes inside it do not. The tail is 32 percent
-// above the floor, and a first reading of four samples missed it by 1.6 ms and set the
-// bound at 22, which is 14 percent above the true worst. A ratchet set from an
-// understated tail trips on a busy machine and not on a change to the code, so the
-// bound is now the worst of the nineteen plus a quarter. The rule is the one the bound
-// always stated; the worst it is taken from is corrected.
+// sum is what one task costs. Twenty-eight readings on this card run **14.2 to
+// 19.2 ms** for the sum, with 1.8 to 2.9 ms for the worst single asset, so the one task
+// straddles the 16.7 ms frame budget and the 33 decodes inside it do not. The tail is
+// 35 percent above the floor, and a first reading of four samples missed it by 1.6 ms
+// and set the bound at 22, which is 14 percent above the true worst. A ratchet set from
+// an understated tail trips on a busy machine and not on a change to the code, so the
+// bound is now the worst reading plus a quarter. The rule is the one the bound always
+// stated; the worst it is taken from is corrected.
 const FALLBACK_DECODE_MS = 24;
 
 test('the fallback decode is one task', async ({ page }) => {

@@ -213,12 +213,12 @@ from the active list before task 1.1.
       block path and the decoding path into `createNebulaVolumeTextures`, because the
       choice needs a context and the loader has none. That call is synchronous, so all
       33 decodes now run inside it.
-      **What it costs.** Nineteen readings on the development card give a sum of 14.5 to
-      19.2 ms in one task, with a worst single asset of 1.8 to 2.9 ms. The one task
-      therefore straddles the 16.7 ms frame budget. It is paid once, at load, after
-      the first frame, and nothing waits on the set, so it shows as one long frame and
-      in no other way. It is the normal path on a GPU that carries ETC or ASTC rather
-      than S3TC and RGTC, where a slower CPU makes it worse.
+      **What it costs.** Twenty-eight readings on the development card give a sum of
+      14.2 to 19.2 ms in one task, with a worst single asset of 1.8 to 2.9 ms. The one
+      task therefore straddles the 16.7 ms frame budget. It is paid once, at load,
+      after the first frame, and nothing waits on the set, so it shows as one long
+      frame and in no other way. It is the normal path on a GPU that carries ETC or
+      ASTC rather than S3TC and RGTC, where a slower CPU makes it worse.
       **Why it is not fixed here.** Splitting the decode across tasks again needs either
       a context parameter on `NebulaSource.loadVolumes`, which takes none, or a
       `createDraw` that finishes after it returns. Both change the source interface a
@@ -231,16 +231,18 @@ from the active list before task 1.1.
       taken — every other test in that file runs on the block path, where the decode
       count is 0 and any decode assertion passes vacuously. It asserts on the **sum**,
       which is what one task costs, and not on the per-asset worst, which no longer
-      describes a task. Its bound is 24 ms, the worst of the nineteen readings plus a
-      quarter. It is a ratchet against the decode growing and not a promise that the
-      frame budget holds.
+      describes a task. Its bound is 24 ms, the worst reading plus a quarter. It is a
+      ratchet against the decode growing and not a promise that the frame budget
+      holds.
       **The bound was set from an understated tail and is corrected.** The first four
       readings ran 15.0 to 17.6 ms and put the bound at 22. The gate then sampled 15.0,
       15.3, 15.9, 16.4 and 19.2, and nine further runs gave 14.5 to 16.9, so the real
       worst of nineteen is 19.2 and a bound of 22 sat 14 percent above it rather than
       the quarter it claimed. A ratchet that close to the tail trips on a busy machine
       and not on a change to the code. The rule did not move; the worst it is taken from
-      is corrected, and the bound follows it to 24.
+      is corrected, and the bound follows it to 24. A third gate pass read nine more
+      sums, 14.2 to 17.8 ms. They leave the worst of twenty-eight at 19.2 and move the
+      floor to 14.2.
       Two comments that claimed one asset a task are corrected:
       `src/render/nebula-volumes.ts` now states what runs in the one call and why it
       cannot sit in the loader, and the decode paragraph of `e2e/nebula-cost.spec.ts`
