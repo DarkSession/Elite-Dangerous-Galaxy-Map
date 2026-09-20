@@ -10,6 +10,7 @@ import {
   MODEL_BOUNDS,
 } from './real-systems';
 import type { CategoryInput, RealSystemSet, SystemRecordInput } from './real-systems';
+import { TIMED_TEST } from '../../tests/timed';
 
 /**
  * Casts a hand-made array to the input type. The reader checks every field at run
@@ -489,7 +490,7 @@ describe('the set', () => {
     expect(afterClear).toBeGreaterThan(afterAdd);
   });
 
-  test('adds 10,000 records and replaces them in under 50 ms each', () => {
+  test('adds 10,000 records and replaces them in under 50 ms each', TIMED_TEST, () => {
     const set = setWith('A');
     const records = Array.from({ length: MAX_SYSTEMS }, (_ignored, index) => ({
       ...record(`s${index}`, 'A', [index * 0.001, 0, 0]),
@@ -732,7 +733,7 @@ describe('the category switch', () => {
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
   });
 
-  test('sweeps 10,000 systems of 4 categories in under 2 ms', () => {
+  test('sweeps 10,000 systems of 4 categories in under 2 ms', TIMED_TEST, () => {
     const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
     const set = setWith(...names);
     const records = Array.from(
