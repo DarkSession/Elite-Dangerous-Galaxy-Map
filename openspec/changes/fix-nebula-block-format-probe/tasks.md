@@ -191,7 +191,9 @@ a refusal on every stub context and three passing tests fail. This group comes f
       range in this task; report it, because the range is a Chromium figure and a second
       browser's reading may belong beside it rather than inside it. **Read:** eight
       readings of the sum in Firefox are **16, 17, 20, 15, 21, 20, 13, 21 ms**, and the
-      worst single asset is 1 to 2 ms. The range is therefore **13 to 21 ms**, which sits
+      worst single asset is 1 to 2 ms. A ninth reading, taken inside the whole-suite run
+      of task 7.3, is **23 ms** with a worst asset of 3 ms. The range is therefore **13 to
+      23 ms**, which sits
       **outside** the stated 14.2 to 19.2 at both ends. Firefox rounds `performance.now()`
       to 1 ms, so every one of the 33 marks is quantized and the sum carries that error;
       the figures are integers for that reason. The range is not moved here. Five Chromium
@@ -210,17 +212,46 @@ a refusal on every stub context and three passing tests fail. This group comes f
 
 ## 7. The whole suite and the gate
 
-- [ ] 7.1 Run `pnpm lint` and `pnpm exec tsc --noEmit`, and fix what they report.
-- [ ] 7.2 Run `pnpm exec vitest run` on its own, with no Playwright run in flight, and
-      verify every unit test passes.
-- [ ] 7.3 Run the whole Playwright suite once, one run at a time, and verify it passes with
-      the renderer assertion holding on hardware in both browsers.
-- [ ] 7.4 Check that no figure of the two delta specs is left unmet, by reading each changed
+- [x] 7.1 Run `pnpm lint` and `pnpm exec tsc --noEmit`, and fix what they report.
+      **Read:** both pass with nothing reported.
+- [x] 7.2 Run `pnpm exec vitest run` on its own, with no Playwright run in flight, and
+      verify every unit test passes. **Read:** **82 of 82 files, 1188 of 1188 tests
+      passed**.
+- [x] 7.3 Run the whole Playwright suite once, one run at a time, and verify it passes with
+      the renderer assertion holding on hardware in both browsers. **Read:** the suite
+      passes. The parallel pass reads **556 passed** in 8.0 minutes and the timed pass
+      **64 passed** in 3.4 minutes, for **620 of 620**, and the script exits 0. The
+      renderer check holds on hardware in both browsers: Chromium reads
+      `ANGLE (NVIDIA, Vulkan 1.4.341 (NVIDIA GeForce RTX 4080 (0x00002704)), NVIDIA)` and
+      Firefox reads `NVIDIA GeForce RTX 4080/PCIe/SSE2`. Neither SwiftShader nor llvmpipe
+      appears. The Firefox project runs six tests, which are the renderer pair, the new
+      nebula reading and the three paint budget readings.
+- [x] 7.4 Check that no figure of the two delta specs is left unmet, by reading each changed
       scenario against the test that holds it. Do not edit `openspec/specs/` by hand; the
-      archive step carries the delta.
-- [ ] 7.5 Confirm the archive order the design states is still correct: this change is
+      archive step carries the delta. **Read:** `openspec/specs/` is untouched. The three
+      new `nebulae` scenarios are held: "A refused format takes both volumes to the decode
+      path" by the three unit scenarios of tasks 2.3 to 2.5, which cover each format on
+      its own, the drain and the restored context; "The nebulae draw where the target
+      refuses a block format" by the Chromium guard of task 3.2; "The nebulae draw in
+      Firefox" by `e2e/nebulae-firefox.spec.ts`. The widened WHEN of "The blocks upload
+      with no decode where the extensions are there" is held by task 5.2. The prose figure
+      14.2 to 19.2 ms keeps its ratchet at 24 ms in `e2e/nebula-cost.spec.ts`, and five
+      readings taken now are 16.0 to 17.2 ms. The log of the path the browser took is task
+      4.2. The twelve scenarios the requirement carries over are held by the tests that
+      already held them, which the suite run of 7.3 covers. In `browser-suite`, the
+      `testMatch` scenario is held by task 4.6 and the baseline scenario by task 4.7.
+- [x] 7.5 Confirm the archive order the design states is still correct: this change is
       archived **after** `store-nebula-volumes-as-slice-arrays`, because its delta is
-      written against the text that change leaves behind. Record the check.
+      written against the text that change leaves behind. Record the check. **Read:** the
+      order holds, and change 2 is already archived. `openspec/changes/archive/` holds
+      `2026-09-20-store-nebula-volumes-as-slice-arrays`, and
+      `openspec/specs/nebulae/spec.md` now carries the sentence this delta corrects, at
+      line 302: "Where the context carries both `EXT_texture_compression_rgtc` and
+      `WEBGL_compressed_texture_s3tc`, the renderer SHALL upload the blocks with no
+      decode." The delta's MODIFIED heading "The art comes from 33 volume assets" matches
+      the requirement at line 233, and the `browser-suite` heading "The browser gate runs
+      Chromium and Firefox" matches the requirement at line 12 of that spec. This change
+      is the only one left to archive of the two.
 - [ ] 7.6 GATE — implementation review. Launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and state
       the verdict and every finding when presenting the work.
