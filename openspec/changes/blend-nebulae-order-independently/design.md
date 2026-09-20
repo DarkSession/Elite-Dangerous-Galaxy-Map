@@ -95,6 +95,14 @@ saved value back before the composite.
   one new member, the number format.
 - _Rejected:_ a framebuffer on `NebulaFrame`. It puts a WebGL handle in a published type
   for no gain, and the renderer would then have to pass what it had already bound.
+- **The read comes before the target is built, and the order is not free.**
+  `createRenderTarget` binds the new framebuffer to attach its texture and then binds
+  **null**, so a draw that built its target first and read the binding second would read
+  null on the frame that built it. The composite of that frame would then go to the
+  canvas and not to the half-resolution target. The pass reads the binding as its first
+  act, and two unit tests hold the order: one over the pass's fake context, and one over
+  the renderer's, whose fake answers `getParameter(FRAMEBUFFER_BINDING)` with the
+  framebuffer it holds rather than with a number.
 
 ### The CPU reference composites the way the pass does
 
@@ -110,6 +118,21 @@ additively, and both `.bin` fixtures are rebuilt in the same commit as the shade
   says the march still agrees with an independent statement of the same integral and the
   same composite, which is what the requirement asks of it. The check that the frame did
   not change elsewhere is task 4.3, over the readings of `e2e/nebulae.spec.ts`.
+- _On what the two RMSE bounds do not guard, which is sharper than the paragraph above:_
+  the rebuilt reference sums the emissions over black and drops the transmittance it
+  carried, and the browser frame the fixture is read against also draws on black. The
+  accumulated transmittance therefore multiplies zero on both sides. The comparison is
+  blind to the output alpha — the one expression this change moves — and that, and not the
+  composite in general, is why both readings fell: 0.0083255 to 0.0018745 for
+  `barnards-loop` and 0.0058001 to 0.0036028 for `cats-eye`. The bounds guard the march
+  and the emission sum. They do not guard the transmittance.
+
+  The transmittance keeps its coverage in two other places. The 33-asset range test in
+  `src/render/nebula-march.test.ts` reads the output alpha of every asset against a
+  hand-computed pair of constants, which is why those two constants became their
+  complements. And the browser test **a dark nebula behind the core stops cutting a hole**
+  draws a record of negative extinction over the lit core, where the transmittance is the
+  only thing the frame shows.
 - _Rejected:_ keeping the old reference and widening the bound. That hides the size of the
   change in the bound and leaves the next reader unable to tell a march error from this
   one.
@@ -150,15 +173,42 @@ additively, and both `.bin` fixtures are rebuilt in the same commit as the shade
   **art** and not of the target. Reading it would need a test that stubs
   `EXT_color_buffer_float` to null, which this change does not add.
 
-### The composite is its own shader pair
+### The order probe reverses the draw and nothing else
 
-**Chosen:** a full-screen triangle with a two-line fragment shader, in
-`src/render/shaders/`, and the draw in `src/render/nebula-pass.ts`.
+**Chosen:** `NebulaFrame` gains `reverseOrder`, the pass draws `selection.instances`
+backwards when it is set, and the switch runs from `src/render/global.ts` through
+`src/app/main.ts`, `src/app/create-map.ts` and `src/render/renderer.ts`, in the manner of
+`setNebulaOcclusion`. The map draws with it false.
+
+- _Why:_ the requirement is that the frame does not depend on the order. A test can only
+  state that by drawing the same frame under two orders, and nothing else in the map can
+  change the order of a selection.
+- _Why the frame and not a global:_ the pass reaches the map through `NebulaFrame` alone.
+  A module-level switch would need a setter on the `./nebulae` subpath, which is the
+  published surface, and a read of `window` inside the draw loop would put an untyped
+  back door in the render path.
+- _The cost:_ `NebulaFrame` is reachable from `NebulaSource`, so this second member is in
+  `dist/types` beside the first. No host writes a `NebulaFrame` — the renderer builds it —
+  so nothing outside the package breaks, but the member is a probe sitting in a published
+  type and it is named and documented as one.
+- _What the probe cannot reach:_ the bound is one step of the display range and not zero,
+  because `RGBA16F` addition is not associative. The reading is in the spec's scenario.
+
+### The composite is its own fragment shader, over the shared vertex stage
+
+**Chosen:** a two-line fragment shader in `src/render/shaders/`, over the
+`fullscreen.vert` the other full-screen passes use, and the draw in
+`src/render/nebula-pass.ts`.
 
 - _Why:_ the pass owns its target and its composite, so the renderer keeps one call and
   the whole graph stays behind `src/nebulae/`. The import rule that keeps the nebula art
   out of a host that asks for no nebulae is what decides this: a composite shader in the
   renderer would be in the main chunk.
+- _Why the vertex stage is shared:_ the first draft copied `fullscreen.vert` to a
+  `nebula-composite.vert` that differed in its comment alone. Sharing it costs the entry
+  chunk nothing, because six core passes already import that file: the string moves into
+  the chunk both entries load, and `dist/index.js` falls by 310 bytes and `dist/nebulae.js`
+  by 296 while the shared chunk gains 339.
 - _Rejected:_ reusing `src/render/composite-pass.ts`. It reads the scene target and tone
   maps it, which is a different draw at a different place in the frame.
 
@@ -174,10 +224,26 @@ additively, and both `.bin` fixtures are rebuilt in the same commit as the shade
   The committed readings are a weak proxy on their own — most of them assert that light
   rose, so a blend that adds light passes them harder — which is why the rise has a bound of
   its own.
-- **The step may not fall to the floor.** → The spec bounds it at 8, which is the no-flip
-  floor the sweep measured. If the blend is order independent the step must reach that
-  floor, so a reading above it means something else still depends on the order — the
-  selection, the budget fade or the clear. Task 4.1 reads the same sweep the probe ran.
+- **The step may not fall to the floor.** → The spec bounds it at 30, which is the worst
+  pair the sweep reads with no order dependence left in the blend. Task 4.1 reads the same
+  sweep the probe ran.
+
+  **The first draft of this design bounded it at 8, and that was wrong twice over.** The
+  probe reported a no-flip floor of "3 to 7", and that figure is a **median of the worst
+  pixel of each window**, not a floor on the worst pixel of 720 windows; a median of maxima
+  bounds nothing. And the sweep's premise, that 0.004 degrees moves the image about a
+  twentieth of a pixel, holds only for a record far beyond the cursor: the camera
+  **orbits**, so it translates as well as turns, and a record at range `r` moves by
+  `turn * (1 - d / r)` for an orbit radius `d`. At 400 light years inside a 3,000 light
+  year orbit that is about a third of a pixel, seven times the figure the premise used. The
+  implementation reads a worst pair of 26 with the blend order independent, against a mean
+  window of 6.93 — the 6.93 is the "3 to 7" the probe meant.
+
+  The lesson for the next reader: a sweep of a moving camera cannot state order
+  independence, because it always carries the motion. The scenario **The frame does not
+  change when the order is reversed** states it instead, by drawing one camera twice and
+  reversing the record order between the two. The sweep stays beside it as the continuity
+  reading, with a bound that falsifies the 71 the ordered blend gives.
 - **One more full-screen draw and one more target.** → 230,400 fragments and 1,843,200
   bytes at 1280 by 720. The pass already reads far more than that per frame in the march,
   so the composite should not show. Task 2.2 takes the cost before and task 4.4 after, at the cameras

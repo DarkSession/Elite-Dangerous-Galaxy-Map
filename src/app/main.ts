@@ -323,6 +323,7 @@ function start(target: HTMLCanvasElement): void {
   global.project = (point) => debug.project(point);
   global.setPasses = (next) => debug.setPasses(next);
   global.setNebulaOcclusion = (value) => debug.setNebulaOcclusion(value);
+  global.setNebulaOrderReversed = (value) => debug.setNebulaOrderReversed(value);
   global.starVertexCount = () => debug.starVertexCount();
   global.starDrawnCount = () => debug.starDrawnCount();
   global.starSuppressedCount = () => debug.starSuppressedCount();

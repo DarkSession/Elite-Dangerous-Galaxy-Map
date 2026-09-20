@@ -33,6 +33,10 @@ the light one record would take from another, and it does not change as the came
 The selection SHALL NOT order the records by range. It orders them by apparent size,
 which the covered-area budget needs, and the draw follows that order.
 
+The renderer SHALL carry a probe that draws the selected records in the reverse order, so
+a test can state the order independence rather than argue it. The probe SHALL NOT reach
+the supported surface, and the map SHALL draw with it off.
+
 #### Scenario: A dark nebula attenuates
 
 - **WHEN** the browser test draws a dark nebula over a lit background and reads the mean
@@ -68,17 +72,45 @@ which the covered-area budget needs, and the draw follows that order.
   is a judgement about how much brightening the look can take. It is not a reading, and it
   is the one figure here a reader is meant to argue with.
 
+#### Scenario: The frame does not change when the order is reversed
+
+- **WHEN** the browser test draws one camera twice, once with the selected records in the
+  order the selection gives them and once with that order reversed, at three cameras
+  inside the band, with every pass but the nebulae off and the occlusion at 0
+- **THEN** the two frames are one frame: no pixel differs by more than **1** of 255,
+  summed over the three channels, and the mean frame luminance agrees to seven places
+
+  This is the scenario that states the requirement. The two frames differ in the draw
+  order and in nothing else, so nothing but the order can move them.
+
+  The bound is not 0 because the accumulation target is `RGBA16F` and addition in it is
+  not associative: a sum of 120 emissions can land one step of the format either side of
+  the same sum added backwards. The implementation reads a frame of 87 records that is
+  byte for byte identical, a frame of 110 records that differs at 7 pixels of 921,600 and
+  a frame of 120 records that differs at 40, each by 1 of 255 in one channel. The means
+  differ by 6.1e-9 in 0.1933 at the worst of the three.
+
 #### Scenario: The frame does not step when two records change rank
 
 - **WHEN** the browser test orbits the camera about the Orion viewpoint at 3,000 light
   years, with every pass but the nebulae switched off, and reads 720 pairs of frames, each
   pair 0.004 degrees apart
-- **THEN** no pair differs at any pixel by more than **8**, summed over the three
+- **THEN** no pair differs at any pixel by more than **30**, summed over the three
   channels on a 0 to 255 scale
 
-  A camera step of 0.004 degrees moves the image about a twentieth of a pixel, so a
-  difference above that floor is a step and not a move. The same sweep before this change
-  reads a worst pair of **71** at this viewpoint, and 167 of its 720 pairs above 8.
+  This is the continuity reading beside the scenario above, and it measures more than a
+  step. The camera **orbits** the cursor, so 0.004 degrees turns it and also carries it
+  0.21 light years sideways at this radius. A record at range `r` therefore moves by
+  `turn * (1 - 3000 / r)` on the screen: nothing at the cursor's own range, a twentieth
+  of a pixel far beyond it, and about a third of a pixel at 400 light years, which is
+  well inside the orbit. The records nearest the camera move most and cover the most
+  pixels. The sweep therefore reads the motion plus any step, and never a step alone.
+
+  What the bound falsifies is the reading the ordered blend gives at the same sweep: a
+  worst pair of **71**. The implementation reads **26**, and 30 is that figure rounded up.
+  The count of pairs above the bound is not part of the assertion, because the motion puts
+  many pairs above any floor near the motion's own size: 163 of the 720 pairs sit above 8
+  under this blend and 167 sit above it under the ordered one.
 
 ## MODIFIED Requirements
 

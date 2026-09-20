@@ -391,6 +391,12 @@ export interface GalaxyMapDebug {
    * give the same picture.
    */
   setNebulaOcclusion(value: number): void;
+  /**
+   * Draws the nebula records in the reverse order. The pass composites without an
+   * order, so the frame does not change, and the browser test that reads that is the
+   * one caller.
+   */
+  setNebulaOrderReversed(value: boolean): void;
   readonly look: LookSettings;
   measureFrames(count: number): number;
   frameStats(): FrameStats;
@@ -1647,6 +1653,10 @@ export function createGalaxyMap(
     },
     setNebulaOcclusion(value: number): void {
       renderer?.setNebulaOcclusion(value);
+      drawFrame();
+    },
+    setNebulaOrderReversed(value: boolean): void {
+      renderer?.setNebulaOrderReversed(value);
       drawFrame();
     },
     get look(): LookSettings {

@@ -365,6 +365,12 @@ export interface Renderer {
    * give the same picture.
    */
   setNebulaOcclusion(value: number): void;
+  /**
+   * Draws the nebula records in the reverse order, or in the order the selection gives
+   * them. It is a probe and not a look setting: the browser test that reads the order
+   * independence of the frame is the one caller.
+   */
+  setNebulaOrderReversed(value: boolean): void;
   /** Reads the look settings, which the caller may change in place. */
   readonly look: LookSettings;
   /** The drawing area in CSS pixels. */
@@ -458,6 +464,9 @@ export function createRenderer(
   let markerCalls = 0;
   let cloudPass: CloudPass | null = null;
   let nebulaDraw: NebulaDraw | null = null;
+  // The draw order of the records. The map draws in the order the selection gives, and
+  // a browser test turns this on to read that the frame does not follow it.
+  let nebulaOrderReversed = false;
   let nebulaDrawn = 0;
   let nebulaCalls = 0;
   let nebulaAboveFloor = 0;
@@ -607,8 +616,11 @@ export function createRenderer(
 
     // The nebulae join the volume and the clouds in the half-resolution target, after
     // the cloud sprites. The glow then reads them with the rest of the source, and the
-    // tone map reads them with the rest of the scene. The blend is source-over, so a
-    // dark nebula attenuates what the two passes before it drew.
+    // tone map reads them with the rest of the scene.
+    //
+    // The pass draws the records into a target of its own and composites that target
+    // here, so a dark nebula attenuates what the two passes before it drew at the
+    // composite and not during the record loop.
     nebulaDrawn = 0;
     nebulaCalls = 0;
     nebulaAboveFloor = 0;
@@ -630,6 +642,9 @@ export function createRenderer(
         camera: [camera[0], camera[1], camera[2]],
         distance: view.distance,
         targetSize: [halfTarget.width, halfTarget.height],
+        // The pass builds its accumulation target with the flag the half-resolution
+        // target was built with, so the two hold one number format.
+        floatTarget: float,
         canvasHeightCss: area.height,
         canvasWidthCss: area.width,
         fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
@@ -670,6 +685,7 @@ export function createRenderer(
         // a handle the caller may write to in place, so a clamp in the setter alone is
         // gone around by a write to `debug.look`.
         occlusion: marched ? nebulaOcclusionOf(look.nebulaOcclusion) : 0,
+        reverseOrder: nebulaOrderReversed,
       });
       nebulaDrawn = nebulaDraw.drawnCount;
       nebulaCalls = nebulaDraw.drawCalls;
@@ -1080,6 +1096,9 @@ export function createRenderer(
     },
     setNebulaOcclusion(value: number): void {
       look.nebulaOcclusion = value;
+    },
+    setNebulaOrderReversed(value: boolean): void {
+      nebulaOrderReversed = value;
     },
     setPasses(next: Partial<PassSwitches>): void {
       if (next.volume !== undefined) passes.volume = next.volume;

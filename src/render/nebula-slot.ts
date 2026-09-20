@@ -55,6 +55,12 @@ export interface NebulaFrame {
   readonly distance: number;
   /** The size of the target the draw draws into, in pixels. */
   readonly targetSize: readonly [number, number];
+  /**
+   * Whether the renderer's own colour targets hold a floating point number format. The
+   * pass builds its accumulation target with the same flag, so a card that gives no
+   * floating point target draws the nebulae as it draws the rest of the scene.
+   */
+  readonly floatTarget: boolean;
   /** The height of the canvas in CSS pixels. The size rules are stated in those. */
   readonly canvasHeightCss: number;
   /**
@@ -98,6 +104,15 @@ export interface NebulaFrame {
   readonly detailScale: number;
   /** How much of the galaxy volume's extinction a nebula takes, 0 to 1. */
   readonly occlusion: number;
+  /**
+   * True draws the selected records in the reverse order. It is a probe and not a look
+   * setting: the map draws with it false, and the browser test that reads the order
+   * independence of the frame is the one caller that sets it.
+   *
+   * The pass composites without an order, so the two frames are one frame. The member
+   * is what lets a test state that rather than argue it.
+   */
+  readonly reverseOrder: boolean;
 }
 
 /** What the renderer calls to draw the nebulae of one frame. */

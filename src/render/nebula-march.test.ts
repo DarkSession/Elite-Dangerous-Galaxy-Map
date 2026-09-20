@@ -2,8 +2,9 @@
 //
 // `shaders/nebulae.frag` applies no upper clamp to the transmittance, because five of
 // the 33 assets carry a negative extinction channel and clamping changes what they draw.
-// Without a clamp the transmittance can rise above 1, which would make the output alpha
-// negative and the blend wrong. This file marches the committed art and reads the range.
+// Without a clamp the transmittance can rise above 1, and the output alpha is that
+// transmittance, so a value above 1 would raise the light of the scene behind a nebula.
+// This file marches the committed art and reads the range.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
@@ -91,7 +92,8 @@ function sample(
 /**
  * One ray, as `shaders/nebulae.frag` marches it: the slab test with the near end clamped
  * at 0, the four-channel recurrence with no upper clamp, the emission after the step and
- * the same early exit. The alpha is `1` minus the running alpha transmittance.
+ * the same early exit. The output alpha is the running alpha transmittance, which is
+ * what the shader writes and what the pass multiplies the accumulated alpha by.
  */
 function marchOf(
   asset: Marched,
@@ -99,7 +101,7 @@ function marchOf(
   dir: readonly [number, number, number],
   steps: number,
   gain: readonly [number, number, number] = [0, 0, 0],
-): { colour: [number, number, number]; alpha: number } {
+): { colour: [number, number, number]; transmittance: number } {
   const low = [0, 0, 0];
   const high = [0, 0, 0];
   for (let axis = 0; axis < 3; axis += 1) {
@@ -111,7 +113,8 @@ function marchOf(
   }
   const near = Math.max(low[0] as number, low[1] as number, low[2] as number, 0);
   const far = Math.min(high[0] as number, high[1] as number, high[2] as number);
-  if (far <= near) return { colour: [0, 0, 0], alpha: 0 };
+  // A ray that misses the box draws nothing, so it takes no light from the scene.
+  if (far <= near) return { colour: [0, 0, 0], transmittance: 1 };
 
   const count = Math.min(Math.max(Math.ceil((far - near) * steps), 1), 256);
   const step = (far - near) / count;
@@ -147,7 +150,7 @@ function marchOf(
     }
     if (transmittance.every((held) => held < 0.01)) break;
   }
-  return { colour: emission, alpha: 1 - (transmittance[3] as number) };
+  return { colour: emission, transmittance: transmittance[3] as number };
 }
 
 /** Rays into the box, from outside it, along each axis and across a small grid. */
@@ -187,7 +190,7 @@ describe('the marched alpha', () => {
     for (const asset of assets) {
       for (const steps of RATES) {
         for (const ray of raysOf()) {
-          const alpha = marchOf(asset, ray.eye, ray.dir, steps).alpha;
+          const alpha = marchOf(asset, ray.eye, ray.dir, steps).transmittance;
           expect(
             Number.isFinite(alpha),
             `${asset.name} at ${steps} steps gave ${alpha}`,
@@ -272,13 +275,13 @@ describe('the march integral', () => {
   function byHand(
     count: number,
     step: number,
-  ): { colour: [number, number, number]; alpha: number } {
+  ): { colour: [number, number, number]; transmittance: number } {
     const held = 1 - EXTINCTION * DENSITY * step;
     let powers = 0;
     for (let index = 1; index <= count; index += 1) powers += held ** index;
     const of = (channel: number): number =>
       COLOUR * (GAIN[channel] as number) * DENSITY * step * powers;
-    return { colour: [of(0), of(1), of(2)], alpha: 1 - held ** count };
+    return { colour: [of(0), of(1), of(2)], transmittance: held ** count };
   }
 
   test('matches the hand-computed result on a ray across the box', () => {
@@ -286,9 +289,10 @@ describe('the march integral', () => {
     // and a far of 3. At one step over a unit the march takes two steps of one unit.
     const marched = marchOf(flatAsset(), [0, 0, -2], [0, 0, 1], 1, GAIN);
     const wanted = byHand(2, 1);
-    // 1 - (1 - 0.5 * 128/255) ** 2, which is 0.43896963...
-    expect(wanted.alpha).toBeCloseTo(0.43896963, 8);
-    expect(marched.alpha).toBeCloseTo(wanted.alpha, 12);
+    // (1 - 0.5 * 128/255) ** 2, which is 0.56103037... The shader wrote one minus this
+    // before the blend changed, so the figure is the same reading the other way.
+    expect(wanted.transmittance).toBeCloseTo(0.56103037, 8);
+    expect(marched.transmittance).toBeCloseTo(wanted.transmittance, 12);
     for (let channel = 0; channel < 3; channel += 1) {
       expect(marched.colour[channel], `channel ${channel}`).toBeCloseTo(
         wanted.colour[channel] as number,
@@ -302,9 +306,10 @@ describe('the march integral', () => {
     // unit, and four steps of a quarter at a rate of four.
     const marched = marchOf(flatAsset(), [0, 0, 0], [0, 0, 1], 4, GAIN);
     const wanted = byHand(4, 0.25);
-    // 1 - (1 - 0.5 * 128/255 * 0.25) ** 4, which is 0.22833131...
-    expect(wanted.alpha).toBeCloseTo(0.22833131, 8);
-    expect(marched.alpha).toBeCloseTo(wanted.alpha, 12);
+    // (1 - 0.5 * 128/255 * 0.25) ** 4, which is 0.77166869... The shader wrote one minus
+    // this before the blend changed.
+    expect(wanted.transmittance).toBeCloseTo(0.77166869, 8);
+    expect(marched.transmittance).toBeCloseTo(wanted.transmittance, 12);
     for (let channel = 0; channel < 3; channel += 1) {
       expect(marched.colour[channel], `channel ${channel}`).toBeCloseTo(
         wanted.colour[channel] as number,

@@ -13,7 +13,7 @@ import {
   DEFAULT_NEBULA_OCCLUSION,
   DEFAULT_NEBULA_STEP_RATE,
 } from './nebula-slot';
-import type { NebulaDraw } from './nebula-slot';
+import type { NebulaDraw, NebulaFrame } from './nebula-slot';
 import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
@@ -70,6 +70,7 @@ function fakeContext(extensions: readonly string[]): FakeContext {
   const programs = new Map<unknown, string[]>();
   const draws: string[][] = [];
   let bound: unknown = null;
+  let framebuffer: unknown = null;
   const state: Record<string, unknown> = {
     drawingBufferWidth: 800,
     drawingBufferHeight: 600,
@@ -83,7 +84,13 @@ function fakeContext(extensions: readonly string[]): FakeContext {
       case 'getShaderParameter':
       case 'getProgramParameter':
         return true;
+      case 'bindFramebuffer':
+        framebuffer = args[1];
+        return null;
+      // The nebula pass reads the binding it has to put back, so the fake answers that
+      // one read with the framebuffer it holds rather than with a number.
       case 'getParameter':
+        if (args[0] === constants.get('FRAMEBUFFER_BINDING')) return framebuffer;
         return Float32Array.from([1, 1023]);
       case 'shaderSource':
         shaders.set(args[0], args[1] as string);
@@ -483,6 +490,7 @@ function nebulaDrawOf(gl: WebGL2RenderingContext): NebulaDraw {
  */
 function scenePassOf(sources: readonly string[]): string {
   const source = sources.join('\n');
+  if (source.includes('uAccumulated')) return 'nebula-composite';
   if (source.includes('uNebulaTransfer')) return 'nebulae';
   if (source.includes('uSpreadPower')) return 'clouds';
   if (source.includes('uAbsorption')) return 'volume';
@@ -525,13 +533,15 @@ describe('the nebula pass in the frame', () => {
     renderer.dispose();
   });
 
-  test('draws after the cloud sprites, into the same target', () => {
+  test('composites after the cloud sprites, into the same target', () => {
     const { context, renderer, order } = sceneFrame(12000);
-    expect(order).toEqual(['volume', 'clouds', 'nebulae']);
+    // The records draw into the pass's own accumulation target, and the composite then
+    // applies that target to the half-resolution one.
+    expect(order).toEqual(['volume', 'clouds', 'nebulae', 'nebula-composite']);
 
-    // The framebuffer bound at the nebula draw is the one bound at the cloud draw, so
-    // the nebulae join the volume and the clouds in the half-resolution target and the
-    // glow reads all three.
+    // The framebuffer bound at the composite draw is the one bound at the cloud draw,
+    // so the nebulae join the volume and the clouds in the half-resolution target and
+    // the glow reads all three. The records draw into a target of their own.
     let bound: unknown = 'none';
     const targets = new Map<string, unknown>();
     let drawIndex = 0;
@@ -548,9 +558,48 @@ describe('the nebula pass in the frame', () => {
         drawIndex += 1;
       }
     }
-    expect(targets.get('nebulae')).toBe(targets.get('clouds'));
-    expect(targets.get('nebulae')).toBe(targets.get('volume'));
+    expect(targets.get('nebula-composite')).toBe(targets.get('clouds'));
+    expect(targets.get('nebula-composite')).toBe(targets.get('volume'));
+    expect(targets.get('nebulae')).not.toBe(targets.get('clouds'));
     renderer.dispose();
+  });
+
+  // The accumulation target of the nebula pass has to hold what the half-resolution
+  // target holds, so the renderer names the flag it built that target with and the pass
+  // does not read the context again.
+  test('gives the nebulae the number format it built its own targets with', () => {
+    for (const float of [true, false]) {
+      (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+      const context = fakeContext(
+        float ? ['EXT_color_buffer_float', 'EXT_float_blend'] : [],
+      );
+      const frames: NebulaFrame[] = [];
+      const renderer = createRenderer(context.gl, fakeCanvas());
+      renderer.setNebulae({
+        draw(frame: NebulaFrame): void {
+          frames.push(frame);
+        },
+        drawnCount: 0,
+        drawCalls: 0,
+        aboveFloorCount: 0,
+        coveredArea: 0,
+        dispose: (): void => undefined,
+      });
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+
+      expect(frames[0]?.floatTarget).toBe(float);
+      // The first image the renderer allocates is the half-resolution target, at the
+      // 2 by 2 it starts from. The frame names the format of that image.
+      // The first four-channel image the renderer allocates is the half-resolution
+      // target, at the 2 by 2 it starts from. The range buffer is one channel and comes
+      // before it, so the search names the format as well as the size.
+      const half = context
+        .of('texImage2D')
+        .find((call) => call.args[6] === context.gl.RGBA)?.args;
+      expect([half?.[3], half?.[4]]).toEqual([2, 2]);
+      expect(half?.[2]).toBe(float ? context.gl.RGBA16F : context.gl.RGBA8);
+      renderer.dispose();
+    }
   });
 
   test('reports the drawn count and the one draw call', () => {
@@ -563,6 +612,8 @@ describe('the nebula pass in the frame', () => {
   test('draws nothing at the default view, where the zoom weight is 0', () => {
     const { renderer, order } = sceneFrame(60000);
     expect(order).not.toContain('nebulae');
+    // The target, the clear and the composite go with the record draws.
+    expect(order).not.toContain('nebula-composite');
     expect(renderer.nebulaDrawnCount()).toBe(0);
     expect(renderer.nebulaDrawCalls()).toBe(0);
     renderer.dispose();
@@ -581,6 +632,7 @@ describe('the nebula pass in the frame', () => {
     const order = context.drawSources().map(scenePassOf);
     expect(order).toContain('clouds');
     expect(order).not.toContain('nebulae');
+    expect(order).not.toContain('nebula-composite');
     expect(renderer.nebulaDrawnCount()).toBe(0);
     expect(renderer.nebulaDrawCalls()).toBe(0);
     renderer.dispose();
@@ -595,7 +647,10 @@ describe('the nebula pass in the frame', () => {
     renderer.setPasses({ nebulae: false });
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
     const order = context.drawSources().map(scenePassOf);
+    // The switch skips the accumulation target, the clear and the composite with the
+    // record draws, so a frame with the nebulae off pays for none of them.
     expect(order).not.toContain('nebulae');
+    expect(order).not.toContain('nebula-composite');
     expect(renderer.nebulaDrawnCount()).toBe(0);
     renderer.dispose();
   });

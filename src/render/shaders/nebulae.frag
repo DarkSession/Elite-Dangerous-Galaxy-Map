@@ -2,9 +2,10 @@
 // Marches one nebula volume inside its box.
 //
 // The loop is a volume integral: the transfer function is a four-channel extinction
-// coefficient the density indexes, the emission takes the transmittance after the step,
-// and the output is premultiplied, so the pass blends it with source-over. One blend
-// serves a bright nebula and a dark one.
+// coefficient the density indexes, and the emission takes the transmittance after the
+// step. The output colour is the emission, which the pass adds, and the output alpha is
+// the record's transmittance, which the pass multiplies. One blend serves a bright
+// nebula and a dark one.
 precision highp float;
 precision highp sampler3D;
 
@@ -69,12 +70,15 @@ void main() {
     if (all(lessThan(transmittance, vec4(0.01)))) break;
   }
 
-  // The occlusion scales the colour channels and the alpha together, so a nebula the
-  // camera sees through the dust both stops adding light and stops hiding what is
-  // behind it. The alpha takes the mean of the three channels, which is what the volume
-  // pass writes into its own alpha.
+  // The occlusion scales the colour channels and the extinction together, so a nebula
+  // the camera sees through the dust both stops adding light and stops hiding what is
+  // behind it. The extinction takes the mean of the three channels, which is what the
+  // volume pass writes into its own alpha.
+  //
+  // The alpha is the record's transmittance and not one minus it, because the pass
+  // multiplies the accumulated alpha by `SRC_ALPHA`.
   float mean = dot(vTransmittance, vec3(1.0 / 3.0));
   fragColour = vec4(
     emission * vTransmittance * vWeight,
-    (1.0 - transmittance.a) * mean * vWeight);
+    1.0 - (1.0 - transmittance.a) * mean * vWeight);
 }
