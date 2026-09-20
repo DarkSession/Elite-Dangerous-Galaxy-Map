@@ -353,36 +353,79 @@ async function waitFrames(page: Page, count: number): Promise<void> {
   }, count);
 }
 
+/**
+ * Waits for a number of animation frames, and moves the pointer on the canvas in each
+ * one. A map nobody touches draws at the idle rate, so a reading of the work one frame
+ * does must hold the map awake, as a user who keeps the pointer on it does.
+ */
+async function hoverFrames(
+  page: Page,
+  count: number,
+  x: number,
+  y: number,
+): Promise<void> {
+  await page.evaluate(
+    async ({ frames, pixelX, pixelY }) => {
+      const canvas = document.querySelector('canvas');
+      if (canvas === null) return;
+      for (let index = 0; index < frames; index += 1) {
+        // The point moves by half a pixel and back, so the hover holds the same system.
+        const offset = index % 2 === 0 ? 0 : 0.5;
+        canvas.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId: 1,
+            pointerType: 'mouse',
+            clientX: pixelX + offset,
+            clientY: pixelY,
+          }),
+        );
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+    },
+    { frames: count, pixelX: x, pixelY: y },
+  );
+}
+
 /** What the page reports about the animation frames it drew. */
 interface IntervalStats {
   readonly frames: number;
   readonly meanMs: number;
   readonly worstMs: number;
+  /** The frames the map drew inside the window, which the turn count does not give. */
+  readonly draws: number;
 }
 
 /**
- * Resets the interval reading, waits 120 frames and gives back every statistic. The
- * worst frame and the frame count say what a mean over the budget was: many slightly
- * late frames are load on the machine, and one long stall is a defect in the page.
+ * Resets the interval reading, holds the map awake for 120 frames and gives back every
+ * statistic. The worst frame and the frame count say what a mean over the budget was:
+ * many slightly late frames are load on the machine, and one long stall is a defect in
+ * the page. The map is held awake because a map nobody touches draws at the idle rate,
+ * and a turn of the loop that draws nothing costs nothing to read. The draw count comes
+ * back with the reading, so every caller can prove its window drew.
  */
 async function intervalOver120Frames(page: Page): Promise<IntervalStats> {
-  await page.evaluate(() => window.__galaxyMap?.resetFrameIntervalStats?.());
-  await waitFrames(page, 120);
-  return page.evaluate(
-    () =>
-      window.__galaxyMap?.frameIntervalStats?.() ?? {
-        frames: 0,
-        meanMs: Number.POSITIVE_INFINITY,
-        worstMs: Number.POSITIVE_INFINITY,
-      },
-  );
+  await page.evaluate(() => {
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    window.__galaxyMap?.resetFrameStats?.();
+  });
+  // The middle of the 1920x1080 viewport, so a test that hovers a system there keeps it.
+  await hoverFrames(page, 120, 960, 540);
+  return page.evaluate(() => ({
+    ...(window.__galaxyMap?.frameIntervalStats?.() ?? {
+      frames: 0,
+      meanMs: Number.POSITIVE_INFINITY,
+      worstMs: Number.POSITIVE_INFINITY,
+    }),
+    draws: window.__galaxyMap?.frameStats?.().frames ?? 0,
+  }));
 }
 
-// The reading below is the guard on the instrument. A still map draws one frame per
-// display refresh, so a 60 Hz display gives 16.7 ms. A mean under 15 ms means the
-// browser is not pacing animation frames to the display, and every 18 ms budget in this
-// file is void until that is fixed, rather than passing by default.
-test('a still map paces its animation frames to the display', async ({ page }) => {
+// The reading below is the guard on the instrument. The loop turns once per display
+// refresh, so a 60 Hz display gives 16.7 ms. A mean under 15 ms means the browser is not
+// pacing animation frames to the display, and every 18 ms budget in this file is void
+// until that is fixed, rather than passing by default.
+test('the map paces its animation frames to the display', async ({ page }) => {
   test.setTimeout(120000);
   await openMap(page);
   await page.evaluate(() => {
@@ -398,6 +441,7 @@ test('a still map paces its animation frames to the display', async ({ page }) =
   console.log('the still animation frame interval', stats);
 
   expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.draws).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeGreaterThanOrEqual(15);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });
@@ -424,7 +468,7 @@ test('the selection work stays inside its budget', async ({ page }) => {
   const hovered = await page.evaluate(() => window.galaxyMap?.getHover()?.name ?? null);
 
   await page.evaluate(() => window.__galaxyMap?.resetSelectionSampling?.());
-  await waitFrames(page, 120);
+  await hoverFrames(page, 120, 960, 540);
   const stats = await page.evaluate(
     () =>
       window.__galaxyMap?.selectionSampling?.() ?? {
@@ -436,6 +480,7 @@ test('the selection work stays inside its budget', async ({ page }) => {
   console.log('the selection work over 120 frames', { hovered, ...stats });
 
   expect(hovered).not.toBeNull();
+  // The count is of drawn frames: the sampling runs inside the draw.
   expect(stats.frames).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
 });
@@ -459,6 +504,7 @@ test('the frame interval holds with the selection work running', async ({ page }
   console.log('the interval with 10,000 systems and the pick', stats);
 
   expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.draws).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });
 
@@ -483,6 +529,7 @@ test('the frame interval holds with the HUD on', async ({ page }) => {
   console.log('the interval with the HUD on', stats);
 
   expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.draws).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });
 
@@ -542,6 +589,7 @@ test('the grid labels hold the frame rate', async ({ page }) => {
 
   expect(labels).toBeGreaterThan(0);
   expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.draws).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });
 
@@ -562,6 +610,7 @@ test('reading the background back does not stall the frame', async ({ page }) =>
   const stats = await page.evaluate(async () => {
     const map = window.galaxyMap;
     window.__galaxyMap?.resetFrameIntervalStats?.();
+    window.__galaxyMap?.resetFrameStats?.();
     for (let frame = 0; frame < 120; frame += 1) {
       map?.setView({ cursor: [frame * 20, 0, 0], distance: 4000, yaw: 0, pitch: 5 });
       await new Promise<void>((resolve) => {
@@ -570,13 +619,14 @@ test('reading the background back does not stall the frame', async ({ page }) =>
         });
       });
     }
-    return (
-      window.__galaxyMap?.frameIntervalStats?.() ?? {
+    return {
+      ...(window.__galaxyMap?.frameIntervalStats?.() ?? {
         frames: 0,
         meanMs: Number.POSITIVE_INFINITY,
         worstMs: Number.POSITIVE_INFINITY,
-      }
-    );
+      }),
+      draws: window.__galaxyMap?.frameStats?.().frames ?? 0,
+    };
   });
   const size = await page.evaluate(
     () => window.galaxyMap?.debug.backgroundSize() ?? [0, 0],
@@ -586,6 +636,7 @@ test('reading the background back does not stall the frame', async ({ page }) =>
   // The reading has to be in the path, or the measurement says nothing.
   expect(size).toEqual([120, 68]);
   expect(stats.frames).toBeGreaterThanOrEqual(110);
+  expect(stats.draws).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
   expect(stats.worstMs).toBeLessThanOrEqual(WORST_INTERVAL_MS);
 });
@@ -805,8 +856,9 @@ function bigDumpFixture(): string {
 
 // The page fetches the dump and moves the body to a worker, which inflates it and reads
 // it. The budget is the frame interval and not the whole read: the time the fetch takes
-// is the network's.
-test('the map keeps drawing while the dump is read', async ({ page }) => {
+// is the network's. The reading is of the loop and not of the draw, because a read of a
+// dump touches nothing on the screen until it lands.
+test('the loop keeps turning while the dump is read', async ({ page }) => {
   test.setTimeout(300000);
   const fixture = bigDumpFixture();
   console.log('the dump fixture holds', fixture.length, 'bytes');
@@ -961,4 +1013,65 @@ test('the shape flag sweep holds its budget', async ({ page }) => {
   expect(first).toBeGreaterThanOrEqual(0);
   expect(first).toBeLessThan(2);
   expect(last).toBeLessThan(1);
+});
+
+// Nothing in the map is driven by a clock, so a map nobody touches draws the picture it
+// drew before. The loop still turns at the rate of the display; the draw falls to the
+// idle rate, and every change brings it back.
+test('a still map draws at the idle rate and wakes on a change', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  // Past the settle window that opening the map opened, which is 1200 milliseconds.
+  await page.waitForTimeout(2000);
+
+  const still = await page.evaluate(async () => {
+    window.__galaxyMap?.resetFrameStats?.();
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    return {
+      draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+      turns: window.__galaxyMap?.frameIntervalStats?.().frames ?? -1,
+    };
+  });
+  console.log('two still seconds', still);
+
+  // 200 milliseconds between draws gives 10 draws in two seconds. The band holds a
+  // browser that turns the loop a little early or a little late.
+  expect(still.draws).toBeGreaterThan(5);
+  expect(still.draws).toBeLessThan(20);
+  // The loop itself must keep running, so a change is on the screen in the next frame.
+  expect(still.turns).toBeGreaterThan(100);
+
+  const moved = await page.evaluate(async () => {
+    window.__galaxyMap?.resetFrameStats?.();
+    window.__galaxyMap?.setView?.({
+      cursor: [0, 0, 0],
+      distance: 3000,
+      yaw: 10,
+      pitch: 35,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  });
+  console.log('the draws in 300 milliseconds after a view change', moved);
+
+  // At the rate of the display 300 milliseconds is 18 frames. A map that woke draws
+  // every one of them; a map that did not would draw one or two.
+  expect(moved).toBeGreaterThan(10);
+
+  // A switch on the handle changes the picture without a write of the view. The HUD
+  // holds four of them, so a map that slept through one would follow a click 200
+  // milliseconds late.
+  const switched = await page.evaluate(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    window.__galaxyMap?.resetFrameStats?.();
+    window.galaxyMap?.setGridVisible(false);
+    for (let index = 0; index < 3; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  });
+  console.log('the draws in three frames after the grid switch', switched);
+
+  expect(switched).toBeGreaterThan(0);
 });

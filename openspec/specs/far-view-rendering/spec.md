@@ -287,6 +287,40 @@ SHALL NOT call `gl.finish()`.
   calls the measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms
 
+### Requirement: A still map draws at an idle rate
+No shader reads a clock, so a map nobody touches draws the picture it drew before. The
+frame loop SHALL keep running at the rate of the display, and it SHALL draw every frame
+for 1200 ms after a change and one frame each 200 ms while nothing changes. A change is
+a write of the view, a resize, a pointer move on the canvas, a draw asked for from
+outside the loop, or a call of any member of the handle that changes what the map draws:
+the record and shape members, the category and name filters, the visibility switches and
+the selection.
+
+The 1200 ms holds the label ease. The region label anchors and targets approach their
+place by half-life, and a measurement of a 22,000 light year jump has a label move more
+than a twentieth of a CSS pixel until 886 ms after the jump. The idle map therefore
+draws no frame in which a label moves where the user can see it.
+
+#### Scenario: A still map drops to the idle rate
+- **WHEN** the browser test opens the map, waits out the settle window and reads the
+  drawn frames and the loop turns over two seconds
+- **THEN** the map draws between 6 and 19 frames and the loop turns more than 100 times
+
+#### Scenario: A view change wakes the loop
+- **WHEN** the browser test writes the view and reads the drawn frames over the next
+  300 milliseconds
+- **THEN** the map draws more than 10 frames
+
+#### Scenario: No label moves after the settle window
+- **WHEN** the browser test jumps the camera 22,000 light years, reads the box of every
+  region label 1300 ms later, and reads them again 1200 ms after that
+- **THEN** no label moved by a tenth of a CSS pixel
+
+#### Scenario: A switch on the handle wakes the loop
+- **WHEN** the browser test waits out the settle window, turns the grid off and reads
+  the drawn frames over the next three animation frames
+- **THEN** the map drew at least one of them
+
 ### Requirement: Canvas follows the window
 The canvas SHALL fill the viewport and SHALL resize its drawing buffer to the viewport
 size times the device pixel ratio, capped at 2, when the window resizes.

@@ -990,7 +990,9 @@ test('dispose stops the map and repeats safely', async ({ page }) => {
     if (map === undefined) return { before: -1, after: -2, threw: true };
     const before = map.debug.frameStats().frames;
     map.dispose();
-    for (let index = 0; index < 10; index += 1) {
+    // 30 frames and not 10: a still map draws once each 200 milliseconds, so a shorter
+    // window would pass on a map whose loop still ran.
+    for (let index = 0; index < 30; index += 1) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
     const after = map.debug.frameStats().frames;

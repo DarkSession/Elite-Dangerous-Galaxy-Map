@@ -6,6 +6,7 @@ import {
   createCellFinder,
   drawHeight,
   heightDrawOf,
+  zoneAt,
 } from './point-cloud';
 import type { SurfaceTable } from './point-cloud';
 import { DEFAULT_SEED } from './point-cloud';
@@ -181,7 +182,7 @@ export function generateCloudSet(
     positions[base] = x;
     positions[base + 1] = centreY + above;
     positions[base + 2] = z;
-    tints[index] = Math.round(model.zone(x, z) * 255);
+    tints[index] = Math.round(zoneAt(table, x, z) * 255);
     radii[index] = CLOUD_RADIUS_MIN_LY * Math.pow(radiusRatio, random.float());
     ratios[index] =
       model.surfaceDensity(originX + (ix + 0.5) * cellX, originZ + (iz + 0.5) * cellZ) /

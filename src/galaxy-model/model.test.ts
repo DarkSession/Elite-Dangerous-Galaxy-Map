@@ -160,6 +160,20 @@ describe('the volume, mass and zone values', () => {
     expect(worstZone).toBeLessThan(TOLERANCE);
   });
 
+  test('reads the zone from a corrected density the caller holds', () => {
+    let worst = 0;
+    for (const point of fixture.points) {
+      const corrected = galaxyModel.correctedSurfaceDensity(point.x, point.z);
+      worst = Math.max(
+        worst,
+        Math.abs(
+          galaxyModel.zoneFromCorrected(corrected) - galaxyModel.zone(point.x, point.z),
+        ),
+      );
+    }
+    expect(worst).toBe(0);
+  });
+
   test('gives the same detailed and corrected mass density without a detail grid', () => {
     let worst = 0;
     for (const point of fixture.points) {
