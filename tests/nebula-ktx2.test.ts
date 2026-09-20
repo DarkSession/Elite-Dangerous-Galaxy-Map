@@ -164,7 +164,10 @@ describe('the round trip over the committed art', () => {
         expect(written, file).toHaveLength(
           NEBULA_KTX2_HEADER_BYTES + read.blocks.byteLength,
         );
-        expect(Buffer.from(written), file).toEqual(Buffer.from(source));
+        // `Buffer.compare` and not `toEqual`: both read the same byte-for-byte answer, but
+        // `toEqual` walks the 2.77 MB of art one byte at a time and takes 3 seconds, which
+        // is over the 5 second default on a two-core pipeline runner. This reads 1.2 ms.
+        expect(Buffer.compare(written, source), file).toBe(0);
         checked += 1;
       }
     }
