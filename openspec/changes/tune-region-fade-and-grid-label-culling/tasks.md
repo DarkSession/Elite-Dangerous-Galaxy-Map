@@ -1,18 +1,18 @@
 ## 1. The region range fade
 
-- [ ] 1.1 Add `REGION_WIDTH_RANGE = 12000` to `src/render/region-pass.ts` and make
+- [x] 1.1 Add `REGION_WIDTH_RANGE = 12000` to `src/render/region-pass.ts` and make
       `regionBandHalfWidthAtRange` and the `uReferenceRange` uniform read it in place of
       `REGION_RANGE_FULL`. Verify `pnpm vitest run src/render/region-pass.test.ts`
       passes with every width expectation unchanged.
-- [ ] 1.2 Set `REGION_RANGE_NONE` to 5000 and `REGION_RANGE_FULL` to 8000, and update the
+- [x] 1.2 Set `REGION_RANGE_NONE` to 5000 and `REGION_RANGE_FULL` to 8000, and update the
       comments on both to the new figures. Verify nothing else in `src/` reads either
       constant as a width, with
       `grep -rn "REGION_RANGE_FULL\|REGION_RANGE_NONE" src/`.
-- [ ] 1.3 Update `src/render/region-pass.test.ts`: the two constants read 5,000 and 8,000
+- [x] 1.3 Update `src/render/region-pass.test.ts`: the two constants read 5,000 and 8,000
       and `regionFade` keeps its zoom figures of 20,000 and 30,000. The range fade itself
       has no function in this module, so this task asserts the constants alone. Verify the
       file passes.
-- [ ] 1.4 Add the scenario "The band's width keeps its own reference range" to
+- [x] 1.4 Add the scenario "The band's width keeps its own reference range" to
       `src/render/region-pass.test.ts`, reading the whole band at 1,080 CSS rows at
       5,000, 8,000, 12,000, 20,000 and 40,000 light years against 34.6, 34.6, 34.6, 20.7
       and 10.4 CSS pixels. Verify it passes.

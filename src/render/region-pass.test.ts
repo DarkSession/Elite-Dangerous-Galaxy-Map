@@ -17,6 +17,7 @@ import {
   REGION_RANGE_NONE,
   REGION_TONE,
   REGION_TONE_CORE,
+  REGION_WIDTH_RANGE,
   regionBandHalfWidthAtRange,
   regionBandHalfWidthCss,
   regionFade,
@@ -183,12 +184,22 @@ describe('the region overlay zoom fade', () => {
 });
 
 describe('the region overlay range fade', () => {
-  test('takes away a line at 8,000 light years and draws it in full at 12,000', () => {
-    // The fade moves in, so the lines reach about 2,000 light years nearer the camera
-    // than they did. The far figure is also the range at which the band carries its base
-    // width, so the width rule and the fade read one constant.
-    expect(REGION_RANGE_NONE).toBe(8000);
-    expect(REGION_RANGE_FULL).toBe(12000);
+  test('takes away a line at 5,000 light years and draws it in full at 8,000', () => {
+    // The fade moves in again, so the lines reach 3,000 light years nearer the camera
+    // than they did and reach full 4,000 nearer. The band's width keeps its own
+    // reference range of 12,000, so the two rules are two figures.
+    expect(REGION_RANGE_NONE).toBe(5000);
+    expect(REGION_RANGE_FULL).toBe(8000);
+    expect(REGION_WIDTH_RANGE).toBe(12000);
+    expect(REGION_WIDTH_RANGE).not.toBe(REGION_RANGE_FULL);
+  });
+
+  test('the zoom fade keeps its two figures', () => {
+    // The range fade moved and the zoom fade did not.
+    expect(REGION_FADE_IN_NEAR).toBe(20000);
+    expect(REGION_FADE_IN_FAR).toBe(30000);
+    expect(regionFade(20000)).toBe(1);
+    expect(regionFade(30000)).toBe(0);
   });
 
   test('the composite shader reads the range of the plane point', () => {
@@ -379,7 +390,7 @@ describe('the boundary band', () => {
   });
 
   test('writes the reference range from one constant and not a second literal', () => {
-    // The shader takes the range through a uniform, so `REGION_RANGE_FULL` is the only
+    // The shader takes the range through a uniform, so `REGION_WIDTH_RANGE` is the only
     // place the figure is written.
     expect(ribbonVertexSource).not.toContain('12000');
     const context = fakeContext(1280, 720);
@@ -391,7 +402,7 @@ describe('the boundary band', () => {
     );
     pass.draw(FRAME);
     expect(uniformValues(context, 'uniform1f', 'uReferenceRange')).toEqual([
-      REGION_RANGE_FULL,
+      REGION_WIDTH_RANGE,
     ]);
   });
 });
@@ -434,6 +445,21 @@ describe('the band half width', () => {
 });
 
 describe('the band width at a range', () => {
+  test('keeps its own reference range', () => {
+    // The fade now ends at 8,000 light years and the width still turns at 12,000. The
+    // band is therefore at its widest over the whole of the fade band and past it, and
+    // every reading below is what it was before the fade moved.
+    const widthAt = (range: number): number =>
+      2 * regionBandHalfWidthAtRange(1080, range);
+    expect(widthAt(5000)).toBeCloseTo(34.6, 1);
+    expect(widthAt(8000)).toBeCloseTo(34.6, 1);
+    expect(widthAt(12000)).toBeCloseTo(34.6, 1);
+    expect(widthAt(20000)).toBeCloseTo(20.7, 1);
+    expect(widthAt(40000)).toBeCloseTo(10.4, 1);
+    // No line changes width over the fade band.
+    expect(widthAt(REGION_RANGE_NONE)).toBe(widthAt(REGION_RANGE_FULL));
+  });
+
   test('holds the base width in and narrows as one over the range beyond it', () => {
     // The whole band at 1,080 CSS rows, where the base half width is 17.28. The band
     // keeps its base width at the reference range and nearer, and falls as 1 / range
