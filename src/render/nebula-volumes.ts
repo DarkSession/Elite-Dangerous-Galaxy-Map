@@ -442,12 +442,59 @@ interface BlockFormats {
   readonly colour: number;
 }
 
+/** The side of the throwaway texture the format probe allocates. */
+const PROBE_SIDE = 4;
+
+/** How many errors the probe reads before it stops draining the queue. */
+const PROBE_DRAIN_LIMIT = 32;
+
 /**
- * The compressed formats of this context, or `null` where it carries fewer than both.
+ * Whether this context allocates `format` on a `TEXTURE_2D_ARRAY`.
+ *
+ * The probe makes a texture, binds it, allocates one block of 4 by 4 by 1 texels, reads
+ * the error and deletes the texture. A block of either format covers 4 by 4 by 1 texels,
+ * so the allocation is the smallest one the format can make and the probe cannot fail
+ * for a reason of size.
+ *
+ * `getError` reports one error and clears it, so an error raised before the probe would
+ * read as the probe's own. The queue is therefore drained before the allocation. The
+ * drain is bounded, because a lost context answers `CONTEXT_LOST_WEBGL` for ever.
+ *
+ * A context that gives no texture reads as a refusal. It cannot make the 33 volumes
+ * either, and the decode path then fails a moment later with a clearer error.
+ */
+function takesBlockFormat(gl: WebGL2RenderingContext, format: number): boolean {
+  const texture = gl.createTexture();
+  if (texture === null) return false;
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+  for (let drained = 0; drained < PROBE_DRAIN_LIMIT; drained += 1) {
+    if (gl.getError() === gl.NO_ERROR) break;
+  }
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, PROBE_SIDE, PROBE_SIDE, 1);
+  const refused = gl.getError() !== gl.NO_ERROR;
+  gl.deleteTexture(texture);
+  return !refused;
+}
+
+/**
+ * The compressed formats of this context, or `null` where it carries fewer than both or
+ * refuses either one on a `TEXTURE_2D_ARRAY`.
  *
  * rgtc carries the density and s3tc the colour, and the fast path needs both. With one
- * and not the other every volume decodes: mixing them per volume would work, but it
- * makes four states to test instead of two, for a combination no desktop driver has.
+ * and not the other every volume decodes: mixing them per volume would work, and it
+ * would keep the compressed colour where a context refuses the density format, but it
+ * makes four states to hold instead of two. The owner weighed that gain against the cost
+ * and chose the simpler renderer.
+ *
+ * **A present extension is not proof.** A context can carry an extension and still
+ * refuse its format on the target the renderer uses. Firefox carries
+ * `EXT_texture_compression_rgtc` and refuses `COMPRESSED_RED_RGTC1` on a
+ * `TEXTURE_2D_ARRAY`, so `texStorage3D` fails, the texture gets no storage and every
+ * volume stays unspecified. The proof is therefore a real allocation the driver answers,
+ * and not the extension list, a browser test or a table of known drivers.
+ *
+ * The probe restores the previous `TEXTURE_BINDING_2D_ARRAY`, because a function that
+ * reports a capability should not change the context it reports on.
  */
 export function nebulaBlockFormats(gl: WebGL2RenderingContext): BlockFormats | null {
   const rgtc = gl.getExtension('EXT_texture_compression_rgtc') as {
@@ -457,10 +504,17 @@ export function nebulaBlockFormats(gl: WebGL2RenderingContext): BlockFormats | n
     COMPRESSED_RGB_S3TC_DXT1_EXT: number;
   } | null;
   if (rgtc === null || s3tc === null) return null;
-  return {
+  const formats = {
     density: rgtc.COMPRESSED_RED_RGTC1_EXT,
     colour: s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT,
   };
+  const bound = gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY) as WebGLTexture | null;
+  // Both formats are probed, and not the first alone. A renderer that read one and
+  // trusted the other would keep the fault this probe answers.
+  const density = takesBlockFormat(gl, formats.density);
+  const colour = takesBlockFormat(gl, formats.colour);
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, bound);
+  return density && colour ? formats : null;
 }
 
 /** What one volume uploads: the blocks as they are, or the texels the decode gave. */
@@ -535,10 +589,11 @@ function createArray(
  * transfer table of 256 by 1. Every volume goes to a `TEXTURE_2D_ARRAY`.
  *
  * Where the context carries both `EXT_texture_compression_rgtc` and
- * `WEBGL_compressed_texture_s3tc`, the blocks reach the card unchanged and the load
- * does no decode at all. Otherwise the blocks decode on the CPU and upload as plain
- * `R8` and `RGBA8`, so the map asks for no compressed-texture extension, which a WebGL2
- * context does not guarantee.
+ * `WEBGL_compressed_texture_s3tc` **and proves both formats on a `TEXTURE_2D_ARRAY`**,
+ * the blocks reach the card unchanged and the load does no decode at all. Otherwise the
+ * blocks decode on the CPU and upload as plain `R8` and `RGBA8`, so the map asks for no
+ * compressed-texture extension, which a WebGL2 context does not guarantee, and refuses
+ * no frame to a context that carries an extension it cannot use on this target.
  *
  * On the decoding path the upload records each asset's two decodes under
  * `NEBULA_DECODE_MEASURE`. A browser test counts those entries: 33 on the decoding path
