@@ -168,6 +168,33 @@ from the active list before task 1.1.
       changed no frame. **If `cats-eye` breaches 0.01**, the GPU's block decode differs from
       `decodeBC1`; regenerate that fixture from the block path and record the old and new
       readings, rather than raise the bound. `design.md` states why.
+      **Both fixtures read better and not worse:** `barnards-loop` fell from 0.0083 to
+      **0.002374** RMSE against its 0.02 bound, and `cats-eye` from 0.0058 to **0.003860**
+      against its 0.01. Neither fixture was regenerated. The shader's own two-layer mix is
+      closer to the trilinear CPU reference than the card's 3D filter was, so the frame
+      moved towards the reference and not away from it.
+- [x] 4.7a **One bound of another change moves with the swap, and this is where it is
+      recorded.** `the overlap stays inside the light it was measured at`, in
+      `e2e/nebulae.spec.ts`, belongs to `blend-nebulae-order-independently`. Its first
+      camera failed after task 4.2: the array's own layer interpolation raises the light a
+      little, and the bound had 0.0007 of headroom because it is the previous reading
+      rounded up.
+      **The three readings, before this change and after it:** Barnard's Loop at 120 light
+      years, 0.193286 to **0.194194**, a rise of **0.47 percent**; the Orion viewpoint at
+      800, 0.043158 to **0.043239**, a rise of **0.19 percent**; the Orion viewpoint at
+      3,000, 0.038243 to **0.038257**, a rise of **0.037 percent**.
+      **Only the first bound moves, from 0.194 to 0.195.** The other two round up to the
+      same thousandth they already held, so their numbers do not change.
+      **Why the bound moves rather than the change stopping.** That scenario states its own
+      rule: the bound at each camera is the figure the implementation measures, rounded up
+      to the next thousandth, and the guard it does not move for is a rise of more than **a
+      tenth**. The worst of the three rises is 0.47 percent, which is two orders under that
+      guard. The evidence that the frame improved rather than degraded is task 4.7's pair of
+      CPU fixture readings, which both fell. The baseline screenshot still matches.
+      `openspec/changes/blend-nebulae-order-independently/tasks.md` is left alone: its line
+      328 records what that change measured, which was true when it measured it.
+      The test is also restructured to read all three cameras before it asserts any, so a
+      bound that has to be restated is restated from three readings and not from one.
 
 ## 5. The decision
 

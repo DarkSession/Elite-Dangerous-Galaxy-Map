@@ -1,4 +1,12 @@
-// Rewrites the committed nebula volumes from `.dds` into `.ktx2`.
+// Rewrote the committed nebula volumes from `.dds` into `.ktx2`. This is the record of
+// that conversion.
+//
+// **It does not run against the tree as it stands.** The change
+// `store-nebula-volumes-as-slice-arrays` removed the 66 `.dds` files at its task 5.2,
+// once the `.ktx2` set had landed and the cost bound had held, so `node
+// scripts/dds-to-ktx2.mjs` now fails on the first missing file. To run it again someone
+// has to put the 66 `.dds` files back in `src/render/nebula-art/`, either from the
+// history of this repository before that task or from a fresh pack.
 //
 // The block payload does not change. A `.dds` file holds a DX10 header of 148 bytes and
 // then the blocks; a `.ktx2` file holds a header of 208 bytes and then the same blocks.
@@ -8,8 +16,14 @@
 // The side of each volume comes from `nebula-art/nebula-volumes.json` and not from the
 // file size, so a file of the wrong length is refused rather than relabelled.
 //
-// Run it with `node scripts/dds-to-ktx2.mjs`. It writes one `.ktx2` beside each `.dds`
-// and prints what it wrote.
+// **`scripts/ktx2.mjs` is the live writer**, and it does not depend on this script.
+// `tests/nebula-ktx2.test.ts` drives it over all 66 committed `.ktx2` files: it reads
+// each one, writes a header back around the blocks it got, and asserts the result is
+// the file on disk byte for byte. The container format therefore stays covered whether
+// or not this script ever runs again.
+//
+// It took no argument. It wrote one `.ktx2` beside each `.dds` and printed what it
+// wrote.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
