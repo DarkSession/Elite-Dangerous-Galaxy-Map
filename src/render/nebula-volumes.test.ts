@@ -262,6 +262,13 @@ describe('the committed set', () => {
 
   // Three different totals, each with a bound of its own. The committed readings are
   // 1.05, 2.77 and 6.03 MiB.
+  //
+  // The test takes its own timeout, because it brotli-compresses the whole art set at
+  // the default quality of 11. That reads 3.7 seconds on the development machine, which
+  // is inside the 5 second default, and longer than 5 seconds on a two-core pipeline
+  // runner, which is not. The quality does not fall to make the test quick: the reading
+  // is the wire budget this capability states, and a different quality states a
+  // different figure.
   test('holds its budget over the wire, on disk and in video memory', () => {
     const MIB = 1024 * 1024;
     let wire = 0;
@@ -285,7 +292,7 @@ describe('the committed set', () => {
     expect(wire).toBeLessThanOrEqual(1.3 * MIB);
     expect(disk).toBeLessThanOrEqual(3.0 * MIB);
     expect(decoded).toBeLessThanOrEqual(6.5 * MIB);
-  });
+  }, 120000);
 
   // `AGENTS.md` and `README.md` both state the disk total, because it is what a host
   // pays to take the nebulae. Neither is generated, so a repack would leave them
