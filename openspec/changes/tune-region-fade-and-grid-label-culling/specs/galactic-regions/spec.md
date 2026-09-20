@@ -615,7 +615,7 @@ flat 0.25, because the viewport and the range are
 
 - **WHEN** the browser test opens a view at a zoom of **4,000 light years** at a pitch of
   **30 degrees**, with the overlay on and again with it off, and counts the pixels the overlay
-  changed in the **top 20 per cent of the rows** and in the rows **below 45 per cent**
+  changed in the **top 20 per cent of the rows** and in the rows **below 60 per cent**
 - **THEN** the top band holds changed pixels and the lower band holds none.
 
   The bands are set by the geometry and not by eye. The vertical field of view is 60 degrees,
@@ -627,12 +627,39 @@ flat 0.25, because the viewport and the range are
   At a zoom of 4,000 light years and a pitch of 30 the camera sits **2,000 light years** above
   the plane. The rows whose plane point is beyond 8,000 light years, where the range fade is
   1, are the top **25.9 per cent**; the rows whose plane point is under 5,000, where the fade
-  is 0, are everything below **40.3 per cent**. The two bands this scenario reads, 20 per cent
-  and 45 per cent, sit inside those and do not touch.
+  is 0, are everything below **40.3 per cent**.
+
+  **Those two figures are the centre column, and the reading takes whole rows.** The test
+  counts the pixels of a rectangle that runs the width of the frame, so a row is held only
+  when **every** column of it is under the floor. A ray at the side of the frame carries a
+  horizontal term, so it leaves the plane at a shallower angle than the centre ray of the
+  same row and meets it further away. The range at a row share `s` is
+  `2000 * |d| / s` for `d = (xn * tan30 * aspect, yn * tan30, -1)` and `yn = 1 - 2 s`. At
+  1280x720 the centre column reads **4,993.8** light years at `s = 0.403`, which is the
+  40.3 per cent above, while the corner column reads **7,133.4** there. The corner column
+  does not fall to 5,000 light years until `s = `**0.5743**.
+
+  **The lower band SHALL therefore clear the corner figure and not the centre one.** It is
+  **60 per cent**, which leaves 2.6 points of room over the 57.43. The top band is unaffected,
+  because a corner ray reads **longer** than the centre ray and the top band asks for a range
+  above 8,000 light years: at 20 per cent the centre column reads 10,583 light years and every
+  column beside it reads more.
+
+  **The measured reading.** The overlay changes pixels down to **row 341 of 720**, which is
+  **47.36 per cent**, at columns **1,085 to 1,102**. That is right of the middle of the frame
+  and not at its corner, because the band draws only where a boundary chain runs. The 60 per
+  cent bound is the geometry and the 47.36 is what this data draws inside it.
 
   The two readings were 17.8 and 25.9 against the fade of 8,000 and 12,000, and the bands read
   10 and 35 per cent. The fade opens nearer again, so both rows move down the frame and both
-  bands move with them
+  bands move with them.
+
+  **Why 35 per cent held against the old floor.** The corner column under-reads there as
+  well: at 35 per cent the corner ray met the plane at **8,249** light years, just past the
+  old floor of 8,000, where the fade reads **0.0056**. The band's contribution at that
+  strength is under the **0.001** of luminance the test counts a pixel at, so the row held by
+  a margin the reading could not see. The floor moved nearer and the same corner now carries
+  a fade of 0.42, which the reading does see
 
 #### Scenario: A boundary is visible at medium zoom
 
@@ -1291,32 +1318,56 @@ user sees at those zooms.
 #### Scenario: The region the camera is inside is named at every zoom
 
 - **WHEN** the browser test opens `#c=0,0,0&p=35&y=0` at each of 20,000, 15,000, 10,000,
-  **6,500** and **3,000** light years, and at each zoom reads the `Inner Orion Spur` label,
+  **2,500** and **1,000** light years, and at each zoom reads the `Inner Orion Spur` label,
   its opacity, and the range from the camera to that label's own plane anchor
 - **THEN** at 20,000 the label is on the page with its box inside the viewport; at every
   zoom at which it is on the page its opacity is `smoothstep(5000, 8000, range)` within
   **0.05**; at least one zoom of the ladder reads a range **strictly inside** the fade band
-  of 5,000 to 8,000 light years, and the test SHALL fail when none does; and at 3,000 the
-  `Inner Orion Spur` label is not on the page at all, because its anchor sits about 3,000
-  light years away and the range fade reads 0 there.
+  of 5,000 to 8,000 light years, and the test SHALL fail when none does; and at 1,000 the
+  `Inner Orion Spur` label is not on the page at all, because its anchor falls under 5,000
+  light years there and the range fade reads 0.
 
   **The ladder moves with the fade.** It read 20,000, 15,000, 10,000, 7,500 and 4,000
-  against the band of 8,000 to 12,000. Its four open zooms now put the anchor at or above
-  8,000, so the ladder would read the fade at 1 at every zoom that carries the label and at
-  0 at the one that does not, and never on its slope. Whether the 7,500 rung reads the slope
-  turns on whether the centroid still projects inside the frame there, which decides which
-  of the two anchor rules answers; the measurement of task 5.2 settles it. The two close zooms therefore move to 6,500 and 3,000, and the clause above
-  makes the reading of the slope a condition of the test rather than a hope about one zoom.
+  against the band of 8,000 to 12,000. Against 5,000 to 8,000 each of those four open zooms
+  puts the anchor at or above 8,000, so the ladder would read the fade at 1 at every zoom
+  that carries the label and never on its slope. The two close rungs therefore move, and the
+  clause above makes the reading of the slope a condition of the test rather than a hope
+  about one zoom.
 
-  The anchor at a close zoom is not the region's centroid: the centroid does not project
-  inside the frame there, so the anchor is the part of the region the frame shows, which
-  sits near the cursor. Its range is therefore near the zoom itself. The implementation
-  SHALL measure the range at each of the five zooms and record what it reads
+  **The anchor range is about 2.3 times the zoom, and not the zoom itself.** The anchor at a
+  close zoom is not the region's centroid: the centroid does not project inside the frame
+  there, so the anchor is the part of the region the frame shows. At a pitch of 35 degrees
+  that part sits well **up** the frame and not at the cursor, so its range runs far past the
+  zoom. An earlier reading of this rule said the range was near the zoom itself, which the
+  measurement below disproves.
+
+  **The measured ladder**, at 1280x720 and a pitch of 35 degrees:
+
+  | zoom (ly) | anchor range (ly) | opacity |
+  | --- | --- | --- |
+  | 20,000 | 23,347.76 | 1.000 |
+  | 15,000 | 18,411.43 | 1.000 |
+  | 10,000 | 13,520.29 | 1.000 |
+  | 8,000 | 11,590.2 | 1.000 |
+  | 6,500 | 10,160.61 | 1.000 |
+  | 5,000 | 8,754.2 | 1.000 |
+  | 4,000 | 7,836.4 | 0.991 |
+  | 3,000 | 6,940.58 | 0.713 |
+  | **2,500** | **6,504.6** | **0.501** |
+  | 2,000 | 6,077.8 | 0.294 |
+  | 1,500 | 5,663.5 | 0.125 |
+  | **1,000** | no label | — |
+
+  The rungs sit where they do because of that table. **2,500** is the rung that reads the
+  slope: 6,504.6 light years is strictly inside the band, and its opacity of 0.501 is the
+  middle of the smooth step. **1,000** is the first rung of the probe at which the label
+  leaves the page. **6,500 is dropped**, because it reads 10,160.61 light years at an opacity
+  of 1, which is the reading the 10,000 rung already gives. The four rungs above 2,500
+  therefore read the top of the fade, one rung reads its slope and one reads its floor.
 
   "Every zoom" is every zoom the overlay draws in, and that is now the same set of zooms the
-  boundary draws in. The label's anchor sits near the cursor, so the label goes as the user
-  zooms in, at the same distance the line beside it goes. The HUD's top bar names the region
-  at every zoom instead
+  boundary draws in. The label goes as the user zooms in, at the same distance the line
+  beside it goes. The HUD's top bar names the region at every zoom instead
 
 #### Scenario: A label and the line beside it read at the same strength
 
