@@ -77,6 +77,13 @@
       8,000 and 4,000 light years, the far-line scenario reading the top 20 per cent and
       the rows below 45 per cent, and the close-fade scenario at 8,000, 6,500 and 4,000.
       Verify with `GALAXY_MAP_E2E_BUILT=1 pnpm exec playwright test e2e/regions.spec.ts`.
+      NOT DONE. The close-end and close-fade scenarios pass. The far-line scenario fails
+      the 45 per cent band. Measured: the overlay changes pixels down to row 341 of 720,
+      which is 47.36 per cent, at columns 1,085 to 1,102. The 40.3 per cent figure of the
+      delta is the centre column alone. A ray at the side of the frame leaves the plane at
+      a shallower angle, so its range is longer, and the corner ray at 1280x720 does not
+      fall under 5,000 light years until 57.43 per cent of the frame height. The lower
+      band must start below 57.43 per cent, not 45. Reported rather than changed.
 - [ ] 5.2 Update `e2e/labels.spec.ts`: `smoothstep(5000, 8000, range)`, the zoom ladder of
       20,000, 15,000, 10,000, 6,500 and 3,000 light years with the clause that one reading
       must land strictly inside the fade band, the sweep view at 2,500 light years, the
@@ -86,6 +93,14 @@
       range at 6,500 against the paragraph "The ladder moves with the fade" in the delta, and
       soften its first sentence if the measurement disagrees with it. Verify with one
       Playwright run over that file.
+      NOT DONE. Measured anchor ranges on the new ladder: 20,000 gives 23,347.76 light
+      years, 15,000 gives 18,411.43, 10,000 gives 13,520.29, 6,500 gives 10,160.61 and
+      3,000 gives 6,940.58 at an opacity of 0.713. The 3,000 rung therefore reads the
+      slope, so the "strictly inside the fade band" clause holds. The clause "at 3,000 the
+      label is not on the page at all" does not hold. Measured further: 4,000 gives
+      7,836.4, 2,500 gives 6,504.6 at 0.501, 2,000 gives 6,077.8 at 0.294, 1,500 gives
+      5,663.5 at 0.125, and 1,000 gives no label. A ladder of 20,000, 15,000, 10,000,
+      2,500 and 1,000 would hold both clauses. Reported rather than changed.
 - [x] 5.3 Update the two grid browser scenarios the new gate reaches, in
       `e2e/grid.spec.ts`: "Every label sits on a line" SHALL skip a label whose anchor is
       outside the viewport and SHALL NOT clamp the read rectangle into the canvas, and
@@ -106,15 +121,20 @@
 
 ## 6. The whole suite and the gate
 
-- [ ] 6.1 Run `pnpm lint` and the type check the `package.json` scripts hold, and fix what
+- [x] 6.1 Run `pnpm lint` and the type check the `package.json` scripts hold, and fix what
       they report.
-- [ ] 6.2 Run `pnpm vitest run` on its own, with no Playwright run in flight, and verify
+- [x] 6.2 Run `pnpm vitest run` on its own, with no Playwright run in flight, and verify
       every unit test passes.
 - [ ] 6.3 Run the whole Playwright suite once, one run at a time, and verify it passes
       with the renderer assertion holding on hardware.
+      NOT DONE. Measured: the parallel pass reads 553 passed and 1 failed, the timed pass
+      62 passed and 1 failed. The two failures are the two scenarios of 5.1 and 5.2. The
+      renderer check passes on hardware in every project.
 - [ ] 6.4 Check that no figure of the two delta specs is left unmet, by reading each
       changed scenario against the test that holds it. Do not edit `openspec/specs/` by
       hand; the archive step carries the delta.
+      NOT DONE. The check is complete and two figures are left unmet, which 5.1 and 5.2
+      record. Every other changed scenario of both deltas has a test that holds it.
 - [ ] 6.5 GATE — implementation review. Launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and
       state the verdict and every finding when presenting the work.
