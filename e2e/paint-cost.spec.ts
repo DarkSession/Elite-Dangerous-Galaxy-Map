@@ -76,7 +76,7 @@ async function addSystems(page: Page, withIcons = false): Promise<number> {
           y: -30 + unit() * 60,
           z: -200 + unit() * 400,
         },
-        primaryCategory: 'Empire',
+        categories: ['Empire'],
         ...(icons ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] } : {}),
       } as SystemRecordInput);
     }

@@ -8,6 +8,7 @@ import type { Viewport } from '../camera/projection';
 import {
   copyView,
   createDefaultView,
+  farZoomLimit,
   normaliseView,
   readBounds,
   resolveBounds,
@@ -68,6 +69,7 @@ import type {
   DatasetInfo,
   DatasetLoadResult,
   DatasetState,
+  DatasetView,
 } from './datasets';
 import { createGridLabelOverlay } from './grid-labels';
 import type { GridLabelOverlay, GridLabelPlaced } from './grid-labels';
@@ -98,6 +100,7 @@ export type {
   DatasetEntry,
   DatasetInfo,
   DatasetLoadResult,
+  DatasetView,
 } from './datasets';
 
 /**
@@ -490,6 +493,12 @@ export interface GalaxyMapDebug {
   regionSampleTotal(): number;
   labelSampling(): SamplingStats;
   resetLabelSampling(): void;
+  /**
+   * How long the category panel's last count pass took, in milliseconds, and 0 where
+   * the map holds no HUD. The pass runs once per change of the filter text and reads
+   * each thing once per category it names.
+   */
+  categoryCountMs(): number;
   /**
    * The hover pick, the pin, the ring and the name label placement of the frames the
    * loop drew since the last reset. The work runs around the draw call, so `frameStats`
@@ -919,6 +928,10 @@ export function createGalaxyMap(
   let boundsSetting: BrowseBounds = readBounds(options.bounds) ?? {
     mode: 'unrestricted',
   };
+  // The bounds the options named, which a dataset entry that names none restores. It is
+  // the option and not a later `setBounds`: two writers of one setting need one rule, and
+  // the option is the value a host can always name.
+  const optionBounds: BrowseBounds = boundsSetting;
   let resolvedBounds: ResolvedBounds = unrestrictedBounds();
   // The set version the resolved shape was worked out at. `auto` follows the set, so the
   // frame loop re-resolves when the set changes and not on every frame.
@@ -1399,6 +1412,75 @@ export function createGalaxyMap(
     return { categories, systems };
   };
 
+  /**
+   * Writes the browsable bounds of the entry that loaded. `null` restores the bounds the
+   * options named, so one restricted set in a catalog does not restrict the next.
+   */
+  const applyDatasetBounds = (bounds: BrowseBounds | null): void => {
+    boundsSetting = bounds ?? optionBounds;
+    resolveBoundsNow();
+    reclampView();
+    wake();
+  };
+
+  /**
+   * Opens the camera where an entry asks. `fit: 'systems'` centres on the box of the set
+   * the load wrote and frames the whole of it, and a field the entry names beside `fit`
+   * wins over what `fit` worked out. A `fit` over a set with no system leaves the view
+   * where it is, as an `auto` bound of an empty set acts as `unrestricted`.
+   */
+  const applyDatasetView = (asked: DatasetView): void => {
+    // The entry takes the camera, so a pending start is dropped, a flight already
+    // running is interrupted and the wheel glide ends. The write below is the view the
+    // next frame draws, and each of those three writes the view as well: a flight would
+    // take it back on the next frame, and a glide would drag the distance away from the
+    // box the entry asked to be framed. Only the wheel glides, which `map-navigation`
+    // states.
+    dropPendingStart();
+    endFlight();
+    controls?.endZoom();
+    const box = set.systemBox;
+    if (asked.fit === 'systems' && !box.empty) {
+      view.cursor = [
+        (box.min[0] + box.max[0]) / 2,
+        (box.min[1] + box.max[1]) / 2,
+        (box.min[2] + box.max[2]) / 2,
+      ];
+      const half =
+        Math.hypot(
+          box.max[0] - box.min[0],
+          box.max[1] - box.min[1],
+          box.max[2] - box.min[2],
+        ) / 2;
+      view.distance = farZoomLimit(half);
+    }
+    if (asked.distance !== undefined) view.distance = asked.distance;
+    if (asked.yaw !== undefined) view.yaw = asked.yaw;
+    if (asked.pitch !== undefined) view.pitch = asked.pitch;
+    // `cursor` beats `system`, as it does in the start view. The name is resolved here
+    // and not through `pendingStart`: the load wrote the set before this call, so the
+    // record is already there, and a pending start is dropped after
+    // `PENDING_START_FRAMES` frames. A page that has drawn more than that would take the
+    // entry's `system` field and move nowhere. A name the set does not hold leaves the
+    // view where it is, as a `fit` over an empty set does.
+    if (asked.cursor !== undefined) {
+      view.cursor = [asked.cursor[0], asked.cursor[1], asked.cursor[2]];
+    } else if (asked.system !== undefined) {
+      const index = set.indexOfIdentity(asked.system);
+      const system = index < 0 ? null : set.system(index);
+      if (system !== null) {
+        view.cursor = [system.position[0], system.position[1], system.position[2]];
+      }
+    }
+    normaliseView(view, resolvedBounds);
+    // The entry writes the view, it does not move it, which is what `setView` and the
+    // landing of a flight do. The region labels read the flag and put their targets in
+    // place rather than walking them across the screen after the load.
+    jumped = true;
+    announce();
+    wake();
+  };
+
   /** Drops a selection the set no longer holds, after the data changes. */
   const syncSelection = (): void => {
     if (selectedIdentity === null) return;
@@ -1412,7 +1494,10 @@ export function createGalaxyMap(
   const datasets: DatasetState = createDatasetState({
     datasets: options.datasets,
     dataset: options.dataset,
+    hasStartView: startView !== null,
     write: writeDataset,
+    setBounds: applyDatasetBounds,
+    applyView: applyDatasetView,
   });
   for (const reject of datasets.rejected) {
     console.warn('The map dropped a dataset entry.', reject);
@@ -1850,6 +1935,9 @@ export function createGalaxyMap(
     resetLabelSampling(): void {
       labels?.resetSampling();
     },
+    categoryCountMs(): number {
+      return hud?.categoryCountMs() ?? 0;
+    },
     selectionSampling(): SamplingStats {
       return selectionWork.read();
     },
@@ -2151,6 +2239,10 @@ export function createGalaxyMap(
       return set.categoryCount;
     },
     getCategory(index: number): Category | null {
+      // The set holds one internal row for an uncategorised map, which the marker pass,
+      // the pick and the overlay read for the library defaults. It is not in the table,
+      // so this reader hides it: a host and the HUD see the table alone.
+      if (index < 0 || index >= set.categoryCount) return null;
       const category = set.category(index);
       return category === null ? null : { ...category };
     },

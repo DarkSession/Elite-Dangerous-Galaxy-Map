@@ -17,6 +17,7 @@ const PUBLIC_TYPES = [
   'DatasetEntry',
   'DatasetInfo',
   'DatasetLoadResult',
+  'DatasetView',
   'FlightOutcome',
   'FlyToOptions',
   'FlyToTarget',

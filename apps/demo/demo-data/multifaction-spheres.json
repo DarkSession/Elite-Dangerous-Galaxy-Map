@@ -28,7 +28,9 @@
       ],
       "radius": 514,
       "name": "Col 70 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -38,7 +40,9 @@
       ],
       "radius": 510,
       "name": "NGC 2264 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -48,7 +52,9 @@
       ],
       "radius": 200,
       "name": "Horsehead Dark Region",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -58,7 +64,9 @@
       ],
       "radius": 205,
       "name": "NGC 1647 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -68,7 +76,9 @@
       ],
       "radius": 100,
       "name": "Cone Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -78,7 +88,9 @@
       ],
       "radius": 250,
       "name": "Col 97 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -88,7 +100,9 @@
       ],
       "radius": 350,
       "name": "M41 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -98,7 +112,9 @@
       ],
       "radius": 459,
       "name": "Col 121 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -108,7 +124,9 @@
       ],
       "radius": 100,
       "name": "Regor Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -118,7 +136,9 @@
       ],
       "radius": 385,
       "name": "NGC 2286 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -128,7 +148,9 @@
       ],
       "radius": 150,
       "name": "NGC 3603 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -138,7 +160,9 @@
       ],
       "radius": 100,
       "name": "IC 4673 Sector",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -148,7 +172,9 @@
       ],
       "radius": 512,
       "name": "Bleia1",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -158,7 +184,9 @@
       ],
       "radius": 512,
       "name": "Bleia2",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -168,7 +196,9 @@
       ],
       "radius": 512,
       "name": "Bleia3",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -178,7 +208,9 @@
       ],
       "radius": 512,
       "name": "Bleia4",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -188,7 +220,9 @@
       ],
       "radius": 512,
       "name": "Bleia5",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -198,7 +232,9 @@
       ],
       "radius": 512,
       "name": "Bovomit",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -208,7 +244,9 @@
       ],
       "radius": 512,
       "name": "Dryman",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -218,7 +256,9 @@
       ],
       "radius": 512,
       "name": "Froadik",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -228,7 +268,9 @@
       ],
       "radius": 512,
       "name": "Hyponia",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -238,7 +280,9 @@
       ],
       "radius": 512,
       "name": "Praei3",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -248,7 +292,9 @@
       ],
       "radius": 512,
       "name": "Praei1",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -258,7 +304,9 @@
       ],
       "radius": 512,
       "name": "Praei2",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -268,7 +316,9 @@
       ],
       "radius": 512,
       "name": "Praei4",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -278,7 +328,9 @@
       ],
       "radius": 512,
       "name": "Praei5",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -288,7 +340,9 @@
       ],
       "radius": 512,
       "name": "Praei6",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -298,7 +352,9 @@
       ],
       "radius": 100,
       "name": "Sidgoir",
-      "primaryCategory": "Permit Locked Sector"
+      "categories": [
+        "Permit Locked Sector"
+      ]
     },
     {
       "position": [
@@ -308,7 +364,9 @@
       ],
       "radius": 100,
       "name": "Barnard's Loop Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -318,7 +376,9 @@
       ],
       "radius": 426,
       "name": "Col 132 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -328,7 +388,9 @@
       ],
       "radius": 150,
       "name": "Col 135 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -338,7 +400,9 @@
       ],
       "radius": 162,
       "name": "Col 140 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -348,7 +412,9 @@
       ],
       "radius": 100,
       "name": "Flame Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -358,7 +424,9 @@
       ],
       "radius": 100,
       "name": "Horsehead Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -368,7 +436,9 @@
       ],
       "radius": 117,
       "name": "M47 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -378,7 +448,9 @@
       ],
       "radius": 100,
       "name": "Messier 78 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -388,7 +460,9 @@
       ],
       "radius": 83,
       "name": "NGC 1662 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -398,7 +472,9 @@
       ],
       "radius": 106,
       "name": "NGC 1981 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -408,7 +484,9 @@
       ],
       "radius": 100,
       "name": "NGC 1999 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -418,7 +496,9 @@
       ],
       "radius": 154,
       "name": "NGC 2232 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -428,7 +508,9 @@
       ],
       "radius": 100,
       "name": "Orion Dark Region",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -438,7 +520,9 @@
       ],
       "radius": 100,
       "name": "Orion Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -448,7 +532,9 @@
       ],
       "radius": 100,
       "name": "Running Man Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -458,7 +544,9 @@
       ],
       "radius": 100,
       "name": "Spirograph Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -468,7 +556,9 @@
       ],
       "radius": 182,
       "name": "Trapezium Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -478,7 +568,9 @@
       ],
       "radius": 100,
       "name": "Vela Dark Region",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -488,7 +580,9 @@
       ],
       "radius": 300,
       "name": "Col 69 Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     },
     {
       "position": [
@@ -498,7 +592,9 @@
       ],
       "radius": 100,
       "name": "Witch Head Sector",
-      "primaryCategory": "Permit Unlocked Sector"
+      "categories": [
+        "Permit Unlocked Sector"
+      ]
     }
   ]
 }

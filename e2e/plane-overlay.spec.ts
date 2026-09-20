@@ -15,7 +15,7 @@ test.describe('the plane overlay', () => {
         { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 200000 },
       ]);
       map.addSystems([
-        { name: 'One', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Alpha' },
+        { name: 'One', coords: { x: 0, y: 0, z: 0 }, categories: ['Alpha'] },
       ]);
       map.setSelection('One');
       map.setView({ cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 30 });

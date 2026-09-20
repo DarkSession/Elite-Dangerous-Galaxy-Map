@@ -13,6 +13,7 @@ import {
   waitForReady,
 } from './helpers';
 import { BRIGHT_VIEW, CLOSE_VIEW, DARK_VIEW } from './nebula-views';
+import { DEFAULT_NEBULA_OCCLUSION } from '../packages/galaxy-map/src/render/nebula-slot';
 import { putVolumeDensity } from '../packages/galaxy-map/src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
@@ -335,7 +336,7 @@ test('a nebula with little in front of it barely changes', async ({ page }) => {
   expect(await hookExists(page)).toBe(true);
 
   const size = 10;
-  const on = await atOcclusion(page, 1, size);
+  const on = await atOcclusion(page, DEFAULT_NEBULA_OCCLUSION, size);
   const off = await atOcclusion(page, 0, size);
   const change = Math.abs(on.lum - off.lum) / off.lum;
   console.log('little in front', { on: on.lum, off: off.lum, change });
@@ -343,12 +344,12 @@ test('a nebula with little in front of it barely changes', async ({ page }) => {
   // The two frames are not the same frame.
   expect(on.bytes).not.toBe(off.bytes);
   // The design costs this 5,912 light year segment at a transmittance of 0.997, 0.994
-  // and 0.989 by channel, so the worst channel changes by about 1.1 percent and the
-  // spec puts the band at 2 percent of the block mean. The measured change of the block
-  // is 0.095 percent. It sits under the estimate because the block mean carries the
-  // background as well as the nebula, and because luminance weights the green channel,
-  // which the middle transmittance of 0.994 attenuates.
-  expect(change).toBeLessThan(0.02);
+  // and 0.989 by channel at the constant 1. The transmittance at a constant k is that
+  // value raised to k, so at the default of 2 the worst channel changes by 1 - 0.989^2,
+  // which is 2.2 percent. The band is 4 percent: that estimate plus the same margin the
+  // 2 percent band carried at the constant 1. The block mean sits under the estimate,
+  // because it carries the background as well as the nebula.
+  expect(change).toBeLessThan(0.04);
 });
 
 test('occluded light turns warm', async ({ page }) => {
@@ -401,6 +402,96 @@ test('a nebula behind the core dims', async ({ page }) => {
   // against 0.01505 at 0, both of them negative: the nebula reads as a hole here, and
   // the march makes that hole shallower.
   expect(Math.abs(added1)).toBeLessThan(Math.abs(added0));
+});
+
+test('a higher constant dims it further', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  const off = await withNebulae(page, false, () => blockReading(page, size));
+  const on1 = await atOcclusion(page, 1, size);
+  const onDefault = await atOcclusion(page, DEFAULT_NEBULA_OCCLUSION, size);
+  const added1 = on1.lum - off.lum;
+  const addedDefault = onDefault.lum - off.lum;
+  console.log('a higher constant', { off: off.lum, added1, addedDefault });
+
+  // The reading is the nebula's contribution, for the reason the test above states.
+  expect(Math.abs(addedDefault)).toBeLessThan(Math.abs(added1));
+});
+
+test('the renderer sends the default with no value named', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  // The frame the map draws before any call to the hook, which carries the default.
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ nebulae: true });
+    window.__galaxyMap?.drawNow?.();
+  });
+  const untouched = await blockReading(page, size);
+  const named = await atOcclusion(page, DEFAULT_NEBULA_OCCLUSION, size);
+  const other = await atOcclusion(page, 1, size);
+  console.log('the default occlusion', { constant: DEFAULT_NEBULA_OCCLUSION });
+
+  expect(DEFAULT_NEBULA_OCCLUSION).toBe(2);
+  expect(named.bytes).toBe(untouched.bytes);
+  expect(other.bytes).not.toBe(untouched.bytes);
+});
+
+/** The four selection readings of the last nebula draw. */
+async function selectionReadings(page: Page): Promise<{
+  drawn: number;
+  calls: number;
+  aboveFloor: number;
+  coveredArea: number;
+}> {
+  return page.evaluate(() => ({
+    drawn: window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
+    calls: window.__galaxyMap?.nebulaDrawCalls?.() ?? -1,
+    aboveFloor: window.__galaxyMap?.nebulaAboveFloorCount?.() ?? -1,
+    coveredArea: window.__galaxyMap?.nebulaCoveredArea?.() ?? -1,
+  }));
+}
+
+/**
+ * The constant that takes Barnard's Loop under the cull floor at `CORE_VIEW`. The design
+ * costs the segment through the core at a transmittance well under 1 at the constant 1,
+ * and the transmittance at a constant k is that value raised to k, so a large k drives
+ * the mean under 0.02. The figure is high on purpose: the test states that a culled
+ * record adds nothing, not the constant at which the cull starts.
+ */
+const CULLING_OCCLUSION = 60;
+
+test('a culled record contributes nothing', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  const size = 6;
+  const culled = await atOcclusion(page, CULLING_OCCLUSION, size);
+  const readings = await selectionReadings(page);
+  const off = await withNebulae(page, false, () => blockReading(page, size));
+  console.log('a culled record', { readings, lum: culled.lum });
+
+  // The cull sits after the selection, so the frame still issued the draw call.
+  expect(readings.calls).toBeGreaterThan(0);
+  // The record marched no fragment, so the two blocks are the same bytes.
+  expect(culled.bytes).toBe(off.bytes);
+});
+
+test('the cull leaves the selection readings alone', async ({ page }) => {
+  await openMap(page, CORE_VIEW);
+  expect(await hookExists(page)).toBe(true);
+
+  await atOcclusion(page, 0, 6);
+  const none = await selectionReadings(page);
+  await atOcclusion(page, CULLING_OCCLUSION, 6);
+  const culling = await selectionReadings(page);
+  console.log('the cull and the selection', { none, culling });
+
+  expect(culling).toEqual(none);
+  expect(none.drawn).toBeGreaterThan(0);
 });
 
 /**

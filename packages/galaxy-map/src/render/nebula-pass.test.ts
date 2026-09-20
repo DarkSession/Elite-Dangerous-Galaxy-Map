@@ -16,6 +16,7 @@ import type { NebulaVolumeTexture, NebulaVolumeTextures } from './nebula-volumes
 import {
   DEFAULT_NEBULA_LIGHT_GAIN,
   DEFAULT_NEBULA_OCCLUSION,
+  NEBULA_CULL_FLOOR,
   DEFAULT_NEBULA_STEP_RATE,
 } from './nebula-slot';
 import type { NebulaFrame } from './nebula-slot';
@@ -105,6 +106,7 @@ function fakeProgram(): Program {
     'uAbsorption',
     'uDetailScale',
     'uOcclusion',
+    'uCullFloor',
   ];
   const uniforms: Record<string, WebGLUniformLocation> = {};
   for (const name of names) uniforms[name] = name as unknown as WebGLUniformLocation;
@@ -825,12 +827,18 @@ describe('the march uniforms', () => {
     expect(sent.get('uDetailScale')).toBe(JSON.stringify([1 / 127]));
   });
 
-  test('sends the occlusion the frame carries, and 1 by default', () => {
+  test('sends the occlusion the frame carries, and 2 by default', () => {
     const context = fakeContext();
     const pass = createNebulaPass(context.gl, fakeProgram(), manySet(2), volumesOf());
 
     pass.draw(frameOf(6000));
-    expect(uniformsOf(context).get('uOcclusion')).toBe(JSON.stringify([1]));
+    expect(uniformsOf(context).get('uOcclusion')).toBe(
+      JSON.stringify([DEFAULT_NEBULA_OCCLUSION]),
+    );
+    // The cull floor rides the same draw and never moves.
+    expect(uniformsOf(context).get('uCullFloor')).toBe(
+      JSON.stringify([NEBULA_CULL_FLOOR]),
+    );
 
     const half = fakeContext();
     const other = createNebulaPass(half.gl, fakeProgram(), manySet(2), volumesOf());

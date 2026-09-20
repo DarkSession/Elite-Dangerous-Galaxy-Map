@@ -219,6 +219,11 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'category per war state. The icons mark the five maelstroms, the invasions and ' +
       'the alerts.',
     systemCount: 189,
+    // The set holds the bubble alone, so the entry names the box of its own systems and
+    // opens the camera on it. A switch away from this entry restores the map's own
+    // unrestricted bounds.
+    bounds: { mode: 'auto' },
+    view: { fit: 'systems' },
     load: async (): Promise<DatasetContent> =>
       demoSet((await import('../demo-data/thargoid-war.json')).default),
   },
@@ -226,7 +231,21 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
 
 function start(target: HTMLCanvasElement): void {
   const global = galaxyMapGlobal();
+  // The fragment is the page's deep link. It goes in as `startView`, so the map opens on
+  // it and the start load's own entry view does not overwrite it when that load settles.
+  // A page with no fragment names no `startView`, and the entry's view then wins.
+  // A fragment that names none of the four view fields is not a deep link. The four names
+  // are the ones `encodeView` writes and `decodeView` reads, in `app/url-view.ts` of the
+  // library, so a field added there is added here as well. `decodeView`
+  // answers with the default view whatever it is given, so a fragment such as `#about`
+  // would otherwise come in as a `startView` and beat the start entry's own view.
+  const fragment = window.location.hash;
+  const fields = new URLSearchParams(fragment.replace('#', ''));
+  const linked = ['c', 'd', 'p', 'y'].some((field) => fields.has(field))
+    ? decodeView(fragment)
+    : null;
   const map: GalaxyMap = createGalaxyMap(target, {
+    ...(linked === null ? {} : { startView: linked }),
     ...(labelHost === null ? {} : { labelHost: labelHost as HTMLElement }),
     // The loader the repository holds in `public/`, which the build serves under the
     // site's own base path. `THIRD_PARTY_NOTICES.md` records the file and its source.
@@ -305,13 +324,8 @@ function start(target: HTMLCanvasElement): void {
   // without them on the same page.
   window.galaxyMapNebulae = nebulae;
 
-  // The page parses the fragment, gives the view to the handle, and writes it back.
-  //
-  // This write beats the `startView` option, because it comes after the map is built. The
-  // demo page names no `startView` and owns its view through the URL, so a reader who
-  // expects the option to win here finds the fragment instead. A host that wants the
-  // option to hold must not write the view after the build.
-  map.setView(decodeView(window.location.hash));
+  // The page reads the view back from the handle and writes the fragment from it. The
+  // deep link went in as `startView` above, so the map already opens on it.
   // The writer formats the object it was given at every write, so the page keeps this
   // one current from the handle's own view changes.
   const pageView: MapView = map.getView();

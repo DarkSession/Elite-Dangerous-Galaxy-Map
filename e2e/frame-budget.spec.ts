@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { dumpFaction, dumpSystem, openMap, serveFactionsDump } from './helpers';
 import { TRACED_CORNER } from './region-views';
+import { DEFAULT_NEBULA_OCCLUSION } from '../packages/galaxy-map/src/render/nebula-slot';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 /** The frame time the map must stay under, in milliseconds. */
@@ -30,9 +31,9 @@ test('every view stays inside the frame budget', async ({ page }) => {
   // The nebula march reads the density volume between the camera and each record. The
   // constant is at its default here, and the test sets it so the reading states which
   // frame it measured.
-  await page.evaluate(() => {
-    window.__galaxyMap?.setNebulaOcclusion?.(1);
-  });
+  await page.evaluate((value) => {
+    window.__galaxyMap?.setNebulaOcclusion?.(value);
+  }, DEFAULT_NEBULA_OCCLUSION);
 
   // The most nebula records any one view draws. The nebulae fade out above 20,000
   // light years, so some views in the list draw none. One view with nebulae is enough
@@ -154,7 +155,7 @@ async function addSpreadSystems(page: Page, withIcons = false): Promise<number> 
           y: -40985 + unit() * 81910,
           z: -24105 + unit() * 100000,
         },
-        primaryCategory: 'Empire',
+        categories: ['Empire'],
         ...(icons ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] } : {}),
       } as SystemRecordInput);
     }
@@ -281,7 +282,7 @@ test('the closest zoom is under budget with every marker in range', async ({
           y: radius * height,
           z: radius * ring * Math.sin(angle),
         },
-        primaryCategory: 'Near',
+        categories: ['Near'],
       });
     }
     map.addSystems(records);
@@ -486,10 +487,13 @@ test('the selection work stays inside its budget', async ({ page }) => {
   expect(stats.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
 });
 
-// The scenario "The icon placement holds the budget at a full set" of
-// `system-selection`. It is the reading above with every record carrying four icons and
-// the icon switch on, and it reads the frame interval in the same window, because the
-// icon elements are painted by the browser and the draw time does not see them.
+// The scenario "The icon placement holds the budget at a full set" of `system-selection`,
+// and the scenario "The test holds the frame budget" of `system-icons`, which reads the
+// same two numbers over the same set. It is the reading above with every record carrying
+// four icons and the icon switch on, and it reads the frame interval in the same window,
+// because the icon elements are painted by the browser and the draw time does not see
+// them. The occlusion test of `system-icons` runs inside this window, so a walk that cost
+// the overlay a millisecond would show here.
 test('the icon placement holds the selection budget', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
@@ -996,8 +1000,7 @@ async function addCategorisedShapeSet(page: Page): Promise<{
       spheres.push({
         position: place(),
         radius: 100 + unit() * 900,
-        primaryCategory: naming[0],
-        secondaryCategories: naming.slice(1),
+        categories: naming,
       });
     }
     // 4,096 lines of 16 points come to 65,536, which is the point bound.
@@ -1012,8 +1015,7 @@ async function addCategorisedShapeSet(page: Page): Promise<{
       lines.push({
         points,
         width: 2,
-        primaryCategory: naming[0],
-        secondaryCategories: naming.slice(1),
+        categories: naming,
       });
     }
     map.addSpheres(spheres as never);

@@ -18,6 +18,16 @@ import type { LabelBox } from './labels';
 /** How many marker name labels the overlay places, beside the hover and the selection. */
 export const MAX_NAME_LABELS = 64;
 
+/**
+ * How many of the nearest markers the keeper holds. It is two more than the label cap,
+ * because the label pass skips the hovered and the selected index as it walks the
+ * keeper, so a frame that carries both still reaches 64 labels.
+ *
+ * The keeper holds every drawn marker and not the subset the labels want: the icon
+ * occlusion test reads the same list to find the marker that hides an element.
+ */
+export const MARKER_KEEP = MAX_NAME_LABELS + 2;
+
 /** How far below the centre of a marker a name label sits, in CSS pixels. */
 export const NAME_LABEL_GAP_CSS = 6;
 
@@ -347,12 +357,20 @@ function makeIcon(document: Document): HTMLImageElement {
   // against the plate and not against whatever the camera puts there.
   style.backgroundColor = '#000';
   // A host icon's URL can 404. `alt` is empty, so the browser draws no broken-image
-  // glyph, but the plate would stay as an opaque black square. The element hides itself
-  // instead, and the frame shows it again when it writes a new URL.
+  // glyph, but the plate would stay as an opaque black square. The element marks itself
+  // instead, and the frame clears the mark when it writes a new URL. The frame writes
+  // `visibility` for the occlusion rule as well, so the mark and not the style is what
+  // carries the fault from one frame to the next.
   element.onerror = (): void => {
     style.visibility = 'hidden';
+    (element as BrokenIcon).gmBroken = true;
   };
   return element;
+}
+
+/** An icon element whose URL failed to load. The frame keeps it hidden. */
+interface BrokenIcon extends HTMLImageElement {
+  gmBroken?: boolean;
 }
 
 /**
@@ -410,9 +428,14 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
   const labels: HTMLElement[] = [];
   const iconElements: HTMLImageElement[] = [];
   const arrowElements: HTMLElement[] = [];
-  const keep = createNearestKeep(MAX_NAME_LABELS);
+  const keep = createNearestKeep(MARKER_KEEP);
   const iconKeep = createNearestKeep(MAX_ICON_STACKS);
   const boxes: LabelBox[] = [];
+  // The screen place of each keeper entry, worked out once a frame. The occlusion test
+  // reads it for every element of every stack, so one projection per candidate serves
+  // the whole frame rather than one per candidate per element.
+  const candidateX = new Float64Array(MARKER_KEEP);
+  const candidateY = new Float64Array(MARKER_KEEP);
   let shownLabels = 0;
   let shownIcons = 0;
   let shownArrows = 0;
@@ -573,29 +596,34 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
       resetNearest(iconKeep);
       if ((namesOn || stacksOn) && count > 0) {
         // A candidate outside the viewport is dropped before any other work, so the
-        // nearest-64 rule and the nearest-32 rule read only what the frame can show.
+        // nearest-66 rule and the nearest-32 rule read only what the frame can show.
         for (let index = 0; index < count; index += 1) {
           const spot = placeOf(index);
           if (spot === null) continue;
           if (spot.x < 0 || spot.y < 0) continue;
           if (spot.x > viewport.width || spot.y > viewport.height) continue;
           const range = rangeOf(index);
-          // The hover and the selection place their own label first, so the keeper of
-          // the labels leaves them out. The stacks carry no such exception: the switch
-          // is the whole rule for an icon.
-          if (namesOn && index !== hoverIndex && index !== selectedIndex) {
-            offerNearest(keep, index, range);
-          }
+          // Every drawn marker is offered, because the keeper has two readers: the label
+          // pass, which skips the hovered and the selected index itself, and the icon
+          // occlusion test, which needs every marker that can cover an element.
+          offerNearest(keep, index, range);
           if (stacksOn && iconsOf(index) !== null) offerNearest(iconKeep, index, range);
         }
       }
 
       if (namesOn) {
-        for (let slot = 0; slot < keep.count; slot += 1) {
+        // The hover and the selection place their own label first, so the pass skips
+        // them here. The counter counts placements and not walked entries: a label the
+        // overlap rule drops must not spend one of the 64.
+        let named = 0;
+        for (let slot = 0; slot < keep.count && named < MAX_NAME_LABELS; slot += 1) {
           const index = keep.indices[slot] as number;
+          if (index === hoverIndex || index === selectedIndex) continue;
           const spot = placeOf(index);
           if (spot === null) continue;
+          const before = placed;
           place(index, spot, false);
+          if (placed > before) named += 1;
         }
       }
 
@@ -603,6 +631,42 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         labels[index]?.remove();
       }
       shownLabels = placed;
+
+      // The candidate places of the keeper, for the occlusion test below. The keeper is
+      // held in ascending range, so the walk of it breaks on range. A frame that draws
+      // no stack tests nothing, so it projects nothing here.
+      for (let slot = 0; iconKeep.count > 0 && slot < keep.count; slot += 1) {
+        const spot = placeOf(keep.indices[slot] as number);
+        candidateX[slot] = spot === null ? Number.NaN : spot.x;
+        candidateY[slot] = spot === null ? Number.NaN : spot.y;
+      }
+
+      /**
+       * True where the marker of a system nearer the camera than `owner` projects inside
+       * the box. A DOM element draws over every pixel the canvas drew at its place, so an
+       * icon of a far system would otherwise cover a near star.
+       */
+      const covered = (
+        owner: number,
+        ownerRange: number,
+        left: number,
+        top: number,
+        width: number,
+        height: number,
+      ): boolean => {
+        for (let slot = 0; slot < keep.count; slot += 1) {
+          if ((keep.ranges[slot] as number) >= ownerRange) return false;
+          const index = keep.indices[slot] as number;
+          if (index === owner) continue;
+          const x = candidateX[slot] as number;
+          const y = candidateY[slot] as number;
+          if (Number.isNaN(x)) continue;
+          if (x < left || x > left + width) continue;
+          if (y < top || y > top + height) continue;
+          return true;
+        }
+        return false;
+      };
 
       // The stacks. There is no overlap test between two of them: an icon reads under a
       // partial cover, and dropping one stack of a cluster would make it blink as the
@@ -622,6 +686,7 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         const spot = placeOf(index);
         if (spot === null) continue;
         const selected = index === selectedIndex;
+        const ownRange = iconKeep.ranges[slot] as number;
         // The nearer stack draws over the further one. The pool hands out an element by
         // its place in the frame, not by depth, so the order cannot come from the tree.
         const level = `${iconZIndex(slot)}`;
@@ -632,8 +697,25 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
           const fill = `rgb(${lowest.color[0]}, ${lowest.color[1]}, ${lowest.color[2]})`;
           if (arrow.style.borderTopColor !== fill) arrow.style.borderTopColor = fill;
           arrow.style.zIndex = level;
-          arrow.style.left = `${Math.round(spot.x - ARROW_WIDTH_CSS / 2)}px`;
-          arrow.style.top = `${Math.round(arrowApexCss(spot.y, spot.markerCss, selected) - ARROW_HEIGHT_CSS)}px`;
+          const arrowLeft = Math.round(spot.x - ARROW_WIDTH_CSS / 2);
+          const arrowTop = Math.round(
+            arrowApexCss(spot.y, spot.markerCss, selected) - ARROW_HEIGHT_CSS,
+          );
+          arrow.style.left = `${arrowLeft}px`;
+          arrow.style.top = `${arrowTop}px`;
+          // A hidden element keeps its place and its pool slot, so the frame that shows
+          // it again costs one style write and allocates nothing.
+          const hide = covered(
+            index,
+            ownRange,
+            arrowLeft,
+            arrowTop,
+            ARROW_WIDTH_CSS,
+            ARROW_HEIGHT_CSS,
+          )
+            ? 'hidden'
+            : '';
+          if (arrow.style.visibility !== hide) arrow.style.visibility = hide;
           if (stackLayer.parentNode === null) host.append(stackLayer);
           if (arrow.parentNode === null) stackLayer.append(arrow);
           arrows += 1;
@@ -644,13 +726,21 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
           if (icon === undefined) continue;
           const element = iconAt(icons);
           if (element.getAttribute('src') !== icon.url) {
-            element.style.visibility = '';
+            (element as BrokenIcon).gmBroken = false;
             element.setAttribute('src', icon.url);
           }
           element.style.zIndex = level;
-          element.style.left = `${Math.round(spot.x - ICON_CSS_SIZE / 2)}px`;
+          const iconLeft = Math.round(spot.x - ICON_CSS_SIZE / 2);
           const bottom = iconBottomCss(spot.y, spot.markerCss, at, selected);
-          element.style.top = `${Math.round(bottom - ICON_CSS_SIZE)}px`;
+          const iconTop = Math.round(bottom - ICON_CSS_SIZE);
+          element.style.left = `${iconLeft}px`;
+          element.style.top = `${iconTop}px`;
+          const hidden =
+            (element as BrokenIcon).gmBroken === true ||
+            covered(index, ownRange, iconLeft, iconTop, ICON_CSS_SIZE, ICON_CSS_SIZE)
+              ? 'hidden'
+              : '';
+          if (element.style.visibility !== hidden) element.style.visibility = hidden;
           if (stackLayer.parentNode === null) host.append(stackLayer);
           if (element.parentNode === null) stackLayer.append(element);
           icons += 1;

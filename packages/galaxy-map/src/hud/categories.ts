@@ -31,6 +31,13 @@ export const LIST_MOVE_MS = 140;
  */
 export const MAX_SYSTEM_ROWS = 200;
 
+/**
+ * The key the panel holds every thing of the shown tab under, for the flat list. A
+ * category name is a string of at least one character, so the empty string is a key no
+ * category takes, and `setCategoryVisible` of it reaches nothing.
+ */
+const FLAT_KEY = '';
+
 /** Which kind of thing the panel lists. */
 export type CategoryTab = 'systems' | 'shapes';
 
@@ -126,6 +133,8 @@ interface Group {
   readonly dot: HTMLButtonElement;
   readonly swatch: HTMLElement;
   readonly row: HTMLButtonElement;
+  /** The element that reads the total, or `<matches> of <total>` under a filter. */
+  readonly count: HTMLElement;
   /** The wrapper that moves from no height to the height of the rows. */
   readonly list: HTMLElement;
   /** The box the rows sit in, which carries the cap and scrolls. */
@@ -144,6 +153,11 @@ export interface CategoryPanel {
   update(): void;
   /** Rebuilds the rows when the table or a set changed since the last call. */
   poll(): void;
+  /**
+   * How long the last count pass took, in milliseconds. It runs once per change of the
+   * filter text and reads each thing once per category it names.
+   */
+  countPassMs(): number;
   /** Drops the timers and the observer the panel holds. */
   dispose(): void;
 }
@@ -227,10 +241,20 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   // The count of open lists, which the observer needs and does not measure.
   let openCount = 0;
   let lastCap = '';
+  // The rows box of the flat list, or null where the tab holds category rows. The flat
+  // list is the panel of a tab whose kind holds things and whose categories hold none.
+  let flatRows: HTMLElement | null = null;
+  // How long the last count pass took, which a browser test reads through the map.
+  let countPassMs = 0;
 
   /** How many shapes the map holds, of both kinds. */
   function shapeCount(): number {
     return map.sphereCount() + map.lineCount();
+  }
+
+  /** How many things of the shown tab's own kind the map holds. */
+  function thingCount(): number {
+    return tab === 'systems' ? map.systemCount() : shapeCount();
   }
 
   /** The filter text of the shown tab. */
@@ -357,8 +381,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       };
       // The system goes in every category it names. The row's dot brings the system
       // back through any of them, so the row's count and its list say so.
-      addEntry(system.primaryCategory, entry);
-      for (const name of system.secondaryCategories) addEntry(name, entry);
+      for (const name of system.categories) addEntry(name, entry);
+      addEntry(FLAT_KEY, entry);
     }
   }
 
@@ -375,8 +399,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         identity: `${kind} ${index}`,
         flight: { centre: info.centre, reach: info.reach },
       };
-      if (info.primaryCategory !== undefined) addEntry(info.primaryCategory, entry);
-      for (const name of info.secondaryCategories) addEntry(name, entry);
+      for (const name of info.categories) addEntry(name, entry);
+      addEntry(FLAT_KEY, entry);
     }
   }
 
@@ -389,6 +413,22 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     }
     readShapes('sphere', map.sphereCount());
     readShapes('line', map.lineCount());
+  }
+
+  /**
+   * How many things of one category the filter keeps. It is the count pass, and it does
+   * no sort: the panel reads each thing once per category it names, which is 40,000
+   * reads at 10,000 systems over 8 categories with 4 names each.
+   */
+  function matchCount(name: string): number {
+    const held = byCategory.get(name) ?? [];
+    const text = filterText().toLowerCase();
+    if (text === '') return held.length;
+    let kept = 0;
+    for (const entry of held) {
+      if (entry.name.toLowerCase().includes(text)) kept += 1;
+    }
+    return kept;
   }
 
   /** The things of one category the filter keeps, in order of name. */
@@ -450,7 +490,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   }
 
   /** Makes one row of an open list. */
-  function makeEntryRow(group: Group, entry: Entry): HTMLButtonElement {
+  function makeEntryRow(categoryName: string, entry: Entry): HTMLButtonElement {
     const row = makeButton(doc, 'gm-hud__system-row');
     row.dataset['name'] = entry.name;
     row.dataset['identity'] = entry.identity;
@@ -461,7 +501,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       // The row turns its category on, because a row of a category the user closed
       // must still reach the thing it names. It turns on the kind of the shown tab
       // alone, so a shape row leaves the systems of that category where they are.
-      setCategoryOn(group.name, true);
+      setCategoryOn(categoryName, true);
       const flight = entry.flight;
       if (flight === null) {
         map.setSelection(entry.identity);
@@ -477,6 +517,44 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   }
 
   /**
+   * Fills one list with the things of one category the filter keeps, up to a cap, and
+   * writes the cut line where the cap dropped some.
+   */
+  function fillRows(box: HTMLElement, categoryName: string, cap: number): void {
+    const entries = entriesOf(categoryName);
+    const shown = Math.min(entries.length, cap);
+    const children: HTMLElement[] = [];
+    for (let index = 0; index < shown; index += 1) {
+      children.push(makeEntryRow(categoryName, entries[index] as Entry));
+    }
+    if (entries.length > shown) {
+      const cut = make(doc, 'div', 'gm-hud__system-cut');
+      cut.textContent = `${formatWhole(shown)} of ${formatWhole(entries.length)}`;
+      children.push(cut);
+    }
+    replaceChildrenKeepingFocus(box, children);
+  }
+
+  /**
+   * Writes the count of every row. While the filter of the shown tab is empty a row
+   * reads the total. While it holds text it reads `<matches> of <total>`, so the count
+   * agrees with the list the row opens into, and a row the filter empties reads
+   * `0 of <total>` and keeps its row.
+   */
+  function writeCounts(): void {
+    const startMs = performance.now();
+    const filtering = filterText() !== '';
+    for (const group of groups) {
+      const total = (byCategory.get(group.name) ?? []).length;
+      const text = filtering
+        ? `${formatWhole(matchCount(group.name))} of ${formatWhole(total)}`
+        : formatWhole(total);
+      if (group.count.textContent !== text) group.count.textContent = text;
+    }
+    countPassMs = performance.now() - startMs;
+  }
+
+  /**
    * Fills the list of every open category and empties every other list.
    *
    * The open lists share the row budget, at `floor(200 / open)` rows each, so the HUD's
@@ -487,10 +565,20 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
    */
   function renderOpenLists(): void {
     const open = openOf[tab];
-    openCount = groups.reduce(
-      (count, group) => (open.has(group.name) ? count + 1 : count),
-      0,
-    );
+    // The flat list is one always-open list, so it takes the whole share the rule gives
+    // one open list.
+    openCount =
+      flatRows === null
+        ? groups.reduce((count, group) => (open.has(group.name) ? count + 1 : count), 0)
+        : 1;
+    writeCounts();
+    if (flatRows !== null) {
+      fillRows(flatRows, FLAT_KEY, rowShare(1, 0));
+      filterSignature = filterText();
+      writeCap();
+      update();
+      return;
+    }
     let openIndex = 0;
     for (const group of groups) {
       const isOpen = open.has(group.name);
@@ -508,18 +596,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       }
       const cap = rowShare(openCount, openIndex);
       openIndex += 1;
-      const entries = entriesOf(group.name);
-      const shown = Math.min(entries.length, cap);
-      const children: HTMLElement[] = [];
-      for (let index = 0; index < shown; index += 1) {
-        children.push(makeEntryRow(group, entries[index] as Entry));
-      }
-      if (entries.length > shown) {
-        const cut = make(doc, 'div', 'gm-hud__system-cut');
-        cut.textContent = `${formatWhole(shown)} of ${formatWhole(entries.length)}`;
-        children.push(cut);
-      }
-      replaceChildrenKeepingFocus(group.rows, children);
+      fillRows(group.rows, group.name, cap);
     }
     filterSignature = filterText();
     writeCap();
@@ -573,8 +650,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       const name = make(doc, 'span', 'gm-hud__category-name');
       name.textContent = category.name;
       const countText = make(doc, 'span', 'gm-hud__category-count');
-      // The count reads the primary category and every secondary one, because the
-      // row's dot brings a thing back through any category it belongs to.
+      // The count reads every category a thing names, because the row's dot brings it
+      // back through any of them. `writeCounts` rewrites it under a filter.
       countText.textContent = formatWhole(held.length);
       const icon = make(doc, 'span', 'gm-hud__category-chevron');
       icon.appendChild(makeListIcon(doc));
@@ -609,11 +686,27 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
         dot,
         swatch,
         row,
+        count: countText,
         list: listWrap,
         rows,
         color: category.color,
         clearTimer: null,
       });
+    }
+    // A tab whose kind holds things and whose categories hold none shows one flat list
+    // of those things in place of the rows. It covers both causes at once: no category
+    // at all, and categories that hold nothing of this tab's kind.
+    flatRows = null;
+    if (groups.length === 0 && thingCount() > 0) {
+      const flat = make(doc, 'div', 'gm-hud__category-group gm-hud__flat-group');
+      flat.dataset['flat'] = 'true';
+      const listWrap = make(doc, 'div', 'gm-hud__system-list gm-hud__flat-list');
+      listWrap.dataset['open'] = 'true';
+      const rows = make(doc, 'div', 'gm-hud__system-rows');
+      listWrap.append(rows);
+      flat.append(listWrap);
+      children.push(flat);
+      flatRows = rows;
     }
     replaceChildrenKeepingFocus(list, children);
     dataSignature = signature();
@@ -633,6 +726,11 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   function update(): void {
     const noShape = shapeCount() === 0;
     if (shapesTab.disabled !== noShape) shapesTab.disabled = noShape;
+    // No switch reaches a thing that names no category, so the two buttons are disabled
+    // over a flat list.
+    const noSwitch = flatRows !== null;
+    if (allButton.disabled !== noSwitch) allButton.disabled = noSwitch;
+    if (noneButton.disabled !== noSwitch) noneButton.disabled = noSwitch;
     setPressed(systemsTab, tab === 'systems');
     setPressed(shapesTab, tab === 'shapes');
     setAttribute(systemsTab, 'aria-selected', tab === 'systems' ? 'true' : 'false');
@@ -642,6 +740,16 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     setAttribute(search, 'aria-label', searchLabel);
     const selection = map.getSelection();
     const selected = selection === null ? null : (selection.id64 ?? selection.name);
+    /** Marks the row of the selected system, so the list says which one is current. */
+    const markCurrent = (box: HTMLElement): void => {
+      for (const row of box.children) {
+        if (!(row instanceof HTMLElement)) continue;
+        const identity = row.dataset['identity'];
+        if (identity === undefined) continue;
+        setAttribute(row, 'aria-current', identity === selected ? 'true' : 'false');
+      }
+    };
+    if (flatRows !== null && tab === 'systems') markCurrent(flatRows);
     for (const group of groups) {
       const on = categoryOn(group.name);
       setPressed(group.dot, on);
@@ -656,12 +764,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       setStyle(group.swatch, 'opacity', on ? '1' : '0.5');
       // A shape is never selected, so the shapes tab marks no row as the current one.
       if (tab !== 'systems') continue;
-      for (const row of group.rows.children) {
-        if (!(row instanceof HTMLElement)) continue;
-        const identity = row.dataset['identity'];
-        if (identity === undefined) continue;
-        setAttribute(row, 'aria-current', identity === selected ? 'true' : 'false');
-      }
+      markCurrent(group.rows);
     }
   }
 
@@ -669,6 +772,9 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     element,
     rebuild,
     update,
+    countPassMs(): number {
+      return countPassMs;
+    },
     poll(): void {
       const nextData = signature();
       if (nextData !== dataSignature) {

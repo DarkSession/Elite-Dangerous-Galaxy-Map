@@ -38,7 +38,7 @@ describe('the committed demo set', () => {
   test('carries one image for each type a record holds', () => {
     let multi = 0;
     for (const system of demo.systems) {
-      const categories = [system.primaryCategory, ...system.secondaryCategories];
+      const categories = system.categories;
       expect(system.images).toHaveLength(categories.length);
       if (categories.length > 1) multi += 1;
       for (const image of system.images) {
@@ -50,7 +50,7 @@ describe('the committed demo set', () => {
 
   test('names its images in the order of its categories', () => {
     for (const system of demo.systems) {
-      const categories = [system.primaryCategory, ...system.secondaryCategories];
+      const categories = system.categories;
       for (let index = 0; index < categories.length; index += 1) {
         const type = (categories[index] as string).replace('Ruins ', '');
         const image = system.images[index] as { url: string; caption: string };
@@ -63,7 +63,7 @@ describe('the committed demo set', () => {
   test('names 1 to 3 categories for each record, with no repeat', () => {
     const names = new Set<string>();
     for (const system of demo.systems) {
-      const categories = [system.primaryCategory, ...system.secondaryCategories];
+      const categories = system.categories;
       expect(categories.length).toBeGreaterThanOrEqual(1);
       expect(categories.length).toBeLessThanOrEqual(3);
       expect(new Set(categories).size).toBe(categories.length);
@@ -107,8 +107,7 @@ describe('the committed structures set', () => {
   test('names every category of its records', () => {
     const names = new Set(structures.categories.map((category) => category.name));
     for (const system of structures.systems) {
-      expect(names.has(system.primaryCategory)).toBe(true);
-      for (const name of system.secondaryCategories) expect(names.has(name)).toBe(true);
+      for (const name of system.categories) expect(names.has(name)).toBe(true);
     }
   });
 
@@ -217,22 +216,20 @@ describe('the committed UIA set', () => {
   // because the category gives it one, and a name that names the line itself.
   test('gives its shapes the categories of the source', () => {
     const named = uia.spheres.filter(
-      (sphere) =>
-        (sphere as { primaryCategory?: string }).primaryCategory !== undefined,
+      (sphere) => (sphere as { categories?: string[] }).categories !== undefined,
     );
     expect(named).toHaveLength(54);
     const unnamed = uia.spheres.filter(
-      (sphere) =>
-        (sphere as { primaryCategory?: string }).primaryCategory === undefined,
+      (sphere) => (sphere as { categories?: string[] }).categories === undefined,
     );
     expect(unnamed.map((sphere) => sphere.name)).toEqual([]);
     const categories = new Set(uia.categories.map((category) => category.name));
     for (const line of uia.lines) {
-      const held = line as { primaryCategory?: string; color?: unknown; name?: string };
-      expect(held.primaryCategory).toBeDefined();
-      expect(categories.has(held.primaryCategory ?? '')).toBe(true);
+      const held = line as { categories?: string[]; color?: unknown; name?: string };
+      expect(held.categories?.[0]).toBeDefined();
+      expect(categories.has(held.categories?.[0] ?? '')).toBe(true);
       expect(held.color).toBeUndefined();
-      expect(held.name).not.toBe(held.primaryCategory);
+      expect(held.name).not.toBe(held.categories?.[0]);
     }
   });
 
@@ -308,12 +305,12 @@ describe('the committed Adamastor set', () => {
   test('holds the categories its routes name', () => {
     const categories = new Set(adamastor.categories.map((category) => category.name));
     const named = adamastor.lines.filter(
-      (line) => (line as { primaryCategory?: string }).primaryCategory !== undefined,
+      (line) => (line as { categories?: string[] }).categories !== undefined,
     );
     expect(named).toHaveLength(7);
     for (const line of named) {
-      const held = line as { primaryCategory?: string; color?: unknown };
-      expect(categories.has(held.primaryCategory ?? '')).toBe(true);
+      const held = line as { categories?: string[]; color?: unknown };
+      expect(categories.has(held.categories?.[0] ?? '')).toBe(true);
       expect(held.color).toBeUndefined();
     }
     const fallback = adamastor.lines.filter(
@@ -372,7 +369,7 @@ describe('the committed Thargoid war set', () => {
     ]);
     expect(thargoidWar.systems).toHaveLength(189);
     for (const system of thargoidWar.systems) {
-      expect(system.secondaryCategories).toEqual([]);
+      expect(system.categories).toHaveLength(1);
     }
   });
 

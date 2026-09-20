@@ -324,7 +324,7 @@ describe('suppression in the boxel table', () => {
       positions.map((position, slot) => ({
         name: `s${slot}`,
         coords: { x: position[0], y: position[1], z: position[2] },
-        primaryCategory: 'A',
+        categories: ['A'],
         id64: slot + 1,
       })),
     );

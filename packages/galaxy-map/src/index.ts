@@ -22,6 +22,7 @@ export type {
   DatasetEntry,
   DatasetInfo,
   DatasetLoadResult,
+  DatasetView,
   FlightOutcome,
   FlyToOptions,
   FlyToTarget,

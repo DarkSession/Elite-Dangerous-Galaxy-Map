@@ -869,6 +869,12 @@ both the cursor and the far zoom limit to it. A host names it in the options as 
 and changes it with `setBounds`. `getBounds` SHALL read back the setting as the host gave
 it, and not the shape the map worked out from it.
 
+**A dataset load is a third writer.** An entry of the catalog may carry a `bounds` of its
+own, which `dataset-catalog` states, and the load writes it by the same route `setBounds`
+takes. An entry that names none restores the setting the options named. `getBounds` SHALL
+read back whichever of the three wrote last, so a host reads what is in force and not what
+it asked for.
+
 **`unrestricted`** is the default and is what the map did before: the cursor clamps to the
 model bounds on each axis and the far zoom limit is 120,000 light years.
 
@@ -895,6 +901,12 @@ limit at or above the close limit for a very small space.
 6000.000000000001. A test SHALL read the limit with a tolerance, or against a value it
 worked out the same way. An exclusive bound on the round number fails on a value the limit
 is meant to reach.
+
+**`fit: 'systems'` of a dataset view reads the same rule.** It sets the distance to `2 * R`
+over half the diagonal of the set's own box, before the margin an `auto` bound adds. An
+entry that names both therefore opens on the systems and can pull back to the margin: the
+zoom the bound allows is wider than the frame `fit` opens at, because the margin is room to
+fly and not room to look at.
 
 **A change of the bounds SHALL re-clamp the view in the frame it happens**, so a host that
 narrows the space while the camera is outside it does not leave the camera there. The view
@@ -937,6 +949,13 @@ the bounds still draws where the frame holds it.
 - **WHEN** the browser test sets `auto` bounds, adds systems spanning 1,000 light years,
   calls `clearSystems` and moves the cursor to (40,000, 0, 0)
 - **THEN** the cursor is (40,000, 0, 0)
+
+#### Scenario: A dataset load writes the bounds and getBounds reads it
+
+- **WHEN** the browser test builds a map naming `bounds: { mode: 'unrestricted' }` and two
+  entries, the first naming `bounds: { mode: 'auto' }` and the second naming none, loads
+  the first, reads `getBounds`, loads the second and reads it again
+- **THEN** the first reading is the `auto` mode and the second is `unrestricted`
 
 #### Scenario: A sphere bound caps the zoom
 

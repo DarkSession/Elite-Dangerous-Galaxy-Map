@@ -43,6 +43,35 @@ export const DEFAULT_MARKER_STYLE: MarkerStyle = 'glow';
  */
 export const DEFAULT_MAX_DRAW_RANGE_LY = 120000;
 
+/**
+ * The colour a marker draws in when its system names no category, as red, green and
+ * blue from 0 to 255. It is the neutral blue-white of an unclassified star.
+ *
+ * A category names its own colour, so this is the one look value no category default
+ * states. It is a stated constant and not a host option: a host that wants another
+ * colour uses categories.
+ */
+export const DEFAULT_MARKER_COLOR: readonly [number, number, number] = [150, 170, 200];
+
+/**
+ * The table index an uncategorised system points at. The set holds one internal row at
+ * it, carrying the three defaults above, and that row is not in the table:
+ * `categoryCount` reads 0 and the handle's `getCategory` reads null.
+ *
+ * The row is what lets the marker pass, the pick sweep and the marker overlay read one
+ * colour, one style and one draw range for every system, with no branch for a set that
+ * names no category.
+ */
+const UNCATEGORISED_INDEX = 0;
+
+/** The internal row an uncategorised system draws through. */
+const UNCATEGORISED_CATEGORY: Category = {
+  name: '',
+  color: DEFAULT_MARKER_COLOR,
+  markerStyle: DEFAULT_MARKER_STYLE,
+  maxDrawRange: DEFAULT_MAX_DRAW_RANGE_LY,
+};
+
 /** One group the host sorts its systems into. */
 export interface Category {
   /** The identity of the category. */
@@ -82,7 +111,14 @@ export interface CategoryInput {
 
 /** Why the reader rejected a category. */
 export type CategoryRejectReason =
-  'no-name' | 'bad-color' | 'bad-style' | 'bad-range' | 'over-capacity';
+  | 'no-name'
+  | 'bad-color'
+  | 'bad-style'
+  | 'bad-range'
+  | 'over-capacity'
+  // What a call takes while the set holds a system that names no category. A set is
+  // categorised or it is not, and never half of each.
+  | 'set-is-uncategorised';
 
 /** One category the reader rejected. */
 export interface CategoryReject {
@@ -141,10 +177,12 @@ export interface RealSystem {
   readonly name: string;
   /** The position in game coordinates, in light years. */
   readonly position: readonly [number, number, number];
-  /** The name of the category whose colour the marker draws. */
-  readonly primaryCategory: string;
-  /** The other categories the record names, without a repeat. */
-  readonly secondaryCategories: readonly string[];
+  /**
+   * The categories the record names, in its own order and without a repeat. The first
+   * one gives the marker its colour, its style and its draw range. It is empty where the
+   * record names none, which an uncategorised set holds.
+   */
+  readonly categories: readonly string[];
   /** The 64-bit system id as a decimal string. */
   readonly id64?: string;
   readonly allegiance?: string;
@@ -176,10 +214,22 @@ export interface SystemRecordInput {
   readonly name: string;
   /** The position in game coordinates, in light years. */
   readonly coords: { readonly x: number; readonly y: number; readonly z: number };
-  /** The name of a category the table holds. */
-  readonly primaryCategory: string;
-  /** The names of other categories the table holds. */
-  readonly secondaryCategories?: readonly string[];
+  /**
+   * The names of categories the table holds, in the order the marker reads them. The
+   * first one gives the colour, the style and the draw range. A record may name none,
+   * which the reader takes while the category table is empty.
+   */
+  readonly categories?: readonly string[];
+  /**
+   * The two names `categories` replaces. Each one is `never`, so a record that carries
+   * it fails the compile.
+   *
+   * The ban has to sit in the type. The index signature below turns off TypeScript's
+   * excess-property check, so a record naming `primaryCategory` beside `categories`
+   * would compile clean and the reader would drop it with no word to the caller.
+   */
+  readonly primaryCategory?: never;
+  readonly secondaryCategories?: never;
   /**
    * The 64-bit system id. `JSON.parse` loses digits above 2^53, so a host that needs
    * every digit passes a string or a `bigint`.
@@ -247,9 +297,12 @@ export interface RealSystemSet {
   readonly positions: Float64Array;
   /**
    * The table index of the category each system draws through, in the same order. It is
-   * the first category the record names that is on: the primary category first, then the
-   * secondary categories in the record's own order. A system whose categories are all off
-   * draws no marker, and its entry holds the index of its primary category.
+   * the first category the record names that is on, in the record's own order. A system
+   * whose categories are all off draws no marker, and its entry holds the index of the
+   * first category it names.
+   *
+   * A system that names no category holds the index of the set's internal row, which
+   * carries the library defaults and is not in the table.
    */
   readonly categoryIndices: Uint16Array;
   /**
@@ -434,8 +487,7 @@ const NUMBER_FIELDS = ['population', 'bodyCount'] as const;
 interface MutableSystem {
   name: string;
   position: [number, number, number];
-  primaryCategory: string;
-  secondaryCategories: string[];
+  categories: string[];
   id64?: string;
   allegiance?: string;
   government?: string;
@@ -475,6 +527,10 @@ export function createSystemSet(): RealSystemSet {
   // How many records hold at least one icon. It rises with a record that carries one
   // and falls only where the set is emptied, so it reads high and never low.
   let iconSystems = 0;
+  // How many records name no category. It follows the same rule as the icon count: a
+  // record raises it and only a clear resets it, so a replacement needs no sweep.
+  // `addCategories` rejects every category while it is above 0.
+  let uncategorisedSystems = 0;
 
   // The filter text, and the same text folded to lower case once. The comparison folds
   // both sides to lower case, so it reads the same in every browser.
@@ -492,21 +548,31 @@ export function createSystemSet(): RealSystemSet {
   let lastSweepMs = 0;
 
   /**
+   * The table index of the first category a record names. A record that names none takes
+   * the internal row, which every reader of `categoryIndices` can read.
+   */
+  const indexOfFirst = (names: readonly string[]): number => {
+    const first = names[0];
+    if (first === undefined) return UNCATEGORISED_INDEX;
+    return categoryOf.get(first) ?? UNCATEGORISED_INDEX;
+  };
+
+  /**
    * The table index of the first category the system names that is on, or -1 when every
-   * one of them is off. The order is the primary category first, then the secondary
-   * categories in the record's own order.
+   * one of them is off. The order is the record's own order.
    *
    * The marker draws while any category it belongs to is on, and it takes its colour, its
    * style and its draw range from this one. A row the user left on therefore keeps the
    * system on the map and gives it the colour of that row.
+   *
+   * A system that names no category always draws, and it takes the internal row: no
+   * switch reaches it.
    */
   const firstCategoryOn = (system: RealSystem): number => {
-    if (categoryVisible.get(system.primaryCategory) !== false) {
-      return categoryOf.get(system.primaryCategory) ?? 0;
-    }
-    const secondary = system.secondaryCategories;
-    for (let index = 0; index < secondary.length; index += 1) {
-      const name = secondary[index] as string;
+    const names = system.categories;
+    if (names.length === 0) return UNCATEGORISED_INDEX;
+    for (let index = 0; index < names.length; index += 1) {
+      const name = names[index] as string;
       if (categoryVisible.get(name) !== false) return categoryOf.get(name) ?? 0;
     }
     return -1;
@@ -526,10 +592,9 @@ export function createSystemSet(): RealSystemSet {
         system.name.toLowerCase().includes(nameFilterFold);
       markerFlags[index] = drawn >= 0 && kept ? 1 : 0;
       // A system with every category off draws no marker, so the index it holds never
-      // reaches the frame. It keeps the primary category's index, which is always a row
-      // of the table, so no reader of the array meets an index outside it.
-      categoryIndices[index] =
-        drawn >= 0 ? drawn : (categoryOf.get(system.primaryCategory) ?? 0);
+      // reaches the frame. It keeps the index of the first category it names, which is
+      // always a row of the table, so no reader of the array meets an unreadable index.
+      categoryIndices[index] = drawn >= 0 ? drawn : indexOfFirst(system.categories);
     }
     flagsVersion = version;
     flagsCategoryVersion = categoryVersion;
@@ -561,7 +626,7 @@ export function createSystemSet(): RealSystemSet {
     positions[slot * 3] = system.position[0];
     positions[slot * 3 + 1] = system.position[1];
     positions[slot * 3 + 2] = system.position[2];
-    categoryIndices[slot] = categoryOf.get(system.primaryCategory) ?? 0;
+    categoryIndices[slot] = indexOfFirst(system.categories);
   };
 
   return {
@@ -569,6 +634,16 @@ export function createSystemSet(): RealSystemSet {
       const rejected: CategoryReject[] = [];
       let added = 0;
       let replaced = 0;
+
+      // A set is categorised or it is not. While it holds a system that names no
+      // category the whole call is refused, so the map never draws a set where only
+      // some systems carry a row.
+      if (uncategorisedSystems > 0) {
+        for (let index = 0; index < input.length; index += 1) {
+          rejected.push({ index, reason: 'set-is-uncategorised' });
+        }
+        return { added, replaced, rejected };
+      }
 
       for (let index = 0; index < input.length; index += 1) {
         const source = input[index];
@@ -668,36 +743,31 @@ export function createSystemSet(): RealSystemSet {
           continue;
         }
 
-        const primaryCategory = readName(record['primaryCategory']);
-        if (primaryCategory === null) {
-          rejected.push({ index, reason: 'no-category' });
-          continue;
-        }
-        if (!categoryOf.has(primaryCategory)) {
-          rejected.push({ index, reason: 'unknown-category' });
-          continue;
-        }
-
-        // An optional field of the wrong type is dropped, so a `secondaryCategories`
-        // that is not an array leaves the record with no secondary category. An entry
-        // the table does not hold rejects the record instead, so a misspelt name shows
-        // in the report rather than as a system with no colour behind it.
-        const secondarySource = record['secondaryCategories'];
-        const secondaryCategories: string[] = [];
-        let unknownSecondary = false;
-        if (Array.isArray(secondarySource)) {
-          for (const entry of secondarySource) {
+        // An optional field of the wrong type is dropped, so a `categories` that is not
+        // an array leaves the record naming none. An entry the table does not hold
+        // rejects the record instead, so a misspelt name shows in the report rather
+        // than as a system with no colour behind it.
+        const categorySource = record['categories'];
+        const named: string[] = [];
+        let unknownCategory = false;
+        if (Array.isArray(categorySource)) {
+          for (const entry of categorySource) {
             if (typeof entry !== 'string' || !categoryOf.has(entry)) {
-              unknownSecondary = true;
+              unknownCategory = true;
               break;
             }
-            if (entry === primaryCategory) continue;
-            if (secondaryCategories.includes(entry)) continue;
-            secondaryCategories.push(entry);
+            if (named.includes(entry)) continue;
+            named.push(entry);
           }
         }
-        if (unknownSecondary) {
+        if (unknownCategory) {
           rejected.push({ index, reason: 'unknown-category' });
+          continue;
+        }
+        // A record that names none is taken while the table is empty and refused while
+        // it holds a category, which is the other half of the all-or-nothing rule.
+        if (named.length === 0 && categories.length > 0) {
+          rejected.push({ index, reason: 'no-category' });
           continue;
         }
 
@@ -724,8 +794,7 @@ export function createSystemSet(): RealSystemSet {
         const system: MutableSystem = {
           name,
           position: [x, y, z],
-          primaryCategory,
-          secondaryCategories,
+          categories: named,
         };
         if (id64 !== null) system.id64 = id64;
         for (const field of TEXT_FIELDS) {
@@ -738,6 +807,11 @@ export function createSystemSet(): RealSystemSet {
         }
         const images = readImages(record['images']);
         if (images !== null) system.images = images;
+        if (named.length === 0) {
+          // A replacement raises it again, as the icon count rises, so the counter needs
+          // no sweep of the set. Only a clear resets it.
+          uncategorisedSystems += 1;
+        }
         if (icons.length > 0) {
           system.icons = icons;
           // A replacement raises it again, so a record that loses its icons leaves the
@@ -764,6 +838,7 @@ export function createSystemSet(): RealSystemSet {
       systems.length = 0;
       slotOf.clear();
       iconSystems = 0;
+      uncategorisedSystems = 0;
       boxEmpty = true;
       version += 1;
     },
@@ -772,6 +847,7 @@ export function createSystemSet(): RealSystemSet {
       systems.length = 0;
       slotOf.clear();
       iconSystems = 0;
+      uncategorisedSystems = 0;
       boxEmpty = true;
       categories.length = 0;
       categoryOf.clear();
@@ -851,7 +927,15 @@ export function createSystemSet(): RealSystemSet {
       return systems[index] ?? null;
     },
     category(index: number): Category | null {
-      return categories[index] ?? null;
+      const row = categories[index];
+      if (row !== undefined) return row;
+      // A set with no category holds one internal row, so every reader of
+      // `categoryIndices` finds a colour, a style and a draw range. The row is not in
+      // the table, and the handle's `getCategory` is the one reader that hides it.
+      if (categories.length === 0 && index === UNCATEGORISED_INDEX) {
+        return UNCATEGORISED_CATEGORY;
+      }
+      return null;
     },
     categoryIndex(name: string): number {
       return categoryOf.get(name) ?? -1;

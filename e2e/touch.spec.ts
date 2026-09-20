@@ -234,7 +234,7 @@ test('a tap selects and a drag does not', async ({ page }) => {
       {
         name: 'Tap Target',
         coords: { x: 0, y: 0, z: 0 },
-        primaryCategory: 'Core',
+        categories: ['Core'],
       } as unknown as SystemRecordInput,
     ]);
     window.galaxyMap?.setView({
@@ -282,12 +282,12 @@ test('a cancelled touch does not select', async ({ page }) => {
       {
         name: 'Tap Target',
         coords: { x: 0, y: 0, z: 0 },
-        primaryCategory: 'Core',
+        categories: ['Core'],
       } as unknown as SystemRecordInput,
       {
         name: 'Other',
         coords: { x: 900, y: 0, z: 0 },
-        primaryCategory: 'Core',
+        categories: ['Core'],
       } as unknown as SystemRecordInput,
     ]);
     window.galaxyMap?.setView({
@@ -338,7 +338,7 @@ test('a gesture ends a running selection flight', async ({ page }) => {
       {
         name: 'Far Away',
         coords: { x: 4000, y: 0, z: 4000 },
-        primaryCategory: 'Core',
+        categories: ['Core'],
       } as unknown as SystemRecordInput,
     ]);
     window.galaxyMap?.setView({

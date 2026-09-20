@@ -270,23 +270,22 @@ describe('the record reducer', () => {
     expect(records.map((record) => record.name)).toEqual(['Shared', 'Canonn Only']);
     const shared = records[0];
     // A row that controls wins over a row that does not, inside one faction.
-    expect(shared?.primaryCategory).toBe('Canonn Controlled');
-    expect(shared?.secondaryCategories).toEqual([
+    expect(shared?.categories).toEqual([
+      'Canonn Controlled',
       'Second Faction Present',
       'Third Faction Controlled',
     ]);
-    expect(records[1]?.primaryCategory).toBe('Canonn Present');
-    expect(records[1]?.secondaryCategories).toEqual([]);
+    expect(records[1]?.categories).toEqual(['Canonn Present']);
   });
 
-  test('takes the primary category from the first faction of the order', () => {
+  test('takes the first category from the first faction of the order', () => {
     const records = multifactionRecords(SHARED, [
       'Third Faction',
       'Second Faction',
       'Canonn',
     ]);
-    expect(records[0]?.primaryCategory).toBe('Third Faction Controlled');
-    expect(records[0]?.secondaryCategories).toEqual([
+    expect(records[0]?.categories).toEqual([
+      'Third Faction Controlled',
       'Second Faction Present',
       'Canonn Controlled',
     ]);
@@ -298,8 +297,7 @@ describe('the record reducer', () => {
       name: 'Shared',
       coords: { x: 10, y: 0, z: -10 },
       id64: 10,
-      primaryCategory: 'Canonn Controlled',
-      secondaryCategories: [],
+      categories: ['Canonn Controlled'],
     });
   });
 
@@ -346,8 +344,8 @@ describe('the fetch of the dump', () => {
     const records = await fetchMultifactionRecords('https://example.invalid/dump.gz');
     expect(records).toHaveLength(1);
     expect(records[0]?.name).toBe('Beta');
-    expect(records[0]?.primaryCategory).toBe('Canonn Controlled');
-    expect(records[0]?.secondaryCategories).toEqual([
+    expect(records[0]?.categories).toEqual([
+      'Canonn Controlled',
       'Canonn Deep Space Research Present',
     ]);
   });

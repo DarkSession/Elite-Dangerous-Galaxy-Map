@@ -344,8 +344,7 @@ interface Building {
     name: string;
     coords: { x: number; y: number; z: number };
     id64: number;
-    primaryCategory: string;
-    secondaryCategories: string[];
+    categories: string[];
   };
 }
 
@@ -360,8 +359,8 @@ function numberOf(value: unknown): number | null {
  * A faction lists a system once for each of its states, and two factions may name one
  * system, so the reducer holds one record per `systemId64`. Within one faction a row that
  * controls wins over a row that does not, so one faction gives one system one category.
- * The first faction of the entry's order that names a system gives the record its primary
- * category and every other category it earns is a secondary one.
+ * The first faction of the entry's order that names a system gives the record its first
+ * category, which is the one that carries the marker's colour.
  *
  * `JSON.parse` reads `systemId64` as a number, which loses the digits above 2^53. Two
  * systems whose ids differ above that limit would read as one record.
@@ -400,11 +399,8 @@ export function multifactionRecords(
         : presentCategory(name);
       const first = held.get(key);
       if (first !== undefined) {
-        if (
-          first.record.primaryCategory !== category &&
-          !first.record.secondaryCategories.includes(category)
-        ) {
-          first.record.secondaryCategories.push(category);
+        if (!first.record.categories.includes(category)) {
+          first.record.categories.push(category);
         }
         continue;
       }
@@ -421,8 +417,7 @@ export function multifactionRecords(
           name: systemName,
           coords: { x, y, z },
           id64: Number(key),
-          primaryCategory: category,
-          secondaryCategories: [],
+          categories: [category],
         },
       };
       held.set(key, building);

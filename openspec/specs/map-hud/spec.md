@@ -255,9 +255,43 @@ A category that holds neither SHALL have no row in either tab: a row that counts
 switches nothing the user can see.
 
 A row SHALL show the category's colour as a dot, its name and its count. The count SHALL
-be the number of **things of the shown tab** that belong to that category, by their primary
-category **or** any secondary category. A system or a shape that belongs to three
-categories is counted in all three rows.
+be the number of **things of the shown tab** that belong to that category. A thing that
+belongs to three categories is counted in all three rows.
+
+**The count reads the search box.** While the filter of the shown tab is **empty**, the
+count SHALL be the total. While it holds text, the count SHALL read
+`<matches> of <total>`, where `<matches>` is the number of things of that row the filter
+keeps and `<total>` is the number it holds in all. Both numbers SHALL be written in the
+whole-number format the HUD already uses, so a row of 1,116 systems with three matches
+reads `3 of 1,116`. A row whose things the filter all drop SHALL read `0 of <total>` and
+SHALL keep its row, because a row that vanished on a search would tell the user the
+category is gone rather than that it holds no match.
+
+The match count SHALL be worked out with the same comparison the map makes: the text is
+not trimmed and the match is not case sensitive.
+
+**A tab that holds no row shows a flat list.** Where the shown tab holds **no** category
+row while the map holds at least one thing of that tab's kind, the panel SHALL show one
+list of those things in place of the rows. This is the panel of an uncategorised system
+set, which `real-systems` allows, and of a shape set every shape of which names no
+category.
+
+**A mixed set is not a flat list.** Where one shape of the set names a category and another
+names none, the tab holds a row and the flat list SHALL NOT appear. The shape that names
+none keeps no row, which is what it has today, and the rule "A shape draws when a category
+it names is on" already keeps it drawn. The all-or-nothing rule `real-systems` states binds
+the systems alone, so the shapes of a set such as the demo's `adamastor` can be mixed and
+this change does not reach them.
+
+The flat list SHALL:
+
+- hold no dot, no colour swatch, no category name and no count;
+- carry a row per thing, which reads and acts exactly as a row of an open category list
+  does, by the requirement "A category expands into a list of its systems";
+- take that requirement's row budget and its `<shown> of <total>` cut line;
+- be filtered by the search box, by the same comparison a category list is filtered by;
+- show the **ALL** and **NONE** buttons **disabled**, because no switch reaches a thing
+  that names no category.
 
 **The dot switches the category and the rest of the row opens the list.** A click on the
 dot SHALL call the setter of the shown tab's kind with the opposite of what the row holds:
@@ -284,6 +318,14 @@ The panel SHALL rebuild its rows when the category table changes, when the syste
 changes and when the shape set changes, and not on a frame where none of the three
 changed. The table holds at most 256 categories, so the panel holds at most 256 rows.
 
+The pass that counts the matches SHALL run when the filter text changes and SHALL NOT run
+per frame. It SHALL read each thing of the shown tab **once per category that thing names**,
+because it runs the row filter per row: 10,000 systems over 8 categories with 4 names each
+is **40,000** reads, and 5,120 shapes over the same table is 20,480. Each read is one
+case-insensitive compare against a filter of a few characters. The pass SHALL cost less
+than **2 milliseconds** on the main thread. The box gives its text to the filter at most
+once per 150 ms, so the pass runs at most that often.
+
 #### Scenario: A row toggles its category
 
 - **WHEN** the browser test adds two categories and one system in each, clicks the dot of
@@ -298,16 +340,16 @@ changed. The table holds at most 256 categories, so the panel holds at most 256 
 - **THEN** the first click opens one list and leaves the category on, and the second click
   folds it
 
-#### Scenario: The counts read the primary category
+#### Scenario: The counts read the first category
 
-- **WHEN** the browser test adds the categories `A` and `B`, then two records whose primary
-  category is `A` and one of them names `B` as a secondary category
-- **THEN** the row for `A` reads 2
+- **WHEN** the browser test adds the categories `A` and `B`, then two records whose
+  `categories` both begin with `A`, one of which also holds `B`
+- **THEN** the row for `A` reads `2`
 
-#### Scenario: The counts read the secondary categories as well
+#### Scenario: The counts read the later categories as well
 
 - **WHEN** the browser test reads the row for `B` in the frame the scenario above set up
-- **THEN** the row for `B` reads 1, because one of the two records names `B`
+- **THEN** the row for `B` reads `1`, because one of the two records names `B` after `A`
 
 #### Scenario: The counts hold with the demo set
 
@@ -315,6 +357,46 @@ changed. The table holds at most 256 categories, so the panel holds at most 256 
   three category rows and `systemCount`
 - **THEN** the three counts add up to more than `systemCount`, because 166 of the 212
   systems hold more than one ruin layout
+
+#### Scenario: A search rewrites the counts
+
+- **WHEN** the browser test adds the category `A` holding the systems `Sol`, `Solati` and
+  `Achenar` and the category `B` holding `Beta`, types `sol` in the box, waits 300 ms and
+  reads both rows, then clears the box, waits 300 ms and reads them again
+- **THEN** the first reading is `2 of 3` for `A` and `0 of 1` for `B`, and the second is
+  `3` and `1`
+
+#### Scenario: A row with no match keeps its row
+
+- **WHEN** the browser test reads the row for `B` in the frame the scenario above set up
+  while the box holds `sol`
+- **THEN** the row is in the panel, it reads `0 of 1`, and its dot still switches the
+  category
+
+#### Scenario: An uncategorised set shows a flat list
+
+- **WHEN** the browser test builds a map with the HUD on, no category and the systems
+  `Sol`, `Solati` and `Achenar`, and reads the **SYSTEMS** tab
+- **THEN** the tab holds no category row, it holds one list of the three names in order of
+  name, and **ALL** and **NONE** are disabled
+
+#### Scenario: The flat list selects and filters
+
+- **WHEN** the browser test types `sol` in the box, waits 300 ms, reads the list, then
+  clicks the row named `Sol` and reads `getSelection()`
+- **THEN** the list holds `Sol` and `Solati`, and the reading names `Sol`
+
+#### Scenario: The shapes tab shows a flat list for uncategorised shapes
+
+- **WHEN** the browser test adds one category, one system in it, and two spheres named
+  `Alpha Zone` and `Beta Zone` that name no category, clicks **SHAPES** and reads the tab
+- **THEN** the tab holds no category row and holds one list of the two shape names
+
+#### Scenario: One categorised thing removes the flat list
+
+- **WHEN** the browser test adds a category and one system in it to the uncategorised map
+  of the scenario above, waits for the panel to rebuild and reads the **SYSTEMS** tab
+- **THEN** the tab holds one category row and no flat list
 
 #### Scenario: ALL and NONE move every row
 
@@ -367,6 +449,13 @@ changed. The table holds at most 256 categories, so the panel holds at most 256 
 - **THEN** the **SHAPES** row reads on while the **SYSTEMS** row is off, and the
   **SYSTEMS** row still reads off after the shape dot moved
 
+#### Scenario: The count pass holds its budget
+
+- **WHEN** the browser test adds 10,000 systems over 8 categories, each naming 4 of them,
+  types one character in the box, waits 300 ms and reads the measurement the page exposes
+  for the count pass
+- **THEN** the reading is under 2 milliseconds
+
 ### Requirement: The search box filters the systems by name
 
 The category panel SHALL hold a text box. In the **SYSTEMS** tab its text SHALL go to
@@ -377,6 +466,10 @@ per **150 ms** while the user types, and once more after the user stops.
 The filter reaches the map as well as the lists: the user is asking the map to show the
 thing they are looking for, and a list that narrows over a map that does not would leave
 the marker or the shape they want among thousands they do not.
+
+**The filter also rewrites the counts beside the rows**, by the rule the requirement "The
+category browser lists the categories and turns them off" states, so the count agrees with
+the list the row opens into.
 
 Clearing the box SHALL clear the filter and bring everything back.
 
@@ -409,6 +502,9 @@ search and one after it.
 
 Each tab SHALL hold an open set of its own, so a tab the user comes back to reads as they
 left it.
+
+**A flat list has no open set.** Where the tab shows the flat list the requirement above
+states, the box filters that one list and opens and folds nothing.
 
 #### Scenario: A list folded during a search stays folded
 
@@ -481,9 +577,9 @@ distance from Sol of the system the user selects, and the row is a way to reach 
 name. A number beside every name is a second reading of the same thing in the place the
 user is reading names.
 
-The list SHALL hold the systems, or the shapes, that belong to the row's category, by their
-primary category **or** any secondary category, and whose name the filter of that tab
-keeps, in order of name.
+The list SHALL hold the systems, or the shapes, that belong to the row's category, by
+**any** of the names in their `categories`, and whose name the filter of that tab keeps, in
+order of name.
 
 **The row cap is shared over the open lists.** The lists together SHALL show at most
 **200** rows, and each open list SHALL show at most `floor(200 / open)` rows, where `open`
@@ -583,9 +679,8 @@ never selected.
 
 #### Scenario: One system shows in every list it belongs to
 
-- **WHEN** the browser test adds the categories `A` and `B` and one system whose primary
-  category is `A` and whose secondary categories hold `B`, opens `A`, reads the list,
-  opens `B` and reads it again
+- **WHEN** the browser test adds the categories `A` and `B` and one system whose
+  `categories` reads `['A', 'B']`, opens `A`, reads the list, opens `B` and reads it again
 - **THEN** both lists hold that system
 
 #### Scenario: A shape row names the shape
@@ -639,9 +734,9 @@ never selected.
 ### Requirement: The map options panel carries the map switches
 
 The map options panel SHALL hold one switch for each map option the host leaves open, and
-no segmented control. The options are **Galactic regions**, **System names**, **Coordinate
-grid** and **Shapes**, and a fifth, **Nebulae**, where the map holds nebulae.
-`lockedOptions` below is what takes one out. Each one SHALL be a switch of the shape the
+no segmented control. The options are **Galactic regions**, **System names**, **System
+icons**, **Coordinate grid** and **Shapes**, and a sixth, **Nebulae**, where the map holds
+nebulae. `lockedOptions` below is what takes one out. Each one SHALL be a switch of the shape the
 panel already uses, with its label and its track.
 
 **Galactic regions** SHALL call `setRegionsVisible`, which `galactic-regions` defines. It
@@ -651,6 +746,11 @@ false`.
 **System names** SHALL call `setSystemNamesVisible`, which `system-selection` defines. It
 SHALL open on the state the map is in, which is off unless the options named
 `systemNames: true`.
+
+**System icons** SHALL call `setSystemIconsVisible`, which `system-icons` defines. It
+SHALL open on the state the map is in, which is on unless the options named
+`systemIcons: false`. It SHALL draw whether or not a record on the map names an icon,
+because a host can add one at any time.
 
 **Coordinate grid** SHALL call `setGridVisible`, which `coordinate-grid` defines. It SHALL
 open on the state the map is in, which is off unless the options named `grid`. The demo
@@ -662,36 +762,36 @@ whether or not the map holds a shape, because a host can add one at any time.
 
 **Nebulae** SHALL call `setNebulaeVisible`, which `nebulae` defines. The panel SHALL build
 this switch only where `hasNebulae()` returns true, and SHALL build the open switches of
-the other four otherwise. A switch that turned on a feature the map cannot draw would be a control that
-does nothing, and the other four are not in that position: each of them moves a feature
+the other five otherwise. A switch that turned on a feature the map cannot draw would be a control that
+does nothing, and the other five are not in that position: each of them moves a feature
 every map holds. The switch SHALL open on the state the map is in, which is on.
 
-The HUD SHALL reach all five through the public handle and through nothing else, which is
+The HUD SHALL reach all six through the public handle and through nothing else, which is
 the boundary `AGENTS.md` holds and the lint rules enforce.
 
 **The host locks an option.** `HudOptions` SHALL carry `lockedOptions`, an array of the
-names `regions`, `systemNames`, `grid`, `shapes` and `nebulae`. A locked option SHALL draw
+names `regions`, `systemNames`, `systemIcons`, `grid`, `shapes` and `nebulae`. A locked option SHALL draw
 **no switch**. The user is never shown a control that does nothing, and a switch that reads
 disabled states a rule the user cannot act on. The panel SHALL leave out that switch and
 nothing else, so the switches that stay keep the order above.
 
 **`nebulae` is lockable because it is a switch.** The lock list names every switch the
-panel can hold, and not only the four that every map holds. A host that locks `nebulae` on
+panel can hold, and not only the five that every map holds. A host that locks `nebulae` on
 a map that holds no nebula source loses nothing, because that switch was never built.
 
 When **every switch the panel would hold** is locked, the HUD SHALL build **no map options
 panel**, and the left column SHALL hold the category browser alone. On a map with no nebula
-source that is the four; on a map with one it is the five. The rule is the switches the
+source that is the five; on a map with one it is the six. The rule is the switches the
 panel would hold and not a fixed count, because the count is not fixed.
 
-A name the five above do not hold SHALL be ignored, and a `lockedOptions` that is not an
+A name the six above do not hold SHALL be ignored, and a `lockedOptions` that is not an
 array SHALL be ignored, because a setting the HUD cannot read takes the default.
 
 **A lock holds the user, not the host.** `setRegionsVisible`, `setSystemNamesVisible`,
-`setGridVisible`, `setShapesVisible` and `setNebulaeVisible` SHALL work on a locked option
-as they do on an open one, so the host changes it in code at any time. A locked option
-SHALL start at the value its `GalaxyMapOptions` field gives, which is `regions`,
-`systemNames`, `grid` and `shapes`; the nebulae start visible on a map that holds a source,
+`setSystemIconsVisible`, `setGridVisible`, `setShapesVisible` and `setNebulaeVisible` SHALL
+work on a locked option as they do on an open one, so the host changes it in code at any
+time. A locked option SHALL start at the value its `GalaxyMapOptions` field gives, which is
+`regions`, `systemNames`, `systemIcons`, `grid` and `shapes`; the nebulae start visible on a map that holds a source,
 which `nebulae` states. The library SHALL NOT read `lockedOptions` anywhere but the HUD.
 
 The three buttons **NONE**, **SIMPLIFIED** and **ACCURATE** are gone with the region mode
@@ -738,8 +838,8 @@ the handle moves the control with it.
 - **WHEN** a browser test builds a map with `hud: true` and the nebula source and counts
   the switches, and a second builds one with `hud: true` and no `nebulae` option and
   counts them
-- **THEN** the first holds five switches with a **Nebulae** switch that reads on, and the
-  second holds four and no switch labelled **Nebulae**
+- **THEN** the first holds six switches with a **Nebulae** switch that reads on, and the
+  second holds five and no switch labelled **Nebulae**
 
 #### Scenario: The nebulae switch removes the sprites
 
@@ -758,22 +858,22 @@ the handle moves the control with it.
 
 - **WHEN** a browser test builds a map with `hud: { lockedOptions: ['grid', 'shapes'] }`
   and reads the map options panel
-- **THEN** the panel holds the **Galactic regions** switch and the **System names** switch
-  in that order, and holds no coordinate grid switch and no shapes switch
+- **THEN** the panel holds the **Galactic regions**, **System names** and **System icons**
+  switches in that order, and holds no coordinate grid switch and no shapes switch
 
 #### Scenario: Every switch locked drops the panel
 
 - **WHEN** a browser test builds a map with no nebula source and
-  `hud: { lockedOptions: ['regions', 'systemNames', 'grid', 'shapes'] }` and reads the HUD,
-  and a second builds one **with** the source and the same four names
+  `hud: { lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'] }` and
+  reads the HUD, and a second builds one **with** the source and the same five names
 - **THEN** the first holds no map options panel and the category browser is there, and the
   second holds a panel with the **Nebulae** switch alone
 
 #### Scenario: The nebulae switch locks with the rest
 
 - **WHEN** a browser test builds a map with the nebula source and
-  `hud: { lockedOptions: ['regions', 'systemNames', 'grid', 'shapes', 'nebulae'] }` and
-  reads the HUD
+  `hud: { lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes', 'nebulae'] }`
+  and reads the HUD
 - **THEN** the HUD holds no map options panel, and the sprites still draw
 
 #### Scenario: A locked option still moves through the handle
@@ -789,7 +889,21 @@ the handle moves the control with it.
 - **WHEN** a browser test builds a map with no nebula source whose `lockedOptions` hold the
   name `datasets` and the number 7, and a second whose `lockedOptions` is the string
   `grid`, and reads the map options panel of each
-- **THEN** both panels hold all four switches
+- **THEN** both panels hold all five switches
+
+#### Scenario: The system icons switch moves the stacks
+
+- **WHEN** a browser test builds a map with the HUD, adds one system with two icons in
+  view, clicks the **System icons** switch, draws a frame and counts the icon elements,
+  then clicks it again, draws and counts
+- **THEN** the counts are 0 and 2, and the switch reads off and then on
+
+#### Scenario: The system icons switch opens on the option
+
+- **WHEN** a browser test builds a map with `systemIcons: false` and the HUD and reads the
+  **System icons** switch, and a second builds one with no `systemIcons` option and reads
+  the same switch
+- **THEN** the first reads off and the second reads on
 
 ### Requirement: The information panel shows the selected system
 
@@ -804,8 +918,10 @@ selection. It SHALL hold, in this order:
    answer gave them. A field the record does not carry SHALL be left out, not shown empty.
    The position is always shown. The distance from Sol, the range and the region are
    worked out from the position and are shown unless `infoFields` turns them off.
-3. The categories, as one chip per category in the record's colour, the primary first and
-   then the secondary ones in the order the record gave them.
+3. The categories, as one chip per name in the record's `categories`, in the record's own
+   order, each in that category's colour. A system that names **no** category SHALL carry
+   no chip and no empty chip row in place of one, which the `real-systems` requirement
+   "A set holds categories or holds none" allows.
 4. The description, drawn as **Markdown**, which `system-details` defines. It is the loaded
    description when `details` gave one, and the record's `description` otherwise. The
    section is left out when there is neither.
@@ -1209,6 +1325,13 @@ returns them from the loader for every system.
 - **THEN** the section holds one paragraph with a bold `hub`, one bullet list of two items,
   and one anchor whose `href` is `https://edsm.net`
 
+#### Scenario: A system with no category shows no chip row
+
+- **WHEN** the browser test builds a map with no category and three systems, selects one
+  and reads the information panel
+- **THEN** the panel opens, it holds the header, the fields and the description, and it
+  holds no chip and no empty row where the chips sit
+
 ### Requirement: The images open in a lightbox
 
 The panel SHALL show each image of the record as a thumbnail in a grid of two columns,
@@ -1292,9 +1415,9 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
   panels, reading the focused element at each step
 - **THEN** the two tabs, every category dot, every category row, the ALL and NONE buttons,
   every switch the panel holds, the two copy buttons, the dataset field and the reset
-  view button are each focused once. Where the map holds nebulae the panel holds five
+  view button are each focused once. Where the map holds nebulae the panel holds six
   switches and the **Nebulae** switch is one of them; where it does not, the panel holds
-  four and no focus step lands on a nebulae switch
+  five and no focus step lands on a nebulae switch
 
 #### Scenario: Enter and Space work a control
 
@@ -1329,8 +1452,9 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
 
 - **WHEN** a browser test builds a map with `hud: { lockedOptions: ['grid', 'shapes'] }`,
   tabs through the map options panel and reads each control it reaches
-- **THEN** it reaches two switches, each carries `aria-pressed` and a name a screen reader
-  can read, and each acts on `Enter` and on `Space`
+- **THEN** it reaches three switches — **Galactic regions**, **System names** and **System
+  icons** — each carries `aria-pressed` and a name a screen reader can read, and each acts
+  on `Enter` and on `Space`
 
 ### Requirement: Escape closes the lightbox, then the panel
 

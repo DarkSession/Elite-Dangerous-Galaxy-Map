@@ -76,12 +76,7 @@ describe('the conversion of the Adamastor source', () => {
       "Hyford's Cache & D-2's LPs",
       'Project Seraph Settlements',
     ]);
-    const records = new Set(
-      set.systems.flatMap((system) => [
-        system.primaryCategory,
-        ...system.secondaryCategories,
-      ]),
-    );
+    const records = new Set(set.systems.flatMap((system) => system.categories));
     expect(records.has('Adamastor Initial Route')).toBe(false);
   });
 
@@ -129,11 +124,10 @@ describe('the conversion of the Adamastor source', () => {
   // no colour of its own. Only a line that names none keeps a colour.
   test('gives a line its route categories and the grey fallback where it has none', () => {
     const lines = convertAdamastor(extract(), findPosition).lines;
-    expect(lines[0]?.primaryCategory).toBe('Adamastor Initial Route');
-    expect(lines[0]?.secondaryCategories).toBeUndefined();
+    expect(lines[0]?.categories).toEqual(['Adamastor Initial Route']);
     expect(lines[0]?.color).toBeUndefined();
     // The route naming category `50` is the one the table does not hold.
-    expect(lines[2]?.primaryCategory).toBeUndefined();
+    expect(lines[2]?.categories).toBeUndefined();
     expect(lines[2]?.color).toEqual(LINE_COLOUR_FALLBACK);
     expect(LINE_COLOUR_FALLBACK).toEqual([160, 160, 160]);
   });

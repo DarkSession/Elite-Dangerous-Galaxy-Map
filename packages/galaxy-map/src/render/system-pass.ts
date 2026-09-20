@@ -7,6 +7,7 @@ import {
   MIN_MARKER_CSS,
 } from '../scene-data/marker-size';
 import {
+  DEFAULT_MARKER_COLOR,
   DEFAULT_MARKER_STYLE,
   DEFAULT_MAX_DRAW_RANGE_LY,
   MAX_SYSTEMS,
@@ -65,9 +66,6 @@ const HALO_PEAK = 0.85;
 /** The radius the core holds at 1, in CSS pixels, and the radius it reaches 0 at. */
 const CORE_PLATEAU_CSS = 1;
 const CORE_EDGE_CSS = 2.5;
-
-/** The colour a marker draws in when its category index names no category. */
-const FALLBACK_COLOR: readonly [number, number, number] = [1, 1, 1];
 
 /**
  * The diameter of the sprite of a marker in CSS pixels. A disc is the marker itself; a
@@ -229,7 +227,9 @@ export function buildMarkerColors(set: RealSystemSet, out: Float32Array): void {
   const indices = set.categoryIndices;
   for (let index = 0; index < set.count; index += 1) {
     const category = set.category(indices[index] as number);
-    const colour = category === null ? FALLBACK_COLOR : category.color;
+    // A set with no category answers with its internal row, so the fallback here is
+    // reached only by an index the set never writes.
+    const colour = category === null ? DEFAULT_MARKER_COLOR : category.color;
     const base = index * 3;
     out[base] = (colour[0] as number) / 255;
     out[base + 1] = (colour[1] as number) / 255;

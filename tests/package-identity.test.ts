@@ -84,7 +84,7 @@ describe('the library package', () => {
   });
 
   test('names its version', () => {
-    expect(library.version).toBe('0.6.0');
+    expect(library.version).toBe('0.7.0');
   });
 });
 

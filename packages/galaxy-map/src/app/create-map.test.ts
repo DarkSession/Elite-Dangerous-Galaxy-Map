@@ -48,11 +48,27 @@ describe('the entry point with no WebGL2 context', () => {
 
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
     const report = map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
     ]);
     expect(report.added).toBe(1);
     expect(map.systemCount()).toBe(1);
     expect(frames).not.toHaveBeenCalled();
+  });
+
+  test('hides the internal row of an uncategorised set', async () => {
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+
+    const report = map.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 } },
+      { name: 'Achenar', coords: { x: 10, y: 0, z: 0 } },
+    ]);
+    expect(report.added).toBe(2);
+    expect(map.systemCount()).toBe(2);
+    // The set points an uncategorised system at an internal row. The handle hides it, so
+    // a host reads an empty table.
+    expect(map.categoryCount()).toBe(0);
+    expect(map.getCategory(0)).toBeNull();
   });
 
   test('clears the shapes with the systems', async () => {
@@ -61,7 +77,7 @@ describe('the entry point with no WebGL2 context', () => {
 
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
     map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
     ]);
     map.addSpheres([{ position: [100, 0, 200], radius: 50, color: [255, 0, 0] }]);
     map.addLines([
@@ -87,11 +103,9 @@ describe('the entry point with no WebGL2 context', () => {
 
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
     map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
     ]);
-    map.addSpheres([
-      { position: [100, 0, 200], radius: 50, primaryCategory: 'Empire' },
-    ]);
+    map.addSpheres([{ position: [100, 0, 200], radius: 50, categories: ['Empire'] }]);
 
     map.setCategoryVisible('Empire', false);
     expect(map.isCategoryVisible('Empire')).toBe(false);
@@ -113,7 +127,7 @@ describe('the entry point with no WebGL2 context', () => {
 
     const sphere = { position: [100, 0, 200] as const, radius: 50 };
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
-    map.addSpheres([{ ...sphere, primaryCategory: 'Empire' }]);
+    map.addSpheres([{ ...sphere, categories: ['Empire'] }]);
     map.setShapeCategoryVisible('Empire', false);
 
     // Each of the three clears empties the shape set, so each one drops the flags with
@@ -128,7 +142,7 @@ describe('the entry point with no WebGL2 context', () => {
     map.setShapeCategoryVisible('Empire', false);
     map.clearSystemsAndCategories();
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
-    map.addSpheres([{ ...sphere, primaryCategory: 'Empire' }]);
+    map.addSpheres([{ ...sphere, categories: ['Empire'] }]);
     expect(map.isShapeCategoryVisible('Empire')).toBe(true);
     expect(map.getShapeInfo('sphere', 0)?.drawn).toBe(true);
   });
@@ -139,12 +153,12 @@ describe('the entry point with no WebGL2 context', () => {
 
     map.addCategories([{ name: 'Empire', color: [0, 180, 255] }]);
     map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
       {
         name: 'Alioth',
         id64: '10477373803',
         coords: { x: -33.65, y: 72.46, z: -20.65 },
-        primaryCategory: 'Empire',
+        categories: ['Empire'],
       },
     ]);
     const report = map.addLines([
@@ -173,11 +187,11 @@ describe('the entry point with no WebGL2 context', () => {
           load: () => ({
             categories: [{ name: 'Empire', color: [0, 180, 255] as const }],
             systems: [
-              { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+              { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
               {
                 name: 'Alioth',
                 coords: { x: -33, y: 72, z: -20 },
-                primaryCategory: 'Empire',
+                categories: ['Empire'],
               },
             ],
           }),
@@ -217,11 +231,11 @@ describe('the entry point with no WebGL2 context', () => {
           load: () => ({
             categories: [{ name: 'Empire', color: [0, 180, 255] as const }],
             systems: [
-              { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+              { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
               {
                 name: 'Alioth',
                 coords: { x: -33, y: 72, z: -20 },
-                primaryCategory: 'Empire',
+                categories: ['Empire'],
               },
             ],
           }),

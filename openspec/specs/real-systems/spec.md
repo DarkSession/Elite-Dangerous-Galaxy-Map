@@ -3,8 +3,9 @@
 Lets a host application put real star systems on the map. The host creates the map with
 one call, gives it a table of categories with a second, and adds records with a third.
 The map validates each record, draws a marker for each system it keeps in the colour of
-that system's primary category, and removes the invented star that stands for the same
-system.
+the first category that system names which is on, and removes the invented star that
+stands for the same system. A set may name no category at all, and its markers then draw
+in the library's own default.
 
 ## Requirements
 
@@ -16,7 +17,8 @@ carry an optional `labelHost` element for the region label overlay, an optional
 `regions`, which `galactic-regions` defines, an optional `shapes`, which `map-shapes`
 defines, an optional `grid`, which
 `coordinate-grid` defines, an optional `hud`, which `map-hud` defines, an optional
-`datasets` and an optional `dataset`, which `dataset-catalog` defines, and an optional
+`datasets` and an optional `dataset`, which `dataset-catalog` defines, an optional
+`systemIcons`, which `system-icons` defines, and an optional
 `loadingImage`, which the requirement below defines. With no `labelHost`
 the library SHALL create its own overlay element in the canvas's parent, so a host that
 gives a canvas alone gets a working map. The library SHALL NOT read an element by id.
@@ -58,6 +60,8 @@ The handle SHALL carry these members:
 | `systemAt(x, y)`              | The system under a canvas pixel, or null                      |
 | `setSystemNamesVisible(on)`   | Turns the marker name labels on or off                        |
 | `areSystemNamesVisible()`     | Reads whether the marker name labels draw                     |
+| `setSystemIconsVisible(on)`   | Turns the system icon stacks on or off                        |
+| `areSystemIconsVisible()`     | Reads whether the system icon stacks draw                     |
 | `setGridVisible(on)`          | Turns the coordinate grid on or off                           |
 | `isGridVisible()`             | Reads whether the coordinate grid draws                       |
 | `onGridChange(fn)`            | Calls `fn` after the grid switch moves, returns an unsubscribe |
@@ -350,7 +354,9 @@ already in it.
 The table SHALL hold at most 256 categories. `addCategories` SHALL return a report of
 `added`, `replaced` and `rejected`. Each rejected entry SHALL carry the index of the
 category in the call and one reason from this set: `no-name`, `bad-color`, `bad-style`,
-`bad-range`, `over-capacity`. A `color` that is not three finite numbers from 0 to 255
+`bad-range`, `over-capacity`, `set-is-uncategorised`. The last of those is what a call
+takes while the set holds a system that names no category, which the requirement "A set
+holds categories or holds none" states. A `color` that is not three finite numbers from 0 to 255
 SHALL be rejected as `bad-color`.
 
 The host names its categories. The map reads a name, a colour, a description, a style and
@@ -416,19 +422,30 @@ allegiance and a host that groups them by star class both fit the same call.
 
 ### Requirement: A record follows the shape of an EDSM or a Spansh dump
 
-A record SHALL carry a `name` that is a string of at least one character, a `coords`
-object whose `x`, `y` and `z` are finite numbers, and a `primaryCategory` that is the name
-of a category the table holds. The position is in game coordinates in light years.
+A record SHALL carry a `name` that is a string of at least one character and a `coords`
+object whose `x`, `y` and `z` are finite numbers. The position is in game coordinates in
+light years.
 
-A record MAY carry `secondaryCategories`, an array of names of categories the table
-holds. The array MAY hold any number of names. The reader SHALL drop a name that repeats
-and a name equal to the primary category, and SHALL keep the rest in the order the record
-gave them. A `secondaryCategories` that is present and is not an array SHALL be dropped,
-as an optional field of the wrong type is dropped. An entry of the array that is not the
-name of a category the table holds SHALL reject the record, which covers an entry that is
-not a string. A secondary category does not change the **colour** or the **style** a
-marker draws in, which the primary category alone gives. It does decide whether the marker
-draws at all: the requirement "A category can be turned off" states that rule.
+A record MAY carry `categories`, an array of names of categories the table holds. The
+array MAY hold any number of names. The reader SHALL drop a name that repeats and SHALL
+keep the rest in the order the record gave them. A `categories` that is present and is not
+an array SHALL be read as an empty list, as an optional field of the wrong type is
+dropped. An entry of the array that is not the name of a category the table holds SHALL
+reject the record, which covers an entry that is not a string.
+
+**The first name of the list is what the record's `primaryCategory` was.** It gives the
+**colour**, the **style** and the **draw range** of the marker. Every later name decides
+whether the marker draws at all and may become the drawn one when an earlier name is
+switched off: the requirement "A category can be turned off" states that rule.
+
+**The record carries one list and not two.** `primaryCategory` and `secondaryCategories`
+are gone. A record that carries either name SHALL have it dropped with every other field
+the reader does not know, so an old record reads as a record that names no category.
+
+A record whose `categories` is empty, or that names none, SHALL be accepted while the
+category table is empty and SHALL be rejected as `no-category` while the table holds a
+category. The requirement "A set holds categories or holds none" states that rule and what
+such a marker draws in.
 
 The reader SHALL keep these optional fields when they are present and of the stated
 type, and SHALL drop every other field of the record:
@@ -445,6 +462,7 @@ type, and SHALL drop every other field of the record:
 | `description`     | string                     |
 | `primaryStar`     | string                     |
 | `images`          | array, read as below       |
+| `icons`           | array, which `system-icons` defines |
 
 The reader SHALL store `id64` as a decimal string. A Spansh `id64` is a 64-bit integer,
 and `JSON.parse` loses digits above 2^53, so a host that needs every digit passes a
@@ -464,38 +482,58 @@ when the record carries none and the `details` loader of `system-details` gives 
 `caption` string. The reader SHALL keep at most **8** entries, in the order the record
 gave them, and SHALL drop the rest. The reader SHALL drop an entry that is not an object,
 an entry whose `url` is not a string, an entry whose `url` is empty, and an entry whose
-`url` names a scheme that is not `http` or `https`. A `url` with no scheme is a relative URL and SHALL be kept. A bad entry
-SHALL NOT reject the record, because an image is decoration and the rest of the record
-still draws and still reads.
+`url` names a scheme that is not `http` or `https`. A `url` with no scheme is a relative
+URL and SHALL be kept. A bad entry SHALL NOT reject the record, because an image is
+decoration and the rest of the record still draws and still reads.
 
 The scheme rule is a safety rule, not a formatting one. The HUD puts the `url` in an image
 element, so a `javascript:` or a `data:` URL from an untrusted dump would run or embed
 content the host did not mean to serve. The library SHALL NOT fetch an image itself: the
 browser loads it from the element.
 
+`icons` is an array of at most **4** entries, which `system-icons` states the shape of and
+the map draws over the system's marker. It is the one optional field a bad value **rejects**
+the record for, rather than drops: `system-icons` states why, and the two reasons the
+requirement below names are what the report carries. The same URL rule the images hold
+covers a host icon's `url`.
+
+`getSystem` SHALL read a record back with `categories` and with neither of the two names
+it replaces.
+
 #### Scenario: An EDSM record and a Spansh record are both read
 
 - **WHEN** a unit test adds two categories, then one EDSM record, which carries `id64`,
-  `name`, `coords`, `primaryCategory` and `date`, and one Spansh record, which carries
-  those fields and `allegiance`, `government`, `primaryEconomy`, `security`,
-  `population`, `bodyCount`, `bodies` and `stations`
+  `name`, `coords`, `categories` and `date`, and one Spansh record, which carries those
+  fields and `allegiance`, `government`, `primaryEconomy`, `security`, `population`,
+  `bodyCount`, `bodies` and `stations`
 - **THEN** both are accepted, the kept fields hold the values the records gave, and
   neither `date` nor `bodies` nor `stations` is held
 
-#### Scenario: An unknown secondary category rejects the record
+#### Scenario: An unknown category in the list rejects the record
 
-- **WHEN** a unit test adds the category `A`, then two records that name `A` as the
-  primary category: one whose `secondaryCategories` hold `B`, which the table does not
-  hold, and one whose `secondaryCategories` is the string `A` and not an array
-- **THEN** the first is rejected as `unknown-category`, and the second is accepted with
-  no secondary category
+- **WHEN** a unit test adds the category `A`, then three records: one whose `categories`
+  are `['A', 'B']`, where the table does not hold `B`, one whose `categories` is the
+  string `A` and not an array, and one whose `categories` are `['A', 7]`
+- **THEN** the first and the third are rejected as `unknown-category`, and the second is
+  rejected as `no-category`, because a `categories` of the wrong type reads as an empty
+  list and the table holds a category
 
-#### Scenario: The secondary categories are kept in order, without a repeat
+  A secondary category is now an entry of `categories` after the first, and the reader
+  rejects an unknown name wherever it sits in the list.
+
+#### Scenario: The categories are kept in order, without a repeat
 
 - **WHEN** a unit test adds the categories `A`, `B` and `C`, then one record whose
-  primary category is `A` and whose `secondaryCategories` are `C`, `B`, `C` and `A`
-- **THEN** the record is accepted and holds the secondary categories `C` and `B`, in that
-  order
+  `categories` are `C`, `B`, `C` and `A`
+- **THEN** the record is accepted and reads back the categories `C`, `B` and `A`, in that
+  order, and the marker takes the colour of `C`
+
+#### Scenario: The old field names are dropped
+
+- **WHEN** a unit test adds the category `A`, then one record that carries
+  `primaryCategory: 'A'` and `secondaryCategories: []` and no `categories`
+- **THEN** the record is rejected as `no-category`, and neither name is held on any record
+  the set reads back
 
 #### Scenario: A large id64 keeps every digit
 
@@ -533,34 +571,54 @@ browser loads it from the element.
   bracket and a backslash, and reads the record back from the handle
 - **THEN** the string reads exactly as the record gave it, character for character
 
+#### Scenario: An icon list is kept and a bad one rejects the record
+
+- **WHEN** a unit test adds one record whose `icons` is `['titan']` and one whose `icons`
+  is the string `titan`
+- **THEN** the first is accepted and holds one icon, and the second is rejected as
+  `bad-icon`
+
 ### Requirement: The reader reports every record it rejects
 
 `addSystems` SHALL return a report of `added`, `replaced` and `rejected`. Each rejected
 entry SHALL carry the index of the record in the call and one reason from this set:
 `no-name`, `no-coords`, `no-category`, `unknown-category`, `out-of-bounds`,
-`over-capacity`.
+`over-capacity`, `bad-icon`, `unknown-icon`.
 
 A record whose position lies outside the galaxy model bounds SHALL be rejected as
 `out-of-bounds`. The bounds are the volume the map draws, so a record outside them could
 never show. The reader SHALL reject a bad record and SHALL keep reading the rest of the
 call.
 
-A record with no `primaryCategory`, or whose `primaryCategory` is not a string of at
-least one character, SHALL be rejected as `no-category`. A record whose primary category,
-or one of whose secondary categories, names a category the table does not hold SHALL be
-rejected as `unknown-category`. A category is what colours a marker, so a system without
-one has no colour to draw in. The host therefore adds its categories before its systems,
-and the report names every record that arrived too early.
+A record that names **no category**, while the category table holds at least one, SHALL be
+rejected as `no-category`. A category is what colours a marker in a set that has
+categories, so a system without one in such a set has no colour to draw in. The host
+therefore adds its categories before its systems, and the report names every record that
+arrived too early. While the table is **empty** such a record SHALL be accepted, which the
+requirement "A set holds categories or holds none" states.
+
+A record one of whose `categories` names a category the table does not hold SHALL be
+rejected as `unknown-category`.
+
+`bad-icon` and `unknown-icon` are what an unreadable `icons` field gives, and
+`system-icons` states which fault gives which. They are the last two reasons the reader
+tests, so a record that is faulty in an earlier field reports that earlier reason.
 
 #### Scenario: Each fault gets its own reason
 
 - **WHEN** a unit test adds one category, then seven records: one valid, one with an
   empty name, one with no `coords`, one whose `coords.x` is `NaN`, one at
-  (0, 0, 900,000), one with no `primaryCategory`, and one whose `primaryCategory` names a
-  category the table does not hold
+  (0, 0, 900,000), one with no `categories`, and one whose `categories` name a category
+  the table does not hold
 - **THEN** `added` is 1, and `rejected` holds `no-name` at index 1, `no-coords` at
   index 2, `no-coords` at index 3, `out-of-bounds` at index 4, `no-category` at index 5
   and `unknown-category` at index 6
+
+#### Scenario: An icon fault reports after an earlier fault
+
+- **WHEN** a unit test adds one record with an empty name and an `icons` of
+  `['no-such-icon']`, and one valid record whose `icons` is `['no-such-icon']`
+- **THEN** the first is rejected as `no-name` and the second as `unknown-icon`
 
 ### Requirement: A system's identity is its id64, or its name
 
@@ -612,8 +670,8 @@ the star field drops the suppressed sets it kept, so a change that did not raise
 would leave both stale.
 
 The system set SHALL hold positions as one `Float64Array` of three game coordinates per
-system, in the order the records were added, the index of each system's primary category
-in the table as one `Uint16Array` in the same order, and the record fields as plain
+system, in the order the records were added, the index of each system's **drawn category**
+as one `Uint16Array` in the same order, and the record fields as plain
 objects and strings.
 
 The positions stay in `float64`, because the marker pass subtracts the camera position
@@ -627,6 +685,23 @@ them.
 - **WHEN** a unit test adds three records and reads the set's position array
 - **THEN** the array is a `Float64Array` of length 9 and holds the three positions in
   the order the records were added
+
+**The drawn category is the first of the record's `categories` that is on**, which the
+requirement "A category can be turned off" states, and its index is a row of the table.
+
+**A system that names no category points at a row that is not in the table.** An
+uncategorised set, which the requirement "A set holds categories or holds none" allows,
+holds one internal row carrying the library's default colour, style and draw range, and
+every system of that set points at it. The row SHALL NOT be in the table: `categoryCount()`
+SHALL read 0 and `getCategory(0)` SHALL read null on such a set. The array therefore holds
+a readable index for every system, whether the set is categorised or not, and no reader of
+it needs a branch.
+
+#### Scenario: An uncategorised set holds no table row
+
+- **WHEN** a unit test builds a map with no category and three systems, draws a frame, and
+  reads `categoryCount()` and `getCategory(0)`
+- **THEN** the readings are 0 and null, and the three markers drew
 
 ### Requirement: The demo page loads the Guardian Ruins data set
 
@@ -669,9 +744,9 @@ colour and the description the project gives it. The source names a fourth categ
 holds no record, so the HUD's category browser shows no empty row.
 
 **A record** SHALL be one system and not one site. The dump holds 600 sites in 212
-systems, and a system holds up to three site types. The primary category SHALL be the type
-of the system's first site in the dump, and the other types the system holds SHALL be its
-secondary categories. 166 of the 212 systems hold more than one type.
+systems, and a system holds up to three site types. The record's `categories` SHALL hold
+every type the system holds, the type of its first site in the dump first, so that type is
+the one that gives the marker its colour. 166 of the 212 systems hold more than one type.
 
 **The images.** A record SHALL carry one image for each site type the system holds, in
 the same order as its categories. An image's `url` SHALL be the thumbnail of that type at
@@ -744,7 +819,7 @@ and SHALL keep the Canonn MIT licence text it holds today.
 
 The renderer SHALL draw one marker per system in the set, in one draw call, at every
 zoom distance from 10 to 120,000 light years, for every system the range rule below keeps,
-whose primary category is on, and whose name the filter keeps. There SHALL be no level of
+**one of whose categories is on or that names none**, and whose name the filter keeps. There SHALL be no level of
 detail: the pass draws the whole set in every frame.
 
 A marker's size SHALL follow one rule for both styles, and that rule SHALL read the
@@ -798,8 +873,8 @@ draws. A category replaced under the same name SHALL therefore recolour every ma
 names it, and the set SHALL NOT copy the colour into the record.
 
 The core colour SHALL NOT follow the population zone ramp that the decoration stars and
-the point cloud use. Two systems of one primary category SHALL draw one colour, wherever
-they lie, and two systems of different categories SHALL draw the two colours the
+the point cloud use. Two systems whose drawn category is the same SHALL draw one colour,
+wherever they lie, and two systems of different categories SHALL draw the two colours the
 categories give. The category colour is the first of the two things that separate a real
 system from an invented star. The second is the close fade of `close-view-stars`, which
 holds the invented field at no light below a zoom distance of 640 light years while a
@@ -1278,20 +1353,18 @@ The handle SHALL carry `setCategoryVisible(name, visible)` and `isCategoryVisibl
 A category SHALL be on when the table takes it, so a host that never calls the setter sees
 the map it sees today.
 
-A marker SHALL draw and SHALL be picked when **any** category the system belongs to is
-on, and SHALL NOT draw and SHALL NOT be picked when every one of them is off. The rule
-reads the primary category and every secondary category together.
+A marker SHALL draw and SHALL be picked when **any** category the system names is on, and
+SHALL NOT draw and SHALL NOT be picked when every one of them is off. The rule reads the
+whole of the record's `categories` list.
 
 **The marker SHALL take its colour, its style and its draw range from the first category
-the record names that is on.** The order SHALL be the primary category first, then the
-secondary categories in the order the record gave them, without a repeat. The reading is
-therefore one category, and it is the first one of that order that the user has left on.
+the record names that is on.** The order SHALL be the order of the record's `categories`
+list. The reading is therefore one category, and it is the first one of that list that the
+user has left on.
 
-The rule changed here. The marker took all three from the primary category alone, even
-when the user had turned the primary category off. A system that draws through a secondary
-category then kept the colour of the row the user had just switched off, which says the
-opposite of what the row says. The demo Guardian Ruins set holds **166** systems that name
-two categories or more, so the fault is on the screen in the map the demo site opens with.
+A marker of a system that names **no** category SHALL always draw and SHALL always be
+picked. No switch reaches it, and the requirement "A set holds categories or holds none"
+states what it draws in.
 
 The drawn category SHALL follow the visibility in the next frame, with no rebuild of the
 scene data and no reupload of the system positions. A system whose categories are all off
@@ -1301,8 +1374,8 @@ reaches the frame.
 A call that names a category the table does not hold SHALL change nothing and SHALL NOT
 throw. `isCategoryVisible` SHALL return `false` for such a name.
 
-The sweep that rebuilds which markers draw SHALL run when the set, the category table,
-the visibility or the filter changes, and SHALL NOT run per frame. It SHALL read each
+The sweep that rebuilds which markers draw SHALL run when the set, the category table, the
+visibility or the filter changes, and SHALL NOT run per frame. It SHALL read each
 system's categories once, and it SHALL write the drawn category in that same read. With
 10,000 systems each naming 4 categories, and every category turned off in one call, the
 sweep SHALL cost less than **2 milliseconds** on the main thread, and the page SHALL expose
@@ -1323,12 +1396,12 @@ the system positions.
 - **THEN** the first count is 2 and the second is 1, the pixel of the first marker matches
   the frame drawn with the systems pass off, and the pixel of the second does not
 
-#### Scenario: A secondary category keeps a marker on the screen
+#### Scenario: A later category keeps a marker on the screen
 
-- **WHEN** the browser test adds the categories `A` and `B` and one system whose primary
-  category is `A` and whose secondary categories hold `B`, turns `A` off, draws a frame and
-  reads the marker count and `systemAt` at the pixel it projects to, then turns `B` off as
-  well, draws and reads both again
+- **WHEN** the browser test adds the categories `A` and `B` and one system whose
+  `categories` are `A` then `B`, turns `A` off, draws a frame and reads the marker count
+  and `systemAt` at the pixel it projects to, then turns `B` off as well, draws and reads
+  both again
 - **THEN** the first reading is 1 and names the system, and the second reading is 0 and
   null
 
@@ -1341,9 +1414,8 @@ the system positions.
 #### Scenario: The colour follows the first category that is on
 
 - **WHEN** the browser test adds a red category `A` and a blue category `B`, one system
-  whose primary category is `B` and whose secondary categories hold `A`, reads the marker's
-  pixel, then turns `B` off so the marker draws through `A` alone, draws a frame and reads
-  the pixel again
+  whose `categories` are `B` then `A`, reads the marker's pixel, then turns `B` off so the
+  marker draws through `A` alone, draws a frame and reads the pixel again
 - **THEN** the first reading is the blue of `B` and the second is the red of `A`
 
 #### Scenario: The colour goes back when the category comes back on
@@ -1355,34 +1427,30 @@ the system positions.
 #### Scenario: The order is the record's order
 
 - **WHEN** the browser test adds the categories `A`, `B` and `C` in three colours and one
-  system whose primary category is `A` and whose secondary categories are `C` then `B`,
-  turns `A` off, draws and reads the marker's pixel, then turns `C` off as well, draws and
-  reads it again
+  system whose `categories` are `A`, `C` then `B`, turns `A` off, draws and reads the
+  marker's pixel, then turns `C` off as well, draws and reads it again
 - **THEN** the first reading is the colour of `C` and the second is the colour of `B`,
   because the order is the record's order and not the table's
 
 #### Scenario: The style and the range follow the drawn category
 
 - **WHEN** the browser test adds a `glow` category `A` with a `maxDrawRange` of 200 and a
-  `disc` category `B` with a `maxDrawRange` of 20,000, one system whose primary category is
-  `A` and whose secondary categories hold `B`, opens a view 1,000 light years from the
-  system, draws a frame and reads the marker count, then turns `A` off, draws and reads the
-  count and the marker's pixel
+  `disc` category `B` with a `maxDrawRange` of 20,000, one system whose `categories` are
+  `A` then `B`, opens a view 1,000 light years from the system, draws a frame and reads the
+  marker count, then turns `A` off, draws and reads the count and the marker's pixel
 - **THEN** the first count is 0, because `A` cuts the marker at 200 light years, and after
   the switch the count is 1 and the pixel reads the `disc` style of `B`
 
-#### Scenario: The colour still follows the primary category
+#### Scenario: The colour still follows the first category
 
 - **WHEN** the browser test adds a red category `A` and a blue category `B`, one system
-  whose primary category is `B` and whose secondary categories hold `A`, keeps both
-  categories on, draws a frame and reads the marker's pixel
-- **THEN** the pixel is the blue of `B`, because the primary category is the first the
-  record names and it is on
+  whose `categories` are `B` then `A`, keeps both categories on, draws a frame and reads
+  the marker's pixel
+- **THEN** the pixel is the blue of `B`, because the first category the record names is on
 
-  The scenario asserted the pixel stayed blue **after `B` was turned off**. That is the
-  behaviour this change replaces, so the scenario now reads the case the new rule leaves
-  alone: with every category on, the first category the record names is the primary one and
-  the colour is unchanged.
+  The primary category is now the **first entry of `categories`**. The scenario keeps its
+  name, because the rule it reads is unchanged: with every category on, the marker takes
+  the colour of the first one the record names.
 
 #### Scenario: The sweep holds its budget
 
@@ -1544,3 +1612,76 @@ reader to find it.
   parent before `ready` settles
 - **THEN** the parent holds no image element
 
+### Requirement: A set holds categories or holds none
+
+A host SHALL choose, for one set, between grouping its systems into categories and
+grouping none of them. The map SHALL hold that choice and SHALL NOT draw a set that is
+half of each, because a category browser over a set where only some systems carry a row
+tells the user nothing about the rest.
+
+The rule is two rejections, one on each reader:
+
+- `addSystems` SHALL accept a record that names no category while the category table is
+  **empty**, and SHALL reject it as `no-category` while the table holds a category.
+- `addCategories` SHALL reject every category of the call, with the reason
+  `set-is-uncategorised`, while the set holds at least one system that names no category.
+  The reason SHALL join `no-name`, `bad-color`, `bad-style`, `bad-range` and
+  `over-capacity` in the set a `CategoryReport` reports.
+
+`clearSystems` and `clearSystemsAndCategories` SHALL clear the state the second rejection
+reads, so a host switches a categorised set for an uncategorised one, or the other way
+round, by clearing first. A dataset load already clears both.
+
+**A marker with no category SHALL draw in one library default**: the colour
+**(150, 170, 200)**, which is the neutral blue-white of an unclassified star; the default
+marker style `glow`; and the default draw range of **120,000** light years. All three are
+the values a category takes when it names none, but for the colour, which no category
+default states today. The default SHALL be a stated constant and SHALL NOT be a host
+option: a host that wants another colour uses categories.
+
+A marker with no category SHALL be picked, SHALL be selected, SHALL carry its name label,
+its icons, its hover ring and its selection pin, and SHALL be kept or dropped by the name
+filter, exactly as a marker with a category is. The only member of the map it does not
+reach is the category switch.
+
+The information panel SHALL show no category chip for such a system, which the `map-hud`
+requirement "The information panel shows the selected system" states and owns.
+
+#### Scenario: An uncategorised set loads
+
+- **WHEN** a unit test builds a map, adds no category, then adds three records that carry
+  no `categories`, and reads the report, `systemCount` and `categoryCount`
+- **THEN** the report holds three added and no rejection, the count is 3 and the category
+  count is 0
+
+#### Scenario: A record with no category is rejected in a categorised set
+
+- **WHEN** a unit test adds one category, then two records, one naming that category and
+  one naming none
+- **THEN** the first is added and the second is rejected as `no-category`
+
+#### Scenario: A category is rejected on an uncategorised set
+
+- **WHEN** a unit test adds two records that carry no `categories`, then calls
+  `addCategories` with two categories, and reads the report and `categoryCount`
+- **THEN** both categories are rejected as `set-is-uncategorised` and the count is 0
+
+#### Scenario: Clearing the set lets the categories in
+
+- **WHEN** the same test calls `clearSystems()`, then `addCategories` with the same two
+  categories, and reads the report
+- **THEN** both are added
+
+#### Scenario: The default marker draws and is picked
+
+- **WHEN** the browser test builds a map with no category and one system named `Sol`,
+  opens a view that shows it, draws a frame, reads the marker count, reads the pixel at
+  the marker centre and calls `systemAt` at that pixel
+- **THEN** the count is 1, the pixel reads the default colour (150, 170, 200) in the
+  `glow` style, and `systemAt` names `Sol`
+
+#### Scenario: The filter reaches an uncategorised marker
+
+- **WHEN** the browser test adds three uncategorised systems named `Sol`, `Solati` and
+  `Achenar`, calls `setNameFilter('sol')`, draws a frame and reads the marker count
+- **THEN** the count is 2

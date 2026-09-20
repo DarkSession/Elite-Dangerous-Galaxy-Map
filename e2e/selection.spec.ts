@@ -42,7 +42,7 @@ function record(
   const value: Record<string, unknown> = {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
   };
   if (id64 !== undefined) value['id64'] = id64;
   return value as SystemRecordInput;
@@ -385,7 +385,7 @@ test.describe('the pick', () => {
         records.push({
           name: `S${index}`,
           coords: { x: (column - 50) * 20, y: (row - 50) * 20, z: 0 },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         });
       }
       return window.galaxyMap?.addSystems(records).added ?? -1;
@@ -1315,7 +1315,7 @@ test.describe('the overlay marks', () => {
         records.push({
           name: `S${index}`,
           coords: { x: (column - 50) * 192, y: (row - 50) * 192, z: 0 },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         });
       }
       return window.galaxyMap?.addSystems(records).added ?? -1;
@@ -1332,6 +1332,91 @@ test.describe('the overlay marks', () => {
     expect(added).toBe(10000);
     expect(labels).toBeLessThanOrEqual(64);
     expect(labels).toBeGreaterThan(0);
+  });
+
+  /**
+   * A grid of 81 systems around the cursor, in the plane `z = 0`. The step is 400 light
+   * years, which is about 62 CSS pixels across the screen at a distance of 4,000 and
+   * about 51 up it, and a name label box is under 40 by 20. The spacing is part of the
+   * two tests below: a label the overlap rule drops does not spend one of the 64, so a
+   * crowded frame would place fewer for a reason the scenarios are not about.
+   */
+  const GRID_STEP = 400;
+  const GRID_SIDE = 9;
+
+  /** The 81 records of that grid, named by their column and their row. */
+  function gridRecords(): SystemRecordInput[] {
+    const records: SystemRecordInput[] = [];
+    for (let row = 0; row < GRID_SIDE; row += 1) {
+      for (let column = 0; column < GRID_SIDE; column += 1) {
+        records.push({
+          name: `S${column}-${row}`,
+          coords: {
+            x: (column - 4) * GRID_STEP,
+            y: (row - 4) * GRID_STEP,
+            z: 0,
+          },
+          categories: ['Alpha'],
+        });
+      }
+    }
+    return records;
+  }
+
+  /**
+   * The system beside the nearest one. The camera stands above the plane and looks down,
+   * so the nearest points of the grid are the ones at the highest `y`. The test hovers
+   * this one and selects `S4-8`, which is the nearest.
+   */
+  const NEXT: [number, number, number] = [GRID_STEP, 4 * GRID_STEP, 0];
+
+  /** Opens the map on that grid with the name switch on. */
+  const openGrid = async (page: Page): Promise<number> => {
+    await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+    await addCategory(page, 'Alpha');
+    const added = await addSystems(page, gridRecords());
+    await setView(page, [0, 0, 0], 4000);
+    await page.evaluate(() => {
+      window.galaxyMap?.setSystemNamesVisible(true);
+    });
+    await drawFrame(page);
+    return added;
+  };
+
+  test('the label count holds with no hover and no selection', async ({ page }) => {
+    const added = await openGrid(page);
+    const labels = (await markCounts(page)).labels;
+    console.log('the label count with no hover', { added, labels });
+
+    expect(added).toBe(GRID_SIDE * GRID_SIDE);
+    // The keeper holds 66 and the pass stops after 64 placements.
+    expect(labels).toBe(64);
+  });
+
+  test('the label count holds with a hover and a selection', async ({ page }) => {
+    await openGrid(page);
+    await page.evaluate((name) => {
+      window.galaxyMap?.setSelection(name);
+    }, 'S4-8');
+    // A selection flies the camera onto the system, so the test waits for the flight and
+    // then puts the grid view back.
+    await waitForFlightEnd(page);
+    await setView(page, [0, 0, 0], 4000);
+    const screen = await projectOf(page, NEXT);
+    await page.mouse.move(screen.x, screen.y);
+    await waitFrames(page);
+
+    const names = {
+      hover: await hoverName(page),
+      selected: await selectionName(page),
+    };
+    const labels = (await markCounts(page)).labels;
+    console.log('the label count with a hover and a selection', { names, labels });
+
+    expect(names.hover).toBe('S5-8');
+    expect(names.selected).toBe('S4-8');
+    // 64 name labels beside the hover label and the selection label.
+    expect(labels).toBe(66);
   });
 
   test('two labels do not overlap', async ({ page }) => {
@@ -1584,7 +1669,7 @@ test.describe('the system names option', () => {
         records.push({
           name: `S${index}`,
           coords: { x: (index - 5) * 100 + 50, y: 0, z: 0 },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         });
       }
       map.addSystems(records as never);

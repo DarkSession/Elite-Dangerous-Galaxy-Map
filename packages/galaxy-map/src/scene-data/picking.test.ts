@@ -28,7 +28,7 @@ function setWith(points: [string, [number, number, number]][]): RealSystemSet {
     points.map(([name, position]) => ({
       name,
       coords: { x: position[0], y: position[1], z: position[2] },
-      primaryCategory: 'A',
+      categories: ['A'],
     })),
   );
   return set;
@@ -141,7 +141,7 @@ describe('the pick sweep', () => {
       {
         name: 'Sol',
         coords: { x: point[0], y: point[1], z: point[2] },
-        primaryCategory: 'A',
+        categories: ['A'],
       },
     ]);
     const screen = project(view, point, VIEWPORT);

@@ -68,8 +68,7 @@ describe('the conversion of the structures dump', () => {
 
     const system = convertStructures(sites).systems[0];
 
-    expect(system?.primaryCategory).toBe('Structure Turtle');
-    expect(system?.secondaryCategories).toEqual(['Structure Squid']);
+    expect(system?.categories).toEqual(['Structure Turtle', 'Structure Squid']);
   });
 
   test('gives a site type the table does not name the unknown category', () => {
@@ -79,7 +78,7 @@ describe('the conversion of the structures dump', () => {
 
     const system = convertStructures(sites).systems[0];
 
-    expect(system?.primaryCategory).toBe('Structure Unknown');
+    expect(system?.categories).toEqual(['Structure Unknown']);
   });
 
   test('names no image, because the dump names no picture', () => {

@@ -273,7 +273,7 @@ describe('the overlay order', () => {
     const systems = createSystemSet();
     systems.addCategories([{ name: 'Alpha', color: [255, 0, 0] }]);
     systems.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, primaryCategory: 'Alpha' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, categories: ['Alpha'] },
     ]);
     const shapes = createShapeSet(() => null);
     if (shapesHeld === 'both') {
@@ -388,7 +388,7 @@ describe('the overlay order', () => {
     const systems = createSystemSet();
     systems.addCategories([{ name: 'Alpha', color: [255, 0, 0] }]);
     systems.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, primaryCategory: 'Alpha' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, categories: ['Alpha'] },
     ]);
     renderer.setSystems(systems);
     renderer.render(closeView());
@@ -769,15 +769,28 @@ describe('the volume texture the renderer owns', () => {
     renderer.dispose();
   });
 
-  test('carries an occlusion of its own, at 1, which the caller may change', () => {
+  test('carries an occlusion of its own, at 2, which the caller may change', () => {
     const { context, renderer } = withVolume();
+    expect(DEFAULT_NEBULA_OCCLUSION).toBe(2);
     expect(renderer.look.nebulaOcclusion).toBe(DEFAULT_NEBULA_OCCLUSION);
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
-    expect(uniformOf(context, 'uOcclusion')).toBe(1);
+    expect(uniformOf(context, 'uOcclusion')).toBe(2);
 
     renderer.setNebulaOcclusion(0.25);
     renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
     expect(uniformOf(context, 'uOcclusion')).toBe(0.25);
+    renderer.dispose();
+  });
+
+  // The cap of 1 is gone: the frame is tone mapped, so a nebula behind a bright mass
+  // needs more depth than the volume carries over the same segment.
+  test('sends a value above 1 as the caller gave it', () => {
+    const { context, renderer } = withVolume();
+    for (const value of [0, 1, 2.5]) {
+      renderer.setNebulaOcclusion(value);
+      renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+      expect(uniformOf(context, 'uOcclusion')).toBe(value);
+    }
     renderer.dispose();
   });
 
@@ -786,7 +799,7 @@ describe('the volume texture the renderer owns', () => {
   // straight onto `debug.look`.
   test('takes the default for a value outside the range, by either route', () => {
     const { context, renderer } = withVolume();
-    for (const value of [-0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const value of [-0.5, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       renderer.setNebulaOcclusion(value);
       renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
       expect(uniformOf(context, 'uOcclusion')).toBe(DEFAULT_NEBULA_OCCLUSION);

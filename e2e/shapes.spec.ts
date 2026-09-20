@@ -53,7 +53,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: 'Alpha',
+    categories: ['Alpha'],
   } as SystemRecordInput;
 }
 
@@ -1417,8 +1417,8 @@ test.describe('a shape and its categories', () => {
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
     await addPair(page);
     await addSpheres(page, [
-      { position: [-800, 0, 0], radius: 500, primaryCategory: 'A' },
-      { position: [800, 0, 0], radius: 500, primaryCategory: 'B' },
+      { position: [-800, 0, 0], radius: 500, categories: ['A'] },
+      { position: [800, 0, 0], radius: 500, categories: ['B'] },
     ]);
     await setView(page, [0, 0, 0], 4000);
     const both = await frameHash(page);
@@ -1432,9 +1432,7 @@ test.describe('a shape and its categories', () => {
       window.galaxyMap?.clearShapes();
       window.galaxyMap?.setShapeCategoryVisible('A', true);
     });
-    await addSpheres(page, [
-      { position: [800, 0, 0], radius: 500, primaryCategory: 'B' },
-    ]);
+    await addSpheres(page, [{ position: [800, 0, 0], radius: 500, categories: ['B'] }]);
     await drawNow(page);
     const onlyB = await frameHash(page);
     console.log('the frames of the switch', { both, withoutA, onlyB });
@@ -1456,8 +1454,7 @@ test.describe('a shape and its categories', () => {
           [100, 0, 0],
         ],
         width: 8,
-        primaryCategory: 'A',
-        secondaryCategories: ['B'],
+        categories: ['A', 'B'],
       },
     ]);
     await setView(page, [0, 0, 0], 1000);
@@ -1484,7 +1481,7 @@ test.describe('a shape and its categories', () => {
         ],
         width: 8,
         color: [0, 0, 255],
-        primaryCategory: 'A',
+        categories: ['A'],
       },
     ]);
     await setView(page, [0, 0, 0], 1000);

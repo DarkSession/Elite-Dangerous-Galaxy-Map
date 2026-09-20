@@ -39,11 +39,11 @@ map.addCategories([
 ]);
 
 const report = map.addSystems([
-  { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Federation' },
+  { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Federation'] },
   {
     name: 'Achenar',
     coords: { x: 67.5, y: -119.46, z: 24.84 },
-    primaryCategory: 'Empire',
+    categories: ['Empire'],
   },
 ]);
 console.log(report.added, report.replaced, report.rejected.length);
@@ -72,7 +72,7 @@ map.addSystems([
   {
     name: 'HIP 36823',
     coords: { x: 570.4, y: 17.5, z: -68.6 },
-    primaryCategory: 'Landmark',
+    categories: ['Landmark'],
     primaryStar: 'A3 V',
     description:
       'A **Guardian beacon** points to a ruins site.\n\n' +
@@ -157,7 +157,7 @@ are pure, so you need no map to save a view or to load one.
 
 ```ts
 map.addSpheres([
-  { name: 'Permit zone', position: [0, 0, 0], radius: 200, primaryCategory: 'Empire' },
+  { name: 'Permit zone', position: [0, 0, 0], radius: 200, categories: ['Empire'] },
 ]);
 
 map.addLines([

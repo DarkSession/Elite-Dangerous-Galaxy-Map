@@ -118,6 +118,9 @@ export function createHud(
   return {
     element,
     refresh,
+    categoryCountMs(): number {
+      return categories.countPassMs();
+    },
     dispose(): void {
       clearInterval(timer);
       doc.removeEventListener('keydown', onKeyDown);

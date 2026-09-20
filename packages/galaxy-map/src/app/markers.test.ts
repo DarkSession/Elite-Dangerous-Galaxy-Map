@@ -16,7 +16,7 @@ import {
   STACK_LAYER_Z,
   iconBottomCss,
   labelTopCss,
-  MAX_NAME_LABELS,
+  MARKER_KEEP,
   MIN_RING_CSS,
   offerNearest,
   PIN_HEIGHT_CSS,
@@ -25,9 +25,9 @@ import {
   ringCssSize,
 } from './markers';
 
-describe('the 64 nearest labels', () => {
-  test('keep the 64 smallest ranges of 10,000, in order', () => {
-    const keep = createNearestKeep(MAX_NAME_LABELS);
+describe('the nearest markers the keeper holds', () => {
+  test('keep the smallest ranges of 10,000, in order', () => {
+    const keep = createNearestKeep(MARKER_KEEP);
     // A repeatable pseudo-random sequence, so a failure is the same on every run.
     let seed = 12345;
     const ranges: number[] = [];
@@ -38,9 +38,11 @@ describe('the 64 nearest labels', () => {
       offerNearest(keep, index, range);
     }
 
-    const wanted = [...ranges].sort((first, second) => first - second).slice(0, 64);
+    const wanted = [...ranges]
+      .sort((first, second) => first - second)
+      .slice(0, MARKER_KEEP);
     const kept = Array.from(keep.ranges.subarray(0, keep.count));
-    expect(keep.count).toBe(64);
+    expect(keep.count).toBe(MARKER_KEEP);
     expect(kept).toEqual(wanted);
     for (let slot = 0; slot < keep.count; slot += 1) {
       expect(ranges[keep.indices[slot] as number]).toBe(keep.ranges[slot]);
@@ -48,7 +50,7 @@ describe('the 64 nearest labels', () => {
   });
 
   test('hold fewer than the limit when fewer are offered', () => {
-    const keep = createNearestKeep(MAX_NAME_LABELS);
+    const keep = createNearestKeep(MARKER_KEEP);
     offerNearest(keep, 7, 30);
     offerNearest(keep, 3, 10);
     offerNearest(keep, 5, 20);
@@ -218,8 +220,7 @@ function fakeSystem(
   const system: RealSystem = {
     name,
     position,
-    primaryCategory: 'A',
-    secondaryCategories: [],
+    categories: ['A'],
   };
   return icons === undefined ? system : { ...system, icons };
 }

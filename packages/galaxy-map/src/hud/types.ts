@@ -53,6 +53,12 @@ export interface HudHandle {
   readonly element: HTMLElement;
   /** Rebuilds the panels from the map's current state. */
   refresh(): void;
+  /**
+   * How long the category panel's last count pass took, in milliseconds. The map
+   * re-exports it on its `debug` object, so a browser test reads the budget the pass
+   * holds without reaching into the HUD.
+   */
+  categoryCountMs(): number;
   /** Removes the HUD element and every listener it added. */
   dispose(): void;
 }

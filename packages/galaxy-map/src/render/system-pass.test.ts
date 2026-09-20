@@ -38,7 +38,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
   };
 }
 

@@ -123,7 +123,7 @@ test('the details loader draws a host section', async ({ page }) => {
       {
         name: 'PANEL TEST',
         coords: { x: 0, y: 0, z: 100 },
-        primaryCategory: 'Survey',
+        categories: ['Survey'],
         description: 'A *survey* note.',
       },
     ]);

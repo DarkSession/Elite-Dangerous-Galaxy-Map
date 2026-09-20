@@ -13,9 +13,10 @@ and returns the system under it or null.
 
 A system SHALL be a candidate when all of these hold:
 
-1. Its marker draws in the current frame. That means its primary category is on, the name
-   filter keeps it, and the **cursor** is inside its category's `maxDrawRange`, which
-   `real-systems` states.
+1. Its marker draws in the current frame. That means one of its categories is on **or it
+   names none**, the name filter keeps it, and the **cursor** is inside the `maxDrawRange`
+   of the category it draws in, which `real-systems` states. A system that names no
+   category draws in the library default, so its range is the default draw range.
 2. It lies in front of the near plane, so a system behind the camera is never picked.
 3. The distance from the pixel to its projected centre is at or below the **pick radius**.
 
@@ -551,13 +552,25 @@ The placement SHALL hold to these bounds:
 
 - A candidate whose projected centre lies outside the viewport SHALL be dropped before any
   other work.
-- The **64** candidates nearest the camera SHALL be kept, and the placement SHALL hold the
-  time bound the budget requirement below gives. A sort of the whole candidate list is what
+- The **66** candidates nearest the camera SHALL be kept, and the placement SHALL hold the
+  time bound the budget requirement below gives.
+
+  **The keeper SHALL hold every drawn marker**, including the hovered one, the selected one
+  and every one drawn while the name switch is off. It is no longer the label pass's own
+  list: `system-icons` reads the same keeper to find the marker that hides an icon, and
+  each of those three is a marker that can hide one.
+
+  **66 and not 64**, because the label pass now skips the hovered and the selected index as
+  it walks the keeper, where the sweep once left them out before they reached it. Two more
+  entries hold the label count where it was in a frame that carries both. A sort of the whole candidate list is what
   that bound rules out in practice: the list can hold 10,000 entries.
 - A candidate whose label box overlaps a box already placed SHALL be skipped, by the same
   box test the region labels use.
 - At most **64** name labels, plus the hover label and the selection label, SHALL be in
-  the overlay in any frame. The DOM node count therefore does not follow the size of the
+  the overlay in any frame. **The pass SHALL stop after 64 name labels are placed**, and
+  not after 64 entries are walked: it walks 66 and a label it drops on an overlap does not
+  count against the 64. Counting walked entries would place 62 in a frame that carries a
+  hover and a selection, which is the loss the keeper grew to prevent. The DOM node count therefore does not follow the size of the
   set.
 
 #### Scenario: The switch turns the labels on and off
@@ -608,11 +621,38 @@ The placement SHALL hold to these bounds:
   systems in view, draws a frame and reads `areSystemNamesVisible` and the label count
 - **THEN** the reading is false and the count is 0
 
+#### Scenario: The label count holds with no hover and no selection
+
+- **WHEN** the browser test fills the viewport with more than 66 systems, spaced so that no
+  two label boxes overlap, none hovered and none selected, draws a frame and counts the name
+  labels in the overlay
+- **THEN** the count is 64, which is the keeper's 66 less the two the placement cap drops.
+
+  **The spacing is part of the test.** A label the overlap rule drops does not spend one of
+  the 64, so a crowded frame places fewer and the reading would be under 64 for a reason
+  this scenario is not about. The answer is to space the systems, not to loosen the
+  assertion to "64 or fewer", which would pass the 62 the placement cap exists to
+  prevent.
+
+#### Scenario: The label count holds with a hover and a selection
+
+- **WHEN** the browser test hovers one system and selects another in the frame above, both
+  inside the 64 nearest, and counts the name labels
+- **THEN** the count is 64 name labels beside the hover label and the selection label. The
+  hover label and the selection label are placed first and go in the same box list, so the
+  spacing of the frame above SHALL hold them clear of every name label too
+
 ### Requirement: Selection holds the frame budget
 
-The hover pick, the pin, the ring and the name label placement together SHALL add at most
-**2 ms** to the mean frame with a set of 10,000 systems, the name switch on and the pointer
-over the canvas, at 1920x1080 on the project's test card.
+The hover pick, the pin, the ring, the name label placement and the **icon stack
+placement** together SHALL add at most **2 ms** to the mean frame with a set of 10,000
+systems, the name switch on, the icon switch on, every record carrying 4 icons, and the
+pointer over the canvas, at 1920x1080 on the project's test card.
+
+The budget is unchanged at 2 ms. The icon placement runs in the same per-frame sweep the
+name labels run in and keeps the 32 stacks nearest the camera by the same rule, so it adds
+one bounded pass over the same candidate list rather than a second sweep of its own.
+`system-icons` states the bounds it holds to.
 
 The page SHALL expose the mean and the worst time of that work since the last reset, as
 `labelSampling` already does for the region label sweep. The work runs in the frame loop
@@ -623,9 +663,10 @@ therefore pass whatever this work cost, and it is not the instrument for it.
 The page SHALL also expose the mean and the worst interval between animation frames since
 the last reset. That reading covers everything the browser does per frame, the draw, this
 work and the paint of the overlay elements together, and it is what shows a dropped frame.
-With the set, the switch and the pointer above, at 1920x1080, the mean interval SHALL stay
-at or below **18 ms**. A display at 60 Hz gives 16.7 ms when the page keeps up and about
-33.3 ms when it misses a frame, so 18 ms is the reading that separates the two.
+With the set, the switches, the icons and the pointer above, at 1920x1080, the mean
+interval SHALL stay at or below **18 ms**. A display at 60 Hz gives 16.7 ms when the page
+keeps up and about 33.3 ms when it misses a frame, so 18 ms is the reading that separates
+the two.
 
 The draw-time budget of `far-view-rendering` is unchanged and is measured as it always was.
 This requirement adds the two readings the new work needs and does not restate that one.
@@ -649,3 +690,10 @@ This requirement adds the two readings the new work needs and does not restate t
   and reads the selection work statistics over 120 frames
 - **THEN** the mean is 2 ms or less, which a sort of the whole candidate list every frame
   would not hold
+
+#### Scenario: The icon placement holds the budget at a full set
+
+- **WHEN** the browser test adds 10,000 systems inside the frame, each carrying 4 icons,
+  turns the name switch and the icon switch on, puts the pointer over a marker and reads
+  the selection work statistics and the frame interval statistics over 120 frames
+- **THEN** the mean of the work is 2 ms or less and the mean interval is 18 ms or less

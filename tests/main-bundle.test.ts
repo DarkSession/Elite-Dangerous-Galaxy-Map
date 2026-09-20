@@ -996,7 +996,11 @@ describe('the library build', () => {
     // buttons come from `SystemDetails.actions` alone, so a host that writes
     // `hud: { actions: [...] }` now fails the type check. It moves the same array into
     // the answer its `details` loader returns.
-    expect(manifest.version).toBe('0.6.0');
+    //
+    // 0.7.0 breaks the record input and the shape input. `primaryCategory` and
+    // `secondaryCategories` are removed, and one `categories` array of names takes their
+    // place, so a host that names either field now fails the type check.
+    expect(manifest.version).toBe('0.7.0');
 
     // Every entry of `exports`, and not the `.` entry alone. The `./nebulae` entry names
     // two more paths, and a reading of the main entry alone would leave them unchecked.
@@ -1104,8 +1108,7 @@ describe('the library build', () => {
         'declare const map: GalaxyMap;\n' +
         "const kind: ShapeKind = 'sphere';\n" +
         'const info: ShapeInfo | null = map.getShapeInfo(kind, 0);\n' +
-        'void info?.primaryCategory;\n' +
-        'void info?.secondaryCategories.length;\n' +
+        'void info?.categories.length;\n' +
         'void info?.centre[0];\n' +
         'void info?.reach;\n' +
         'void info?.drawn;\n',
