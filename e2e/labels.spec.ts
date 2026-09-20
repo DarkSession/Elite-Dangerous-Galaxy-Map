@@ -584,6 +584,42 @@ test.describe('the labels at 1280 by 720', () => {
     expect(boxes.before.length).toBeGreaterThan(0);
     expect(boxes.after).toEqual(boxes.before);
   });
+
+  // The scenario "The labels settle before the loop drops to the idle rate". A map
+  // nobody touches draws every frame for 1200 milliseconds after a change, and one
+  // frame each 200 milliseconds after that. A label that still eased at 1200
+  // milliseconds would therefore step across the screen once every 200 milliseconds.
+  test('no label moves after the settle window', async ({ page }) => {
+    await openView(page, '#c=0,0,0&d=20000&p=35&y=0');
+    await page.waitForTimeout(2000);
+
+    const boxes = await page.evaluate(async () => {
+      const read = (): { name: string; left: number; top: number }[] =>
+        Array.from(document.querySelectorAll('.region-label')).map((node) => {
+          const box = node.getBoundingClientRect();
+          return { name: node.textContent ?? '', left: box.left, top: box.top };
+        });
+      // The jump of the settle measurement: 22,000 light years, which is the widest
+      // move a label makes in the test set.
+      window.galaxyMap?.setView({ cursor: [22000, 0, 0] });
+      await new Promise<void>((resolve) => setTimeout(resolve, 1300));
+      const atSettle = read();
+      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+      return { atSettle, later: read() };
+    });
+
+    console.log('the labels at the end of the settle window', boxes.atSettle.length);
+
+    expect(boxes.atSettle.length).toBeGreaterThan(0);
+    // A tenth of a CSS pixel: under the quarter pixel the measurement calls a move, and
+    // over the rounding of `getBoundingClientRect`.
+    for (const [index, label] of boxes.atSettle.entries()) {
+      const after = boxes.later[index];
+      expect(after?.name, `the label ${index}`).toBe(label.name);
+      expect(Math.abs((after?.left ?? 0) - label.left), label.name).toBeLessThan(0.1);
+      expect(Math.abs((after?.top ?? 0) - label.top), label.name).toBeLessThan(0.1);
+    }
+  });
 });
 
 test.describe('the sampling budget at 1920 by 1080', () => {
@@ -594,7 +630,19 @@ test.describe('the sampling budget at 1920 by 1080', () => {
     const total = await readSampleTotal(page);
     await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
     await page.waitForFunction(
-      () => (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300,
+      // The check runs on every animation frame, and it moves the pointer as a user's
+      // hand does, because a map nobody touches draws at the idle rate.
+      () => {
+        document.querySelector('canvas')?.dispatchEvent(
+          new PointerEvent('pointermove', {
+            clientX: 4,
+            clientY: 4,
+            pointerId: 1,
+            pointerType: 'mouse',
+          }),
+        );
+        return (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300;
+      },
       undefined,
       { timeout: 120000 },
     );

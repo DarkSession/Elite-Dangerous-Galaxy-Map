@@ -2664,7 +2664,19 @@ test.describe('under the plane', () => {
       await page.waitForFunction(
         // 300 frames and not 60: the sweep costs about 0.2 milliseconds and the clock
         // steps by 0.1, so 60 frames leaves the 20 per cent bound on the noise floor.
-        () => (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300,
+        // The check runs on every animation frame, and it moves the pointer as a user's
+        // hand does, because a map nobody touches draws at the idle rate.
+        () => {
+          document.querySelector('canvas')?.dispatchEvent(
+            new PointerEvent('pointermove', {
+              clientX: 4,
+              clientY: 4,
+              pointerId: 1,
+              pointerType: 'mouse',
+            }),
+          );
+          return (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300;
+        },
         undefined,
         { timeout: 60000 },
       );

@@ -275,6 +275,31 @@ export interface StartView {
 /** How many drawn frames a pending start view waits for its record. */
 const PENDING_START_FRAMES = 600;
 
+/**
+ * How long the loop draws every frame after a change, in milliseconds.
+ *
+ * The region labels ease toward their place by half-life, so they approach it and never
+ * reach it. A measurement of the worst move in the test set, a 22,000 light year jump,
+ * has a label move more than a quarter of a CSS pixel until 869 milliseconds after the
+ * jump, and more than a twentieth of one until 886. A small pan settles at 408. 1200
+ * milliseconds therefore holds every frame the user can see a label move in.
+ */
+const SETTLE_MS = 1200;
+
+/**
+ * How long the loop waits between draws while nothing changes, in milliseconds.
+ *
+ * Nothing in the map is driven by a clock: no shader reads a time, and every change of
+ * the picture wakes the loop. A map nobody touches therefore draws the same picture
+ * again. At the rate of the display that held the container's card at 33 percent of its
+ * capacity, against 2 percent for a blank page.
+ *
+ * The loop still runs at the rate of the display, so a change is picked up in the next
+ * frame. This is the rate of the draw alone, and it is a floor and not a rule: a change
+ * the map does not hear about is on the screen inside this time rather than never.
+ */
+const IDLE_DRAW_MS = 200;
+
 /** True where a field the host left out, or a finite number. */
 function readNumberField(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isFinite(value));
@@ -929,6 +954,22 @@ export function createGalaxyMap(
   let pendingStart: string | null = null;
   /** How many frames the map has drawn. A pending start expires at 600 of them. */
   let framesDrawn = 0;
+  /**
+   * The time the loop draws every frame until. Every change pushes it forward by
+   * `SETTLE_MS`, and past it the loop falls back to `IDLE_DRAW_MS`.
+   */
+  let awakeUntil = 0;
+
+  /**
+   * Says the picture changed, so the loop draws every frame while it settles.
+   *
+   * Every member of the handle that changes what the map draws calls this first, and so
+   * does every write of the view, the resize and the pointer move. A change that does
+   * not call it is on the screen inside `IDLE_DRAW_MS` and not in the next frame.
+   */
+  const wake = (): void => {
+    awakeUntil = performance.now() + SETTLE_MS;
+  };
 
   // The start view is taken here and not in the first frame, so the first frame the user
   // sees is already the view the host asked for. The map does not fly to it.
@@ -1094,6 +1135,9 @@ export function createGalaxyMap(
   });
 
   const announce = (): void => {
+    // Every write of the view passes here, so the camera, the zoom glide, the movement
+    // keys, a selection flight and a host's own `setView` all wake the loop.
+    wake();
     const copy = readView();
     for (const listener of listeners) listener(copy);
   };
@@ -1301,6 +1345,7 @@ export function createGalaxyMap(
    * `null`, clear the selection and leave the view where it is.
    */
   const applySelection = (identity: string | null): void => {
+    wake();
     dropPendingStart();
     const index = identity === null ? -1 : set.indexOfIdentity(identity);
     const system = index < 0 ? null : set.system(index);
@@ -1321,6 +1366,7 @@ export function createGalaxyMap(
    * set that is being replaced. The view stays where it is.
    */
   const writeDataset = (content: DatasetContent): DatasetLoadResult => {
+    wake();
     set.clearSystemsAndCategories();
     // The shapes of the entry that goes leave with it, so a route never draws over the
     // systems of the entry that comes. The listener of the new entry adds its own.
@@ -1369,6 +1415,10 @@ export function createGalaxyMap(
    */
   const drawFrame = (timing: FrameTiming = STILL_FRAME): void => {
     if (renderer === null) return;
+    // A draw from outside the loop follows a change. The rule above holds every such
+    // call to `STILL_FRAME`, and the loop passes a timing of its own, so this wakes on
+    // the change and never on the loop's own draw.
+    if (timing === STILL_FRAME) wake();
     framesDrawn += 1;
     renderer.render(view);
     const size = renderer.viewport();
@@ -1415,6 +1465,7 @@ export function createGalaxyMap(
   };
 
   const onResize = (): void => {
+    wake();
     renderer?.resize();
     if (loadingImage !== null) placeLoadingImage(loadingImage, canvas);
   };
@@ -1499,6 +1550,9 @@ export function createGalaxyMap(
       bounds: () => resolvedBounds,
       interaction: () => interaction,
       onPointer(pixel: { x: number; y: number } | null): void {
+        // The hover pick reads this in the draw, so a pointer that moves over a still
+        // camera still changes the picture.
+        wake();
         lastPointer = pixel;
       },
       onClick(pixel: { x: number; y: number }): void {
@@ -1555,8 +1609,7 @@ export function createGalaxyMap(
     // The nebulae attach after the loop runs, and the start chain does not wait for
     // them. An await here would hold the first frame, and the loading picture with it,
     // behind a fetch that may never answer, and every other pass would be down with the
-    // nebulae. The loop draws every frame, so they appear on the frame after the
-    // upload.
+    // nebulae. The upload wakes the loop, so they appear on the frame after it.
     void nebulaPromise
       .then((nebulae) => {
         if (nebulae === null || nebulaSource === null) return;
@@ -1569,6 +1622,7 @@ export function createGalaxyMap(
             renderer.setNebulae(nebulaSource.createDraw(gl, records, volumes));
             renderer.setPasses({ nebulae: nebulaeVisible });
             nebulaeAttached = true;
+            wake();
           }
         } finally {
           closeVolumes(volumes);
@@ -1586,6 +1640,7 @@ export function createGalaxyMap(
     drawFrame();
 
     let previous = performance.now();
+    let drawnAt = previous;
     const loop = (now: number): void => {
       const seconds = Math.min((now - previous) / 1000, 0.1);
       frameIntervals.add(now - previous);
@@ -1602,7 +1657,20 @@ export function createGalaxyMap(
       advanceFlight(performance.now());
       controls?.update(seconds);
       refreshHud();
-      drawFrame({ seconds, jump: false });
+      // The loop runs at the rate of the display and the draw does not. Nothing moves
+      // the picture but a change, and every change wakes the loop, so a map nobody
+      // touches redraws at the idle rate and leaves the GPU to the rest of the page.
+      //
+      // A pending start holds the loop awake, because it expires on a count of drawn
+      // frames and a map that drew at the idle rate would hold it 12 times as long.
+      const awake = now < awakeUntil || pendingStart !== null;
+      if (awake || now - drawnAt >= IDLE_DRAW_MS) {
+        // The frame covers the time since the last turn of the loop and not since the
+        // last draw. The loop drops a draw only where nothing moves, so no movement is
+        // lost, and an eased value does not step where the loop comes back.
+        drawFrame({ seconds, jump: false });
+        drawnAt = now;
+      }
       frameHandle = requestAnimationFrame(loop);
     };
     frameHandle = requestAnimationFrame(loop);
@@ -1836,17 +1904,20 @@ export function createGalaxyMap(
 
   const map: GalaxyMap = {
     addCategories(categories: readonly CategoryInput[]): CategoryReport {
+      wake();
       const report = set.addCategories(categories);
       if (report.added + report.replaced > 0) hudDirty = true;
       return report;
     },
     addSystems(records: readonly SystemRecordInput[]): AddReport {
+      wake();
       const report = set.addSystems(records);
       syncSelection();
       if (report.added + report.replaced > 0) hudDirty = true;
       return report;
     },
     clearSystems(): void {
+      wake();
       if (set.count > 0 || shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       set.clearSystems();
       // A line may hold the position of a system of the set, so the shapes go with it.
@@ -1854,6 +1925,7 @@ export function createGalaxyMap(
       syncSelection();
     },
     clearSystemsAndCategories(): void {
+      wake();
       if (set.count > 0 || set.categoryCount > 0) hudDirty = true;
       if (shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       set.clearSystemsAndCategories();
@@ -1983,6 +2055,7 @@ export function createGalaxyMap(
       drawFrame();
     },
     addSpheres(spheres: readonly SphereInput[]): ShapeReport {
+      wake();
       const report = shapes.addSpheres(spheres);
       // The category panel lists the shapes, so a shape the reader keeps rebuilds it in
       // the next frame, as a system does.
@@ -1990,11 +2063,13 @@ export function createGalaxyMap(
       return report;
     },
     addLines(lines: readonly LineInput[]): ShapeReport {
+      wake();
       const report = shapes.addLines(lines);
       if (report.added > 0) hudDirty = true;
       return report;
     },
     clearShapes(): void {
+      wake();
       if (shapes.sphereCount + shapes.lineCount > 0) hudDirty = true;
       shapes.clearShapes();
     },
@@ -2014,6 +2089,7 @@ export function createGalaxyMap(
       return shapes.getShapeInfo(kind, index);
     },
     setShapeNameFilter(text: string): void {
+      wake();
       shapes.setShapeNameFilter(text);
     },
     getShapeNameFilter(): string {
@@ -2056,18 +2132,21 @@ export function createGalaxyMap(
       return category === null ? null : { ...category };
     },
     setCategoryVisible(name: string, visible: boolean): void {
+      wake();
       set.setCategoryVisible(name, visible);
     },
     isCategoryVisible(name: string): boolean {
       return set.isCategoryVisible(name);
     },
     setShapeCategoryVisible(name: string, visible: boolean): void {
+      wake();
       shapes.setCategoryVisible(name, visible);
     },
     isShapeCategoryVisible(name: string): boolean {
       return shapes.isCategoryVisible(name);
     },
     setNameFilter(text: string): void {
+      wake();
       set.setNameFilter(text);
     },
     getNameFilter(): string {
@@ -2094,12 +2173,14 @@ export function createGalaxyMap(
       };
     },
     setSystemNamesVisible(on: boolean): void {
+      wake();
       namesOn = on === true;
     },
     areSystemNamesVisible(): boolean {
       return namesOn;
     },
     setCursorMarkerVisible(on: boolean): void {
+      wake();
       cursorMarkerOn = on !== false;
       // The next frame places the marker again. Turning it off takes the element out of
       // the overlay at once, so a host that reads the overlay after the call sees the
@@ -2110,6 +2191,7 @@ export function createGalaxyMap(
       return cursorMarkerOn;
     },
     setGridVisible(on: boolean): void {
+      wake();
       const next = on === true;
       // A set to the value the switch already holds raises no listener, so a host that
       // writes the state it read does not write its own URL fragment again.
