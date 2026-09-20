@@ -42,16 +42,14 @@ function writeFragment(fragment: string): void {
  * Reads one demo file into the two arrays the map takes.
  *
  * JSON holds no tuple, so the module types a colour as `number[]` while `CategoryInput`
- * states three numbers. The page therefore casts the categories through `unknown`. That
- * is the point at which the file data enters, and the reader still checks every field.
+ * states three numbers. An icon colour of a record is the same case. The page therefore
+ * casts both arrays through `unknown`. That is the point at which the file data enters,
+ * and the reader still checks every field.
  */
-function demoSet(file: {
-  categories: unknown;
-  systems: readonly SystemRecordInput[];
-}): DatasetContent {
+function demoSet(file: { categories: unknown; systems: unknown }): DatasetContent {
   return {
     categories: file.categories as unknown as readonly CategoryInput[],
-    systems: file.systems,
+    systems: file.systems as readonly SystemRecordInput[],
   };
 }
 
@@ -98,14 +96,14 @@ function demoShapeSet(
 }
 
 /**
- * The six demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
+ * The seven demo data sets, which `THIRD_PARTY_NOTICES.md` names. The page is a host
  * application, so it gives the map a catalog the way any other host does: each entry
  * carries the counts the committed file holds and a `load()` that imports it. The
  * library bundles no data and fetches none.
  *
  * The Guardian Ruins records name their thumbnails at
  * `https://ruins.canonn.tech/images/maps/`, so the browser loads those pictures from
- * Canonn when the user selects such a system. The other four sets name no picture.
+ * Canonn when the user selects such a system. The other six sets name no picture.
  *
  * Three of the sets carry shapes as well as systems. Their `load()` writes the shapes
  * into `DEMO_SHAPES` before it gives the two arrays back, and the catalog listener
@@ -116,7 +114,7 @@ function demoShapeSet(
  * fetches nothing. Its spheres are a static list, so the build writes them into a file
  * the entry imports.
  *
- * The demo site build carries the six files, so the dev server and the built site
+ * The demo site build carries the seven files, so the dev server and the built site
  * draw the same map. The library build reaches this module from nowhere, because
  * `src/index.ts` does not import it.
  */
@@ -211,6 +209,19 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       };
     },
   },
+  {
+    id: 'thargoid-war',
+    label: 'Thargoid War Cycle 2',
+    collection: 'DCoH Overwatch archive',
+    region: 'The bubble, from the Hyades to Col 285 Sector',
+    description:
+      'The systems of cycle 2 of the Thargoid war, the week of 2022-12-08, with one ' +
+      'category per war state. The icons mark the five maelstroms, the invasions and ' +
+      'the alerts.',
+    systemCount: 189,
+    load: async (): Promise<DatasetContent> =>
+      demoSet((await import('../demo-data/thargoid-war.json')).default),
+  },
 ];
 
 function start(target: HTMLCanvasElement): void {
@@ -222,9 +233,9 @@ function start(target: HTMLCanvasElement): void {
     // The page reads the base path from the build, because the published site sits
     // under a path and the dev server sits at the root.
     loadingImage: `${import.meta.env.BASE_URL}EDLoader1.svg`,
-    // The page gives the map the six demo sets and asks for the Guardian Ruins at
-    // start. The sixth set fetches its records, so the page fetches nothing until the
-    // user asks for that set. The HUD then shows the dataset field and the dataset
+    // The page gives the map the seven demo sets and asks for the Guardian Ruins at
+    // start. The Canonn Factions set fetches its records, so the page fetches nothing
+    // until the user asks for that set. The HUD then shows the dataset field and the dataset
     // library dialog.
     datasets: DEMO_DATASETS,
     dataset: 'guardian-ruins',

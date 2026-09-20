@@ -624,6 +624,108 @@ describe('the three HUD record fields', () => {
   });
 });
 
+describe('the record icons', () => {
+  test('keeps a built-in symbol and a host icon in the record order', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([
+        {
+          ...record('Sol', 'A'),
+          icons: ['titan', { url: '/my.svg', color: [0, 205, 247] }],
+        },
+      ]),
+    );
+
+    expect(report.added).toBe(1);
+    const icons = set.system(0)?.icons ?? [];
+    expect(icons).toHaveLength(2);
+    // `titan` reads `#FF0000` in the catalogue this version pins.
+    expect(icons[0]?.color).toEqual([255, 0, 0]);
+    expect(icons[0]?.url.length).toBeGreaterThan(0);
+    expect(icons[1]).toEqual({ url: '/my.svg', color: [0, 205, 247] });
+  });
+
+  test('adds a record with no icons and one with an empty list', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([record('Sol', 'A'), { ...record('Achenar', 'A'), icons: [] }]),
+    );
+
+    expect(report.added).toBe(2);
+    expect(report.rejected).toEqual([]);
+    expect(set.system(0)?.icons).toBeUndefined();
+    expect(set.system(1)?.icons).toBeUndefined();
+  });
+
+  test('gives each icon fault its own reason', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([
+        { ...record('one', 'A'), icons: ['no-such-icon'] },
+        { ...record('two', 'A'), icons: 'titan' },
+        { ...record('three', 'A'), icons: [{ url: '/my.svg' }] },
+        {
+          ...record('four', 'A'),
+          icons: [{ url: 'javascript:alert(1)', color: [1, 2, 3] }],
+        },
+        {
+          ...record('five', 'A'),
+          icons: [{ url: '\tjavascript:alert(1)', color: [1, 2, 3] }],
+        },
+        {
+          ...record('six', 'A'),
+          icons: ['titan', 'mission', 'bookmark', 'waypoint', 'engineer'],
+        },
+        { ...record('seven', 'A'), icons: [4] },
+      ]),
+    );
+
+    expect(report.added).toBe(0);
+    expect(report.rejected).toEqual([
+      { index: 0, reason: 'unknown-icon' },
+      { index: 1, reason: 'bad-icon' },
+      { index: 2, reason: 'bad-icon' },
+      { index: 3, reason: 'bad-icon' },
+      { index: 4, reason: 'bad-icon' },
+      { index: 5, reason: 'bad-icon' },
+      { index: 6, reason: 'bad-icon' },
+    ]);
+  });
+
+  test('reports an earlier fault before an icon fault', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([
+        { ...record('', 'A'), icons: ['no-such-icon'] },
+        { ...record('Sol', 'A'), icons: ['no-such-icon'] },
+      ]),
+    );
+
+    expect(report.rejected).toEqual([
+      { index: 0, reason: 'no-name' },
+      { index: 1, reason: 'unknown-icon' },
+    ]);
+  });
+
+  test('leaves the count and the box alone on a rejected record', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([
+        record('Sol', 'A', [10, 20, 30]),
+        { ...record('Achenar', 'A', [100, 200, 300]), icons: ['no-such-icon'] },
+      ]),
+    );
+
+    expect(report.added).toBe(1);
+    expect(set.count).toBe(1);
+    expect(set.systemBox).toEqual({
+      min: [10, 20, 30],
+      max: [10, 20, 30],
+      empty: false,
+    });
+  });
+});
+
 describe('the category switch', () => {
   test('takes the markers of a category off the frame', () => {
     const set = setWith('A', 'B');

@@ -1,0 +1,262 @@
+[
+  {
+    "Address": 1659744799067,
+    "Name": "HIP 20567",
+    "Population": 0,
+    "LowestRecordedPopulation": 0,
+    "X": -2.8125,
+    "Y": -63.8125,
+    "Z": -162.4375,
+    "States": [
+      {
+        "State": "Titan",
+        "Start": {
+          "CycleNumber": 1,
+          "Start": "2022-12-01T07:00:00+00:00",
+          "End": "2022-12-08T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 85,
+          "Start": "2024-07-11T07:00:00+00:00",
+          "End": "2024-07-18T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Indra"
+        },
+        "Progress": [
+          {
+            "Progress": 0.000001,
+            "Reported": "2024-02-27T00:13:44+00:00",
+            "Updated": "2024-02-27T19:35:30+00:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Address": 216618994011,
+    "Name": "HIP 8887",
+    "Population": 0,
+    "LowestRecordedPopulation": 0,
+    "X": -66.4375,
+    "Y": -144.40625,
+    "Z": -106.28125,
+    "States": [
+      {
+        "State": "Titan",
+        "Start": {
+          "CycleNumber": 1,
+          "Start": "2022-12-01T07:00:00+00:00",
+          "End": "2022-12-08T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 69,
+          "Start": "2024-03-21T07:00:00+00:00",
+          "End": "2024-03-28T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Leigong"
+        },
+        "Progress": [
+          {
+            "Progress": 0.000039,
+            "Reported": "2024-02-27T20:11:38+00:00",
+            "Updated": "2024-02-27T20:11:38+00:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Address": 3107643658938,
+    "Name": "Awara",
+    "Population": 1839465,
+    "LowestRecordedPopulation": 91973,
+    "X": 67.21875,
+    "Y": -72.65625,
+    "Z": -127.34375,
+    "States": [
+      {
+        "State": "Invasion",
+        "Start": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 3,
+          "Start": "2022-12-15T07:00:00+00:00",
+          "End": "2022-12-22T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Taranis"
+        },
+        "Progress": [
+          {
+            "Progress": 1,
+            "Reported": "0001-01-01T00:00:00+00:00",
+            "Updated": "0001-01-01T00:00:00+00:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Address": 670954235241,
+    "Name": "Gaezatorix",
+    "Population": 61504,
+    "LowestRecordedPopulation": 0,
+    "X": -0.78125,
+    "Y": -74.375,
+    "Z": -149.15625,
+    "States": [
+      {
+        "State": "Invasion",
+        "Start": {
+          "CycleNumber": 1,
+          "Start": "2022-12-01T07:00:00+00:00",
+          "End": "2022-12-08T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 4,
+          "Start": "2022-12-22T07:00:00+00:00",
+          "End": "2022-12-29T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Indra"
+        },
+        "Progress": [
+          {
+            "Progress": 0.02,
+            "Reported": "2022-12-24T08:32:45.270089+00:00",
+            "Updated": "2022-12-24T08:32:45.270089+00:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Address": 11666875819385,
+    "Name": "Trianguli Sector FL-Y b5",
+    "Population": 0,
+    "LowestRecordedPopulation": 0,
+    "X": 70.15625,
+    "Y": -76.09375,
+    "Z": -114.625,
+    "States": [
+      {
+        "State": "Alert",
+        "Start": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Taranis"
+        },
+        "Progress": []
+      }
+    ]
+  },
+  {
+    "Address": 9468120933753,
+    "Name": "Hyades Sector HW-M b7-4",
+    "Population": 0,
+    "LowestRecordedPopulation": 0,
+    "X": 86.71875,
+    "Y": -86.71875,
+    "Z": -108.09375,
+    "States": [
+      {
+        "State": "Alert",
+        "Start": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Taranis"
+        },
+        "Progress": []
+      }
+    ]
+  },
+  {
+    "Address": 5532807765,
+    "Name": "5 Mu Leporis",
+    "Population": 56945,
+    "LowestRecordedPopulation": 0,
+    "X": 99.40625,
+    "Y": -88.4375,
+    "Z": -129.9375,
+    "States": [
+      {
+        "State": "Controlled",
+        "Start": {
+          "CycleNumber": 2,
+          "Start": "2022-12-08T07:00:00+00:00",
+          "End": "2022-12-15T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 47,
+          "Start": "2023-10-19T07:00:00+00:00",
+          "End": "2023-10-26T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Taranis"
+        },
+        "Progress": [
+          {
+            "Progress": 0,
+            "Reported": "2022-12-26T18:02:53.56118+00:00",
+            "Updated": "2022-12-26T18:02:53.56118+00:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Address": 358730404530,
+    "Name": "HIP 20563",
+    "Population": 0,
+    "LowestRecordedPopulation": 0,
+    "X": -4.875,
+    "Y": -60.1875,
+    "Z": -157.78125,
+    "States": [
+      {
+        "State": "Controlled",
+        "Start": {
+          "CycleNumber": 1,
+          "Start": "2022-12-01T07:00:00+00:00",
+          "End": "2022-12-08T07:00:00+00:00"
+        },
+        "End": {
+          "CycleNumber": 83,
+          "Start": "2024-06-27T07:00:00+00:00",
+          "End": "2024-07-04T07:00:00+00:00"
+        },
+        "Titan": {
+          "Name": "Indra"
+        },
+        "Progress": [
+          {
+            "Progress": 0,
+            "Reported": "2023-04-10T22:33:39.201034+00:00",
+            "Updated": "2024-02-27T20:39:52.486383+00:00"
+          }
+        ]
+      }
+    ]
+  }
+]

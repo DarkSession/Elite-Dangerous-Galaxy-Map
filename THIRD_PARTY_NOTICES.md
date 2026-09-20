@@ -29,11 +29,12 @@ data and the art the package ships.
 
 ## CanonnED3D-Map (Canonn Research Group)
 
-Five of the six demo data sets are conversions of
+Five of the seven demo data sets are conversions of
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map) by the
 [Canonn Research Group](https://canonn.science/), which is under the **MIT** licence. The
-sixth set fetches its records from another source and takes its spheres from this one.
-Each section below names what its conversion takes.
+Canonn Factions set fetches its records from another source and takes its spheres from
+this one. The Thargoid war set comes from a different project, which the section below
+names. Each section below names what its conversion takes.
 
 The MIT licence text, with the copyright line the project's `LICENSE` carries:
 
@@ -202,6 +203,31 @@ names and the descriptions in that file are this project's own.
 The systems and the factions are of the game's galaxy, so the Frontier Developments terms
 above also apply to them.
 
+## The Thargoid war records of the demo page
+
+`apps/demo/demo-data/thargoid-war.json` holds 4 categories and 189 systems. The records come from
+the **EDOverwatch.Archive** repository, at
+[https://github.com/DarkSession/EDOverwatch.Archive](https://github.com/DarkSession/EDOverwatch.Archive),
+which is the archive of the Distant Cries of Humanity (DCoH) Overwatch site. The
+repository is public and **declares no licence**: it holds no `LICENSE` file and states no
+terms. This notice records where the data came from, as the notices of the Spansh dump and
+the two ED Assets files do.
+
+The file is a conversion of one cycle file of that archive,
+`By Cycle/2 - 2022-12-08.json`, which is cycle 2 of the Thargoid war and the week of
+2022-12-08. `apps/demo/scripts/build-demo-systems.mjs` makes the conversion, and
+`pnpm build:demo-data` runs it. The dump is 3.8 MB, so the script fetches it into `data/`,
+which the repository ignores. The conversion keeps each system's name, its coordinates,
+its population and the one war state the cycle file gives it, and drops every other field,
+including the progress readings of each state.
+
+The category names, the colours, the category descriptions and the record descriptions in
+that file are this project's own. The icons are this project's own choice as well, and the
+built-in symbols they name come from the library's own catalogue.
+
+The systems and the war are of the game's galaxy, so the Frontier Developments terms above
+also apply to them.
+
 ## The committed extracts of the three CanonnED3D-Map sources
 
 `tests/fixtures/uia-extract.js`, `tests/fixtures/adamastor-extract.js` and
@@ -212,6 +238,10 @@ above, and they keep the style of the source: its comments, its quote styles and
 commented-out blocks. The unit tests read them, so the conversion rules are checked with no network and
 on a clean checkout. Neither build carries them, and the lint of this project does not
 read them.
+
+`tests/fixtures/overwatch-extract.json` is an extract of the cycle file above, cut to 8
+records, two of each war state. It is the archive's own data, which carries no licence, and
+each record's progress readings are cut to one, because the conversion reads none of them.
 
 `tests/fixtures/uia-waypoints.json`, `tests/fixtures/uia-waypoints-placeholder.json` and
 `tests/fixtures/uia-hyperdictions.csv` are **this project's own writing**. They keep the

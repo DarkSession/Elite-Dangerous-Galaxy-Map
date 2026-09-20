@@ -1,11 +1,19 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { createSystemSet } from '../packages/galaxy-map/src/scene-data/real-systems';
-import type { CategoryInput } from '../packages/galaxy-map/src/scene-data/real-systems';
+import { BUILT_IN_ICONS } from '../packages/galaxy-map/src/scene-data/marker-icons';
+import { convertOverwatch } from '../apps/demo/scripts/build-demo-systems.mjs';
+import type {
+  CategoryInput,
+  SystemRecordInput,
+} from '../packages/galaxy-map/src/scene-data/real-systems';
 import demo from '../apps/demo/demo-data/guardian-ruins.json' with { type: 'json' };
 import notable from '../apps/demo/demo-data/notable-systems.json' with { type: 'json' };
 import structures from '../apps/demo/demo-data/guardian-structures.json' with { type: 'json' };
 import uia from '../apps/demo/demo-data/uia.json' with { type: 'json' };
 import adamastor from '../apps/demo/demo-data/adamastor.json' with { type: 'json' };
+import thargoidWar from '../apps/demo/demo-data/thargoid-war.json' with { type: 'json' };
 import { createShapeSet } from '../packages/galaxy-map/src/scene-data/shapes';
 import type {
   LineInput,
@@ -349,5 +357,108 @@ describe('the committed Adamastor set', () => {
     expect(systems.rejected).toEqual([]);
     expect(lines.added).toBe(8);
     expect(lines.rejected).toEqual([]);
+  });
+});
+
+describe('the committed Thargoid war set', () => {
+  // The counts describe the committed file, by the same rule as the ruins set above.
+  // One record holds one state, so one system takes one category.
+  test('holds 4 categories and 189 systems', () => {
+    expect(thargoidWar.categories.map((category) => category.name)).toEqual([
+      'Titan',
+      'Invasion',
+      'Alert',
+      'Controlled',
+    ]);
+    expect(thargoidWar.systems).toHaveLength(189);
+    for (const system of thargoidWar.systems) {
+      expect(system.secondaryCategories).toEqual([]);
+    }
+  });
+
+  test('is accepted whole by the reader', () => {
+    const set = createSystemSet();
+    const categories = set.addCategories(
+      thargoidWar.categories as unknown as readonly CategoryInput[],
+    );
+    // JSON holds no tuple, so the module types an icon colour as `number[]`. The
+    // reading casts the way the demo page does.
+    const systems = set.addSystems(
+      thargoidWar.systems as unknown as readonly SystemRecordInput[],
+    );
+
+    expect(categories.added).toBe(4);
+    expect(categories.rejected).toEqual([]);
+    expect(systems.added).toBe(189);
+    expect(systems.rejected).toEqual([]);
+  });
+});
+
+// The requirement "The demo site shows the icon stack" of `system-icons`. The Thargoid
+// war set is the one committed set that carries icons, and every icon of it is a built-in
+// symbol. `e2e/system-icons.spec.ts` covers the host form.
+describe('the icons of the committed demo sets', () => {
+  /** One record of a committed set, as the JSON module types it. */
+  type Record = { readonly name: string; readonly icons?: readonly unknown[] };
+
+  test('the Thargoid war set carries built-in symbols only', () => {
+    const symbols: string[] = [];
+    const hosted: unknown[] = [];
+    for (const system of thargoidWar.systems as readonly Record[]) {
+      for (const icon of system.icons ?? []) {
+        if (typeof icon === 'string') symbols.push(icon);
+        else hosted.push(icon);
+      }
+    }
+    console.log('the icons of the Thargoid war set', {
+      symbols: [...new Set(symbols)],
+      counts: { symbols: symbols.length, hosted: hosted.length },
+    });
+
+    expect(symbols.length).toBeGreaterThan(0);
+    expect(hosted).toEqual([]);
+    for (const symbol of symbols) expect(BUILT_IN_ICONS.has(symbol)).toBe(true);
+  });
+
+  test('the converter writes the icons the committed set holds', () => {
+    const extract = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL('./fixtures/overwatch-extract.json', import.meta.url)),
+        'utf8',
+      ),
+    ) as unknown[];
+    const converted = convertOverwatch(extract).systems as readonly Record[];
+    const committed = new Map(
+      (thargoidWar.systems as readonly Record[]).map((system) => [system.name, system]),
+    );
+
+    expect(converted.length).toBeGreaterThan(0);
+    for (const system of converted) {
+      expect(system.icons).toEqual(committed.get(system.name)?.icons);
+    }
+  });
+
+  // The third scenario, "No committed record is rejected", runs above: each set has its
+  // own "is accepted whole by the reader" test, and the icons go through the same
+  // reader. This reads the icons back, so a set that was accepted with every icon
+  // dropped cannot pass.
+  test('the reader resolves the icons of the Thargoid war set', () => {
+    const set = createSystemSet();
+    set.addCategories(thargoidWar.categories as unknown as readonly CategoryInput[]);
+    const report = set.addSystems(
+      thargoidWar.systems as unknown as readonly SystemRecordInput[],
+    );
+    const carried = new Map<string, readonly { url: string }[]>();
+    for (let index = 0; index < set.count; index += 1) {
+      const system = set.system(index);
+      const icons = system?.icons ?? [];
+      if (system !== null && icons.length > 0) carried.set(system.name, icons);
+    }
+
+    expect(report.rejected).toEqual([]);
+    expect(carried.size).toBeGreaterThan(0);
+    for (const icons of carried.values()) {
+      for (const icon of icons) expect(icon.url.length).toBeGreaterThan(0);
+    }
   });
 });

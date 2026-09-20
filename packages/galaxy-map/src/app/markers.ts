@@ -1,4 +1,5 @@
-// Places the hover ring, the selection pin and the marker name labels over the canvas.
+// Places the hover ring, the selection pin, the marker name labels and the icon stacks
+// over the canvas.
 // The marks are DOM elements in the same overlay the region labels use, so each one
 // stays a crisp vector at every device pixel ratio and needs no shader.
 //
@@ -7,6 +8,7 @@
 import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
+import type { ResolvedIcon } from '../scene-data/marker-icons';
 import { markerCssSize } from '../scene-data/marker-size';
 import { DEFAULT_MAX_DRAW_RANGE_LY } from '../scene-data/real-systems';
 import type { RealSystemSet } from '../scene-data/real-systems';
@@ -57,9 +59,82 @@ export const PIN_PATH =
   'M 238.13 0 L 0 211.44 L 238.12 806.06 L 476.25 211.44 Z ' +
   'M 238 353.89 L 73 206.89 L 238 59.89 L 403.17 206.89 Z';
 
+/** The side of one icon of a stack, in CSS pixels. */
+export const ICON_CSS_SIZE = 28;
+
+/** The gap between two icons of one stack, in CSS pixels. */
+export const ICON_GAP_CSS = 2;
+
+/** The width of the arrow under the lowest icon, in CSS pixels. */
+export const ARROW_WIDTH_CSS = 8;
+
+/** The height of the arrow under the lowest icon, in CSS pixels. */
+export const ARROW_HEIGHT_CSS = 5;
+
+/** How many icon stacks the overlay places. */
+export const MAX_ICON_STACKS = 32;
+
+/**
+ * The stacking level of the stack at a slot of the keeper. The keeper holds the kept
+ * systems nearest first, so slot 0 is the one closest to the camera and takes the highest
+ * level. Two stacks that cross on the screen then read in their depth order.
+ *
+ * The levels run 1 to 32 inside the stack layer, which `STACK_LAYER_Z` puts over the
+ * other overlay elements. The layer is a stacking context of its own, so no level here
+ * reaches the page and none of them can draw over the HUD.
+ */
+export function iconZIndex(slot: number): number {
+  return MAX_ICON_STACKS - Math.min(slot, MAX_ICON_STACKS - 1);
+}
+
+/**
+ * The stacking level of the layer that holds every stack. The plane elements sit at 0 and
+ * the ring, the pin and the name labels at 1, which `src/app/plane-overlay.ts` states, so
+ * 2 puts a stack over all of them. The HUD root sits at 10 in the same parent as the
+ * overlay host, so the layer stays under the HUD.
+ */
+export const STACK_LAYER_Z = 2;
+
 /** The diameter of the hover ring at a marker diameter, in CSS pixels. */
 export function ringCssSize(markerCss: number): number {
   return Math.max(MIN_RING_CSS, markerCss * RING_FACTOR);
+}
+
+/**
+ * How far the stack of a selected system rises, in CSS pixels. It is the height of the
+ * pin, so the pin keeps its own place and the two do not draw over each other.
+ */
+function stackLiftCss(selected: boolean): number {
+  return selected ? PIN_HEIGHT_CSS : 0;
+}
+
+/**
+ * The apex of the arrow over a marker centre, in CSS pixels. The apex points down and
+ * sits at the tip offset the pin takes, so the stack and the pin start from one rule.
+ */
+export function arrowApexCss(
+  centreY: number,
+  markerCss: number,
+  selected: boolean,
+): number {
+  return centreY - markerCss / 2 - PIN_TIP_GAP_CSS - stackLiftCss(selected);
+}
+
+/**
+ * The bottom of the icon at an index of a stack, in CSS pixels. Index 0 is the record's
+ * first icon, which is the lowest one, and it sits on the top of the arrow.
+ */
+export function iconBottomCss(
+  centreY: number,
+  markerCss: number,
+  index: number,
+  selected: boolean,
+): number {
+  return (
+    arrowApexCss(centreY, markerCss, selected) -
+    ARROW_HEIGHT_CSS -
+    index * (ICON_CSS_SIZE + ICON_GAP_CSS)
+  );
 }
 
 /** The top of a name label under a marker centre, in CSS pixels. */
@@ -137,6 +212,8 @@ export interface MarkerFrame {
   readonly selectedIndex: number;
   /** True while the name label switch is on. */
   readonly namesOn: boolean;
+  /** True while the icon stack switch is on. */
+  readonly iconsOn: boolean;
 }
 
 /** The overlay that holds the marks. */
@@ -145,6 +222,10 @@ export interface MarkerOverlay {
   update(frame: MarkerFrame): void;
   /** How many name labels the last frame placed. */
   labelCount(): number;
+  /** How many icons the last frame placed. */
+  iconCount(): number;
+  /** How many arrows the last frame placed. */
+  arrowCount(): number;
   /** Takes every mark out of the overlay. */
   clear(): void;
 }
@@ -180,7 +261,9 @@ function makeLabel(document: Document): HTMLElement {
   element.className = 'gm-system-label';
   const style = element.style;
   style.position = 'absolute';
-  // Over every plane element. `src/app/plane-overlay.ts` states the rule.
+  // The frame writes the level of the stack this arrow belongs to, so the arrow and its
+  // icons read in one depth order. The value here is what an arrow carries before its
+  // first placement.
   style.zIndex = '1';
   style.pointerEvents = 'none';
   style.whiteSpace = 'nowrap';
@@ -245,17 +328,94 @@ function makePin(document: Document): SVGSVGElement {
 }
 
 /**
+ * Builds one icon element. It is an `img` and not inline SVG: a built-in vector carries
+ * its own colour and needs no recolouring, and a host icon is a URL the library never
+ * fetches and parses. `alt` is empty, so a URL that fails to load draws nothing rather
+ * than a broken-image glyph.
+ */
+function makeIcon(document: Document): HTMLImageElement {
+  const element = document.createElement('img');
+  element.className = 'gm-system-icon';
+  element.alt = '';
+  const style = element.style;
+  style.position = 'absolute';
+  style.pointerEvents = 'none';
+  style.width = `${ICON_CSS_SIZE}px`;
+  style.height = `${ICON_CSS_SIZE}px`;
+  // A black plate under the glyph. A vector of the catalogue draws a thin light line on
+  // nothing, and the galaxy behind it is neither dark nor one colour, so the line reads
+  // against the plate and not against whatever the camera puts there.
+  style.backgroundColor = '#000';
+  // A host icon's URL can 404. `alt` is empty, so the browser draws no broken-image
+  // glyph, but the plate would stay as an opaque black square. The element hides itself
+  // instead, and the frame shows it again when it writes a new URL.
+  element.onerror = (): void => {
+    style.visibility = 'hidden';
+  };
+  return element;
+}
+
+/**
+ * Builds one arrow element. The triangle is a CSS border and not an SVG: the left and
+ * the right borders are transparent, the top border carries the colour, and the box
+ * itself has no width and no height. That gives the 8 by 5 shape with its apex down.
+ * The frame writes `borderTopColor` alone.
+ */
+function makeArrow(document: Document): HTMLElement {
+  const element = document.createElement('div');
+  element.className = 'gm-system-arrow';
+  const style = element.style;
+  style.position = 'absolute';
+  // Over every plane element. `src/app/plane-overlay.ts` states the rule.
+  style.zIndex = '1';
+  style.pointerEvents = 'none';
+  style.width = '0';
+  style.height = '0';
+  style.borderStyle = 'solid';
+  style.borderTopWidth = `${ARROW_HEIGHT_CSS}px`;
+  style.borderRightWidth = `${ARROW_WIDTH_CSS / 2}px`;
+  style.borderBottomWidth = '0';
+  style.borderLeftWidth = `${ARROW_WIDTH_CSS / 2}px`;
+  style.borderRightColor = 'transparent';
+  style.borderBottomColor = 'transparent';
+  style.borderLeftColor = 'transparent';
+  return element;
+}
+
+/**
  * Builds the marker overlay in an element. It keeps one ring, one pin and a pool of name
  * label elements, so a frame adds no element the frame before did not need.
  */
 export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
   const document = host.ownerDocument;
+
+  /**
+   * The layer of the stacks. Every icon and every arrow goes in here and not straight
+   * into the host, because a stack takes a level of its own for the depth order and a
+   * level escapes into the page where its parent is not a stacking context. The host is
+   * often one a caller gave, and the library cannot rely on its style. A layer with a
+   * level of its own is a stacking context, so it holds the 32 levels inside it.
+   */
+  const stackLayer = document.createElement('div');
+  stackLayer.className = 'gm-system-stacks';
+  stackLayer.style.position = 'absolute';
+  stackLayer.style.top = '0';
+  stackLayer.style.left = '0';
+  stackLayer.style.width = '100%';
+  stackLayer.style.height = '100%';
+  stackLayer.style.pointerEvents = 'none';
+  stackLayer.style.zIndex = `${STACK_LAYER_Z}`;
   const ring = makeRing(document);
   const pin = makePin(document);
   const labels: HTMLElement[] = [];
+  const iconElements: HTMLImageElement[] = [];
+  const arrowElements: HTMLElement[] = [];
   const keep = createNearestKeep(MAX_NAME_LABELS);
+  const iconKeep = createNearestKeep(MAX_ICON_STACKS);
   const boxes: LabelBox[] = [];
   let shownLabels = 0;
+  let shownIcons = 0;
+  let shownArrows = 0;
 
   /** One label element of the pool, made on the frame that first needs it. */
   const labelAt = (index: number): HTMLElement => {
@@ -267,17 +427,46 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
     return element;
   };
 
+  /** One icon element of the pool, made on the frame that first needs it. */
+  const iconAt = (index: number): HTMLImageElement => {
+    let element = iconElements[index];
+    if (element === undefined) {
+      element = makeIcon(document);
+      iconElements[index] = element;
+    }
+    return element;
+  };
+
+  /** One arrow element of the pool, made on the frame that first needs it. */
+  const arrowAt = (index: number): HTMLElement => {
+    let element = arrowElements[index];
+    if (element === undefined) {
+      element = makeArrow(document);
+      arrowElements[index] = element;
+    }
+    return element;
+  };
+
   const clear = (): void => {
     ring.remove();
     pin.remove();
     for (const element of labels) element.remove();
+    for (const element of iconElements) element.remove();
+    for (const element of arrowElements) element.remove();
+    // `clear` empties the overlay, so the layer goes with its elements. A frame that
+    // places no stack leaves the empty layer where it is: it takes no pointer event and
+    // paints nothing, and one node costs less than the attach and detach of each frame.
+    stackLayer.remove();
     shownLabels = 0;
+    shownIcons = 0;
+    shownArrows = 0;
     boxes.length = 0;
   };
 
   return {
     update(frame: MarkerFrame): void {
-      const { view, viewport, set, hoverIndex, selectedIndex, namesOn } = frame;
+      const { view, viewport, set, hoverIndex, selectedIndex, namesOn, iconsOn } =
+        frame;
       const count = set.count;
       const positions = set.positions;
       const flags = set.markerFlags;
@@ -340,6 +529,12 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         };
       };
 
+      /** The icons of one system, or null where the record names none. */
+      const iconsOf = (index: number): readonly ResolvedIcon[] | null => {
+        const list = set.system(index)?.icons;
+        return list === undefined || list.length === 0 ? null : list;
+      };
+
       const hoverPlace = placeOf(hoverIndex);
       const selectedPlace = placeOf(selectedIndex);
 
@@ -366,18 +561,36 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         place(selectedIndex, selectedPlace, true);
       }
 
-      if (namesOn && count > 0) {
+      // The stacks draw where a record names an icon, and a set that names none pays
+      // nothing for the switch: the count on the set answers that in one comparison.
+      // The count may over-report, which costs this fast path alone.
+      const stacksOn = iconsOn && set.iconSystemCount > 0;
+
+      // One sweep for both keepers. The name switch is off by default and the icon
+      // switch is on, so a sweep held inside the name branch would place no icon on a
+      // map that never touched the name switch.
+      resetNearest(keep);
+      resetNearest(iconKeep);
+      if ((namesOn || stacksOn) && count > 0) {
         // A candidate outside the viewport is dropped before any other work, so the
-        // nearest-64 rule reads only what the frame can show.
-        resetNearest(keep);
+        // nearest-64 rule and the nearest-32 rule read only what the frame can show.
         for (let index = 0; index < count; index += 1) {
-          if (index === hoverIndex || index === selectedIndex) continue;
           const spot = placeOf(index);
           if (spot === null) continue;
           if (spot.x < 0 || spot.y < 0) continue;
           if (spot.x > viewport.width || spot.y > viewport.height) continue;
-          offerNearest(keep, index, rangeOf(index));
+          const range = rangeOf(index);
+          // The hover and the selection place their own label first, so the keeper of
+          // the labels leaves them out. The stacks carry no such exception: the switch
+          // is the whole rule for an icon.
+          if (namesOn && index !== hoverIndex && index !== selectedIndex) {
+            offerNearest(keep, index, range);
+          }
+          if (stacksOn && iconsOf(index) !== null) offerNearest(iconKeep, index, range);
         }
+      }
+
+      if (namesOn) {
         for (let slot = 0; slot < keep.count; slot += 1) {
           const index = keep.indices[slot] as number;
           const spot = placeOf(index);
@@ -390,6 +603,68 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         labels[index]?.remove();
       }
       shownLabels = placed;
+
+      // The stacks. There is no overlap test between two of them: an icon reads under a
+      // partial cover, and dropping one stack of a cluster would make it blink as the
+      // camera moves.
+      //
+      // An icon and an arrow go to whole CSS pixels. The pin and the ring are vectors the
+      // browser draws again at each place, but an icon is a bitmap of a vector: at a
+      // fraction of a pixel the browser samples it at a new phase every frame, and the
+      // glyph shakes while the camera moves. The stack keeps the marker's own place to
+      // within half a pixel, which is under the 1 pixel the offset scenarios allow.
+      let icons = 0;
+      let arrows = 0;
+      for (let slot = 0; slot < iconKeep.count; slot += 1) {
+        const index = iconKeep.indices[slot] as number;
+        const list = iconsOf(index);
+        if (list === null) continue;
+        const spot = placeOf(index);
+        if (spot === null) continue;
+        const selected = index === selectedIndex;
+        // The nearer stack draws over the further one. The pool hands out an element by
+        // its place in the frame, not by depth, so the order cannot come from the tree.
+        const level = `${iconZIndex(slot)}`;
+
+        const lowest = list[0];
+        if (lowest !== undefined) {
+          const arrow = arrowAt(arrows);
+          const fill = `rgb(${lowest.color[0]}, ${lowest.color[1]}, ${lowest.color[2]})`;
+          if (arrow.style.borderTopColor !== fill) arrow.style.borderTopColor = fill;
+          arrow.style.zIndex = level;
+          arrow.style.left = `${Math.round(spot.x - ARROW_WIDTH_CSS / 2)}px`;
+          arrow.style.top = `${Math.round(arrowApexCss(spot.y, spot.markerCss, selected) - ARROW_HEIGHT_CSS)}px`;
+          if (stackLayer.parentNode === null) host.append(stackLayer);
+          if (arrow.parentNode === null) stackLayer.append(arrow);
+          arrows += 1;
+        }
+
+        for (let at = 0; at < list.length; at += 1) {
+          const icon = list[at];
+          if (icon === undefined) continue;
+          const element = iconAt(icons);
+          if (element.getAttribute('src') !== icon.url) {
+            element.style.visibility = '';
+            element.setAttribute('src', icon.url);
+          }
+          element.style.zIndex = level;
+          element.style.left = `${Math.round(spot.x - ICON_CSS_SIZE / 2)}px`;
+          const bottom = iconBottomCss(spot.y, spot.markerCss, at, selected);
+          element.style.top = `${Math.round(bottom - ICON_CSS_SIZE)}px`;
+          if (stackLayer.parentNode === null) host.append(stackLayer);
+          if (element.parentNode === null) stackLayer.append(element);
+          icons += 1;
+        }
+      }
+
+      for (let index = icons; index < shownIcons; index += 1) {
+        iconElements[index]?.remove();
+      }
+      for (let index = arrows; index < shownArrows; index += 1) {
+        arrowElements[index]?.remove();
+      }
+      shownIcons = icons;
+      shownArrows = arrows;
 
       if (hoverPlace === null) {
         ring.remove();
@@ -412,6 +687,12 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
     },
     labelCount(): number {
       return shownLabels;
+    },
+    iconCount(): number {
+      return shownIcons;
+    },
+    arrowCount(): number {
+      return shownArrows;
     },
     clear,
   };

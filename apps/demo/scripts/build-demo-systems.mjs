@@ -1,7 +1,8 @@
-// Builds the three demo data sets of the page from the dumps of the Canonn Research
-// Group. Each conversion is an exported function below, so a unit test can run it over
-// a fixture with no network and no file write. The entry part at the end fetches the
-// dumps and writes the files, and it runs only when node starts this script.
+// Builds the demo data sets of the page from the dumps of the Canonn Research Group and
+// from the cycle files of the DCoH Overwatch archive. Each conversion is an exported
+// function below, so a unit test can run it over a fixture with no network and no file
+// write. The entry part at the end fetches the dumps and writes the files, and it runs
+// only when node starts this script.
 //
 // Run it with `pnpm build:demo-data`.
 import { createHash } from 'node:crypto';
@@ -402,6 +403,133 @@ export function convertNotable(dump) {
 
   const categories = usedCategories(CATEGORY_OF_SUBJECT, bySystem.values());
   return { source: SOURCE_URL, licence: LICENCE, categories, systems };
+}
+
+/**
+ * Where the Thargoid war dump comes from. The archive holds one file for each cycle of
+ * the war, and this is cycle 2, which is the week of 2022-12-08.
+ */
+export const OVERWATCH_DUMP_URL =
+  'https://raw.githubusercontent.com/DarkSession/EDOverwatch.Archive/main/By%20Cycle/2%20-%202022-12-08.json';
+
+/** Where the Thargoid war records come from. */
+export const OVERWATCH_SOURCE_URL =
+  'https://github.com/DarkSession/EDOverwatch.Archive';
+
+/** The licence line the Thargoid war set carries. */
+export const OVERWATCH_LICENCE =
+  'The source repository declares no licence. The cycle records come from the DCoH ' +
+  'Overwatch archive.';
+
+/**
+ * The category of each state the Thargoid war dump names. One record holds one state, so
+ * one system takes one category. The colours run from red through orange to yellow with
+ * the danger, and the Titan takes the red. A record whose state the table does not name
+ * is dropped, and the conversion drops a row that no record uses.
+ */
+export const CATEGORY_OF_STATE = {
+  Titan: {
+    name: 'Titan',
+    color: [255, 56, 56],
+    description: 'A system that holds the maelstrom of a Titan.',
+  },
+  Invasion: {
+    name: 'Invasion',
+    color: [255, 138, 40],
+    description: 'A system a Titan invades.',
+  },
+  Alert: {
+    name: 'Alert',
+    color: [255, 214, 72],
+    description: 'A system a Titan threatens next.',
+  },
+  Controlled: {
+    name: 'Controlled',
+    color: [72, 214, 104],
+    description: 'A system a Titan holds.',
+  },
+};
+
+/**
+ * The icons of each Thargoid war category. Every icon here is a built-in symbol, which
+ * the library ships. The set carries
+ * no host icon: a host icon is a drawing the demo site would have to serve itself, and a
+ * drawing made for a 28 pixel box reads worse beside the game's own symbols.
+ * `e2e/system-icons.spec.ts` covers the host form instead.
+ *
+ * A Titan system takes `titan`, an invaded one takes `front-line` and a threatened one
+ * takes `conflict-zone`. A controlled system takes no icon: 112 of the 189 records are
+ * controlled, and a stack over each one hides the map.
+ */
+export const ICONS_OF_STATE = {
+  Titan: ['titan'],
+  Invasion: ['front-line'],
+  Alert: ['conflict-zone'],
+};
+
+/** What one state says about the Titan, as the first sentence of a description. */
+function describeState(state, titan) {
+  if (state === 'Titan') return `The system holds the maelstrom of the Titan ${titan}.`;
+  if (state === 'Invasion') return `The Titan ${titan} invades the system.`;
+  if (state === 'Alert') return `The Titan ${titan} threatens the system.`;
+  return `The Titan ${titan} controls the system.`;
+}
+
+/** A whole number with a comma between each group of three digits. */
+function groupDigits(value) {
+  return String(value).replace(/\B(?=(\d{3})+$)/g, ',');
+}
+
+/**
+ * Turns the parsed Thargoid war dump into the record set the page adds to the map. One
+ * record is one system. The dump gives each system one state, and that state gives the
+ * record its category, its icons and its description. A record with no name, with no
+ * finite position, with no state or with a state the table does not name is dropped.
+ */
+export function convertOverwatch(dump) {
+  const systems = [];
+  const used = new Set();
+  for (const record of Array.isArray(dump) ? dump : []) {
+    const name = String(record?.['Name'] ?? '').trim();
+    if (name.length === 0) continue;
+    const x = numberOf(record?.['X']);
+    const y = numberOf(record?.['Y']);
+    const z = numberOf(record?.['Z']);
+    if (x === null || y === null || z === null) continue;
+
+    const state = (Array.isArray(record['States']) ? record['States'] : [])[0];
+    const key = String(state?.['State'] ?? '').trim();
+    const category = CATEGORY_OF_STATE[key];
+    if (category === undefined) continue;
+    used.add(key);
+
+    const titan = String(state?.['Titan']?.['Name'] ?? '').trim();
+    const population = numberOf(record['Population']) ?? 0;
+    const sentences = [];
+    if (titan.length > 0) sentences.push(describeState(key, titan));
+    if (population > 0) {
+      sentences.push(`The population is ${groupDigits(population)}.`);
+    }
+    const icons = ICONS_OF_STATE[key];
+    systems.push({
+      name,
+      coords: { x, y, z },
+      primaryCategory: category.name,
+      secondaryCategories: [],
+      ...(sentences.length > 0 ? { description: sentences.join(' ') } : {}),
+      ...(icons === undefined ? {} : { icons }),
+    });
+  }
+
+  const categories = Object.entries(CATEGORY_OF_STATE)
+    .filter(([key]) => used.has(key))
+    .map(([, category]) => category);
+  return {
+    source: OVERWATCH_SOURCE_URL,
+    licence: OVERWATCH_LICENCE,
+    categories,
+    systems,
+  };
 }
 
 /**
@@ -1482,7 +1610,7 @@ export function ed3dSphereRecords(data, lists) {
   return systems;
 }
 
-/** The three sets the entry part writes, in the order it writes them. */
+/** The four record sets the entry part writes, in the order it writes them. */
 const SETS = [
   {
     dump: 'guardian_ruins.json',
@@ -1501,6 +1629,12 @@ const SETS = [
     url: NOTABLE_DUMP_URL,
     file: 'notable-systems.json',
     convert: convertNotable,
+  },
+  {
+    dump: 'overwatch-cycle-2.json',
+    url: OVERWATCH_DUMP_URL,
+    file: 'thargoid-war.json',
+    convert: convertOverwatch,
   },
 ];
 
@@ -1679,8 +1813,8 @@ async function main() {
     );
   }
 
-  // The sixth set fetches its records in the page, and its spheres are a static list in
-  // the source, so the build writes the spheres alone.
+  // The Canonn Factions set fetches its records in the page, and its spheres are a
+  // static list in the source, so the build writes the spheres alone.
   const multifaction = convertMultifactionSpheres(
     parseEd3dData(
       await readSource(

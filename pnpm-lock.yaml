@@ -51,8 +51,8 @@ importers:
   packages/galaxy-map:
     dependencies:
       '@elite-dangerous-almanac/core':
-        specifier: 0.2.8
-        version: 0.2.8
+        specifier: 0.2.16
+        version: 0.2.16
       gl-matrix:
         specifier: ^3.4.4
         version: 3.4.4
@@ -66,8 +66,8 @@ importers:
 
 packages:
 
-  '@elite-dangerous-almanac/core@0.2.8':
-    resolution: {integrity: sha512-9jHzPg0nMmQhQOThyBW9wws8SzwUNWgAfMVOT0coERkMTW4f784MhVP0Jy2XSLRo7akeUJkIaMP2bgqOV9WZVw==}
+  '@elite-dangerous-almanac/core@0.2.16':
+    resolution: {integrity: sha512-tIzded2zhAfpsnxjhQU1FZ/2oQiSwvcb9c0ZZUcppwLjvJbb4Z9rWHWhIzohZE20kilx3004w7lqqm14X+S6XA==}
     engines: {node: '>=22'}
 
   '@eslint-community/eslint-utils@4.10.1':
@@ -896,7 +896,7 @@ packages:
 
 snapshots:
 
-  '@elite-dangerous-almanac/core@0.2.8': {}
+  '@elite-dangerous-almanac/core@0.2.16': {}
 
   '@eslint-community/eslint-utils@4.10.1(eslint@10.9.1)':
     dependencies:
