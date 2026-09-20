@@ -28,12 +28,14 @@ split needs to be a fact of the layout rather than a set of rules over one tree.
 - **The package takes its published identity**: the name
   `@elite-dangerous-almanac/galaxy-map`, a description, an author, the repository, the
   homepage, the issue address, keywords, `publishConfig`, and a `files` list that carries
-  the built output, the package's own README and the two notices files.
+  the built output, the package's own README, the licence and the notices file.
 - **The terms are written down.** `LICENSE.md` at the repository root carries a
   **non-commercial** licence, as the maintainer chose, a `prepack` script copies it into
   the package so the tarball states terms too, and `package.json` names it. `THIRD_PARTY_NOTICES.md` ships
   inside the package, because the data the map carries has terms of its own and some of
-  them are non-commercial.
+  them are non-commercial. **The notices split in two.** The package's file names what the
+  tarball carries, and a second file at the repository root names the demo site's data
+  sets, the test extracts and the design mockup, which no host installs.
 - **The font packages leave `dependencies`.** `@fontsource/chakra-petch` and
   `@fontsource/ibm-plex-mono` are **two** packages, and `src/hud/styles.ts` imports three
   `.woff2` files from them with `?url&no-inline`. The build inlines those files into the
@@ -142,7 +144,7 @@ file moves twice.
 | `src/app/main.ts`          | `apps/demo/src/main.ts`                  |
 | `src/app/multifaction*.ts` | `apps/demo/src/`                         |
 | `src/app/demo-systems.test.ts` | `tests/demo-systems.test.ts`         |
-| `THIRD_PARTY_NOTICES.md`   | `packages/galaxy-map/THIRD_PARTY_NOTICES.md` |
+| `THIRD_PARTY_NOTICES.md`   | `packages/galaxy-map/THIRD_PARTY_NOTICES.md`, less the sections that describe what the package does not ship |
 | `index.html`               | `apps/demo/index.html`                   |
 | `demo-data/`               | `apps/demo/demo-data/`                   |
 | `public/`                  | `apps/demo/public/`                      |
@@ -185,8 +187,9 @@ and these, which the reviewer of this proposal should not have to find:
   static import fails them at import time rather than only breaking the script.
 
 **What is new**: `packages/galaxy-map/package.json`, `packages/galaxy-map/README.md`,
-`LICENSE.md` at the root with a copy in the package, `apps/demo/package.json`, `.github/workflows/publish-npm.yml`, and the
-packed-tarball test.
+`LICENSE.md` at the root with a copy in the package, `THIRD_PARTY_NOTICES.md` at the root,
+`apps/demo/package.json`, `.github/workflows/publish-npm.yml`, and the packed-tarball
+test.
 
 **Scale.** The restructure moves about 120 source files and changes no run-time
 behaviour. The map still holds up to 10,000 systems against a galaxy of about 400 billion,

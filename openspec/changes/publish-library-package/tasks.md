@@ -576,7 +576,7 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       the way task 7.2 reads the tarball
 - [x] 6.5 Add `files` to the package: the build output, `README.md`, `LICENSE.md` and
       `THIRD_PARTY_NOTICES.md`
-- [ ] 6.6 Record here, for the maintainer to read: `THIRD_PARTY_NOTICES.md` holds 17
+- [x] 6.6 Record here, for the maintainer to read: `THIRD_PARTY_NOTICES.md` holds 17
       sections, about eight of which cover demo-page data and three more demo-site assets.
       Moving the one copy into the package means the tarball documents sources the package
       does not carry, and the repository root loses the notices for the site it publishes
@@ -591,9 +591,43 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       Ten of the 17 therefore describe files the tarball does not carry, and the repository
       root now states nothing about the site it publishes to Pages.
 
-      The decision stands as `design.md` states it: one file, in the package. **Open, and
-      the maintainer's to close**: say here whether you accept it or want the file split
-      into a package copy and a root copy.
+      **The maintainer closed this on 2026-09-20: split the file.** The package's file
+      keeps what the tarball carries, which is the almanac package, EliteDangerousRegionMap,
+      the Frontier terms, the two font families, the selection pin and the naming tables.
+      A new `THIRD_PARTY_NOTICES.md` at the repository root takes the six demo data sets,
+      the committed extracts, the loading picture and the design mockup. Each source is in
+      one file alone. The Frontier terms are the one statement in both, because the package
+      ships game art and the demo site draws game data.
+
+      The split also fixes a link the README already carried: `README.md` points at
+      `THIRD_PARTY_NOTICES.md` beside it, which after the move was no file.
+
+      Two sections went rather than moved, on the same instruction. The nebula records and
+      the volume art fold into the game data section, which is now **Elite Dangerous game
+      data and visuals (Frontier Developments)**: one source, one set of terms, and no
+      section that gives one kind of game content a treatment of its own. The galaxy
+      density model section went altogether, because it recorded that the model is this
+      project's own work, and a notices file lists what the project does not own.
+
+      `galactic-regions` read the notices as one file, so this change now carries a delta
+      for it. `tests/third-party-notices.test.ts` reads both files, and it fails on a demo
+      data set in the package file.
+
+      **The gate read the split and returned APPROVE WITH NOTES.** Two notes were the
+      implementation's, and both are acted on. Nothing read the "and the art" half of the
+      new requirement: `Frontier` is in the section heading, so deleting the whole
+      statement about the art passed every test. `tests/third-party-notices.test.ts` now
+      reads `volume art` and `KTX2` in the package file, and reads that the file names no
+      nebula at all. The package file's one source path lost the repository-root-relative
+      form task 3.6a set; it is back.
+
+      **The third note is the maintainer's.** The nebula section ended with "This notice
+      records what the files are; it does not settle whether they may ship", and the
+      folded section does not carry it. The folded section says the opposite: the terms
+      are Frontier's non-commercial media-usage rules, and `LICENSE.md` states the same
+      terms for the package. Task 6.2 still holds the licence approval in front of the
+      first publish, so a human gate remains. Say here if the caution is to come back in
+      the Frontier section, which needs no mention of nebulae.
 
 
 ## 7. The packed-tarball check

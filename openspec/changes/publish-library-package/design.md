@@ -262,16 +262,28 @@ and never-included lists, and the result is what ships.
 `npm` and not `pnpm pack` here, because `npm pack --dry-run --json` is the form the
 reference workflow uses and the form that prints a machine-readable list.
 
-### `THIRD_PARTY_NOTICES.md` moves; it is not copied
+### `THIRD_PARTY_NOTICES.md` splits; it is not copied
 
 The file moves to `packages/galaxy-map/THIRD_PARTY_NOTICES.md` with `git mv`, and the
-package's `files` list carries it. There is **one** copy. `tests/third-party-notices.test.ts`
-takes the new path.
+package's `files` list carries it. The sections that describe what the package does not
+ship then move on to a second file, `THIRD_PARTY_NOTICES.md` at the repository root: the
+six demo data sets, the committed test extracts, the loading picture and the design
+mockup.
 
-A copy at the root and a copy in the package would drift, and the notices are the one
-file where drift is a licence problem rather than an untidiness. The data the map carries
-has terms of its own, so the file must be in the tarball; a reader at the repository root
-reaches it one directory down, which the root `README.md` says.
+**A split is not a copy.** The argument against two files is drift, and drift needs the
+same statement in two places. Here each source is in one file alone, so there is one
+place to edit when a source changes. The Frontier terms are the one statement in both,
+and that is deliberate: the package ships game art and the demo site draws game data, and
+a reader of either file must see the non-commercial terms without opening the other.
+
+The split is what the tarball asks for. The package's file ships to every host that
+installs the package, and ten of its seventeen sections described files no host receives.
+A notices file that names a data set the tarball leaves out tells the reader they hold
+something they do not. `tests/third-party-notices.test.ts` reads both files and fails on a
+demo data set in the package file.
+
+The root file also fixes a link `README.md` already carries: the README points at
+`THIRD_PARTY_NOTICES.md` beside it, which after the move was no file.
 
 ### Two existing assertions change, and that is the point
 
@@ -313,11 +325,11 @@ states no terms for what a host installs. Both readers need a file, and they are
 readers.
 
 This is the opposite call from `THIRD_PARTY_NOTICES.md`, and the reason is that the two
-files fail differently. The notices file is a list that grows as data sources are added,
-so two committed copies drift and the drift is a licence fault. A licence text does not
-change; a copy of it cannot drift in any way that matters, and the two readers each
-genuinely need one. The `prepack` script copies the root file, so there is still **one
-source** and no second file to edit.
+files fail differently. The notices are a list that grows as data sources are added, so
+two copies of one section drift and the drift is a licence fault. The notices are split
+and not copied for that reason. A licence text does not change; a copy of it cannot drift
+in any way that matters, and the two readers each genuinely need one. The `prepack` script
+copies the root file, so there is still **one source** and no second file to edit.
 
 The copy is not committed, so a test reads it from the `npm pack --dry-run` file list
 rather than from the package directory. `pnpm test` runs before the build and before the

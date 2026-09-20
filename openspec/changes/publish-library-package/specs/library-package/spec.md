@@ -19,11 +19,13 @@ and no other spec is rewritten for the move.
 | `index.html` | `apps/demo/index.html` |
 | `dist/` as the library build | `packages/galaxy-map/dist/` |
 | `dist-demo/` | `apps/demo/dist/` |
-| `THIRD_PARTY_NOTICES.md` | `packages/galaxy-map/THIRD_PARTY_NOTICES.md` |
+| `THIRD_PARTY_NOTICES.md` | the file that carries that source, which is `packages/galaxy-map/THIRD_PARTY_NOTICES.md` for a source the package ships and the root file for every other one |
 
 Specs written before the move are read through this table and are not rewritten for it.
-The one exception is a scenario that **asserts on** a moved path rather than mentioning
-it: `real-systems` holds one such scenario, and this change carries a delta for it.
+The exceptions are a scenario that **asserts on** a moved path rather than mentioning it,
+and the requirement that reads the notices as one file: `real-systems` holds one such
+scenario and `galactic-regions` holds that requirement, and this change carries a delta
+for each.
 
 The library build SHALL emit **three** ES module entry points: the main one, `./nebulae`
 which `make-nebulae-optional` adds, and `./testing`.

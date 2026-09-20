@@ -758,7 +758,7 @@ packages/galaxy-map/        the library, published as @elite-dangerous-almanac/g
   src/hud/                  the heads-up display, its styles and the bundled fonts
   src/nebulae/              the nebula subpath entry, which is one source
   src/testing.ts            the unsupported subpath the browser suite reads
-  THIRD_PARTY_NOTICES.md    the terms of the data and the art the map draws
+  THIRD_PARTY_NOTICES.md    the terms of the data and the art the package ships
 apps/demo/                  the demo site, private, which the Pages job publishes
   index.html, src/          the page
   demo-data/                the six committed record sets
@@ -770,6 +770,7 @@ tests/fixtures/             the model fixture and the detail fixture
 docs/                       the model formulas
 scripts/                    the repository's own tools, and the release version rule
 LICENSE.md                  the terms of the code
+THIRD_PARTY_NOTICES.md      the terms of the demo data, the fixtures and the mockup
 ```
 
 Each build writes inside its own package, so neither can land where the other is looked
