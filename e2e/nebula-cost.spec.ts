@@ -48,11 +48,16 @@ async function nebulaeAlone(page: Page): Promise<void> {
 // after the first frame. The map waits on nothing, so a decode that held a frame would
 // show as a long frame and in no other way.
 //
-// `createNebulaVolumeTextures` records each asset's decode under `nebula-decode`, so
-// the reading below is of the decode alone and not of the start work around it. Before
-// this change the readings on the hardware renderer were 16.9 ms for all 33 assets
-// together and 2.3 ms for the worst one, and 2.64 MiB of blocks expanded to 6.03 MiB.
-// The development GPU carries both extensions, so it now reads 0 on both.
+// `createNebulaVolumeTextures` records each asset's two decodes under `nebula-decode`,
+// and the mark covers the decode alone: the upload of that asset runs after the mark
+// closes. Before this change the readings on the hardware renderer were 16.9 ms for all
+// 33 assets together and 2.3 ms for the worst one, and 2.64 MiB of blocks expanded to
+// 6.03 MiB. The development GPU carries both extensions, so it now reads 0 on both.
+//
+// This test reads the path the development GPU takes, which is the block path, so its
+// decode assertions pass because there is no decode. **It is not the guard on the
+// fallback**: `the fallback decode is one task` below refuses the two extensions and
+// reads that path on purpose.
 test('the volume decode holds the frame budget', async ({ page }) => {
   await openMap(page, BRIGHT_VIEW);
   const report = await page.evaluate(() => {
@@ -88,6 +93,68 @@ test('the volume decode holds the frame budget', async ({ page }) => {
   // decode is one task, so this is what one frame pays. Above it the decode moves to a
   // worker.
   expect(report.worstAssetMs).toBeLessThan(16.7);
+});
+
+// The guard on the fallback path, which the test above cannot see.
+//
+// The development GPU carries both compressed-texture extensions, so every other test
+// in this file takes the block path and reads no decode at all. This one refuses the
+// two extensions, which is what a GPU that carries ETC or ASTC rather than S3TC and
+// RGTC gives, and reads what that path costs.
+//
+// **The reading is a statement of fact and not a budget met.** All 33 assets decode
+// inside one synchronous `createNebulaVolumeTextures` call, because the choice between
+// the two paths needs a context and `NebulaSource.loadVolumes` takes none. Before the
+// volumes became slice arrays the decode sat in the loader, one asset a task, and the
+// worst task was 2.3 ms against the 16.7 ms frame budget. It is now one task of the
+// whole sum, which straddles that budget on this card and would be several times worse
+// on a phone. `src/render/nebula-volumes.ts` records why it cannot sit in the loader
+// any more, and the task list of `store-nebula-volumes-as-slice-arrays` records the
+// regression for the owner.
+//
+// The assertion is therefore on the **sum** and not on the per-asset worst, because the
+// sum is what one task costs. Four readings on this card give 15.0, 16.5, 17.5 and 17.6
+// ms for the sum and 1.8 to 2.9 ms for the worst single asset, so the one task straddles
+// the 16.7 ms frame budget and the 33 decodes inside it do not. The spread is 16 percent
+// of the reading, so the bound is the worst of the four plus a quarter, at 22 ms. It is
+// a ratchet against the decode growing, not a promise that the frame budget holds.
+const FALLBACK_DECODE_MS = 22;
+
+test('the fallback decode is one task', async ({ page }) => {
+  await page.addInitScript(
+    (names: string[]) => {
+      const original = WebGL2RenderingContext.prototype.getExtension;
+      WebGL2RenderingContext.prototype.getExtension = function patched(
+        this: WebGL2RenderingContext,
+        name: string,
+      ) {
+        if (names.includes(name)) return null;
+        return (original as (...args: unknown[]) => unknown).call(this, name);
+      } as typeof WebGL2RenderingContext.prototype.getExtension;
+    },
+    ['WEBGL_compressed_texture_s3tc', 'EXT_texture_compression_rgtc'],
+  );
+
+  await openMap(page, BRIGHT_VIEW);
+  const report = await page.evaluate(() => {
+    const durations = performance
+      .getEntriesByName('nebula-decode')
+      .map((entry) => entry.duration);
+    return {
+      attached: window.__galaxyMap?.nebulaeAttached?.() ?? false,
+      assets: durations.length,
+      sumMs: durations.reduce((sum, value) => sum + value, 0),
+      worstAssetMs: Math.max(0, ...durations),
+    };
+  });
+  console.log('the fallback decode', report);
+
+  // The positive control: the refusal reached the page and every asset decoded.
+  expect(report.attached).toBe(true);
+  expect(report.assets).toBe(33);
+  // The sum, because all 33 decodes run in one task. The frame budget is 16.7 ms and
+  // this reading is above it; the comment above says why and who decides.
+  expect(report.sumMs).toBeLessThan(FALLBACK_DECODE_MS);
 });
 
 // The budget reading of this change. The camera sits at the centre of Barnard's Loop,
@@ -209,10 +276,20 @@ test('the worst camera holds the fetch bound', async ({ page }) => {
 // fragments and a camera outside it gets one layer and not two. The failure this guards
 // is the back faces drawing as well as the front, which doubles the fragments.
 //
-// The readings on the hardware renderer are 0.495 ms outside and 0.568 ms inside, a
-// difference of 13 percent, under the 20 percent bound. They were 0.614 and 0.655
-// before the volumes became slice arrays. These two are means of one run, so they move
-// more than the medians of five that `the worst camera holds the fetch bound` takes.
+// The test read a mean of one run at each camera, and that instrument cannot resolve a
+// difference of 20 percent. Five repeats of it, unchanged, gave shares of 0.45, 0.035,
+// 0.036, 0.17 and 0.21, so it passed or failed at random. It now takes the median of
+// five runs at each camera, which is the instrument `the worst camera holds the fetch
+// bound` takes above. The bound stays at 20 percent.
+//
+// Five repeats of the median instrument give shares of 0.1503, 0.1513, 0.1515, 0.1519
+// and 0.1534, a spread of 0.3 points against 41 points before. The medians in those
+// runs are 1.35 ms outside and 1.59 ms inside. A whole-suite run reads 0.468 and
+// 0.487, a share of 3.8 percent. Both the absolute cost and the share depend on what
+// ran before, because the card holds a different clock, so the share is repeatable
+// inside one context and not across two. Both contexts hold the bound with room. The
+// means of one run read 0.495 and 0.568 after this change, and 0.614 and 0.655 before
+// it.
 test('the box costs the same from inside as from outside', async ({ page }) => {
   await openMap(page, '');
   await nebulaeAlone(page);
@@ -229,7 +306,14 @@ test('the box costs the same from inside as from outside', async ({ page }) => {
           yaw: 0,
         });
         window.__galaxyMap?.drawNow?.();
-        return window.__galaxyMap?.measureFrames?.(120) ?? Number.POSITIVE_INFINITY;
+        const runs: number[] = [];
+        for (let run = 0; run < 5; run += 1) {
+          runs.push(
+            window.__galaxyMap?.measureFrames?.(120) ?? Number.POSITIVE_INFINITY,
+          );
+        }
+        runs.sort((a, b) => a - b);
+        return runs[2] as number;
       },
       { cursor: BARNARDS_LOOP, distance },
     );

@@ -276,9 +276,9 @@ export interface NebulaKtx2 {
  * Reads one `.ktx2` file of the nebula set.
  *
  * This is not a reader for the format at large. It takes the one shape
- * `scripts/dds-to-ktx2.mjs` writes — one level, one face, no supercompression, a square
- * BC1 or BC4 array — and throws the loader's typed error on anything else. A smaller
- * contract is a stricter one, and the files are ones this repository writes.
+ * `scripts/ktx2.mjs` writes — one level, one face, no supercompression, a square BC1 or
+ * BC4 array — and throws the loader's typed error on anything else. A smaller contract
+ * is a stricter one, and the files are ones this repository writes.
  */
 export function readNebulaKtx2(bytes: Uint8Array, what = 'volume'): NebulaKtx2 {
   if (bytes.byteLength < NEBULA_KTX2_HEADER_BYTES) {
@@ -540,9 +540,24 @@ function createArray(
  * `R8` and `RGBA8`, so the map asks for no compressed-texture extension, which a WebGL2
  * context does not guarantee.
  *
- * On the decoding path the two decodes of one asset run in one task, and the upload
- * records each one under `NEBULA_DECODE_MEASURE`. A browser test counts those entries:
- * 33 on the decoding path and none on the block path.
+ * On the decoding path the upload records each asset's two decodes under
+ * `NEBULA_DECODE_MEASURE`. A browser test counts those entries: 33 on the decoding path
+ * and none on the block path.
+ *
+ * **Every one of those 33 decodes runs inside this one synchronous call.** Before the
+ * volumes became slice arrays the decode sat in `loadNebulaVolumes`, inside a per-asset
+ * `async` callback, so each asset was a task of its own and the worst task was 2.3 ms.
+ * It cannot sit there any more: the choice between the two paths needs a context, and
+ * `NebulaSource.loadVolumes` takes none. Splitting the decode across tasks again needs
+ * either a context parameter on `loadVolumes` or a `createDraw` that finishes after it
+ * returns, and both are changes to the source interface a host passes.
+ *
+ * The cost of that is one long task on the fallback path, at load, after the first
+ * frame. `e2e/nebula-cost.spec.ts` reads it under `the fallback decode is one task`: it
+ * runs 15.0 to 17.6 ms on the development card, against a 16.7 ms frame budget and a
+ * worst single asset of 2.9 ms. Nothing waits on the set, so it shows as one long frame
+ * and in no other way, but it is the normal path on a GPU that carries ETC or ASTC
+ * rather than S3TC and RGTC, where a slower CPU makes it worse.
  *
  * The transfer table reads with `texelFetch` and `NEAREST`. A `LINEAR` filter on a
  * floating-point texture needs `OES_texture_float_linear`, which WebGL2 does not
@@ -563,27 +578,33 @@ export function createNebulaVolumeTextures(
 
   const blockFormats = nebulaBlockFormats(gl);
 
-  /** One volume, uploaded as blocks where the context takes them and decoded where not. */
-  const volume = (
+  /**
+   * What one volume uploads, and in which format: the blocks as they are where the
+   * context takes them, and the texels the CPU decode gave where it does not.
+   *
+   * The decode happens here and the upload happens after it, so the `nebula-decode`
+   * mark covers the decode alone and no part of `texStorage3D` or `texSubImage3D`.
+   */
+  const sourceOf = (
     kind: 'density' | 'colour',
     side: number,
     blocks: Uint8Array,
-  ): WebGLTexture => {
+  ): { readonly format: number; readonly source: VolumeSource } => {
     if (blockFormats !== null) {
       if (side < 4 || side % 4 !== 0) {
         throw new Error(`A nebula volume of ${side} texels a side holds no blocks.`);
       }
-      return createArray(gl, blockFormats[kind], side, { blocks });
+      return { format: blockFormats[kind], source: { blocks } };
     }
     return kind === 'density'
-      ? createArray(gl, gl.R8, side, {
-          texels: decodeBC4(blocks, side),
-          layout: gl.RED,
-        })
-      : createArray(gl, gl.RGBA8, side, {
-          texels: decodeBC1(blocks, side),
-          layout: gl.RGBA,
-        });
+      ? {
+          format: gl.R8,
+          source: { texels: decodeBC4(blocks, side), layout: gl.RED },
+        }
+      : {
+          format: gl.RGBA8,
+          source: { texels: decodeBC1(blocks, side), layout: gl.RGBA },
+        };
   };
 
   const build = (asset: NebulaVolumeAsset): NebulaVolumeTexture => {
@@ -612,9 +633,15 @@ export function createNebulaVolumeTextures(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_2D, null);
     const started = performance.now();
-    const density = keep(volume('density', asset.densitySide, asset.density));
-    const colour = keep(volume('colour', asset.colourSide, asset.colour));
+    const densityFrom = sourceOf('density', asset.densitySide, asset.density);
+    const colourFrom = sourceOf('colour', asset.colourSide, asset.colour);
     if (blockFormats === null) recordDecode(started, performance.now());
+    const density = keep(
+      createArray(gl, densityFrom.format, asset.densitySide, densityFrom.source),
+    );
+    const colour = keep(
+      createArray(gl, colourFrom.format, asset.colourSide, colourFrom.source),
+    );
     return {
       name: asset.name,
       densitySide: asset.densitySide,

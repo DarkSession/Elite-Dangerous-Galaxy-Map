@@ -766,7 +766,7 @@ function fixtureRmse(frame: number[], reference: Uint8Array, crop: number): numb
 }
 
 // The fidelity reading of this change. The frame marches on the GPU and the fixture
-// marches the same integral on the CPU, from the `.dds` bytes and each record's own
+// marches the same integral on the CPU, from the `.ktx2` bytes and each record's own
 // rotation, through the map's exposure and tone map. A flipped axis, a transposed
 // rotation or a mistaken transfer lookup moves the reading and no other test would
 // catch it.
@@ -774,11 +774,20 @@ function fixtureRmse(frame: number[], reference: Uint8Array, crop: number): numb
 // The occlusion is held at 0, so the galaxy volume's extinction leaves the reading
 // alone and the fixture needs no copy of the volume march. Every other pass is off.
 //
-// The readings on the hardware renderer are barnards-loop 0.0083 and cats-eye 0.0058,
-// against bounds of 0.02 and 0.01. `barnards-loop` is the mildest asset in the set;
-// `cats-eye` carries its largest negative extinction, -193.5, so it is where the
-// transmittance recurrence shows first. Its bound is its reading rounded up to the next
-// hundredth, as the spec asks. A reading above 0.05 means the march is wrong.
+// The readings on the hardware renderer are barnards-loop **0.002374** and cats-eye
+// **0.003860**, against bounds of 0.02 and 0.01.
+//
+// **The pre-change pair is 0.0083 and 0.0058**, read while the march sampled 3D
+// textures. It is kept here because this change cites the move from that pair to the
+// one above as its evidence that the frame improved: the shader's own two-layer mix is
+// closer to the trilinear CPU reference than the card's 3D filter was. Overwriting the
+// old pair would leave that argument citing figures the tree no longer holds. The
+// bounds did not move and neither fixture was regenerated.
+//
+// `barnards-loop` is the mildest asset in the set; `cats-eye` carries its largest
+// negative extinction, -193.5, so it is where the transmittance recurrence shows first.
+// Its bound is the pre-change reading rounded up to the next hundredth, as the spec
+// asks. A reading above 0.05 means the march is wrong.
 for (const [name, bound] of [
   ['barnards-loop', 0.02],
   ['cats-eye', 0.01],
@@ -1174,9 +1183,12 @@ test('the frame does not change when the order is reversed', async ({ page }) =>
  *
  * The three readings are 0.194194, 0.043239 and 0.038257. The blend that ordered the
  * records read 0.182415, 0.043142 and 0.038236 under the same conditions, so the light
- * rises by 6.46 percent at the first camera, by 0.23 percent at the second and by 0.055
- * percent at the third. A change that raises any of the three by more than a tenth is
- * outside what this capability accepts, and the bound does not move to fit it.
+ * is up 6.46 percent at the first camera, 0.23 percent at the second and 0.055 percent
+ * at the third. **Those three figures carry two changes and not one**: the order
+ * independence and, after it, the move to slice arrays. Almost all of each is the order
+ * independence; the paragraph below splits them. A change that raises any of the three
+ * by more than a tenth is outside what this capability accepts, and the bound does not
+ * move to fit it.
  *
  * The three readings moved when the volumes became slice arrays: they were 0.193286,
  * 0.043158 and 0.038243 while the march read 3D textures, so the move to the array and
