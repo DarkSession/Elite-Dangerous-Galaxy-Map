@@ -133,16 +133,27 @@
       they report.
 - [x] 6.2 Run `pnpm vitest run` on its own, with no Playwright run in flight, and verify
       every unit test passes.
-- [ ] 6.3 Run the whole Playwright suite once, one run at a time, and verify it passes
+- [x] 6.3 Run the whole Playwright suite once, one run at a time, and verify it passes
       with the renderer assertion holding on hardware.
-      NOT DONE. Measured: the parallel pass reads 553 passed and 1 failed, the timed pass
-      62 passed and 1 failed. The two failures are the two scenarios of 5.1 and 5.2. The
-      renderer check passes on hardware in every project.
-- [ ] 6.4 Check that no figure of the two delta specs is left unmet, by reading each
+      Measured: the parallel pass reads 554 passed and 0 failed, the timed pass 63 passed
+      and 0 failed, which is 617 tests. The renderer check reads
+      `ANGLE (NVIDIA, Vulkan 1.4.341 (NVIDIA NVIDIA GeForce RTX 4080), NVIDIA)`, so no run
+      fell back to software. An earlier run read 553 and 62 with one failure in each,
+      which were the two delta figures that 5.1 and 5.2 corrected.
+- [x] 6.4 Check that no figure of the two delta specs is left unmet, by reading each
       changed scenario against the test that holds it. Do not edit `openspec/specs/` by
       hand; the archive step carries the delta.
-      NOT DONE. The check is complete and two figures are left unmet, which 5.1 and 5.2
-      record. Every other changed scenario of both deltas has a test that holds it.
+      Done. Every changed scenario of both deltas has a test that holds it. The two
+      figures that did not hold, the far-line lower band and the label ladder's close
+      rungs, are corrected in the delta and in the tests. The readers are:
+      "The range fade reads its two figures" and "The sweep is skipped only when nothing
+      could draw" in `src/app/labels.test.ts`; "The band's width keeps its own reference
+      range" and the two constants in `src/render/region-pass.test.ts`; the four searches
+      and the no-line view's floor in `tests/region-views.test.ts`; the close-end,
+      far-line, close-fade and same-strength scenarios in `e2e/regions.spec.ts`; the
+      ladder, the sweep gate and the no-line view in `e2e/labels.spec.ts`; the three new
+      grid scenarios in `src/app/grid-labels.test.ts`; and the two changed grid scenarios
+      in `e2e/grid.spec.ts`.
 - [ ] 6.5 GATE — implementation review. Launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and
       state the verdict and every finding when presenting the work.
