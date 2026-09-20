@@ -68,22 +68,32 @@ a refusal on every stub context and three passing tests fail. This group comes f
 
 ## 3. The durable guard, in the browser the suite runs everywhere
 
-- [ ] 3.1 Move `BRIGHT_VIEW`, `DARK_VIEW` and `CLOSE_VIEW` out of `e2e/nebulae.spec.ts` into
+- [x] 3.1 Move `BRIGHT_VIEW`, `DARK_VIEW` and `CLOSE_VIEW` out of `e2e/nebulae.spec.ts` into
       a new `e2e/nebula-views.ts`, beside `e2e/region-views.ts`, and import them back.
       Verify `GALAXY_MAP_E2E_BUILT=1 pnpm exec playwright test e2e/nebulae.spec.ts
-      --project=chromium-gpu` passes with no other change.
-- [ ] 3.2 Add the scenario "The nebulae draw where the target refuses a block format" to
+      --project=chromium-gpu` passes with no other change. **Read:** **28 of 28 passed**
+      after a fresh build.
+- [x] 3.2 Add the scenario "The nebulae draw where the target refuses a block format" to
       `e2e/nebulae.spec.ts`. It patches `texStorage3D` in the page to refuse
       `COMPRESSED_RED_RGTC1` on a `TEXTURE_2D_ARRAY` and to pass every other call through,
       opens `CLOSE_VIEW`, reads the frame with the nebulae on and again with them off, and
       asserts the two differ and that the load records a block decode. Use `withNebulae`
-      and `meanLuminanceFrame`, which `e2e/nebulae.spec.ts` already pairs.
-- [ ] 3.3 Confirm the guard of 3.2 fails against the fault. Comment out the probe of task
+      and `meanLuminanceFrame`, which `e2e/nebulae.spec.ts` already pairs. **Read:** the
+      patch makes `texStorage3D` allocate nothing for that pair and the next `getError`
+      read `INVALID_ENUM`, which is the fault Firefox shows. The run reads
+      `on 0.17613, off 0.17379, added 0.00234, decodes 33`, twice with the same figures.
+      The bound is 0.001, a little under half the reading.
+- [x] 3.3 Confirm the guard of 3.2 fails against the fault. Comment out the probe of task
       2.1, run **`pnpm build:demo-site`**, then run the spec, and record that it fails and
       how it reads. Restore the probe and rebuild. Do **not** reuse the
       `GALAXY_MAP_E2E_BUILT=1` command of task 3.1 for this: that flag runs `pnpm preview`
       alone, which serves the previous bundle, so the reverted source never reaches the
-      browser and the test passes for the wrong reason.
+      browser and the test passes for the wrong reason. **Read:** with the probe removed
+      and `pnpm build:demo-site` run, the spec fails at `expect(decodes).toBe(33)` with
+      **0** decodes, and the two frames read `on 0.17379, off 0.17379, added 0`. The
+      frames are the same frame, which is the fault: the textures hold nothing and the
+      march reads 0. The probe was restored, the tree rebuilt, and the whole spec file
+      then read **29 of 29 passed**.
 
 ## 4. The Firefox reading
 
