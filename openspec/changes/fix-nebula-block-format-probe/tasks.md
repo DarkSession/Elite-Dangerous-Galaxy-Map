@@ -10,7 +10,8 @@ a refusal on every stub context and three passing tests fail. This group comes f
       src/render/nebula-volumes.test.ts` passes with the stub changed and no production
       code touched yet. **Read:** the stub gained `getError`, `getParameter` for
       `TEXTURE_BINDING_2D_ARRAY`, a `refuse` list of formats whose `texStorage3D` on that
-      target raises `INVALID_ENUM`, an `errorBefore` switch and a `live()` reader. With
+      target raises `INVALID_OPERATION`, an `errorBefore` switch and a `live()` reader.
+      With
       the stub changed and no production code touched, the file ran **26 of 26 passed**.
 - [x] 1.2 Name the three tests that pass `blockFormats = true` and confirm each still takes
       the fast path after task 2.1: "uploads both volumes to a 2D array on both paths",

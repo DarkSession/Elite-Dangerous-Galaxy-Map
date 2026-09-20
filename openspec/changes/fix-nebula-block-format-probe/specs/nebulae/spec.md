@@ -102,12 +102,21 @@ fixture bound this capability already states.
 
 **The fallback decode is one synchronous task, and that is a stated property.** All 33
 assets decode inside one call, because the choice between the paths needs a context and the
-loader has none. It reads 14.2 to 19.2 ms over twenty-eight readings on the development
-card, against a 16.7 ms frame budget, so the one task straddles the budget. It is paid once,
-at load, after the first frame. Nothing waits on the set, so it shows as one long frame and
-in no other way. The renderer SHALL hold that sum under a ratchet, so the cost cannot grow
-unseen. A GPU that carries ETC or ASTC rather than S3TC and RGTC takes this path, and so
-does Firefox on a card that carries both.
+loader has none. It is paid once, at load, after the first frame. Nothing waits on the set,
+so it shows as one long frame and in no other way. A GPU that carries ETC or ASTC rather
+than S3TC and RGTC takes this path, and so does Firefox on a card that carries both.
+
+**The two browsers read different sums, and neither reading is the bound.** Chromium reads
+**14.2 to 19.2 ms** over twenty-eight readings on the development card. Firefox on the same
+card reads **13 to 23 ms** over nine, and every one of its figures is a whole number because
+Firefox rounds `performance.now()` to 1 ms, which quantises all 33 marks the sum is built
+from. A browser reading therefore belongs **beside** the other and not inside it, and
+neither is a promise.
+
+**The bound is the ratchet, and it SHALL be one figure both readings hold.** It is 24 ms
+today. The renderer SHALL hold the sum under it, so the cost cannot grow unseen, and the
+ratchet and not a browser's own range is what a test asserts. The one task straddles the
+16.7 ms frame budget on both browsers, which is the property this paragraph states.
 
 Both volumes SHALL be stored upside down against object space, and the march SHALL
 sample at `(u, 1 - v, w)`.

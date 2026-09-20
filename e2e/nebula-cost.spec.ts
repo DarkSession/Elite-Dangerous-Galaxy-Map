@@ -7,6 +7,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
+import { BRIGHT_VIEW } from './nebula-views';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -15,9 +16,6 @@ test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
  * Every view below that names a cursor puts it there.
  */
 const BARNARDS_LOOP: [number, number, number] = [624.4, -425.9, -1229.5];
-
-/** Barnard's Loop at a zoom inside the band, where it draws about 21 CSS pixels. */
-const BRIGHT_VIEW = '#c=624.4,-425.9,-1229.5&d=6000&p=35&y=0';
 
 /** Turns off every pass but the nebulae and holds the occlusion at 0. */
 async function nebulaeAlone(page: Page): Promise<void> {

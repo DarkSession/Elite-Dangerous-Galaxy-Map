@@ -59,9 +59,12 @@ const STUB_BC1 = 0x83f0;
 interface FakeOptions {
   /**
    * The block formats whose `texStorage3D` on a `TEXTURE_2D_ARRAY` raises
-   * `INVALID_ENUM`, which is what Firefox does with `COMPRESSED_RED_RGTC1`. A test
+   * `INVALID_OPERATION`, which is what Firefox does with `COMPRESSED_RED_RGTC1`. A test
    * names one format and leaves the other accepted, so the probe of each format is
    * read on its own.
+   *
+   * The probe reads any error as a refusal, so the code the stub raises does not change
+   * what it does. The name is here because it is the fact this change records.
    */
   readonly refuse?: readonly number[];
   /**
@@ -134,7 +137,7 @@ function fakeContext(
             args[0] === constantOf('TEXTURE_2D_ARRAY') &&
             refused.has(args[2] as number)
           ) {
-            errors.push(constantOf('INVALID_ENUM'));
+            errors.push(constantOf('INVALID_OPERATION'));
           }
           return null;
         }
@@ -358,10 +361,14 @@ describe('the upload', () => {
       createNebulaVolumeTextures(gl, oneAsset(8, 4));
       // The block-format probe allocates on the same target before the upload does, so
       // the two the upload made are the last two.
-      const targets = context
-        .of('texStorage3D')
-        .slice(-2)
-        .map((call) => call.args[0]);
+      //
+      // The **count** is read as well as the targets. The probe allocates twice where
+      // both extensions are there, so a fast path that allocated nothing would still
+      // leave two calls and the last two would read the array target. That is the shape
+      // of the fault this change answers: a path whose textures are never specified.
+      const allocations = context.of('texStorage3D');
+      expect(allocations, `blocks ${String(blocks)}`).toHaveLength(blocks ? 4 : 2);
+      const targets = allocations.slice(-2).map((call) => call.args[0]);
       expect(targets, `blocks ${String(blocks)}`).toEqual([
         gl.TEXTURE_2D_ARRAY,
         gl.TEXTURE_2D_ARRAY,
