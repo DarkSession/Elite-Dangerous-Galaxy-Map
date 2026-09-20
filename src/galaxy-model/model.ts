@@ -71,6 +71,12 @@ export interface GalaxyModel {
   detailedMassDensity(x: number, y: number, z: number): number;
   /** The population zone in 0 to 1, used as a tint. */
   zone(x: number, z: number): number;
+  /**
+   * The population zone of a corrected surface density the caller already has. It
+   * gives the same number as `zone` at the same point, and it costs one logarithm,
+   * so a caller that holds the density does not compute it a second time.
+   */
+  zoneFromCorrected(corrected: number): number;
   /** The azimuth of an arm's centre line at a radius, in radians. */
   armAzimuth(arm: number, radius: number): number;
   /** The point on an arm's centre line at a radius, in game coordinates. */
@@ -79,13 +85,7 @@ export interface GalaxyModel {
   pitchAngleDegrees(radius: number): number;
 }
 
-function zoneOf(
-  document: GalaxyModelDocument,
-  surface: PreparedSurface,
-  x: number,
-  z: number,
-): number {
-  const density = correctedSurfaceDensity(surface, x, z);
+function zoneFrom(document: GalaxyModelDocument, density: number): number {
   const value = Math.log(density + document.epsilon);
   const grid = document.zone.log_density;
   const zones = document.zone.zone;
@@ -171,7 +171,8 @@ export function createGalaxyModel(
     detailedVolumeDensity,
     massDensity: (x, y, z) => volumeDensity(x, y, z) * budget,
     detailedMassDensity: (x, y, z) => detailedVolumeDensity(x, y, z) * budget,
-    zone: (x, z) => zoneOf(document, surface, x, z),
+    zone: (x, z) => zoneFrom(document, correctedSurfaceDensity(surface, x, z)),
+    zoneFromCorrected: (corrected) => zoneFrom(document, corrected),
     armAzimuth: (arm, radius) => armAzimuth(surface, arm, radius),
     armPoint: (arm, radius) => armPoint(surface, arm, radius),
     pitchAngleDegrees: (radius) => pitchAngleDegrees(surface, radius),

@@ -25,10 +25,12 @@ SHALL import a rendering module.
 ### Requirement: Point cloud samples the model
 The point cloud SHALL hold a requested number of samples, default 2,000,000. Each sample
 SHALL hold a position in game coordinates in light years as three `float32` values, and
-one `uint8` tint equal to the population zone at the sample's `(x, z)` scaled to 0 to
-255. Sample positions SHALL lie inside the model bounds. The sample density SHALL
-follow the detailed volume density of the model: the detailed surface density times
-the vertical profile.
+one `uint8` tint. The tint SHALL be the population zone at the sample's `(x, z)` scaled
+to 0 to 255, within 2 steps of that number. The tint SHALL come from a bilinear read of
+the population zone at the surface table cell centres, so a sample does not compute the
+analytic surface density a second time. Sample positions SHALL lie inside the model
+bounds. The sample density SHALL follow the detailed volume density of the model: the
+detailed surface density times the vertical profile.
 
 #### Scenario: Count and bounds
 - **WHEN** a test requests 100,000 samples
@@ -54,11 +56,11 @@ the vertical profile.
 ### Requirement: Cloud samples flatten the density
 Scene data SHALL include a cloud sample set of a requested number of samples, default
 40,000. Each sample SHALL hold a position in game coordinates in light years as three
-`float32` values, one `uint8` tint equal to the population zone at the sample's
-`(x, z)` scaled to 0 to 255, one `float32` radius in light years, and one `float32`
-density ratio. The plane position SHALL follow the placement mass of the surface table
-cells raised to the power 0.5, so the outer disc and the rim get samples the density
-alone does not give them. The placement mass SHALL be the cell mass held at a floor of
+`float32` values, one `uint8` tint, one `float32` radius in light years, and one
+`float32` density ratio. The tint SHALL follow the same rule as the point cloud's.
+The plane position SHALL follow the placement mass of the surface table cells raised to
+the power 0.5, so the outer disc and the rim get samples the density alone does not give
+them. The placement mass SHALL be the cell mass held at a floor of
 0.005 of the largest cell mass, and the floor SHALL fade to zero from 38,000 to 50,000
 light years from the galactic centre in the plane, so the sprite count is near level
 from the outer arms to the rim and the placement has no edge. The height SHALL follow

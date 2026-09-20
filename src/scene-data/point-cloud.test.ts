@@ -11,6 +11,7 @@ import {
   decodeDetailRatio,
   findCell,
   generatePointCloud,
+  zoneAt,
 } from './point-cloud';
 import type { SurfaceTable } from './point-cloud';
 
@@ -51,6 +52,77 @@ describe('the cell finder', () => {
     const total = table.cumulative[table.cumulative.length - 1] as number;
     expect(find(-1)).toBe(findCell(table.cumulative, -1));
     expect(find(2 * total)).toBe(findCell(table.cumulative, 2 * total));
+  });
+});
+
+describe('the zone grid', () => {
+  test('holds the model zone at each cell centre', () => {
+    const size = table.size;
+    const originX = table.origin[0];
+    const originZ = table.origin[1];
+    let worst = 0;
+    // Every 37th cell, which is coprime with the side, so the sweep crosses the table
+    // rather than reading one column of it.
+    for (let cell = 0; cell < size * size; cell += 37) {
+      const ix = cell % size;
+      const iz = (cell - ix) / size;
+      const x = originX + (ix + 0.5) * table.cell[0];
+      const z = originZ + (iz + 0.5) * table.cell[1];
+      worst = Math.max(
+        worst,
+        Math.abs((table.zone[cell] as number) - galaxyModel.zone(x, z)),
+      );
+    }
+    // The grid holds `Float32`, so a cell carries the model value to that precision.
+    expect(worst).toBeLessThan(1e-6);
+  });
+
+  test('reads the cell centre back exactly', () => {
+    const x = table.origin[0] + 300.5 * table.cell[0];
+    const z = table.origin[1] + 512.5 * table.cell[1];
+    expect(zoneAt(table, x, z)).toBeCloseTo(galaxyModel.zone(x, z), 6);
+  });
+
+  test('keeps the tint within two steps of the model over the bounds', () => {
+    // The tint is the zone in 0 to 255, so the bound is stated in tint steps. The read
+    // is bilinear over cells about 98 light years wide, and the zone is smooth, so the
+    // approximation must not move a tint by more than two steps.
+    let worst = 0;
+    let changed = 0;
+    let count = 0;
+    const xLow = galaxyModel.bounds.x[0];
+    const zLow = galaxyModel.bounds.z[0];
+    const xSpan = galaxyModel.bounds.x[1] - xLow;
+    const zSpan = galaxyModel.bounds.z[1] - zLow;
+    for (let step = 0; step < 40000; step += 1) {
+      // A fixed low-discrepancy sweep, so the sample set is the same on every run.
+      const x = xLow + ((step * 0.7548776662) % 1) * xSpan;
+      const z = zLow + ((step * 0.5698402909) % 1) * zSpan;
+      const exact = Math.round(galaxyModel.zone(x, z) * 255);
+      const near = Math.round(zoneAt(table, x, z) * 255);
+      const difference = Math.abs(exact - near);
+      if (difference > worst) worst = difference;
+      if (difference > 0) changed += 1;
+      count += 1;
+    }
+    expect(worst).toBeLessThanOrEqual(2);
+    expect(changed / count).toBeLessThan(0.03);
+  });
+
+  test('clamps a point outside the bounds to the edge cell', () => {
+    const size = table.size;
+    const far = zoneAt(
+      table,
+      galaxyModel.bounds.x[0] - 1e6,
+      galaxyModel.bounds.z[0] - 1e6,
+    );
+    expect(far).toBe(table.zone[0]);
+    const other = zoneAt(
+      table,
+      galaxyModel.bounds.x[1] + 1e6,
+      galaxyModel.bounds.z[1] + 1e6,
+    );
+    expect(other).toBe(table.zone[size * size - 1]);
   });
 });
 

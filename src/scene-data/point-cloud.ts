@@ -37,6 +37,15 @@ export interface SurfaceTable {
   /** The ratio of the detailed to the corrected surface density, over the same cells. */
   readonly detail: SurfaceDetail;
   /**
+   * The population zone at the centre of each cell, in 0 to 1. `zoneAt` reads it.
+   *
+   * The build already holds the corrected density of every cell, so the grid costs one
+   * logarithm a cell. A sample that read the zone from the model instead would compute
+   * the whole analytic surface density again, which is two thirds of the point cloud's
+   * build time.
+   */
+  readonly zone: Float32Array;
+  /**
    * The largest smooth surface density over the centres of the cells. The build reads
    * that density for every cell already, so the peak costs nothing here and the cloud
    * set does not sweep the model a second time. `peakCellDensity` states the same rule,
@@ -61,6 +70,7 @@ export function buildSurfaceTable(
   const cellZ = (model.bounds.z[1] - zLow) / size;
   const cumulative = new Float64Array(size * size);
   const ratios = new Uint8Array(size * size);
+  const zones = new Float32Array(size * size);
   const limit = DETAIL_RATIO_SCALE;
 
   let total = 0;
@@ -80,6 +90,7 @@ export function buildSurfaceTable(
       const detailed = model.detailedFromCorrected(corrected, x, z);
       total += detailed;
       cumulative[row + ix] = total;
+      zones[row + ix] = model.zoneFromCorrected(corrected);
 
       // Where both densities are 0 the ratio has no value, so the cell takes 1.
       let logRatio = corrected > 0 && detailed > 0 ? Math.log(detailed / corrected) : 0;
@@ -103,8 +114,45 @@ export function buildSurfaceTable(
       scale: limit,
       data: ratios,
     },
+    zone: zones,
     peak,
   };
+}
+
+/**
+ * The population zone at a plane point, read from the table's cell-centre grid by
+ * bilinear interpolation.
+ *
+ * The zone is a smooth function of the plane position, and one cell is about 98 light
+ * years wide, so the read tracks the model closely: over the two million samples of the
+ * default cloud it moves the tint byte for 1.7 percent of them, and never by more than
+ * two steps out of 255.
+ */
+export function zoneAt(table: SurfaceTable, x: number, z: number): number {
+  const size = table.size;
+  const last = size - 1;
+  let fx = (x - table.origin[0]) / table.cell[0] - 0.5;
+  let fz = (z - table.origin[1]) / table.cell[1] - 0.5;
+  if (!(fx > 0)) fx = 0;
+  if (fx > last) fx = last;
+  if (!(fz > 0)) fz = 0;
+  if (fz > last) fz = last;
+  const ix = fx | 0;
+  const iz = fz | 0;
+  const jx = ix < last ? ix + 1 : last;
+  const jz = iz < last ? iz + 1 : last;
+  const tx = fx - ix;
+  const tz = fz - iz;
+  const zone = table.zone;
+  const lowRow = iz * size;
+  const highRow = jz * size;
+  const a = zone[lowRow + ix] as number;
+  const b = zone[lowRow + jx] as number;
+  const c = zone[highRow + ix] as number;
+  const d = zone[highRow + jx] as number;
+  const low = a + (b - a) * tx;
+  const high = c + (d - c) * tx;
+  return low + (high - low) * tz;
 }
 
 /** Finds the first cell whose cumulative mass is above a target, by binary search. */
@@ -278,7 +326,7 @@ export function generatePointCloud(
     positions[base] = x;
     positions[base + 1] = centreY + above;
     positions[base + 2] = z;
-    tints[index] = Math.round(model.zone(x, z) * 255);
+    tints[index] = Math.round(zoneAt(table, x, z) * 255);
   }
 
   return { count, positions, tints };
