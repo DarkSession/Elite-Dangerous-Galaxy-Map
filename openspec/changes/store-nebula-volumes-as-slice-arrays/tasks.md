@@ -16,7 +16,7 @@ from the active list before task 1.1.
 
 ## 1. The container, both ways
 
-- [ ] 1.1 Add `scripts/dds-to-ktx2.mjs`: read every `src/render/nebula-art/*.dds`, take the
+- [x] 1.1 Add `scripts/dds-to-ktx2.mjs`: read every `src/render/nebula-art/*.dds`, take the
       bytes after the 148-byte header, and write `<name>.ktx2` beside it. The header is
       exactly **208 bytes** — 12 identifier, 68 fixed, a 24-byte one-entry level index, a
       44-byte basic descriptor block, a 56-byte key/value block and 4 bytes of padding,
@@ -30,14 +30,14 @@ from the active list before task 1.1.
       value keeps its zero because the format requires it and a general reader takes it as a C
       string. Verify the script writes 66 files and that every one is exactly `208 + blocks`
       bytes long.
-- [ ] 1.2 Add `readNebulaKtx2(bytes)` to `src/render/nebula-volumes.ts`: check the
+- [x] 1.2 Add `readNebulaKtx2(bytes)` to `src/render/nebula-volumes.ts`: check the
       identifier, read the fixed fields, read the one level's offset and length from the
       level index, and return `{ format, side, layers, blocks }`. Throw the loader's typed
       error where the identifier is wrong, `levelCount` is not 1, `faceCount` is not 1,
       `supercompressionScheme` is not 0, `vkFormat` is neither 139 nor 131, `layerCount` is 0,
       or the level's slice runs past the file. Verify a unit test drives each of those seven
       refusals and the accepting case.
-- [ ] 1.3 Add the round-trip unit test: for every one of the 33 assets, run the script's
+- [x] 1.3 Add the round-trip unit test: for every one of the 33 assets, run the script's
       writer over the committed `.dds` blocks, read the result back with `readNebulaKtx2`,
       and assert the blocks come back byte for byte and the side, layer count and format
       match the index. This is what makes the conversion provable, so it runs over all 66
@@ -45,7 +45,7 @@ from the active list before task 1.1.
       the test both import, so the two cannot hold different versions of the header. It is a
       build-time writer and not application code, so it does not go under `src/`, and the
       published bundle never carries it.
-- [ ] 1.4 Verify `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass.
+- [x] 1.4 Verify `pnpm lint`, `pnpm exec tsc --noEmit` and `pnpm exec vitest run` all pass.
       Nothing in the renderer has changed yet.
 
 ## 2. The files

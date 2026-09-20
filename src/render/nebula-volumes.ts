@@ -222,6 +222,100 @@ function blocksOf(bytes: Uint8Array, side: number, what: string): Uint8Array {
   return bytes.subarray(NEBULA_DDS_HEADER_BYTES, NEBULA_DDS_HEADER_BYTES + needed);
 }
 
+/** Bytes a nebula `.ktx2` header takes before the block payload. */
+export const NEBULA_KTX2_HEADER_BYTES = 208;
+
+/** The `vkFormat` of a colour volume, which is three channels. */
+export const NEBULA_KTX2_BC1 = 131;
+
+/** The `vkFormat` of a density volume, which is one channel. */
+export const NEBULA_KTX2_BC4 = 139;
+
+/** The 12 bytes every KTX2 file starts with. */
+const KTX2_IDENTIFIER = [
+  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+];
+
+/** What one `.ktx2` file of the set carries. */
+export interface NebulaKtx2 {
+  /** 139 for a density volume and 131 for a colour one. */
+  readonly format: number;
+  /** The width and the height of one slice, which are the same number. */
+  readonly side: number;
+  /** How many slices the array holds, which is the volume's third axis. */
+  readonly layers: number;
+  /** The block payload, which is the same bytes whichever container holds it. */
+  readonly blocks: Uint8Array;
+}
+
+/**
+ * Reads one `.ktx2` file of the nebula set.
+ *
+ * This is not a reader for the format at large. It takes the one shape
+ * `scripts/dds-to-ktx2.mjs` writes — one level, one face, no supercompression, a square
+ * BC1 or BC4 array — and throws the loader's typed error on anything else. A smaller
+ * contract is a stricter one, and the files are ones this repository writes.
+ */
+export function readNebulaKtx2(bytes: Uint8Array, what = 'volume'): NebulaKtx2 {
+  if (bytes.byteLength < NEBULA_KTX2_HEADER_BYTES) {
+    throw new NebulaError(
+      `The nebula ${what} holds ${bytes.byteLength} bytes, which is shorter than its ` +
+        `${NEBULA_KTX2_HEADER_BYTES}-byte header.`,
+    );
+  }
+  for (let at = 0; at < KTX2_IDENTIFIER.length; at += 1) {
+    if (bytes[at] !== KTX2_IDENTIFIER[at]) {
+      throw new NebulaError(`The nebula ${what} is not a KTX2 file.`);
+    }
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const format = view.getUint32(12, true);
+  const width = view.getUint32(20, true);
+  const height = view.getUint32(24, true);
+  const layers = view.getUint32(32, true);
+  const faces = view.getUint32(36, true);
+  const levels = view.getUint32(40, true);
+  const supercompression = view.getUint32(44, true);
+  if (format !== NEBULA_KTX2_BC1 && format !== NEBULA_KTX2_BC4) {
+    throw new NebulaError(`The nebula ${what} holds vkFormat ${format}.`);
+  }
+  if (levels !== 1) {
+    throw new NebulaError(`The nebula ${what} holds ${levels} levels, not 1.`);
+  }
+  if (faces !== 1) {
+    throw new NebulaError(`The nebula ${what} holds ${faces} faces, not 1.`);
+  }
+  if (supercompression !== 0) {
+    throw new NebulaError(
+      `The nebula ${what} uses supercompression scheme ${supercompression}.`,
+    );
+  }
+  if (layers === 0) {
+    throw new NebulaError(`The nebula ${what} holds no layer.`);
+  }
+  if (width !== height) {
+    throw new NebulaError(
+      `The nebula ${what} is ${width} by ${height} texels, which is not square.`,
+    );
+  }
+  // The one level index entry sits after the fixed header: a byte offset, a byte length
+  // and an uncompressed byte length, each of 8 bytes.
+  const offset = Number(view.getBigUint64(80, true));
+  const length = Number(view.getBigUint64(88, true));
+  if (offset + length > bytes.byteLength) {
+    throw new NebulaError(
+      `The nebula ${what} states a level of ${length} bytes at ${offset}, which runs ` +
+        `past its ${bytes.byteLength} bytes.`,
+    );
+  }
+  return {
+    format,
+    side: width,
+    layers,
+    blocks: bytes.subarray(offset, offset + length),
+  };
+}
+
 /**
  * The name the loader records each asset's decode under. One entry is one asset's two
  * block decodes, which run in one task on the main thread. A browser test reads the
