@@ -456,10 +456,12 @@ function volumeIndexName(): string {
 
 /**
  * How many files the volume art is: 33 density volumes, 33 colour volumes, the index and
- * the transfer function. `src/render/nebula-volumes.ts` globs the directory, so a file
- * added to it or dropped from it moves this figure.
+ * the transfer function. Each volume sits in the directory twice while the `.ktx2` set
+ * lands beside the `.dds` set, so the figure is 134 until the `.dds` files go.
+ * `src/render/nebula-volumes.ts` globs the directory, so a file added to it or dropped
+ * from it moves this figure.
  */
-const NEBULA_ASSET_FILES = 68;
+const NEBULA_ASSET_FILES = 134;
 
 let outDir = '';
 let files: string[] = [];
@@ -556,12 +558,14 @@ describe('the library build', () => {
   // entry chunk.
   test('emits the nebula records and the volumes as files, not as chunk text', () => {
     const names = files.map(nameOf);
-    const volumes = names.filter((name) => name.endsWith('.dds'));
+    const volumes = names.filter(
+      (name) => name.endsWith('.dds') || name.endsWith('.ktx2'),
+    );
     const index = names.filter(
       (name) => name.startsWith('nebula-volumes') && name.endsWith('.json'),
     );
     const transfer = names.filter((name) => /^transfer-[\w-]+\.bin$/.test(name));
-    expect(volumes).toHaveLength(66);
+    expect(volumes).toHaveLength(132);
     expect(index).toHaveLength(1);
     expect(transfer).toHaveLength(1);
     expect(volumes.length + index.length + transfer.length).toBe(NEBULA_ASSET_FILES);

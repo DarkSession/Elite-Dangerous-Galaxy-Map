@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync } from 'node:zlib';
@@ -10,6 +11,9 @@ import {
   nebulaAssetUrl,
   nebulaAssetUrlCount,
   NEBULA_DDS_HEADER_BYTES,
+  NEBULA_KTX2_BC1,
+  NEBULA_KTX2_BC4,
+  NEBULA_KTX2_HEADER_BYTES,
   NEBULA_TRANSFER_BYTES,
   NEBULA_TRANSFER_ENTRIES,
 } from './nebula-volumes';
@@ -19,6 +23,20 @@ const artDir = fileURLToPath(new URL('./nebula-art/', import.meta.url));
 const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) as {
   assets: NebulaVolumeEntry[];
 };
+
+/** The digests of the committed art, which ship in no build. */
+const fixture = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../tests/fixtures/nebulae.json', import.meta.url)),
+    'utf8',
+  ),
+) as { volume_blocks_sha256: Record<string, string> };
+
+/** The two volumes of one asset, and the `vkFormat` each one takes. */
+const KINDS = [
+  { kind: 'density', format: NEBULA_KTX2_BC4 },
+  { kind: 'colour', format: NEBULA_KTX2_BC1 },
+] as const;
 
 /** One call the upload made on the context. */
 interface Call {
@@ -159,10 +177,12 @@ describe('the BC1 decode', () => {
 });
 
 describe('the asset URLs', () => {
-  // 33 density volumes, 33 colour volumes, the transfer file and the index.
-  test('name all 68 files of the art directory', () => {
-    expect(nebulaAssetUrlCount()).toBe(68);
-    expect(nebulaAssetUrlCount()).toBe(index.assets.length * 2 + 2);
+  // 33 density volumes, 33 colour volumes, the transfer file and the index. Each
+  // volume sits in the directory twice while the `.ktx2` set lands beside the `.dds`
+  // set, so the count is 134 until the `.dds` files go.
+  test('name all 134 files of the art directory', () => {
+    expect(nebulaAssetUrlCount()).toBe(134);
+    expect(nebulaAssetUrlCount()).toBe(index.assets.length * 4 + 2);
     for (const asset of index.assets) {
       expect(nebulaAssetUrl(`${asset.name}-density.dds`)).toContain(asset.name);
       expect(nebulaAssetUrl(`${asset.name}-colour.dds`)).toContain(asset.name);
@@ -301,6 +321,57 @@ describe('the committed set', () => {
         'utf8',
       );
       expect(text, `${doc} states another total`).toContain('2,914,225');
+    }
+  });
+
+  // The spec's scenario **Every shipped file holds the shape the spec fixes**. The
+  // reader takes one shape and one only, and this says every committed file is that
+  // shape. The 208-byte header is what fixes the on-disk total.
+  test('holds a KTX2 array of the shape the spec fixes', () => {
+    for (const asset of index.assets) {
+      for (const { kind, format } of KINDS) {
+        const side = asset[kind].size;
+        const file = `${asset.name}-${kind}.ktx2`;
+        const bytes = readFileSync(`${artDir}${file}`);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        expect(view.getUint32(12, true), `${file} vkFormat`).toBe(format);
+        expect(view.getUint32(20, true), `${file} pixelWidth`).toBe(side);
+        expect(view.getUint32(24, true), `${file} pixelHeight`).toBe(side);
+        expect(view.getUint32(28, true), `${file} pixelDepth`).toBe(0);
+        expect(view.getUint32(32, true), `${file} layerCount`).toBe(side);
+        expect(view.getUint32(36, true), `${file} faceCount`).toBe(1);
+        expect(view.getUint32(40, true), `${file} levelCount`).toBe(1);
+        expect(view.getUint32(44, true), `${file} supercompression`).toBe(0);
+        // The one level starts right after the header and runs to the end of the file.
+        expect(Number(view.getBigUint64(80, true)), `${file} level offset`).toBe(
+          NEBULA_KTX2_HEADER_BYTES,
+        );
+        expect(bytes.byteLength, `${file} length`).toBe(
+          NEBULA_KTX2_HEADER_BYTES + (side / 4) * (side / 4) * side * 8,
+        );
+      }
+    }
+  });
+
+  // The spec's scenario **The blocks are the blocks that were packed**. A block payload
+  // has no container, so the digest is the same number in the `.dds` file and in the
+  // `.ktx2` file. This is what makes the conversion provable.
+  test('holds the same blocks in the .dds file and the .ktx2 file', () => {
+    const wanted = fixture.volume_blocks_sha256;
+    expect(Object.keys(wanted)).toHaveLength(index.assets.length * 2);
+    for (const asset of index.assets) {
+      for (const { kind } of KINDS) {
+        const name = `${asset.name}-${kind}`;
+        const fromDds = readFileSync(`${artDir}${name}.dds`).subarray(
+          NEBULA_DDS_HEADER_BYTES,
+        );
+        const fromKtx2 = readFileSync(`${artDir}${name}.ktx2`).subarray(
+          NEBULA_KTX2_HEADER_BYTES,
+        );
+        const digest = createHash('sha256').update(fromDds).digest('hex');
+        expect(createHash('sha256').update(fromKtx2).digest('hex'), name).toBe(digest);
+        expect(digest, name).toBe(wanted[name]);
+      }
     }
   });
 

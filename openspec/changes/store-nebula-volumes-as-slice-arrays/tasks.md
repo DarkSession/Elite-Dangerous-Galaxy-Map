@@ -50,20 +50,20 @@ from the active list before task 1.1.
 
 ## 2. The files
 
-- [ ] 2.1 Run `scripts/dds-to-ktx2.mjs` and commit the 66 `.ktx2` files **beside** the 66
+- [x] 2.1 Run `scripts/dds-to-ktx2.mjs` and commit the 66 `.ktx2` files **beside** the 66
       `.dds` files. Verify `src/render/nebula-art/` holds 134 files and that `git status`
       shows no other addition.
-- [ ] 2.2 Extend `tests/fixtures/nebulae.json` with a `volume_blocks_sha256` map: the digest
+- [x] 2.2 Extend `tests/fixtures/nebulae.json` with a `volume_blocks_sha256` map: the digest
       of the **block payload** of each of the 33 assets' two volumes, which is the same number
       whichever container holds it. Verify a unit test reads that digest out of both the
       `.dds` and the `.ktx2` file of every asset and finds it equal, which is the spec's
       scenario **The blocks are the blocks that were packed**.
-- [ ] 2.2a Add the unit test for the spec's scenario **Every shipped file holds the shape the
+- [x] 2.2a Add the unit test for the spec's scenario **Every shipped file holds the shape the
       spec fixes**: read all 66 committed `.ktx2` headers and assert `levelCount` 1,
       `faceCount` 1, `supercompressionScheme` 0, a 208-byte header, a `vkFormat` that matches
       the volume's channel count, and `layerCount`, `pixelWidth` and `pixelHeight` all equal
       to the index's side.
-- [ ] 2.3 Fix every test that counts the art files, because the directory now holds 134. Two
+- [x] 2.3 Fix every test that counts the art files, because the directory now holds 134. Two
       files, and no others:
       `tests/main-bundle.test.ts` — raise `NEBULA_ASSET_FILES` to 134, widen the
       `names.filter((name) => name.endsWith('.dds'))` volume filter to take `.ktx2` as well,
@@ -76,7 +76,7 @@ from the active list before task 1.1.
       names with a `.dds` suffix, so it still finds 68 files and its `2_914_225` disk figure
       still holds; widening it here would break both. Task 5.2 is where it moves. Task 5.2
       also undoes the two edits above. Verify the whole unit suite passes.
-- [ ] 2.4 Verify `pnpm build` and the entry-chunk bounds of `tests/main-bundle.test.ts` read
+- [x] 2.4 Verify `pnpm build` and the entry-chunk bounds of `tests/main-bundle.test.ts` read
       the same as before: the art loads as fetched assets, so 66 more files must add nothing
       to any chunk.
 
