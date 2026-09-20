@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { generateCloudShapes, SHAPE_COLUMNS, shapeAtlasSide } from './cloud-shapes';
 import type { CloudShapes } from './cloud-shapes';
-import { TIMED_TEST } from '../../tests/timed';
+import { TIMED_TEST } from '../../../../tests/timed';
 
 const shapes = generateCloudShapes();
 

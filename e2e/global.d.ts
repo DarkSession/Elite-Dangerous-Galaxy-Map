@@ -1,6 +1,9 @@
-import type { GalaxyMap, GalaxyMapOptions } from '../src/app/create-map';
-import type { NebulaSource } from '../src/render/nebula-slot';
-import type { GalaxyMapGlobal } from '../src/render/global';
+import type {
+  GalaxyMap,
+  GalaxyMapOptions,
+} from '../packages/galaxy-map/src/app/create-map';
+import type { NebulaSource } from '../packages/galaxy-map/src/render/nebula-slot';
+import type { GalaxyMapGlobal } from '../packages/galaxy-map/src/render/global';
 
 /** One long task the browser reported. */
 export interface LongTaskRecord {

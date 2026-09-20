@@ -4,16 +4,19 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { createSystemSet } from '../../src/scene-data/real-systems';
-import { createShapeSet } from '../../src/scene-data/shapes';
-import type { CategoryInput, RealSystem } from '../../src/scene-data/real-systems';
-import type { LineInput } from '../../src/scene-data/shapes';
+import { createSystemSet } from '../../packages/galaxy-map/src/scene-data/real-systems';
+import { createShapeSet } from '../../packages/galaxy-map/src/scene-data/shapes';
+import type {
+  CategoryInput,
+  RealSystem,
+} from '../../packages/galaxy-map/src/scene-data/real-systems';
+import type { LineInput } from '../../packages/galaxy-map/src/scene-data/shapes';
 import {
   convertAdamastor,
   ed3dRouteNames,
   LINE_COLOUR_FALLBACK,
   parseEd3dData,
-} from '../../scripts/build-demo-systems.mjs';
+} from '../../apps/demo/scripts/build-demo-systems.mjs';
 
 const source = readFileSync(
   fileURLToPath(new URL('./adamastor-extract.js', import.meta.url)),

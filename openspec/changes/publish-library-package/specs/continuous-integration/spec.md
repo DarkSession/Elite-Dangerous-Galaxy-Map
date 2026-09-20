@@ -126,9 +126,17 @@ disagreeing.
 
 **It SHALL work out the version rather than take one.** It SHALL read `major.minor` from
 the library package's `package.json`, ask the registry for the versions already published
-under that name, and choose the **next unused patch** of that `major.minor`. It SHALL fail
-where that version would move the `latest` tag behind a higher published version. A name
-the registry does not know SHALL be treated as no published versions, not as an error.
+under that name, and choose the patch **one above the highest patch published on that
+line**. It SHALL fail where that version would move the `latest` tag behind a higher
+published version. A name the registry does not know SHALL be treated as no published
+versions, not as an error.
+
+**A hole in the patch series SHALL NOT be filled.** An earlier wording of this
+requirement said "the next unused patch", which reads as the lowest free number, and the
+two rules cannot both hold: with `0.6.0` and `0.6.2` published, the lowest free patch is
+`0.6.1`, and publishing it is exactly what the rule above forbids. npm also refuses a
+version that was published and unpublished, so a hole cannot be filled in any case. The
+rule is therefore the highest patch of the line plus one.
 
 **It SHALL check twice before it publishes.** After choosing the version it SHALL confirm
 the registry does not already hold it, and SHALL confirm the git tag `v<version>` does not
@@ -188,17 +196,18 @@ dispatch is not where they are found missing.
 - **THEN** it calls `scripts/next-version.mjs` rather than holding the rule in a shell
   block, and the step's output is the version the later steps read
 
-#### Scenario: The version script picks the next free patch
+#### Scenario: The version script picks the next patch of the line
 
 - **WHEN** a unit test calls `scripts/next-version.mjs` with a `major.minor` and a list of
   published versions, for **five** cases: no published version at all, a gap in the patch
   series, a published patch above every local one of the same `major.minor`, a
   `major.minor` with no release yet, and the **regression case** — a local `major.minor`
   of `0.4` while the registry holds `0.5.3`
-- **THEN** it prints the lowest unused patch of that `major.minor` in the first four
-  cases, and in the regression case it **fails with a message and prints no version**,
-  because publishing `0.4.x` would move the `latest` tag behind `0.5.3`. The two outcomes
-  are separate: the script never both prints a version and fails
+- **THEN** it prints one above the highest published patch of that `major.minor` in the
+  first four cases — so the gap case prints `0.6.3` against `0.6.0` and `0.6.2`, and does
+  **not** fill `0.6.1` — and in the regression case it **fails with a message and prints
+  no version**, because publishing `0.4.x` would move the `latest` tag behind `0.5.3`. The
+  two outcomes are separate: the script never both prints a version and fails
 
 #### Scenario: The publish job checks the tarball digest
 

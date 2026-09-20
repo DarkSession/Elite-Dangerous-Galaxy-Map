@@ -136,7 +136,8 @@ export function readBounds(bounds: unknown): BrowseBounds | null {
   if (mode === 'auto') {
     const margin = (bounds as { marginLy?: unknown }).marginLy;
     if (margin === undefined) return { mode: 'auto' };
-    if (typeof margin !== 'number' || !Number.isFinite(margin) || margin < 0) return null;
+    if (typeof margin !== 'number' || !Number.isFinite(margin) || margin < 0)
+      return null;
     return { mode: 'auto', marginLy: margin };
   }
   if (mode === 'sphere') {
@@ -144,7 +145,8 @@ export function readBounds(bounds: unknown): BrowseBounds | null {
     const radius = (bounds as { radiusLy?: unknown }).radiusLy;
     if (!Array.isArray(centre) || centre.length !== 3) return null;
     if (!allFinite(centre as number[])) return null;
-    if (typeof radius !== 'number' || !Number.isFinite(radius) || radius <= 0) return null;
+    if (typeof radius !== 'number' || !Number.isFinite(radius) || radius <= 0)
+      return null;
     const point = centre as number[];
     return {
       mode: 'sphere',
@@ -185,8 +187,7 @@ export function resolveBounds(
       systemBox.max[1] + margin,
       systemBox.max[2] + margin,
     ];
-    const half =
-      Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2;
+    const half = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2;
     return { kind: 'box', min, max, maxDistanceLy: farZoomLimit(half) };
   }
   return unrestrictedBounds();

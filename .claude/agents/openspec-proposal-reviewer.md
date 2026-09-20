@@ -55,7 +55,8 @@ day of work into one line.
 - pnpm only, and the 7-day `minimumReleaseAge` hold is not to be weakened casually. A
   proposal adding a dependency should say why that dependency, and any use of
   `minimumReleaseAgeExclude` must be justified in the proposal itself.
-- Application code goes in `src/`.
+- The repository is a pnpm workspace. Library code goes in
+  `packages/galaxy-map/src/` and demo code in `apps/demo/`.
 
 ## What to report
 

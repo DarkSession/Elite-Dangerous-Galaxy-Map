@@ -6,8 +6,9 @@
 // it does not hold `GalaxyMapDebug`, which is the renderer probe set the browser tests
 // read.
 //
-// `src/app/main.ts`, `index.html` and the demo data reach this module from nowhere, so
-// the library build carries no page and no data.
+// The demo page, `apps/demo/index.html` and the demo data are all in the other package
+// of the workspace and reach this module by the package name, so the library build
+// carries no page and no data.
 export { createGalaxyMap } from './app/create-map';
 export {
   createFragmentWriter,

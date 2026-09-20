@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { parseMarkdown } from './markdown';
 import type { MdBlock, MdInline } from './markdown';
-import { TIMED_TEST } from '../../tests/timed';
+import { TIMED_TEST } from '../../../../tests/timed';
 
 /** The text of a run of parts, with a hard line break read as a newline. */
 function textOf(parts: readonly MdInline[]): string {

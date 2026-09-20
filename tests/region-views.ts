@@ -38,15 +38,15 @@
 // `e2e/region-views.ts` are what it gives. The browser test reads those constants,
 // because Playwright cannot import the camera module: it reaches the PNG of the
 // detail grid, which only Vite can load.
-import { cameraPosition, project } from '../src/camera/projection';
-import type { Viewport } from '../src/camera/projection';
-import type { View } from '../src/camera/view';
-import { farthestPlaneRange } from '../src/app/labels';
+import { cameraPosition, project } from '../packages/galaxy-map/src/camera/projection';
+import type { Viewport } from '../packages/galaxy-map/src/camera/projection';
+import type { View } from '../packages/galaxy-map/src/camera/view';
+import { farthestPlaneRange } from '../packages/galaxy-map/src/app/labels';
 import {
   REGION_RANGE_NONE,
   regionBandHalfWidthAtRange,
-} from '../src/render/region-pass';
-import type { RegionLines } from '../src/scene-data/types';
+} from '../packages/galaxy-map/src/render/region-pass';
+import type { RegionLines } from '../packages/galaxy-map/src/scene-data/types';
 import type {
   CornerChoice,
   CrossingChoice,

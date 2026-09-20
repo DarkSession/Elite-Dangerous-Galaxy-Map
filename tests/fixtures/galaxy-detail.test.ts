@@ -4,11 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 const pngPath = fileURLToPath(
-  new URL('../../src/galaxy-model/galaxy-detail.png', import.meta.url),
+  new URL(
+    '../../packages/galaxy-map/src/galaxy-model/galaxy-detail.png',
+    import.meta.url,
+  ),
 );
 const fixturePath = fileURLToPath(new URL('./galaxy-detail.json', import.meta.url));
 const parameterPath = fileURLToPath(
-  new URL('../../src/galaxy-model/galaxy-model.json', import.meta.url),
+  new URL(
+    '../../packages/galaxy-map/src/galaxy-model/galaxy-model.json',
+    import.meta.url,
+  ),
 );
 
 interface DetailFixturePoint {

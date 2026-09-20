@@ -24,7 +24,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const artDirectory = join(root, 'src', 'render', 'nebula-art');
+const artDirectory = join(
+  root,
+  'packages',
+  'galaxy-map',
+  'src',
+  'render',
+  'nebula-art',
+);
 
 /** The header of a nebula `.ktx2` file, in bytes, before the block payload. */
 const KTX2_HEADER_BYTES = 208;
@@ -91,7 +98,10 @@ const RECORD_FIELDS = 8;
 /** Reads the committed record file into flat arrays, as `buildNebulaSet` does. */
 export function readRecords() {
   const parsed = JSON.parse(
-    readFileSync(join(root, 'src', 'scene-data', 'nebulae.json'), 'utf8'),
+    readFileSync(
+      join(root, 'packages', 'galaxy-map', 'src', 'scene-data', 'nebulae.json'),
+      'utf8',
+    ),
   );
   const rows = parsed.records;
   const count = rows.length;
@@ -662,7 +672,11 @@ function main() {
     stepRate: STEP_RATE,
     lightGain: LIGHT_GAIN,
     records_sha256: createHash('sha256')
-      .update(readFileSync(join(root, 'src', 'scene-data', 'nebulae.json')))
+      .update(
+        readFileSync(
+          join(root, 'packages', 'galaxy-map', 'src', 'scene-data', 'nebulae.json'),
+        ),
+      )
       .digest('hex'),
     views: {},
   };

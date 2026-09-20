@@ -11,7 +11,14 @@ Phase 1 is in the tree: the project setup, the galaxy model port, the scene data
 WebGL2 renderer and the camera. [README.md](README.md) gives the setup, the scripts and
 the control scheme.
 
-Application code goes in **`src/`**, in these directories:
+The repository is a **pnpm workspace** with two packages:
+
+| Package                | What it is                                                      |
+| ---------------------- | --------------------------------------------------------------- |
+| `packages/galaxy-map/` | The library, published as `@elite-dangerous-almanac/galaxy-map` |
+| `apps/demo/`           | The demo site, private, which the Pages job publishes           |
+
+Library code goes in **`packages/galaxy-map/src/`**, in these directories:
 
 | Directory           | What it holds                                    |
 | ------------------- | ------------------------------------------------ |
@@ -23,8 +30,11 @@ Application code goes in **`src/`**, in these directories:
 | `src/hud/`          | The opt-in DOM HUD, its panels and its styles    |
 | `src/nebulae/`      | The nebula subpath entry, which is one source    |
 
-Playwright tests go in `e2e/`, with the baseline image beside them. Unit tests sit next
-to the code they check, as `*.test.ts`.
+Demo code goes in `apps/demo/`: `src/` for the page, `demo-data/` for the committed
+record sets, `scripts/` for the build that writes them, and `public/` for the loading
+picture. Playwright tests go in `e2e/`, with the baseline image beside them. Tests that
+read the repository rather than one package go in `tests/`. Every other unit test sits
+next to the code it checks, as `*.test.ts`.
 
 **The import rules**: `src/galaxy-model/` and `src/scene-data/` must not import
 `src/render/`. `src/hud/` must not import `src/render/`, `src/scene-data/` or
@@ -32,8 +42,16 @@ to the code they check, as `*.test.ts`.
 `no-restricted-syntax` rules in [eslint.config.js](eslint.config.js) fail the lint on a
 breach. The first rule lets a different density source replace the data layers without a
 change in the renderer. The second holds the HUD to the public handle of
-[src/app/create-map.ts](src/app/create-map.ts), so a host can build its own chrome from
-the same members the HUD uses.
+[packages/galaxy-map/src/app/create-map.ts](packages/galaxy-map/src/app/create-map.ts),
+so a host can build its own chrome from the same members the HUD uses.
+
+**The demo imports the map by its package name**, never by a relative path out of
+`apps/demo/src/`. A fourth ESLint rule fails the lint on a reach. The dev server
+resolves the three specifiers — the package name, `/nebulae` and `/testing` — to the
+library's **source** through the alias table of
+[apps/demo/vite.config.ts](apps/demo/vite.config.ts), so a change in either package
+reloads at once and no build stands between them. `e2e/` and `tests/` reach package
+source by relative path on purpose, and that stays legal.
 
 **`src/nebulae/` is the seam, and it may import both layers.** It is the package's second
 entry point, and it holds the whole nebula import graph: the record set of
@@ -155,7 +173,13 @@ entries colon-free or write them as a `|` block, and check with
 ## Working agreements
 
 - Run the dev server as `pnpm dev --host 0.0.0.0` so VS Code's port forwarding reaches
-  it, or set `server.host: true` in `vite.config.ts`.
+  it. `apps/demo/vite.config.ts` already sets `server.host: true`. Five root scripts
+  delegate with `pnpm --filter` — `dev`, `build`, `build:demo-site`, `build:demo-data`
+  and `preview` — and an argument crosses both hops. The other six run at the root:
+  `test`, `test:e2e`, `test:package`, `audit`, `lint` and `format`. `tests/` and `e2e/`
+  belong to no package, so a delegated `pnpm test` would drop every root test file.
+- The two builds write inside their own packages: `pnpm build` writes
+  `packages/galaxy-map/dist/` and `pnpm build:demo-site` writes `apps/demo/dist/`.
 - Commit only when asked. The default branch is `main`.
 - Prettier and ESLint own formatting; do not hand-format against them, and leave GLSL
   files alone (format-on-save is off for them by design).

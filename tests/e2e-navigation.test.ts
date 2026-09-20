@@ -86,7 +86,10 @@ describe('the demo set in the browser suite', () => {
 
   test('no test selects a record of the demo set', () => {
     const demo = JSON.parse(
-      readFileSync(join(root, 'demo-data', 'guardian-ruins.json'), 'utf8'),
+      readFileSync(
+        join(root, 'apps', 'demo', 'demo-data', 'guardian-ruins.json'),
+        'utf8',
+      ),
     ) as { systems: { name: string }[] };
     const names = demo.systems.map((system) => system.name);
     expect(names.length).toBeGreaterThan(0);

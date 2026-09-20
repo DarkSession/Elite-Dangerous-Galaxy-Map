@@ -6,8 +6,12 @@ context: |
   galaxy, rendered in the browser with WebGL.
 
   Status: phase 1 (the far view) is in the tree, as change far-view-galaxy-render.
-  src/ holds app/, galaxy-model/, scene-data/, render/ and camera/. e2e/ holds the
-  Playwright tests. Do not assume a file exists until you have looked for it.
+  The repository is a pnpm workspace with two packages. packages/galaxy-map/ is the
+  library, published as @elite-dangerous-almanac/galaxy-map; its src/ holds app/,
+  galaxy-model/, scene-data/, render/, camera/, hud/ and nebulae/. apps/demo/ is the
+  private demo site, with index.html, src/, demo-data/, scripts/ and public/. e2e/ holds
+  the Playwright tests and tests/ holds the tests that read the repository rather than
+  one package. Do not assume a file exists until you have looked for it.
 
   Tech stack (as wired up by .devcontainer and .vscode):
   - TypeScript, bundled and served by Vite (dev on 5173, production preview on 4173).
@@ -19,7 +23,14 @@ context: |
   - pnpm is the package manager -- never npm or yarn. pnpm-workspace.yaml sets
     minimumReleaseAge: 10080, a 7-day hold on newly published versions as a supply-chain
     measure, so resolved versions are deliberately a week behind the newest release.
-  - Application code lives in src/.
+  - Library code lives in packages/galaxy-map/src/ and demo code in apps/demo/.
+  - Each build writes inside its own package. pnpm build writes
+    packages/galaxy-map/dist/ and pnpm build:demo-site writes apps/demo/dist/. Five root
+    scripts delegate with pnpm --filter, which are dev, build, build:demo-site,
+    build:demo-data and preview. The six that run at the root are test, test:e2e,
+    test:package, audit, lint and format, because tests/ and e2e/ belong to no package.
+  - The demo imports the library by its package name, never by a relative path. An
+    ESLint rule fails the lint on a reach.
 
   Conventions:
   - Rendering work must stay hardware accelerated: a test or change that silently falls

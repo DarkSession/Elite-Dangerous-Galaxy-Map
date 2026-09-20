@@ -26,7 +26,7 @@ import type { NebulaSet } from './nebulae';
 const recordsPath = fileURLToPath(new URL('./nebulae.json', import.meta.url));
 const volumeDir = fileURLToPath(new URL('../render/nebula-art/', import.meta.url));
 const fixturePath = fileURLToPath(
-  new URL('../../tests/fixtures/nebulae.json', import.meta.url),
+  new URL('../../../../tests/fixtures/nebulae.json', import.meta.url),
 );
 
 interface NebulaFixture {

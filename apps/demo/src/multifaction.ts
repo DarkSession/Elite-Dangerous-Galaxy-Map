@@ -12,7 +12,10 @@
 // The page keeps the fetch and moves the body to `multifaction.worker.ts`, which inflates
 // it and runs the reader. Chromium inflates a body the browser already holds in one
 // burst, which costs the map about 70 milliseconds of frames on a 62 MB dump.
-import type { CategoryInput, SystemRecordInput } from '../scene-data/real-systems';
+import type {
+  CategoryInput,
+  SystemRecordInput,
+} from '@elite-dangerous-almanac/galaxy-map';
 import type { MultifactionAnswer, MultifactionRequest } from './multifaction-message';
 
 /** Where the records come from. The map of the Canonn Research Group reads the same file. */

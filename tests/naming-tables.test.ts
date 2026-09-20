@@ -10,6 +10,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+/**
+ * The demo app. The build runs there: after the restructure the repository root holds
+ * no Vite configuration and no page, so a build with its working directory at the root
+ * finds nothing to build.
+ */
+const demo = join(root, 'apps', 'demo');
 
 /**
  * Text that only the procedural naming tables hold. The first four are fragments of the
@@ -44,7 +50,7 @@ beforeAll(() => {
   // This repository uses pnpm. `npx` is npm tooling and would fetch from the registry
   // outside the 7-day release hold if the local binary were ever missing.
   execFileSync('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
-    cwd: root,
+    cwd: demo,
     stdio: 'pipe',
   });
   scripts = listScripts(outDir);

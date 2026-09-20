@@ -37,7 +37,7 @@ import {
 } from './regions';
 import { regionLinesTransferables, regionResponseTransferables } from './messages';
 import type { CoarseRegionGrid, RegionLines } from './types';
-import { TIMED_TEST } from '../../tests/timed';
+import { TIMED_TEST } from '../../../../tests/timed';
 
 /** The departure bound the spec states, in light years. It is one cell. */
 const DEPARTURE_LIMIT = REGION_DEPARTURE_LY;

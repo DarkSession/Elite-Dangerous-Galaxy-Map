@@ -22,7 +22,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
-import type { SystemRecordInput } from '../src/scene-data/real-systems';
+import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 /** The main-thread work a frame of the move may cost, in milliseconds. */
 const BUDGET_MS = 7;

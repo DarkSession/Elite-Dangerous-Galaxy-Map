@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   check:
-    name: Lint, types, unit tests and both builds
+    name: Lint, types, unit tests, both builds and the packed tarball
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -48,8 +48,10 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      # `--frozen-lockfile` fails rather than writes pnpm-lock.yaml, so a run cannot
-      # step around the 7-day release hold in pnpm-workspace.yaml.
+      # The install runs at the workspace root and installs every package of the
+      # workspace in one pass. `--frozen-lockfile` fails rather than writes
+      # pnpm-lock.yaml, so a run cannot step around the 7-day release hold in
+      # pnpm-workspace.yaml.
       - name: Install the dependencies
         run: pnpm install --frozen-lockfile
 
@@ -64,11 +66,20 @@ jobs:
       - name: Run the unit tests
         run: pnpm test
 
+      # Writes `packages/galaxy-map/dist/`.
       - name: Build the library
         run: pnpm build
 
+      # Writes `apps/demo/dist/`.
       - name: Build the demo site
         run: pnpm build:demo-site
+
+      # Reads what `npm pack` would ship and fails on a file that does not belong. It
+      # runs on every push, and not in the publish workflow alone, because a tarball
+      # fault found at publish time is found after the version is chosen and the
+      # registry has been asked.
+      - name: Check the packed tarball
+        run: pnpm test:package
 
   publish:
     name: Publish the demo site to GitHub Pages
@@ -113,13 +124,14 @@ jobs:
       - name: Build the demo site
         run: pnpm build:demo-site
 
-      # `dist-demo/` is the demo site. `vite.config.ts` gives it the base path
-      # `/Elite-Dangerous-Galaxy-Map/`, which is the path the Pages address serves it
-      # from. `dist/` is the library, and the publish does not upload it.
+      # `apps/demo/dist/` is the demo site. `apps/demo/vite.config.ts` gives it the base
+      # path `/Elite-Dangerous-Galaxy-Map/`, which is the path the Pages address serves
+      # it from. `packages/galaxy-map/dist/` is the library, and the publish does not
+      # upload it.
       - name: Upload the demo site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: dist-demo
+          path: apps/demo/dist
 
       - name: Deploy to GitHub Pages
         id: deploy

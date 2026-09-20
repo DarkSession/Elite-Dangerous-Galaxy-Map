@@ -117,10 +117,11 @@ what it carries.
 `setNebulaeVisible(on)` take and give a boolean, so the declaration carries them on
 `GalaxyMap` and the export list does not move for them.
 
-**The package stays at version 0.5.0.** This change moves no file a host imports and
+**The package stays at version 0.6.0.** This change moves no file a host imports and
 changes no call. It renames the package, which is not a version step: nothing was
 published under the old name. The publish workflow reads `major.minor` from
-`package.json` and picks the next free patch, so the first release is `0.5.0`.
+`package.json` and picks one above the highest patch published on that line. The registry
+holds no version of this name, so the first release is `0.6.0`.
 
 The surface keeps the breaks 0.3.0 and 0.4.0 carried. `Sphere.color` and `Line.color` are
 optional, because a shape that names a category takes that category's colour, which
@@ -177,22 +178,29 @@ This change moves the file the test builds from and the directory the test reads
 test's paths change and its bound does not. It **does** move the reading, for two reasons:
 it exports the fragment writer from the entry point, and that function is tree-shaken out of
 the entry chunk today, so it enters; and it adds a third entry point that also reaches
-`src/render/global.ts`, which the bundler may re-partition. The implementation SHALL carry
-forward the bound `make-nebulae-optional` left in this requirement, SHALL measure the chunk
-and write the new reading here, and SHALL check the difference against those two causes. It
-SHALL NOT expect the reading to be unchanged. Restating 266,996 or 270,000
-as the current state here would overwrite the lower bound the change before this one set,
-because this delta replaces the requirement whole.
+`src/render/global.ts`, which the bundler may re-partition.
+
+**The readings this change leaves are 245,833 bytes for the entry chunk alone and
+261,172 bytes for the entry chunk and the chunks it loads with**, against the bound of
+**260,000**, which `make-nebulae-optional` set and this change carries forward. The bound
+reads `index.js` alone, so the pair above it is a reading and not a failure. The entry
+chunk keeps 14,167 bytes of room under the bound.
+
+The reading before this change was 245,616 bytes for the entry chunk and 260,724 for the
+pair, so the entry chunk grew by **217 bytes** and the pair by 448. The fragment writer
+and `FRAGMENT_THROTTLE_MS` are that size, which is the first of the two causes above.
+The third entry point moved no module out of the entry chunk: `src/render/global.ts`
+stays in a chunk the entry loads with, as it was.
 
 The bound still catches the one fault it is for at any figure in this range, because the
 region cell table is 199 KiB.
 
-**The readings `replace-nebula-sprites-with-volumes` left are 254,496 for the entry chunk
-alone and 260,019 for the pair**, against a bound of **260,000**, which leaves 5,504 bytes
-of room. The bound reads `index.js` alone, so the pair above it is a reading and not a
-failure. This delta replaces the requirement whole, so it carries those figures forward
-rather than dropping them. The implementation of this change SHALL measure again and
-replace them with what it reads.
+**The HUD chunk has a bound of its own**, `HUD_CHUNK_LIMIT` in the same file. It stays
+at **70,000**, which `map-hud` set. **The reading this change leaves is 62,299 bytes**,
+against 62,293 before it, so 7,701 bytes of room remain. **No HUD source file changed in
+this change**, so the six bytes are a difference in the emitted chunk and not in the
+code. A move of this bound would be for the HUD pulling in a data layer, and the region
+cell table alone is 199 KiB, which no room under 70,000 absorbs.
 
 #### Scenario: The library build carries no page and no demo data
 
@@ -255,7 +263,8 @@ replace them with what it reads.
   lookup is in **no entry chunk** and in **no chunk the entry chunk imports at load**.
 
   **How many chunks carry it follows the build, and the scenario SHALL NOT assert a fixed
-  count.** `vite.config.lib.ts` marks `@elite-dangerous-almanac/core` and its subpaths
+  count.** The library's `vite.config.ts` marks `@elite-dangerous-almanac/core` and its
+  subpaths
   **external**, so a host holds one copy of the package. `regionNameAtExact` imports the
   lookup by a bare specifier, and in the library build that specifier stays a bare specifier
   in the output: no chunk of `dist/` carries the table except the region worker's, which
@@ -330,7 +339,22 @@ replace them with what it reads.
 #### Scenario: The package names its version
 
 - **WHEN** a test reads `version` from `package.json`
-- **THEN** it is `0.5.0`
+- **THEN** it is `0.6.0`
+
+#### Scenario: The declaration names the panel types
+
+- **WHEN** a test compiles a file that imports `SystemDetails`, `SystemDetailValue`,
+  `HudInfoFields`, `HudMapOption` and `HudAction` from the built declaration, writes a
+  `details` loader whose `SystemDetails` carries a `values` entry and an `actions` entry,
+  and writes an `infoFields` object and a `lockedOptions` array
+- **THEN** the compile is clean
+
+#### Scenario: The HUD chunk stays under its bound
+
+- **WHEN** the bundle test reads the built HUD chunk, which carries the Markdown parser,
+  the details reader and the new panel code
+- **THEN** its size is under the HUD bound this requirement states, and the requirement
+  holds the reading the build gave
 
 ### Requirement: The demo site builds apart from the library
 

@@ -4,12 +4,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { createSystemSet } from '../../src/scene-data/real-systems';
-import type { CategoryInput } from '../../src/scene-data/real-systems';
+import { createSystemSet } from '../../packages/galaxy-map/src/scene-data/real-systems';
+import type { CategoryInput } from '../../packages/galaxy-map/src/scene-data/real-systems';
 import {
   convertStructures,
   describeStructureSystem,
-} from '../../scripts/build-demo-systems.mjs';
+} from '../../apps/demo/scripts/build-demo-systems.mjs';
 
 const extract = JSON.parse(
   readFileSync(

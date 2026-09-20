@@ -4,13 +4,19 @@ node_modules/
 .pnpm-store/
 
 # Galaxy data dumps. They are large and re-downloadable, so the build script fetches
-# them here and the repository never holds one.
+# them here and the repository never holds one. The entry carries no internal slash, so
+# it matches `apps/demo/data/`, which is where the script fetches after the restructure.
 data/
 
-# Build output. `dist/` is the library and `dist-demo/` is the demo site.
+# Build output. Each package writes inside itself: `packages/galaxy-map/dist/` is the
+# library and `apps/demo/dist/` is the demo site. The entry carries no internal slash,
+# so it matches at any depth.
 dist/
-dist-demo/
 dist-ssr/
+
+# The copy of the licence the library package's `prepack` makes. `LICENSE.md` at the
+# repository root is the one committed source.
+packages/galaxy-map/LICENSE.md
 # The directory `tests/main-bundle.test.ts` builds into. It is removed after the run.
 .library-build-*/
 *.local

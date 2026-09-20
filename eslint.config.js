@@ -14,12 +14,12 @@ const renderImportGroups = [
   '../../render',
   '../../render/*',
   '../../render/**',
-  'src/render',
-  'src/render/*',
-  'src/render/**',
+  'packages/*/src/render',
+  'packages/*/src/render/*',
+  'packages/*/src/render/**',
 ];
 
-/** The same shape of pattern list for any one directory under `src/`. */
+/** The same shape of pattern list for any one directory of the library's `src/`. */
 function importGroupsFor(directory) {
   return [
     `**/${directory}`,
@@ -30,9 +30,9 @@ function importGroupsFor(directory) {
     `../../${directory}`,
     `../../${directory}/*`,
     `../../${directory}/**`,
-    `src/${directory}`,
-    `src/${directory}/*`,
-    `src/${directory}/**`,
+    `packages/*/src/${directory}`,
+    `packages/*/src/${directory}/*`,
+    `packages/*/src/${directory}/**`,
   ];
 }
 
@@ -40,7 +40,7 @@ function importGroupsFor(directory) {
  * The nebula modules the main entry point must not reach as a value. The list holds each
  * form a module of `src/` can write, because a pattern of one shape does not match the
  * others: `src/render/` writes `./nebula-pass`, `src/app/` writes `../render/nebula-pass`
- * and a path from the root reads `src/render/nebula-pass`.
+ * and a path from the repository root reads `packages/galaxy-map/src/render/nebula-pass`.
  *
  * `src/render/nebula-slot.ts` is not in the list. It is the module the renderer imports,
  * and it holds types and two number literals and nothing else.
@@ -52,14 +52,14 @@ const nebulaImportGroups = [
   '../render/nebula-volumes',
   '../../render/nebula-pass',
   '../../render/nebula-volumes',
-  'src/render/nebula-pass',
-  'src/render/nebula-volumes',
+  'packages/*/src/render/nebula-pass',
+  'packages/*/src/render/nebula-volumes',
   '**/render/nebula-pass',
   '**/render/nebula-volumes',
   '../scene-data/nebulae',
   '../../scene-data/nebulae',
   './nebulae',
-  'src/scene-data/nebulae',
+  'packages/*/src/scene-data/nebulae',
   '**/scene-data/nebulae',
 ];
 
@@ -69,11 +69,14 @@ export default tseslint.config(
       // The mockup and the runtime the design tool wrote. The project does not own
       // that code and does not ship it.
       '.design/**',
-      'dist/**',
-      'dist-demo/**',
+      // The two build outputs. Each package writes inside itself, so each glob names
+      // its package. An unanchored `dist/**` would not match either.
+      'packages/*/dist/**',
+      'apps/*/dist/**',
       // The directory `tests/main-bundle.test.ts` builds into. It is removed after the
-      // run, and it holds build output and two files the declaration test compiles.
-      '.library-build-*/**',
+      // run, and it holds build output and two files the declaration test compiles. It
+      // now sits inside the library package, so the glob matches at any depth.
+      '**/.library-build-*/**',
       'node_modules/**',
       'test-results/**',
       'playwright-report/**',
@@ -83,10 +86,15 @@ export default tseslint.config(
       // and nothing here ships. An offline spike is written to be read once and thrown
       // away, and a lint error in one must not fail the lint of the code that ships.
       '*.local/**',
-      // The directory the demo data build fetches the sources into. `.gitignore` holds
-      // it, so the repository never carries one. Two of those sources are JavaScript of
-      // another project, which this project does not own and does not ship.
+      // The directory the demo data build fetches the sources into. The script computes
+      // its root as its own parent directory, so after the restructure it fetches into
+      // `apps/demo/data/`. `.gitignore` holds it, so the repository never carries one.
+      // Two of those sources are JavaScript of another project, which this project does
+      // not own and does not ship.
+      'apps/demo/data/**',
       'data/**',
+      // The copy of the licence the library package's `prepack` makes.
+      'packages/galaxy-map/LICENSE.md',
       // The committed extracts of those two sources. They are test data: each one is cut
       // from the source and keeps its own style, so the lint of this project says nothing
       // about them.
@@ -101,7 +109,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/galaxy-model/**/*.ts', 'src/scene-data/**/*.ts'],
+    files: ['packages/*/src/galaxy-model/**/*.ts', 'packages/*/src/scene-data/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -124,7 +132,7 @@ export default tseslint.config(
     // one bundle, where a search of the served source cannot tell them apart. A type
     // import trips the rule as a value import does, so `src/app/create-map.ts`
     // re-exports the record types the HUD names.
-    files: ['src/hud/**/*.ts'],
+    files: ['packages/*/src/hud/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -159,12 +167,14 @@ export default tseslint.config(
     },
   },
   {
-    // The library owns no URL. The page parses the fragment and writes it back, so
-    // `window.location` belongs to `src/app/main.ts` alone. A lint rule is what holds
-    // the boundary, because the production build puts the page and the library in one
-    // bundle, where a search of the served source cannot tell them apart.
-    files: ['src/**/*.ts'],
-    ignores: ['src/app/main.ts'],
+    // The library owns no URL. The page parses the fragment and writes it back, and the
+    // page is now a module of `apps/demo/`, so this rule holds over the library package
+    // **with no exception**. It held one, `src/app/main.ts`, because one `src/` tree
+    // carried both and a search of the served source could not tell them apart.
+    //
+    // The rule stays rather than being dropped as unnecessary: a library module that
+    // read the location would still compile and still bundle. The rule is what fails it.
+    files: ['packages/*/src/**/*.ts'],
     rules: {
       'no-restricted-properties': [
         'error',
@@ -184,7 +194,8 @@ export default tseslint.config(
     // because the build erases it. The renderer therefore reaches the nebulae through
     // `src/render/nebula-slot.ts` alone, which this rule does not name.
     //
-    // Three files keep these imports by design and are ignored here: `src/nebulae/`,
+    // Three files keep these imports by design and are ignored here: the package's
+    // `src/nebulae/`,
     // which is the seam and holds the whole nebula import graph, and the two nebula
     // modules of `src/render/`, which import each other and the record set. A test is
     // ignored as well: it runs in Node and ships in no build.
@@ -193,11 +204,11 @@ export default tseslint.config(
     // cannot tell a type import from a value import. It is a block of its own, so the
     // `no-restricted-imports` rules of the blocks above keep working: the two rule names
     // differ, so neither replaces the other.
-    files: ['src/**/*.ts'],
+    files: ['packages/*/src/**/*.ts'],
     ignores: [
-      'src/nebulae/**',
-      'src/render/nebula-pass.ts',
-      'src/render/nebula-volumes.ts',
+      'packages/*/src/nebulae/**',
+      'packages/*/src/render/nebula-pass.ts',
+      'packages/*/src/render/nebula-volumes.ts',
       '**/*.test.ts',
     ],
     rules: {
@@ -213,6 +224,50 @@ export default tseslint.config(
                 'reaches them through src/render/nebula-slot.ts.',
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // The demo is a package of the workspace and reaches the library by its **package
+    // name** alone. A relative path out of `apps/demo/src/` would resolve on the dev
+    // server, where the alias table points the name at the library's source, and break
+    // for anyone who consumed the built package the same way.
+    //
+    // The rule is scoped to `apps/demo/src/`. `e2e/`, `tests/` and the demo's own build
+    // script reach package source by relative path on purpose, and that stays legal.
+    files: ['apps/demo/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*', '../../*', '../../../*', '**/packages/**'],
+              message:
+                'The demo imports the map by its package name. A relative reach out ' +
+                'of apps/demo/src/ resolves only on the dev server.',
+            },
+          ],
+        },
+      ],
+      // `no-restricted-imports` reads static imports alone. The demo loads its three
+      // data sets with `import()`, and that call takes the same rule: one level up to
+      // `../demo-data/` is the demo's own directory and stays legal, two levels up or a
+      // path through `packages/` reaches out of the package and does not.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression > Literal.source[value=/^\\.\\.\\/\\.\\./]',
+          message:
+            'The demo imports the map by its package name. A dynamic reach out of ' +
+            'apps/demo/src/ resolves only on the dev server.',
+        },
+        {
+          selector: 'ImportExpression > Literal.source[value=/packages\\//]',
+          message:
+            'The demo imports the map by its package name. A dynamic import through ' +
+            'packages/ resolves only on the dev server.',
         },
       ],
     },

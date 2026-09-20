@@ -22,7 +22,7 @@ import {
   VK_FORMAT_BC1_RGB_UNORM_BLOCK,
   VK_FORMAT_BC4_UNORM_BLOCK,
   writeNebulaKtx2,
-} from '../../scripts/ktx2.mjs';
+} from '../../../../scripts/ktx2.mjs';
 
 const artDir = fileURLToPath(new URL('./nebula-art/', import.meta.url));
 const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) as {
@@ -32,7 +32,7 @@ const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) a
 /** The digests of the committed art, which ship in no build. */
 const fixture = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../tests/fixtures/nebulae.json', import.meta.url)),
+    fileURLToPath(new URL('../../../../tests/fixtures/nebulae.json', import.meta.url)),
     'utf8',
   ),
 ) as { volume_blocks_sha256: Record<string, string> };
@@ -537,7 +537,8 @@ describe('the committed set', () => {
 
   // `AGENTS.md` and `README.md` both state the disk total, because it is what a host
   // pays to take the nebulae. Neither is generated, so a repack would leave them
-  // behind without this.
+  // behind without this. Both sit at the repository root, which is four directories
+  // above this one after the move into `packages/galaxy-map/`.
   test('matches the disk total the documentation states', () => {
     let disk = 0;
     for (const file of files) disk += readFileSync(`${artDir}${file}`).byteLength;
@@ -545,7 +546,7 @@ describe('the committed set', () => {
     expect(disk).toBe(2_912_225);
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(
-        fileURLToPath(new URL(`../../${doc}`, import.meta.url)),
+        fileURLToPath(new URL(`../../../../${doc}`, import.meta.url)),
         'utf8',
       );
       expect(text, `${doc} states another total`).toContain('2,912,225');

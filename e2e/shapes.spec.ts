@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
-import type { SystemRecordInput } from '../src/scene-data/real-systems';
-import type { LineInput, SphereInput } from '../src/scene-data/shapes';
+import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
+import type {
+  LineInput,
+  SphereInput,
+} from '../packages/galaxy-map/src/scene-data/shapes';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 

@@ -1,12 +1,16 @@
 import { beforeAll, describe, expect, test } from 'vitest';
-import { project } from '../src/camera/projection';
-import type { Viewport } from '../src/camera/projection';
+import { project } from '../packages/galaxy-map/src/camera/projection';
+import type { Viewport } from '../packages/galaxy-map/src/camera/projection';
 import {
   REGION_RANGE_NONE,
   regionBandHalfWidthAtRange,
-} from '../src/render/region-pass';
-import { farthestPlaneRange, labelFade, labelSweepRuns } from '../src/app/labels';
-import type { View } from '../src/camera/view';
+} from '../packages/galaxy-map/src/render/region-pass';
+import {
+  farthestPlaneRange,
+  labelFade,
+  labelSweepRuns,
+} from '../packages/galaxy-map/src/app/labels';
+import type { View } from '../packages/galaxy-map/src/camera/view';
 import {
   buildRegionData,
   chainPoints,
@@ -14,8 +18,8 @@ import {
   fillRegionGrid,
   packChains,
   traceRegionChains,
-} from '../src/scene-data/region-lines';
-import type { RegionLines } from '../src/scene-data/types';
+} from '../packages/galaxy-map/src/scene-data/region-lines';
+import type { RegionLines } from '../packages/galaxy-map/src/scene-data/types';
 import {
   NO_LINE_VIEW,
   ONE_CHAIN_POINT,

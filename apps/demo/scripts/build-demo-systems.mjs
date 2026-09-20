@@ -9,7 +9,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import galaxyModel from '../src/galaxy-model/galaxy-model.json' with { type: 'json' };
+// The one reach of the demo into the library by a relative path. The script places a
+// generated system against the model, and it is a build tool of the demo rather than a
+// module of `apps/demo/src/`, which the lint rule holds to package-name imports.
+import galaxyModel from '../../../packages/galaxy-map/src/galaxy-model/galaxy-model.json' with { type: 'json' };
 
 /** Where the Guardian Ruins dump comes from. */
 export const DUMP_URL =

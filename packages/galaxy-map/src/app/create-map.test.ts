@@ -394,20 +394,22 @@ describe('the lint rule on the location', () => {
     const eslint = new ESLint();
     const source = 'export const hash = (): string => window.location.hash;\n';
 
+    const file = 'packages/galaxy-map/src/app/create-map.ts';
+
     const clean = await eslint.lintText('export const value = 1;\n', {
-      filePath: 'src/app/create-map.ts',
+      filePath: file,
     });
     expect(clean[0]?.errorCount).toBe(0);
 
-    const broken = await eslint.lintText(source, {
-      filePath: 'src/app/create-map.ts',
-    });
+    const broken = await eslint.lintText(source, { filePath: file });
     expect(broken[0]?.errorCount).toBe(1);
     expect(broken[0]?.messages[0]?.ruleId).toBe('no-restricted-properties');
 
-    // The page is the one file the rule leaves alone.
-    const page = await eslint.lintText(source, { filePath: 'src/app/main.ts' });
-    expect(page[0]?.errorCount).toBe(0);
+    // The rule held one exception, the demo page. The page is a module of `apps/demo/`
+    // now, so the rule over the library package has no hole in it. The reading that
+    // covers that is `tests/lint-config.test.ts`, which lists the files the rule
+    // ignores and checks its pattern reaches every source file of the package. A
+    // `lintText` of a path the block no longer matches would pass and assert nothing.
   });
 });
 

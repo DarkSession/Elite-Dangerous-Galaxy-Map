@@ -30,7 +30,9 @@ interface Fixture {
 
 const fixture = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../tests/fixtures/galaxy-model.json', import.meta.url)),
+    fileURLToPath(
+      new URL('../../../../tests/fixtures/galaxy-model.json', import.meta.url),
+    ),
     'utf8',
   ),
 ) as Fixture;

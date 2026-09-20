@@ -12,8 +12,9 @@ import { defineConfig } from 'vite';
  */
 const EXTERNAL_PACKAGES = /^(gl-matrix|@elite-dangerous-almanac\/core)(\/.*)?$/;
 
-// The library build. `vite.config.ts` keeps the dev server, the demo site build and
-// `preview`; this file emits the package alone.
+// The library build. `apps/demo/vite.config.ts` keeps the dev server, the demo site
+// build and `preview`; this file emits the package alone. The two are both named
+// `vite.config.ts` and sit in their own package, so neither can be run for the other.
 export default defineConfig({
   // A package is not served from the root of a site. With `./` every asset URL the
   // build writes is `new URL('assets/...', import.meta.url)`, so the worker files, the

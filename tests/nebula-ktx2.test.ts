@@ -16,8 +16,8 @@ import {
   NEBULA_KTX2_BC4,
   NEBULA_KTX2_HEADER_BYTES,
   readNebulaKtx2,
-} from '../src/render/nebula-volumes';
-import type { NebulaVolumeEntry } from '../src/render/nebula-volumes';
+} from '../packages/galaxy-map/src/render/nebula-volumes';
+import type { NebulaVolumeEntry } from '../packages/galaxy-map/src/render/nebula-volumes';
 import {
   NEBULA_KTX2_HEADER_BYTES as WRITER_HEADER_BYTES,
   NEBULA_KTX2_WRITER,
@@ -26,7 +26,9 @@ import {
   writeNebulaKtx2,
 } from '../scripts/ktx2.mjs';
 
-const artDir = fileURLToPath(new URL('../src/render/nebula-art/', import.meta.url));
+const artDir = fileURLToPath(
+  new URL('../packages/galaxy-map/src/render/nebula-art/', import.meta.url),
+);
 const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) as {
   assets: NebulaVolumeEntry[];
 };

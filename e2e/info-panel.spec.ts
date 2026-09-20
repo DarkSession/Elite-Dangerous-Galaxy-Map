@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
-import type { SystemRecordInput } from '../src/scene-data/real-systems';
+import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 // What the information panel draws from a description and from a host's `details`
 // loader. `e2e/hud.spec.ts` is long, so the panel tests of the host controls live here.

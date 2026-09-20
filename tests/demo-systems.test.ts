@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'vitest';
-import { createSystemSet } from '../src/scene-data/real-systems';
-import type { CategoryInput } from '../src/scene-data/real-systems';
-import demo from '../demo-data/guardian-ruins.json' with { type: 'json' };
-import notable from '../demo-data/notable-systems.json' with { type: 'json' };
-import structures from '../demo-data/guardian-structures.json' with { type: 'json' };
-import uia from '../demo-data/uia.json' with { type: 'json' };
-import adamastor from '../demo-data/adamastor.json' with { type: 'json' };
-import { createShapeSet } from '../src/scene-data/shapes';
-import type { LineInput, SphereInput } from '../src/scene-data/shapes';
-import type { RealSystem } from '../src/scene-data/real-systems';
+import { createSystemSet } from '../packages/galaxy-map/src/scene-data/real-systems';
+import type { CategoryInput } from '../packages/galaxy-map/src/scene-data/real-systems';
+import demo from '../apps/demo/demo-data/guardian-ruins.json' with { type: 'json' };
+import notable from '../apps/demo/demo-data/notable-systems.json' with { type: 'json' };
+import structures from '../apps/demo/demo-data/guardian-structures.json' with { type: 'json' };
+import uia from '../apps/demo/demo-data/uia.json' with { type: 'json' };
+import adamastor from '../apps/demo/demo-data/adamastor.json' with { type: 'json' };
+import { createShapeSet } from '../packages/galaxy-map/src/scene-data/shapes';
+import type {
+  LineInput,
+  SphereInput,
+} from '../packages/galaxy-map/src/scene-data/shapes';
+import type { RealSystem } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 const THUMBNAIL_BASE = 'https://ruins.canonn.tech/images/maps/';
 

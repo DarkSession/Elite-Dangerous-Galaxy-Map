@@ -13,12 +13,14 @@ import {
   waitForReady,
 } from './helpers';
 import { BRIGHT_VIEW, CLOSE_VIEW, DARK_VIEW } from './nebula-views';
-import { putVolumeDensity } from '../src/render/shader-include';
+import { putVolumeDensity } from '../packages/galaxy-map/src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
 function shaderSource(name: string): string {
   return readFileSync(
-    fileURLToPath(new URL(`../src/render/shaders/${name}`, import.meta.url)),
+    fileURLToPath(
+      new URL(`../packages/galaxy-map/src/render/shaders/${name}`, import.meta.url),
+    ),
     'utf8',
   );
 }

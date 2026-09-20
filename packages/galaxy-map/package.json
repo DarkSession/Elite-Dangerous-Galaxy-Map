@@ -49,7 +49,7 @@
     "access": "public"
   },
   "scripts": {
-    "prepack": "cp ../../LICENSE.md LICENSE.md",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../LICENSE.md', 'LICENSE.md')\"",
     "build": "tsc --noEmit -p ../../tsconfig.json && vite build --config vite.config.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {

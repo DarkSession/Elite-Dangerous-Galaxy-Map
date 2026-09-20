@@ -1,7 +1,7 @@
 # Galaxy density model
 
 The map draws the galaxy's shape from a compact analytic model of the game's stellar-mass
-distribution. The parameters live in [src/galaxy-model/galaxy-model.json](../src/galaxy-model/galaxy-model.json).
+distribution. The parameters live in [packages/galaxy-map/src/galaxy-model/galaxy-model.json](../packages/galaxy-map/src/galaxy-model/galaxy-model.json).
 This document gives the formulas the TypeScript port implements. The fixture in
 [tests/fixtures/galaxy-model.json](../tests/fixtures/galaxy-model.json) pins the port to
 reference values.
@@ -124,7 +124,7 @@ The grid rows run along `z` and columns along `x`.
 ## Detail grid
 
 The correction grid holds the map's shape at 1,562 light years per cell. A second grid,
-[src/galaxy-model/galaxy-detail.png](../src/galaxy-model/galaxy-detail.png), holds the
+[packages/galaxy-map/src/galaxy-model/galaxy-detail.png](../packages/galaxy-map/src/galaxy-model/galaxy-detail.png), holds the
 painted texture at 98 light years per cell. It is a greyscale PNG of 1024 x 1024
 pixels, 8 bits per pixel, not interlaced, 347,358 bytes. The fixture in
 [tests/fixtures/galaxy-detail.json](../tests/fixtures/galaxy-detail.json) carries the
@@ -138,7 +138,7 @@ cell, and `epsilon` is 300. Pixel column 0 lies at the low `x` bound and pixel r
 the low `z` bound, as for the correction grid.
 
 The port reads the file with its own decoder in
-[src/galaxy-model/png.ts](../src/galaxy-model/png.ts): the signature, the IHDR chunk,
+[packages/galaxy-map/src/galaxy-model/png.ts](../packages/galaxy-map/src/galaxy-model/png.ts): the signature, the IHDR chunk,
 the IDAT chunks inflated with `DecompressionStream('deflate')`, and the five PNG row
 filters. It throws a named error for any file that is not 1024 x 1024, 8-bit greyscale
 and not interlaced.

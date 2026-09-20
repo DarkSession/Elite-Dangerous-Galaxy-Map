@@ -3,8 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap, startState, waitForReady } from './helpers';
-import { putMarkerAlpha } from '../src/render/shader-include';
-import type { CategoryInput, SystemRecordInput } from '../src/scene-data/real-systems';
+import { putMarkerAlpha } from '../packages/galaxy-map/src/render/shader-include';
+import type {
+  CategoryInput,
+  SystemRecordInput,
+} from '../packages/galaxy-map/src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -336,7 +339,9 @@ function differingPixels(first: number[], second: number[]): number {
 /** Reads a shader source file from the tree. */
 function shaderSource(name: string): string {
   return readFileSync(
-    fileURLToPath(new URL(`../src/render/shaders/${name}`, import.meta.url)),
+    fileURLToPath(
+      new URL(`../packages/galaxy-map/src/render/shaders/${name}`, import.meta.url),
+    ),
     'utf8',
   );
 }

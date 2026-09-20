@@ -4,7 +4,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { convertRuins, describeSystem } from '../../scripts/build-demo-systems.mjs';
+import {
+  convertRuins,
+  describeSystem,
+} from '../../apps/demo/scripts/build-demo-systems.mjs';
 
 const extract = JSON.parse(
   readFileSync(

@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { ESLint } from 'eslint';
 
 /** The path the rules read. The file does not have to exist for `lintText`. */
-const HUD_FILE = 'src/hud/scratch.ts';
+const HUD_FILE = 'packages/galaxy-map/src/hud/scratch.ts';
 
 /** The rule ids each broken case must report. */
 const IMPORT_RULE = 'no-restricted-imports';

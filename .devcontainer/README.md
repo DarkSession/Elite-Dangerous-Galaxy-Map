@@ -55,7 +55,8 @@ To debug the page:
 Your own browser on the host works the same way: start it with `--remote-debugging-port=9222`,
 forward 5173, then attach. No GPU flags apply -- that Chrome uses the host's driver directly.
 
-`vite.config.ts` sets `server.host: true`, so VS Code's port forwarding sees the server. The
+`apps/demo/vite.config.ts` sets `server.host: true`, so VS Code's port forwarding sees the
+server. The
 pages are at <http://localhost:5173/Elite-Dangerous-Galaxy-Map/> and
 <http://localhost:4173/Elite-Dangerous-Galaxy-Map/> -- the `base` option puts them under that
 path.

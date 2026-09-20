@@ -1,12 +1,23 @@
 // The demo page: build the map, own the URL fragment, and expose the test hooks.
-import { galaxyMapGlobal } from '../render/global';
-import type { CategoryInput, SystemRecordInput } from '../scene-data/real-systems';
-import type { LineInput, SphereInput } from '../scene-data/shapes';
-import { createGalaxyMap } from './create-map';
-import type { DatasetContent, DatasetEntry, GalaxyMap, MapView } from './create-map';
+import { galaxyMapGlobal } from '@elite-dangerous-almanac/galaxy-map/testing';
+import { nebulae } from '@elite-dangerous-almanac/galaxy-map/nebulae';
+import {
+  createFragmentWriter,
+  createGalaxyMap,
+  decodeGrid,
+  decodeView,
+} from '@elite-dangerous-almanac/galaxy-map';
+import type {
+  CategoryInput,
+  DatasetContent,
+  DatasetEntry,
+  GalaxyMap,
+  LineInput,
+  MapView,
+  SphereInput,
+  SystemRecordInput,
+} from '@elite-dangerous-almanac/galaxy-map';
 import { fetchMultifactionRecords, MULTIFACTION_CATEGORIES } from './multifaction';
-import { nebulae } from '../nebulae';
-import { createFragmentWriter, decodeGrid, decodeView } from './url-view';
 
 /** The event the page sends once the scene data is drawn for the first time. */
 export const READY_EVENT = 'galaxy-map-ready';
@@ -120,7 +131,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'system and one category per ruin layout.',
     systemCount: 212,
     load: async (): Promise<DatasetContent> =>
-      demoSet((await import('../../demo-data/guardian-ruins.json')).default),
+      demoSet((await import('../demo-data/guardian-ruins.json')).default),
   },
   {
     id: 'guardian-structures',
@@ -132,7 +143,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'system and one category per site type.',
     systemCount: 163,
     load: async (): Promise<DatasetContent> =>
-      demoSet((await import('../../demo-data/guardian-structures.json')).default),
+      demoSet((await import('../demo-data/guardian-structures.json')).default),
   },
   {
     id: 'notable-systems',
@@ -144,7 +155,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       "subject and the project's own text as the description.",
     systemCount: 16,
     load: async (): Promise<DatasetContent> =>
-      demoSet((await import('../../demo-data/notable-systems.json')).default),
+      demoSet((await import('../demo-data/notable-systems.json')).default),
   },
   {
     id: 'uia',
@@ -157,7 +168,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'permit locked centres and the space the hyperdictions cover.',
     systemCount: 1116,
     load: async (): Promise<DatasetContent> =>
-      demoShapeSet('uia', (await import('../../demo-data/uia.json')).default),
+      demoShapeSet('uia', (await import('../demo-data/uia.json')).default),
   },
   {
     id: 'adamastor',
@@ -169,10 +180,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'route and one category per subject.',
     systemCount: 8,
     load: async (): Promise<DatasetContent> =>
-      demoShapeSet(
-        'adamastor',
-        (await import('../../demo-data/adamastor.json')).default,
-      ),
+      demoShapeSet('adamastor', (await import('../demo-data/adamastor.json')).default),
   },
   {
     id: 'multifaction',
@@ -189,8 +197,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       // The records come first: a failed fetch then leaves the shape map untouched, and
       // the map keeps the set it had.
       const systems = await fetchMultifactionRecords();
-      const spheres = (await import('../../demo-data/multifaction-spheres.json'))
-        .default;
+      const spheres = (await import('../demo-data/multifaction-spheres.json')).default;
       DEMO_SHAPES.set('multifaction', {
         spheres: spheres.spheres as unknown as readonly SphereInput[],
         lines: [],

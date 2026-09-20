@@ -1,6 +1,6 @@
 // The two messages the multifaction worker takes and gives. They sit in a module of
 // their own, so the main thread reads the types without importing the worker.
-import type { SystemRecordInput } from '../scene-data/real-systems';
+import type { SystemRecordInput } from '@elite-dangerous-almanac/galaxy-map';
 
 /** What the main thread sends: the body of the dump, and the factions to look for. */
 export interface MultifactionRequest {

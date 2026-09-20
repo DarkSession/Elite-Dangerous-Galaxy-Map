@@ -60,12 +60,12 @@ which permit non-commercial use only:
 
 ## The nebula records and the volume art
 
-`src/scene-data/nebulae.json` holds 358 nebula records: a position, a radius, an asset
-index, three rotation angles and, for 190 of them, a name. `src/render/nebula-art/` holds
+`packages/galaxy-map/src/scene-data/nebulae.json` holds 358 nebula records: a position, a radius, an asset
+index, three rotation angles and, for 190 of them, a name. `packages/galaxy-map/src/render/nebula-art/` holds
 the art those records draw, as 33 volume assets. Each asset is a pair of files: a
 one-channel density volume of 32, 48 or 64 texels a side, and a three-channel colour
-volume of 8, 16 or 32 texels a side, both as KTX2 arrays of BC4 and BC1 blocks. `src/render/nebula-art/nebula-volumes.json` indexes the pairs and
-`src/render/nebula-art/transfer.bin` holds one 256-entry transfer function per asset.
+volume of 8, 16 or 32 texels a side, both as KTX2 arrays of BC4 and BC1 blocks. `packages/galaxy-map/src/render/nebula-art/nebula-volumes.json` indexes the pairs and
+`packages/galaxy-map/src/render/nebula-art/transfer.bin` holds one 256-entry transfer function per asset.
 
 The nebulae are of the game's galaxy, so the Frontier Developments terms above apply to
 every one of these files, and those terms permit non-commercial use only. The volume art
@@ -76,18 +76,18 @@ notice records what the files are; it does not settle whether they may ship.
 
 ## The galaxy density model
 
-The density model in `src/galaxy-model/` is this project's own work. It carries no
+The density model in `packages/galaxy-map/src/galaxy-model/` is this project's own work. It carries no
 third-party code and no third-party data file.
 
 ## The Guardian site records of the demo page
 
-`demo-data/guardian-ruins.json` holds 3 categories and 212 Guardian systems, with 600
+`apps/demo/demo-data/guardian-ruins.json` holds 3 categories and 212 Guardian systems, with 600
 Guardian Ruins sites between them. The demo page loads them as an example host data set;
 the library itself ships no data and fetches none. The records come from the
 [Canonn Research Group](https://canonn.science/) through
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), which is under the
 **MIT** licence. The file is a conversion of that project's `guardian_ruins.json` data
-set, which `Source/data/MapData-GR.js` fetches. `scripts/build-demo-systems.mjs` makes the
+set, which `Source/data/MapData-GR.js` fetches. `apps/demo/scripts/build-demo-systems.mjs` makes the
 conversion, and `pnpm build:demo-data` runs it. The conversion keeps each system's name, its
 coordinates, its site types and the bodies its sites are on, and drops every other field.
 
@@ -129,11 +129,11 @@ also apply to them.
 
 ## The Guardian Structures records of the demo page
 
-`demo-data/guardian-structures.json` holds 10 categories and 163 Guardian systems, with
+`apps/demo/demo-data/guardian-structures.json` holds 10 categories and 163 Guardian systems, with
 209 Guardian Structures sites between them. The records come from the same Canonn
 Research Group project as the ruins above, under the same **MIT** licence, and the file is
 a conversion of that project's `guardian_structures.json` data set.
-`scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
+`apps/demo/scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
 name, its coordinates, its site types and the bodies its sites are on, and drops every
 other field. The records name no picture, so the browser fetches none for this set.
 
@@ -141,10 +141,10 @@ The category names, the colours and the descriptions in that file are this proje
 
 ## The Notable Systems records of the demo page
 
-`demo-data/notable-systems.json` holds 4 categories and 16 systems. The records come from
+`apps/demo/demo-data/notable-systems.json` holds 4 categories and 16 systems. The records come from
 the same Canonn Research Group project, under the same **MIT** licence, and the file is a
 conversion of that project's `notable_systems.json` data set.
-`scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
+`apps/demo/scripts/build-demo-systems.mjs` makes the conversion. The conversion keeps each system's
 name, its coordinates and its subject, and turns the `html` field of the dump into the
 plain-text description the HUD shows. **The description text is Canonn's own writing**,
 carried over under the MIT licence above, with the markup removed.
@@ -154,7 +154,7 @@ project's own.
 
 ## The UIA Map records, spheres and lines of the demo page
 
-`demo-data/uia.json` holds 19 categories, 1,116 systems, 54 spheres and 983 lines of 2,214
+`apps/demo/demo-data/uia.json` holds 19 categories, 1,116 systems, 54 spheres and 983 lines of 2,214
 points. The records come from the Canonn Research Group's
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map) project, under the
 **MIT** licence above, and the file is a conversion of three files of that project:
@@ -166,7 +166,7 @@ points. The records come from the Canonn Research Group's
 | `Source/data/csvCache/route_UIA_Hyperdictions.csv` | One row for each hyperdiction a commander reported          |
 
 The map builds itself from the last two at run time, so a conversion of the first file
-alone writes a set the live map never shows. `scripts/build-demo-systems.mjs` makes the
+alone writes a set the live map never shows. `apps/demo/scripts/build-demo-systems.mjs` makes the
 conversion, and `pnpm build:demo-data` runs it. The conversion keeps each system's name,
 its coordinates and its categories, turns the `infos` field of the source into the
 plain-text description the HUD shows, and reads the sphere lists, the waypoint routes and
@@ -189,7 +189,7 @@ colour. The category descriptions in that file are this project's own.
 
 ## The Adamastor Routes records and lines of the demo page
 
-`demo-data/adamastor.json` holds 10 categories, 8 systems and 8 lines of 38 points. The
+`apps/demo/demo-data/adamastor.json` holds 10 categories, 8 systems and 8 lines of 38 points. The
 records come from the same CanonnED3D-Map project, under the same **MIT** licence, and the
 file is a conversion of that project's `Source/data/MapData-Adamastor.js` source. The
 conversion keeps each system's name, its coordinates and its categories, turns the `infos`
@@ -210,7 +210,7 @@ converter drops a name EDSM does not hold, and it reports every drop.
 
 The `multifaction` set of the demo page is the one entry that fetches its records when the
 user loads it. The library itself still fetches nothing: the fetch is in the demo host's
-own `load()`, in `src/app/multifaction.ts`.
+own `load()`, in `apps/demo/src/multifaction.ts`.
 
 **The records come from the Spansh factions dump**, at
 `https://downloads.spansh.co.uk/factions.json.gz`, which is 16.9 MB of gzip and 101 MB of
@@ -233,7 +233,7 @@ The two factions the entry names, **Canonn** and **Canonn Deep Space Research**,
 players' own in-game groups. The set holds each system's name, its `id64` and its
 coordinates, and the state of each faction in it. It holds no commander name.
 
-**The spheres come from Canonn.** `demo-data/multifaction-spheres.json` holds 2 categories
+**The spheres come from Canonn.** `apps/demo/demo-data/multifaction-spheres.json` holds 2 categories
 and 48 spheres, converted from the `permitSpheres` literal of
 `Source/data/MapData-multifaction.js` of
 [CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map), under the **MIT**
@@ -281,7 +281,7 @@ full text is also at <https://openfontlicense.org/>.
 
 ## The selection pin
 
-`src/app/markers.ts` draws a pin over the selected system. The shape is the system
+`packages/galaxy-map/src/app/markers.ts` draws a pin over the selected system. The shape is the system
 marker of the game's own galaxy map. The eight points of the path come from
 `https://edassets.org/static/img/galaxy-map/Marker-galaxy-map.svg`, which ED Assets
 publishes. This project commits no copy of that file: the eight numbers are written
@@ -293,7 +293,7 @@ non-commercial media usage rules as the game data above.
 
 ## The loading picture
 
-`public/EDLoader1.svg` is the loader the demo page shows while the map starts. The file
+`apps/demo/public/EDLoader1.svg` is the loader the demo page shows while the map starts. The file
 comes from ED Assets, at
 `https://edassets.org/static/img/svg/EDLoader1.svg`. This repository **holds a copy** of
 it, and the demo site serves that copy from its own address. The page does not fetch the
@@ -310,7 +310,7 @@ drawn from. This notice records where the copy came from. The shape is Frontier
 Developments' and falls under the same non-commercial media usage rules as the game data
 above.
 
-The library ships no copy: the library build leaves `public/` out of the package, and the
+The library ships no copy: the library build leaves `apps/demo/public/` out of the package, and the
 loading picture is a URL the host names.
 
 ## The HUD mockup

@@ -10,7 +10,7 @@ import {
 import type { LineInput, ShapeSet, SphereInput, SystemLookup } from './shapes';
 import { createSystemSet } from './real-systems';
 import type { CategoryInput, RealSystemSet } from './real-systems';
-import { TIMED_TEST } from '../../tests/timed';
+import { TIMED_TEST } from '../../../../tests/timed';
 
 /**
  * Casts a hand-made array to the input type. The reader checks every field at run time,

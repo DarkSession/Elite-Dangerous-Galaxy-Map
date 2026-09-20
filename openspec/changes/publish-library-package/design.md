@@ -283,7 +283,7 @@ which is the same guard one level down.
 
 `tests/main-bundle.test.ts` asserts `manifest.files` equals `['dist']` and that the
 version is `0.4.0`, against the root `package.json`. After the move it reads the library
-package's manifest, `files` holds four entries, and the version is `0.5.0`. The packed
+package's manifest, `files` holds four entries, and the version is `0.6.0`. The packed
 tarball test of this change is the stronger guard and replaces the `files` assertion's
 intent.
 
@@ -350,7 +350,7 @@ a floating client is a supply-chain hole the same size as a floating action tag.
 **The version resolution leaves the YAML.** In the reference it is a shell block inside a
 step, and a shell block inside YAML is checkable only by reading the string. It becomes
 `scripts/next-version.mjs`, which takes the `major.minor` of the package and the list of
-published versions and prints the next free patch. A unit test then covers what the step
+published versions and prints one above the highest patch of that line. A unit test then covers what the step
 actually decides: no published version, a gap in the patch series, a published version
 above the newest local one, and a `major.minor` that has no release yet. The workflow
 step calls the script.

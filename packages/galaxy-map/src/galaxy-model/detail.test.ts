@@ -11,7 +11,7 @@ import { buildPng } from './png-fixture';
 
 const pngPath = fileURLToPath(new URL('./galaxy-detail.png', import.meta.url));
 const fixturePath = fileURLToPath(
-  new URL('../../tests/fixtures/galaxy-detail.json', import.meta.url),
+  new URL('../../../../tests/fixtures/galaxy-detail.json', import.meta.url),
 );
 
 interface DetailFixturePoint {

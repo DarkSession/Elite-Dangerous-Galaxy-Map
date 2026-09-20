@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 const noticesPath = fileURLToPath(
-  new URL('../THIRD_PARTY_NOTICES.md', import.meta.url),
+  new URL('../packages/galaxy-map/THIRD_PARTY_NOTICES.md', import.meta.url),
 );
 const notices = readFileSync(noticesPath, 'utf8');
 

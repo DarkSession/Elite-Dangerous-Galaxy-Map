@@ -90,8 +90,10 @@ split needs to be a fact of the layout rather than a set of rules over one tree.
   move. A restructure that changes a pixel is a restructure with a bug in it.
 - **No automatic release.** The workflow runs when a person dispatches it. Nothing
   publishes on a push, on a tag or on a merge.
-- **No version policy beyond the next free patch.** The workflow reads `major.minor` from
-  `package.json` and picks the next unused patch, exactly as the reference workflow does.
+- **No version policy beyond the next patch of the line.** The workflow reads
+  `major.minor` from `package.json` and picks one above the highest patch published on
+  that line. It does not fill a hole in the series, because npm refuses a version that was
+  published and unpublished, and a lower patch would move the `latest` tag backwards.
   Moving `major.minor` stays a commit a person makes.
 - **The browser suite does not move into the publish workflow.** It needs a GPU, and a
   GitHub-hosted runner has none. The maintainer runs `pnpm test:e2e` locally before
@@ -190,7 +192,9 @@ packed-tarball test.
 behaviour. The map still holds up to 10,000 systems against a galaxy of about 400 billion,
 and the frame budget and the entry chunk bound are the ones `far-view-rendering` and
 `library-package` already state. The published tarball is the library build plus three
-text files; its unpacked size is dominated by the nebula art at 811,762 bytes.
+text files; its unpacked size is dominated by the nebula art at 2,912,225 bytes. An
+earlier draft of this proposal read 811,762 bytes, which `ceb2167` made stale when it
+shrank the nebula volume index.
 
 **Setup the maintainer must do, which no task can close.** Three things live outside the
 repository:
