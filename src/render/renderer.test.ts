@@ -734,13 +734,14 @@ describe('the volume texture the renderer owns', () => {
       .filter(
         (call) =>
           call.name === 'bindTexture' &&
-          call.args[0] === gl.TEXTURE_3D &&
+          (call.args[0] === gl.TEXTURE_3D || call.args[0] === gl.TEXTURE_2D_ARRAY) &&
           call.args[1] !== null,
       )
       .map((call) => call.args[1]);
-    // Three 3D textures reach the card: the galaxy volume, and the density and colour
-    // of the one asset the nebula draws. The volume is the one both passes bind, and it
-    // is one texture and not a copy for each.
+    // Three volume textures reach the card: the galaxy volume, which is a 3D texture,
+    // and the density and colour slice arrays of the one asset the nebula draws. The
+    // galaxy volume is the one both passes bind, and it is one texture and not a copy
+    // for each.
     const times = new Map<unknown, number>();
     for (const texture of bound) times.set(texture, (times.get(texture) ?? 0) + 1);
     expect(times.size).toBe(3);

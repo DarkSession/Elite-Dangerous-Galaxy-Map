@@ -38,17 +38,21 @@ async function nebulaeAlone(page: Page): Promise<void> {
   });
 }
 
-// The decode reading of this change. The volumes arrive as `.dds` blocks and the loader
-// decodes them on the main thread, one asset a task, so the cost is paid once, after the
-// first frame. The map waits on nothing, so a decode that held a frame would show as a
-// long frame and in no other way.
+// The decode reading of this change. The volumes arrive as `.ktx2` arrays of BC4 and
+// BC1 blocks, and what happens next depends on the context.
 //
-// `loadNebulaVolumes` records each asset's decode under `nebula-decode`, so the reading
-// below is of the decode alone and not of the start work around it. The readings on the
-// hardware renderer are 16.9 ms for all 33 assets together and 2.3 ms for the worst one,
-// over a fetch of 75 ms for the 66 files. 2.64 MiB of blocks expand to 6.03 MiB once,
-// after the first frame. No single task reaches the frame budget, so the decode stays on
-// the main thread.
+// Where it carries both `EXT_texture_compression_rgtc` and
+// `WEBGL_compressed_texture_s3tc` the blocks reach the card unchanged and there is no
+// decode at all, which is the point of this change. Where it carries fewer than both,
+// the upload decodes on the main thread, one asset a task, so the cost is paid once,
+// after the first frame. The map waits on nothing, so a decode that held a frame would
+// show as a long frame and in no other way.
+//
+// `createNebulaVolumeTextures` records each asset's decode under `nebula-decode`, so
+// the reading below is of the decode alone and not of the start work around it. Before
+// this change the readings on the hardware renderer were 16.9 ms for all 33 assets
+// together and 2.3 ms for the worst one, and 2.64 MiB of blocks expanded to 6.03 MiB.
+// The development GPU carries both extensions, so it now reads 0 on both.
 test('the volume decode holds the frame budget', async ({ page }) => {
   await openMap(page, BRIGHT_VIEW);
   const report = await page.evaluate(() => {
@@ -56,11 +60,16 @@ test('the volume decode holds the frame budget', async ({ page }) => {
     const durations = entries.map((entry) => entry.duration);
     const volumes = performance
       .getEntriesByType('resource')
-      .filter((entry) => entry.name.endsWith('.dds')) as PerformanceResourceTiming[];
+      .filter((entry) => entry.name.endsWith('.ktx2')) as PerformanceResourceTiming[];
     const first = Math.min(...volumes.map((entry) => entry.startTime));
     const last = Math.max(...volumes.map((entry) => entry.responseEnd));
+    const probe = document.createElement('canvas').getContext('webgl2');
     return {
       attached: window.__galaxyMap?.nebulaeAttached?.() ?? false,
+      // Whether this context takes the block path, which needs both extensions.
+      blocks:
+        probe?.getExtension('EXT_texture_compression_rgtc') != null &&
+        probe?.getExtension('WEBGL_compressed_texture_s3tc') != null,
       files: volumes.length,
       assets: entries.length,
       fetchMs: last - first,
@@ -71,9 +80,10 @@ test('the volume decode holds the frame budget', async ({ page }) => {
   console.log('the volume decode', report);
 
   expect(report.attached).toBe(true);
-  // The positive control: the 66 volumes were fetched and all 33 assets were decoded.
+  // The positive control: the 66 volumes were fetched.
   expect(report.files).toBe(66);
-  expect(report.assets).toBe(33);
+  // No decode at all on the block path, and one task an asset on the other.
+  expect(report.assets).toBe(report.blocks ? 0 : 33);
   // The frame budget of `far-view-rendering`, which is 60 frames a second. One asset's
   // decode is one task, so this is what one frame pays. Above it the decode moves to a
   // worker.

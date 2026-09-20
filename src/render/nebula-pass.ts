@@ -419,10 +419,13 @@ export function createNebulaPass(
           ),
         );
 
+        // The two volumes are slice arrays and not 3D textures: WebGL exposes no
+        // compressed format for `TEXTURE_3D`, and the array target is what lets the
+        // blocks reach the card unchanged.
         gl.activeTexture(gl.TEXTURE0 + DENSITY_UNIT);
-        gl.bindTexture(gl.TEXTURE_3D, asset.density);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, asset.density);
         gl.activeTexture(gl.TEXTURE0 + COLOUR_UNIT);
-        gl.bindTexture(gl.TEXTURE_3D, asset.colour);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, asset.colour);
         gl.activeTexture(gl.TEXTURE0 + TRANSFER_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, asset.transfer);
 
@@ -432,10 +435,14 @@ export function createNebulaPass(
 
       gl.bindVertexArray(null);
       gl.disable(gl.CULL_FACE);
-      for (const unit of [DENSITY_UNIT, COLOUR_UNIT, VOLUME_UNIT]) {
+      // The two volume units carry slice arrays; the galaxy's own volume in the vertex
+      // shader is still a 3D texture, so the sweep splits by target.
+      for (const unit of [DENSITY_UNIT, COLOUR_UNIT]) {
         gl.activeTexture(gl.TEXTURE0 + unit);
-        gl.bindTexture(gl.TEXTURE_3D, null);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
       }
+      gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
+      gl.bindTexture(gl.TEXTURE_3D, null);
       for (const unit of [TRANSFER_UNIT, DETAIL_UNIT]) {
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_2D, null);

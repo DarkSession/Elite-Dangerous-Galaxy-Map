@@ -115,7 +115,7 @@ from the active list before task 1.1.
 
 ## 4. The swap
 
-- [ ] 4.1 Change the upload in `src/render/nebula-volumes.ts`. Replace `create3D` with a
+- [x] 4.1 Change the upload in `src/render/nebula-volumes.ts`. Replace `create3D` with a
       function that makes a `TEXTURE_2D_ARRAY` and takes one of two paths. Where the context
       carries both `EXT_texture_compression_rgtc` and `WEBGL_compressed_texture_s3tc`, call
       `texStorage3D` with `COMPRESSED_RED_RGTC1_EXT` or `COMPRESSED_RGB_S3TC_DXT1_EXT` and
@@ -124,7 +124,7 @@ from the active list before task 1.1.
       on S and T, and keep `LINEAR` on both filters. Throw on the block path where a side is
       not a multiple of 4. Verify unit tests cover both paths over the fake context, and that
       the existing texture-exhaustion test still frees what it made.
-- [ ] 4.2 Change `src/render/shaders/nebulae.frag`: `uDensity` and `uColour` become
+- [x] 4.2 Change `src/render/shaders/nebulae.frag`: `uDensity` and `uColour` become
       `sampler2DArray`, and each read becomes two `texture` calls and a `mix`, with the layer
       count from `textureSize(sampler, 0).z` and the arithmetic of task 3.2. **Replace the
       `precision highp sampler3D;` line as well**: those two uniforms are its only users, and
@@ -133,36 +133,36 @@ from the active list before task 1.1.
       `src/render/nebula-pass.test.ts`'s source checks follow the new text — including the
       `(u, 1 - v, w)` convention and the `.rgb` swizzle on the colour read. The unit test of
       task 3.2 does not read the shader and does not change here.
-- [ ] 4.3 Change the binds in `src/render/nebula-pass.ts`: the two per-record binds move from
+- [x] 4.3 Change the binds in `src/render/nebula-pass.ts`: the two per-record binds move from
       `gl.TEXTURE_3D` to `gl.TEXTURE_2D_ARRAY`. **Split the unbind sweep**, which today loops
       over `DENSITY_UNIT`, `COLOUR_UNIT` and `VOLUME_UNIT` together and unbinds all three as
       `TEXTURE_3D`: the two volume units unbind as `TEXTURE_2D_ARRAY` and `VOLUME_UNIT` stays
       `TEXTURE_3D`. The galaxy volume in the **vertex** shader stays a `sampler3D` and its bind
       stays `TEXTURE_3D` — that texture is the renderer's own and this change does not touch
       it. Verify the pass's unit tests pass and that the program still links.
-- [ ] 4.4 Point the loader at the `.ktx2` files: `blocksOf` gives way to `readNebulaKtx2`,
+- [x] 4.4 Point the loader at the `.ktx2` files: `blocksOf` gives way to `readNebulaKtx2`,
       and the fetch list takes `-density.ktx2` and `-colour.ktx2`. Check each file's side and
       layer count against the index and throw where they disagree, which is the spec's
       scenario **A file that disagrees with the index is refused**. Verify a unit test drives
       that refusal.
-- [ ] 4.4a Fix `the volume decode holds the frame budget` in `e2e/nebula-cost.spec.ts`. It
+- [x] 4.4a Fix `the volume decode holds the frame budget` in `e2e/nebula-cost.spec.ts`. It
       counts resource entries ending `.dds` and asserts 66, and counts `nebula-decode` marks
       and asserts 33. After task 4.4 the first must read `.ktx2`, and on the block path the
       second reads **0**, which is the point of the change. Rewrite it to assert 66 `.ktx2`
       fetches, and to assert the decode mark count is 33 on the decoding path and 0 on the
       block path, branching on the two extensions. Verify it passes on the development GPU,
       where both extensions are present.
-- [ ] 4.5 Update `e2e/nebulae.spec.ts`'s asset watcher: the `NEBULA_FILES` pattern and the
+- [x] 4.5 Update `e2e/nebulae.spec.ts`'s asset watcher: the `NEBULA_FILES` pattern and the
       `page.route('**/*-density-*.dds')` that holds a density file both name `.dds` today.
       Verify the watcher's positive control still reads 1 record file, 1 index, 1 transfer
       file, 33 density and 33 colour.
-- [ ] 4.6 Add the browser test for the spec's scenario **The blocks upload with no decode
+- [x] 4.6 Add the browser test for the spec's scenario **The blocks upload with no decode
       where the extensions are there** to `e2e/nebulae.spec.ts`, beside **The map needs no
       compressed-texture extension**, which already knows how to refuse an extension and runs
       in the parallel pass. Read `performance.getEntriesByName('nebula-decode')` and assert it
       is empty, then take a screenshot; repeat with both extensions refused and compare the
       two frames at 0.01 RMSE in display units.
-- [ ] 4.7 Verify `pnpm lint`, `pnpm exec vitest run` and `pnpm test:e2e` all pass, and that
+- [x] 4.7 Verify `pnpm lint`, `pnpm exec vitest run` and `pnpm test:e2e` all pass, and that
       the two CPU fixture tests still read within their committed bounds — 0.02 for
       `barnards-loop` and 0.01 for `cats-eye`. Those two are what say the layer interpolation
       changed no frame. **If `cats-eye` breaches 0.01**, the GPU's block decode differs from

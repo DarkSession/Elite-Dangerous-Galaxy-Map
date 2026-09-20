@@ -18,6 +18,11 @@ import {
   NEBULA_TRANSFER_ENTRIES,
 } from './nebula-volumes';
 import type { NebulaVolumeEntry, NebulaVolumeSet } from './nebula-volumes';
+import {
+  VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+  VK_FORMAT_BC4_UNORM_BLOCK,
+  writeNebulaKtx2,
+} from '../../scripts/ktx2.mjs';
 
 const artDir = fileURLToPath(new URL('./nebula-art/', import.meta.url));
 const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) as {
@@ -49,7 +54,10 @@ interface Call {
  * A context that answers every call. `textureLimit` makes `createTexture` give `null`
  * from that call on, which is what a context out of memory does.
  */
-function fakeContext(textureLimit = Number.POSITIVE_INFINITY): {
+function fakeContext(
+  textureLimit = Number.POSITIVE_INFINITY,
+  blockFormats = false,
+): {
   gl: WebGL2RenderingContext;
   of(name: string): Call[];
 } {
@@ -72,6 +80,16 @@ function fakeContext(textureLimit = Number.POSITIVE_INFINITY): {
         if (key === 'createTexture') {
           textures += 1;
           return textures > textureLimit ? null : { name: key, at: textures };
+        }
+        if (key === 'getExtension') {
+          if (!blockFormats) return null;
+          if (args[0] === 'EXT_texture_compression_rgtc') {
+            return { COMPRESSED_RED_RGTC1_EXT: 0x8dbb };
+          }
+          if (args[0] === 'WEBGL_compressed_texture_s3tc') {
+            return { COMPRESSED_RGB_S3TC_DXT1_EXT: 0x83f0 };
+          }
+          return null;
         }
         return key.startsWith('create') ? { name: key } : null;
       };
@@ -197,6 +215,9 @@ describe('the asset URLs', () => {
 });
 
 describe('the upload', () => {
+  /** How many bytes of blocks a volume of this side holds. */
+  const blockBytes = (side: number): number => (side / 4) * (side / 4) * side * 8;
+
   /** A set of one asset whose two volumes are different sizes. */
   function oneAsset(densitySide: number, colourSide: number): NebulaVolumeSet {
     return {
@@ -205,8 +226,8 @@ describe('the upload', () => {
           name: 'one',
           densitySide,
           colourSide,
-          density: new Uint8Array(densitySide ** 3),
-          colour: new Uint8Array(colourSide ** 3 * 4),
+          density: new Uint8Array(blockBytes(densitySide)),
+          colour: new Uint8Array(blockBytes(colourSide)),
           transfer: new Float32Array(NEBULA_TRANSFER_ENTRIES * 4),
         },
       ],
@@ -254,18 +275,73 @@ describe('the upload', () => {
     ).toEqual([1, 2, 3, 4]);
   });
 
-  // The march walks out of the box at both ends of every axis.
-  test('clamps every axis to the edge', () => {
+  // The march walks out of the box at both ends of every axis. The layer axis carries
+  // no wrap mode, because the shader picks the layer itself and clamps it itself.
+  test('clamps the two filtered axes to the edge', () => {
     const context = fakeContext();
     const gl = context.gl;
     createNebulaVolumeTextures(gl, oneAsset(8, 4));
     const wraps = context
       .of('texParameteri')
-      .filter((call) => call.args[0] === gl.TEXTURE_3D)
+      .filter((call) => call.args[0] === gl.TEXTURE_2D_ARRAY)
       .filter((call) => call.args[2] === gl.CLAMP_TO_EDGE)
       .map((call) => call.args[1]);
-    expect(new Set(wraps)).toEqual(
-      new Set([gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]),
+    expect(new Set(wraps)).toEqual(new Set([gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]));
+  });
+
+  // Both paths take the array target, so the march reads one sampler type and the
+  // renderer compiles one program.
+  test('uploads both volumes to a 2D array on both paths', () => {
+    for (const blocks of [false, true]) {
+      const context = fakeContext(Number.POSITIVE_INFINITY, blocks);
+      const gl = context.gl;
+      createNebulaVolumeTextures(gl, oneAsset(8, 4));
+      const targets = context.of('texStorage3D').map((call) => call.args[0]);
+      expect(targets, `blocks ${String(blocks)}`).toEqual([
+        gl.TEXTURE_2D_ARRAY,
+        gl.TEXTURE_2D_ARRAY,
+      ]);
+    }
+  });
+
+  // The fast path: both extensions are there, so the blocks reach the card unchanged
+  // and the load does no decode at all.
+  test('uploads the blocks with no decode where both extensions are there', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true);
+    createNebulaVolumeTextures(context.gl, oneAsset(8, 4));
+    const compressed = context.of('compressedTexSubImage3D');
+    expect(compressed).toHaveLength(2);
+    // All layers in one call, and the format the storage took.
+    expect(compressed[0]?.args.slice(5, 9)).toEqual([8, 8, 8, 0x8dbb]);
+    expect(compressed[1]?.args.slice(5, 9)).toEqual([4, 4, 4, 0x83f0]);
+    expect(context.of('texSubImage3D')).toHaveLength(0);
+  });
+
+  // The fallback: one extension or neither, so both volumes decode and upload plain.
+  test('decodes and uploads plain where an extension is missing', () => {
+    const context = fakeContext();
+    const gl = context.gl;
+    createNebulaVolumeTextures(gl, oneAsset(8, 4));
+    expect(context.of('compressedTexSubImage3D')).toHaveLength(0);
+    const plain = context.of('texSubImage3D');
+    expect(plain).toHaveLength(2);
+    expect(plain[0]?.args[8]).toBe(gl.RED);
+    expect(plain[1]?.args[8]).toBe(gl.RGBA);
+    const storage = context.of('texStorage3D').map((call) => call.args[2]);
+    expect(storage).toEqual([gl.R8, gl.RGBA8]);
+  });
+
+  // A side that is not a multiple of 4 cannot be a block texture at all.
+  test('refuses a side the blocks cannot cover', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true);
+    const set = oneAsset(8, 4);
+    const odd = {
+      assets: [
+        { ...(set.assets[0] as NebulaVolumeSet['assets'][number]), colourSide: 6 },
+      ],
+    };
+    expect(() => createNebulaVolumeTextures(context.gl, odd)).toThrow(
+      /holds no blocks/,
     );
   });
 });
@@ -441,7 +517,8 @@ describe('a failed load', () => {
     await expect(loadNebulaVolumes()).rejects.toThrow(/transfer file holds/);
   });
 
-  test('refuses a volume file shorter than its side needs', async () => {
+  /** Answers the index, the transfer file and then one volume file of `volume`. */
+  function stubSet(volume: Uint8Array, density = 8, colour = 4): void {
     let call = 0;
     vi.stubGlobal(
       'fetch',
@@ -450,17 +527,48 @@ describe('a failed load', () => {
         if (call === 1) {
           return Promise.resolve(
             new Response(
-              '{"assets":[{"name":"barnards-loop","density":{"size":8},' +
-                '"colour":{"size":4}}]}',
+              `{"assets":[{"name":"barnards-loop","density":{"size":${density}},` +
+                `"colour":{"size":${colour}}}]}`,
             ),
           );
         }
         if (call === 2) {
           return Promise.resolve(new Response(new ArrayBuffer(NEBULA_TRANSFER_BYTES)));
         }
-        return Promise.resolve(new Response(new ArrayBuffer(16)));
+        return Promise.resolve(new Response(volume.slice().buffer));
       }),
     );
-    await expect(loadNebulaVolumes()).rejects.toThrow(/bytes, not the/);
+  }
+
+  test('refuses a volume file that is not a KTX2 file', async () => {
+    stubSet(new Uint8Array(512));
+    await expect(loadNebulaVolumes()).rejects.toThrow(/not a KTX2 file/);
+  });
+
+  // The spec's scenario **A file that disagrees with the index is refused**. The
+  // renderer takes every side from the index, so a file of another size would draw at
+  // the wrong scale rather than fail.
+  test('refuses a volume whose container disagrees with the index', async () => {
+    stubSet(
+      writeNebulaKtx2({
+        format: VK_FORMAT_BC4_UNORM_BLOCK,
+        side: 16,
+        blocks: new Uint8Array(16 * 4 * 4 * 8),
+      }),
+    );
+    await expect(loadNebulaVolumes()).rejects.toThrow(/not the 8 a side/);
+  });
+
+  // The density volume is BC4 and the colour volume BC1, and the index says which is
+  // which. A file of the other format would read the wrong channel count.
+  test('refuses a volume whose format is not the one its channel count needs', async () => {
+    stubSet(
+      writeNebulaKtx2({
+        format: VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+        side: 8,
+        blocks: new Uint8Array(8 * 2 * 2 * 8),
+      }),
+    );
+    await expect(loadNebulaVolumes()).rejects.toThrow(/channel count needs/);
   });
 });
