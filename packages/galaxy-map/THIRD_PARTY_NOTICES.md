@@ -15,10 +15,17 @@ because the package ships game art and the demo site draws game data.
 
 ## `@elite-dangerous-almanac/core`
 
-The map depends on [`@elite-dangerous-almanac/core`](https://github.com/DarkSession/Elite-Dangerous-Almanac),
-pinned to an exact version. The map reads four leaves of it: `astro/galaxy-grid` and
-`astro/mass-code` for the sector and boxel geometry, and `astro/codex-region` and
-`astro/codex-region-lookup` for the galactic codex regions.
+The map depends on [`@elite-dangerous-almanac/core`](https://github.com/Elite-Dangerous-Almanac/Almanac-Core),
+pinned to the exact version **0.2.16**. The map reads five leaves of it: `astro/galaxy-grid`
+and `astro/mass-code` for the sector and boxel geometry, `astro/codex-region` and
+`astro/codex-region-lookup` for the galactic codex regions, and `galaxy-map/markers` for
+the colours of the system marker icons.
+
+The build also emits the **16 galaxy-map marker vectors**, which it reads from the path
+`assets/galaxy-map/` inside that same package at that same version. The almanac project
+redrew them from the game's own interface artwork, so they carry the Frontier terms this
+file states below and not the MIT terms of the almanac's code. This package holds no copy
+of a vector in its sources: the bytes come from the published package the build installs.
 
 The almanac package's own code is under the **MIT** licence, copyright 2026 Elite
 Dangerous Community. Its data keeps the terms of its own sources, and it carries its

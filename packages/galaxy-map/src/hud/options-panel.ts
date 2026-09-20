@@ -1,6 +1,6 @@
 // The map options panel: the galactic regions switch, the system names switch, the
-// coordinate grid switch, the shapes switch and, where the map holds nebulae, the
-// nebulae switch. Each control shows the state the map is in, so a host that changes a
+// system icons switch, the coordinate grid switch, the shapes switch and, where the map
+// holds nebulae, the nebulae switch. Each control shows the state the map is in, so a host that changes a
 // setting through the handle moves the control with it.
 //
 // The panel builds its switches from one list. `lockedOptions` filters that list, and a
@@ -14,6 +14,7 @@ import type { HudMapOption } from './types';
 const OPTION_NAMES: readonly HudMapOption[] = [
   'regions',
   'systemNames',
+  'systemIcons',
   'grid',
   'shapes',
   'nebulae',
@@ -75,6 +76,15 @@ function togglesOf(map: GalaxyMap): Toggle[] {
       label: 'System names',
       read: () => map.areSystemNamesVisible(),
       flip: () => map.setSystemNamesVisible(!map.areSystemNamesVisible()),
+    },
+    // The switch draws whether or not a record on the map names an icon, because a host
+    // can add one at any time.
+    {
+      name: 'systemIcons',
+      key: 'system-icons',
+      label: 'System icons',
+      read: () => map.areSystemIconsVisible(),
+      flip: () => map.setSystemIconsVisible(!map.areSystemIconsVisible()),
     },
     {
       name: 'grid',

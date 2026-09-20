@@ -25,9 +25,10 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { BUILT_IN_ICONS } from '../packages/galaxy-map/src/scene-data/marker-icons';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 /**
@@ -118,6 +119,14 @@ const libraryRoot = join(root, 'packages', 'galaxy-map');
  * The volume art, the volume module and the pass are all behind the `./nebulae` subpath
  * and reach no chunk here. The bound stays at 260,000, which leaves 5,504 bytes of room.
  * The bound reads `index.js` alone, as it always has; the pair is logged and not asserted.
+ *
+ * The system marker icons take the reading to **248,707 bytes**. That is below the
+ * 254,496 above, which reads as a drop although this change only adds. The 254,496 is
+ * stale: a build of the commit before this change measures **245,830 bytes**, so the
+ * change adds 2,877 bytes to the true baseline. What it adds is the 16 URL strings of the
+ * built-in vectors and the icon reader; the 16 vectors themselves are files of the build
+ * and no part of the chunk. Read 245,830 as the figure this change moved, not 254,496.
+ * The bound stays at 260,000, which leaves 11,293 bytes of room.
  */
 const ENTRY_CHUNK_LIMIT = 260_000;
 
@@ -179,6 +188,18 @@ const PACKAGE_NAME = 'elite-dangerous-galaxy-map';
 /** The files of `public/`, which the library build must not copy. */
 const PUBLIC_FILES = ['EDLoader1.svg', 'ruins-site.svg', 'structure-site.svg'];
 
+/** The dependency the library build leaves external. */
+const ALMANAC_PACKAGE = '@elite-dangerous-almanac/core';
+
+/** The leaves the library reads from it, which stay bare imports of the build. */
+const ALMANAC_LEAVES = [
+  'astro/codex-region',
+  'astro/codex-region-lookup',
+  'astro/galaxy-grid',
+  'astro/mass-code',
+  'galaxy-map/markers',
+];
+
 /** The types the entry point exports, which `library-package` lists. */
 const PUBLIC_TYPES = [
   'GalaxyMapOptions',
@@ -187,6 +208,8 @@ const PUBLIC_TYPES = [
   'Category',
   'RealSystem',
   'SystemImage',
+  'SystemIconInput',
+  'ResolvedIcon',
   'CategoryInput',
   'SystemRecordInput',
   'HudOptions',
@@ -571,6 +594,50 @@ describe('the library build', () => {
     expect(names.filter((name) => name.endsWith('.png'))).toHaveLength(1);
   });
 
+  // The 16 built-in marker vectors. `?url&no-inline` is what keeps each one a file:
+  // a plain `?url` lets the build inline a small asset as a data URI, which would put
+  // about 15 KiB of base64 in the entry chunk of every host, including one that names
+  // no icon.
+  test('emits one file per marker symbol and no vector markup in a chunk', () => {
+    const symbols = [...BUILT_IN_ICONS.keys()];
+    expect(symbols.length).toBeGreaterThan(0);
+
+    const vectors: string[] = [];
+    for (const symbol of symbols) {
+      const found = files.filter((path) =>
+        new RegExp(`^${symbol}-[\\w-]+\\.svg$`).test(nameOf(path)),
+      );
+      expect(found, `${symbol} has no emitted vector`).toHaveLength(1);
+      const path = found[0] as string;
+      expect(path.includes(`${sep}assets${sep}`), `${symbol} is not under assets`).toBe(
+        true,
+      );
+      vectors.push(path);
+    }
+    console.log('the marker vectors the build emitted', vectors.map(nameOf));
+
+    for (const path of scripts) {
+      const text = readFileSync(path, 'utf8');
+      expect(
+        text.includes('data:image/svg+xml'),
+        `${nameOf(path)} inlines a vector`,
+      ).toBe(false);
+    }
+    // The markup itself, and not the file name alone. A build that put a vector in a
+    // chunk would carry its text there, whole or percent-encoded, and the reading above
+    // covers the encoded form.
+    for (const path of vectors) {
+      const markup = readFileSync(path, 'utf8').trim();
+      expect(markup.length, `${nameOf(path)} is empty`).toBeGreaterThan(100);
+      for (const script of scripts) {
+        expect(
+          readFileSync(script, 'utf8').includes(markup),
+          `${nameOf(script)} holds the markup of ${nameOf(path)}`,
+        ).toBe(false);
+      }
+    }
+  });
+
   test('carries no page, no demo data and no file of public', () => {
     const demo: { systems: { name: string }[] } = JSON.parse(
       readFileSync(
@@ -863,6 +930,31 @@ describe('the library build', () => {
       );
       console.log('the bare imports of', nameOf(path), bare);
       expect(bare, `${nameOf(path)} carries a bare import`).toEqual([]);
+    }
+  });
+
+  // The external rule of `packages/galaxy-map/vite.config.ts` keeps the almanac's
+  // JavaScript out of the build, so a host that already installs the package holds one
+  // copy of it. The rule leaves `assets/` out, because a vector is not JavaScript: an
+  // external one would stay a bare `.svg` specifier, which resolves in no browser.
+  test('keeps the almanac JavaScript external and the vectors not', () => {
+    const leaves = new Set<string>();
+    for (const path of scripts) {
+      for (const specifier of importsOf(readFileSync(path, 'utf8'))) {
+        if (specifier.startsWith(ALMANAC_PACKAGE)) leaves.add(specifier);
+      }
+    }
+    console.log('the almanac leaves the build leaves bare', [...leaves].sort());
+
+    for (const leaf of ALMANAC_LEAVES) {
+      expect(leaves, `${leaf} is not a bare import`).toContain(
+        `${ALMANAC_PACKAGE}/${leaf}`,
+      );
+    }
+    for (const leaf of leaves) {
+      expect(leaf.startsWith(`${ALMANAC_PACKAGE}/assets/`), `${leaf} stayed bare`).toBe(
+        false,
+      );
     }
   });
 

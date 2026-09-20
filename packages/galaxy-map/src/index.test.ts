@@ -37,6 +37,7 @@ const PUBLIC_TYPES = [
   'NebulaSource',
   'RealSystem',
   'Reject',
+  'ResolvedIcon',
   'ShapeInfo',
   'ShapeKind',
   'ShapeReject',
@@ -46,6 +47,7 @@ const PUBLIC_TYPES = [
   'StartView',
   'SystemDetailValue',
   'SystemDetails',
+  'SystemIconInput',
   'SystemImage',
   'SystemRecordInput',
 ];

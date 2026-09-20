@@ -17,7 +17,8 @@ export interface HudInfoFields {
 }
 
 /** The name of one switch the map options panel can hold. */
-export type HudMapOption = 'regions' | 'systemNames' | 'grid' | 'shapes' | 'nebulae';
+export type HudMapOption =
+  'regions' | 'systemNames' | 'systemIcons' | 'grid' | 'shapes' | 'nebulae';
 
 /** What the host asks the HUD for. Every field is optional. */
 export interface HudOptions {

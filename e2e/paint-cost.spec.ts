@@ -53,10 +53,12 @@ test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 
 /**
  * Adds 10,000 systems spread over a box of 400 by 60 by 400 light years around the
- * origin. A fixed generator makes the same set on every run.
+ * origin. A fixed generator makes the same set on every run. `withIcons` gives each
+ * record the four icons the icon reading needs; the flat readings take none, because
+ * the measured table of `browser-suite` is a frame that draws no icon.
  */
-async function addSystems(page: Page): Promise<number> {
-  return page.evaluate(() => {
+async function addSystems(page: Page, withIcons = false): Promise<number> {
+  return page.evaluate((icons: boolean) => {
     const map = window.galaxyMap;
     if (map === undefined) return -1;
     map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
@@ -75,11 +77,12 @@ async function addSystems(page: Page): Promise<number> {
           z: -200 + unit() * 400,
         },
         primaryCategory: 'Empire',
-      });
+        ...(icons ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] } : {}),
+      } as SystemRecordInput);
     }
     map.addSystems(records);
     return map.systemCount();
-  });
+  }, withIcons);
 }
 
 /** What one run of the move read. */
@@ -91,6 +94,8 @@ interface Reading {
   readonly labels: number;
   /** How many of those were coordinate labels. */
   readonly gridLabels: number;
+  /** How many icons of a system stack the last frame of the move held. */
+  readonly icons: number;
   /** How many HUD panels had a box on the screen in the last frame. */
   readonly panels: number;
   /** The boxes of those panels, in CSS pixels. */
@@ -115,6 +120,7 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
         worstMs: Number.POSITIVE_INFINITY,
         labels: 0,
         gridLabels: 0,
+        icons: 0,
         panels: 0,
         panelBoxes: [] as string[],
       };
@@ -136,6 +142,7 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
       const stats = probe.frameIntervalStats?.() ?? empty;
       const gridLabels = document.querySelectorAll('.gm-grid-label').length;
       const labels = gridLabels + document.querySelectorAll('.gm-system-label').length;
+      const icons = document.querySelectorAll('.gm-system-icon').length;
       let panels = 0;
       const panelBoxes: string[] = [];
       for (const element of document.querySelectorAll('.gm-hud__panel')) {
@@ -145,7 +152,7 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
           panelBoxes.push(`${Math.round(box.width)}x${Math.round(box.height)}`);
         }
       }
-      return { ...stats, labels, gridLabels, panels, panelBoxes };
+      return { ...stats, labels, gridLabels, icons, panels, panelBoxes };
     },
     { frames, warm: WARM_FRAMES },
   );
@@ -180,15 +187,16 @@ async function removeRule(page: Page, id: string): Promise<void> {
 }
 
 /** Opens the page with the HUD on, the 10,000 systems, the names on and the grid on. */
-async function openForMove(page: Page): Promise<void> {
+async function openForMove(page: Page, withIcons = false): Promise<void> {
   // The HUD is part of the reading and not scenery. Two of its panels carry half the
   // cost this budget exists to hold, and `openMap` removes the HUD unless a test asks.
   await openMap(page, '', { hud: true });
-  expect(await addSystems(page)).toBe(10000);
-  await page.evaluate(() => {
+  expect(await addSystems(page, withIcons)).toBe(10000);
+  await page.evaluate((icons: boolean) => {
     window.galaxyMap?.setSystemNamesVisible(true);
     window.galaxyMap?.setGridVisible(true);
-  });
+    window.galaxyMap?.setSystemIconsVisible(icons);
+  }, withIcons);
   await expect(page.locator('.gm-hud__category-row[data-name="Empire"]')).toBeVisible();
   const size = await page.evaluate(
     () => window.__galaxyMap?.drawingBufferSize?.() ?? [0, 0],
@@ -301,6 +309,27 @@ test('the camera move holds the paint budget', async ({ page }) => {
   // The label count and the panel count are part of the assertion and not of the setup.
   // A change to the overlap rule or to the HUD could leave a page with no labels and no
   // panels, and the reading would then pass while it measures none of the cost.
+  expect(reading.labels).toBeGreaterThanOrEqual(8);
+  expect(reading.panels).toBeGreaterThanOrEqual(2);
+  expect(reading.frames).toBeGreaterThanOrEqual(FRAMES - WARM_FRAMES - 10);
+  expect(reading.meanMs).toBeGreaterThan(0);
+  expect(reading.meanMs).toBeLessThanOrEqual(BUDGET_MS);
+});
+
+// The scenario "A camera move with icons holds the Firefox budget" of `system-icons`.
+// It is a second reading at the view the test above measures, with every record carrying
+// four icons, and it holds to the same 7 ms. The budget is not raised for the icons.
+// The reading above is the frame with no icon, and it stays as it is.
+test('the camera move with icons holds the paint budget', async ({ page }) => {
+  test.setTimeout(180000);
+  await openForMove(page, true);
+
+  const reading = await move(page);
+  console.log('the camera move with icons', reading);
+
+  // The icon count is part of the assertion. A frame that drew no icon would measure
+  // none of the cost this reading exists for.
+  expect(reading.icons).toBeGreaterThan(0);
   expect(reading.labels).toBeGreaterThanOrEqual(8);
   expect(reading.panels).toBeGreaterThanOrEqual(2);
   expect(reading.frames).toBeGreaterThanOrEqual(FRAMES - WARM_FRAMES - 10);

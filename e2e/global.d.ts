@@ -43,6 +43,8 @@ declare global {
     __detailsSignals?: AbortSignal[];
     /** The second map the name label option tests build. */
     __namesMap?: GalaxyMap;
+    /** The second map the icon option tests build. */
+    __iconsMap?: GalaxyMap;
     /** The second map the start-view tests build, with a `startView` of their own. */
     __startMap?: GalaxyMap;
     /** The map the touch tests build, over a canvas that states no `touch-action`. */

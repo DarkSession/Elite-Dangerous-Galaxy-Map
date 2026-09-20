@@ -59,16 +59,20 @@ unchecked data enters.
 ### Requirement: The package pins the almanac version that carries the marker catalogue
 
 `packages/galaxy-map/package.json` SHALL depend on `@elite-dangerous-almanac/core` at
-**exactly 0.2.14**, which is the first version to publish `galaxy-map/markers`, as the
-manifest already pins an exact version. The map reads that leaf for the built-in icon
-colours, beside the four `astro` leaves it already reads.
+**exactly 0.2.16**, as the manifest already pins an exact version. 0.2.15 is the first
+version to publish the marker vectors at `assets/galaxy-map/`, and 0.2.16 is the first to
+name them in its `exports` map, which is what makes a vector reachable. The map reads
+`galaxy-map/markers` for the built-in icon colours and `assets/galaxy-map/` for the
+vectors, beside the four `astro` leaves it already reads.
 
-0.2.14 renames codex region 31 from `Formidine Rift` to `The Formidine Rift`. The map draws
+0.2.15 renames codex region 31 from `Formidine Rift` to `The Formidine Rift`. The map draws
 that name as a region label, so the label reads the new name after the bump. The four
 `astro` leaves keep their paths and their shapes.
 
-The package SHALL stay external to the library build, as it is today, so a host that
-already installs it holds one copy.
+The package's **JavaScript** SHALL stay external to the library build, as it is today, so a
+host that already installs it holds one copy. The `assets/` subpath SHALL NOT be external:
+a vector is a file the library's own build emits, and a bare `.svg` specifier resolves in
+no browser.
 
 `pnpm-workspace.yaml` already names `@elite-dangerous-almanac/core` in
 `minimumReleaseAgeExclude`, because the package is the project's own and the 7-day hold
@@ -76,24 +80,31 @@ guards against a hijacked third-party maintainer. This change SHALL NOT widen th
 SHALL NOT lower `minimumReleaseAge`.
 
 `packages/galaxy-map/THIRD_PARTY_NOTICES.md` SHALL name the fifth leaf the map reads,
-`galaxy-map/markers`, and SHALL state that the package ships the 16 galaxy-map marker
+`galaxy-map/markers`, and SHALL state that the build emits the 16 galaxy-map marker
 vectors, redrawn in the almanac project from the game's own interface artwork, under the
 Frontier terms the file already carries. It SHALL name **where the vectors came from**: the
-`DarkSession/Elite-Dangerous-Almanac` repository, the path `assets/galaxy-map/`, and the
-commit the copy was taken at. A byte-for-byte copy of someone's artwork states which bytes
-it copied, and the commit is what a reader checks the copy against.
+package `@elite-dangerous-almanac/core`, its pinned version, and the path
+`assets/galaxy-map/` inside it. The package redistributes another project's artwork, so the
+notices state which published version the bytes came from.
 
 #### Scenario: The manifest names the version and the hold is unchanged
 
 - **WHEN** a repository test reads `packages/galaxy-map/package.json` and
   `pnpm-workspace.yaml`
-- **THEN** the `@elite-dangerous-almanac/core` dependency is exactly `0.2.14`,
+- **THEN** the `@elite-dangerous-almanac/core` dependency is exactly `0.2.16`,
   `minimumReleaseAge` is 10080, and `minimumReleaseAgeExclude` holds
   `@elite-dangerous-almanac/core` and nothing else
 
 #### Scenario: The notices name the marker leaf, the vectors and their source
 
 - **WHEN** a repository test reads `packages/galaxy-map/THIRD_PARTY_NOTICES.md`
-- **THEN** it names `galaxy-map/markers`, states that the package ships the marker vectors,
-  and names the source repository, the path `assets/galaxy-map/` and a 40-character commit
-  hash
+- **THEN** it names `galaxy-map/markers`, states that the build emits the marker vectors,
+  and names `@elite-dangerous-almanac/core`, the pinned version and the path
+  `assets/galaxy-map/`
+
+#### Scenario: The JavaScript stays external and the vectors do not
+
+- **WHEN** the package is built and a test reads the emitted JavaScript
+- **THEN** the four `astro` leaves and `galaxy-map/markers` are bare imports of
+  `@elite-dangerous-almanac/core`, and no specifier under
+  `@elite-dangerous-almanac/core/assets/` is left in an emitted file

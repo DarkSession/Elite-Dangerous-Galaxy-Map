@@ -22,6 +22,19 @@ export interface NotableEntry {
   readonly z?: string | number;
 }
 
+/** One record of the Thargoid war dump of the DCoH Overwatch archive. */
+export interface OverwatchSystem {
+  readonly Name?: string;
+  readonly Population?: number;
+  readonly X?: number;
+  readonly Y?: number;
+  readonly Z?: number;
+  readonly States?: readonly {
+    readonly State?: string;
+    readonly Titan?: { readonly Name?: string };
+  }[];
+}
+
 /** One category of a demo set. */
 export interface DemoCategory {
   readonly name: string;
@@ -35,6 +48,13 @@ export interface DemoImage {
   readonly caption: string;
 }
 
+/**
+ * One icon of a demo record. A string names a built-in symbol of the map; an object
+ * names a vector the demo site serves itself and the colour of its arrow.
+ */
+export type DemoIcon =
+  string | { readonly url: string; readonly color: readonly [number, number, number] };
+
 /** One record of a demo set. A set without pictures carries no `images`. */
 export interface DemoSystem {
   readonly name: string;
@@ -43,6 +63,7 @@ export interface DemoSystem {
   readonly secondaryCategories: readonly string[];
   readonly description?: string;
   readonly images?: readonly DemoImage[];
+  readonly icons?: readonly DemoIcon[];
   /** A field a later dump may add. The reader of the map drops it. */
   readonly [field: string]: unknown;
 }
@@ -71,6 +92,12 @@ export declare function escapeMarkdown(text: unknown): string;
 export declare function convertRuins(dump: unknown): DemoSet;
 export declare function convertStructures(dump: unknown): DemoSet;
 export declare function convertNotable(dump: unknown): DemoSet;
+export declare const OVERWATCH_DUMP_URL: string;
+export declare const OVERWATCH_SOURCE_URL: string;
+export declare const OVERWATCH_LICENCE: string;
+export declare const CATEGORY_OF_STATE: Record<string, DemoCategory>;
+export declare const ICONS_OF_STATE: Record<string, readonly DemoIcon[]>;
+export declare function convertOverwatch(dump: unknown): DemoSet;
 
 /** One sphere of a demo set. */
 export interface DemoSphere {

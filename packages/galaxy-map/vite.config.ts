@@ -2,15 +2,22 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 /**
- * The two packages a host installs beside the library. They stay external, so a host
- * that already uses `gl-matrix` holds one copy of it.
+ * The two packages a host installs beside the library. Their JavaScript stays external,
+ * so a host that already uses `gl-matrix` holds one copy of it.
  *
  * The rule is a pattern and not two strings, because
  * `src/scene-data/region-lines.ts` imports
  * `@elite-dangerous-almanac/core/astro/codex-region-lookup`, and a plain string in
  * Rollup's `external` does not match a subpath.
+ *
+ * `assets/` is the one subpath the rule leaves out. `src/scene-data/marker-icons.ts`
+ * imports the 16 marker vectors from `@elite-dangerous-almanac/core/assets/galaxy-map/`,
+ * and a vector is not JavaScript: an external one would stay a bare `.svg` specifier in
+ * the emitted JavaScript, which resolves in no browser. The build therefore emits each
+ * vector as a file of its own output and references it by a URL beside the module.
  */
-const EXTERNAL_PACKAGES = /^(gl-matrix|@elite-dangerous-almanac\/core)(\/.*)?$/;
+const EXTERNAL_PACKAGES =
+  /^(gl-matrix|@elite-dangerous-almanac\/core)(\/(?!assets\/).*)?$/;
 
 // The library build. `apps/demo/vite.config.ts` keeps the dev server, the demo site
 // build and `preview`; this file emits the package alone. The two are both named

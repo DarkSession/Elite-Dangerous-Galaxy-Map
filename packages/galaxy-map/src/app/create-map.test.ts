@@ -283,6 +283,31 @@ describe('the entry point with no WebGL2 context', () => {
     on.setShapesVisible('yes' as unknown as boolean);
     expect(on.areShapesVisible()).toBe(false);
   });
+
+  test('takes the system icons option and the system icons switch', async () => {
+    const start = createGalaxyMap(refusingCanvas());
+    const off = createGalaxyMap(refusingCanvas(), { systemIcons: false });
+    // A value that is not a boolean takes the default, which is on. `system-icons`
+    // states why the default runs the other way to the name labels.
+    const unreadable = createGalaxyMap(refusingCanvas(), {
+      systemIcons: 'no' as unknown as boolean,
+    });
+    await expect(start.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    await expect(off.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    await expect(unreadable.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+
+    expect(start.areSystemIconsVisible()).toBe(true);
+    expect(off.areSystemIconsVisible()).toBe(false);
+    expect(unreadable.areSystemIconsVisible()).toBe(true);
+
+    start.setSystemIconsVisible(false);
+    expect(start.areSystemIconsVisible()).toBe(false);
+    // A value that is not a boolean leaves the state as it was.
+    start.setSystemIconsVisible('yes' as unknown as boolean);
+    expect(start.areSystemIconsVisible()).toBe(false);
+    start.setSystemIconsVisible(true);
+    expect(start.areSystemIconsVisible()).toBe(true);
+  });
 });
 
 /** One element the fake document made, with what the caller wrote on it. */

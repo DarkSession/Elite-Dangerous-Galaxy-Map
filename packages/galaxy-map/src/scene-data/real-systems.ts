@@ -1,6 +1,8 @@
 // The category table, the record reader and the set of real star systems the host
 // gives the map. This module owns the shape of an EDSM or a Spansh dump record:
 // nothing else reads a raw record. Nothing here knows about WebGL.
+import { readIcons } from './marker-icons';
+import type { ResolvedIcon, SystemIconInput } from './marker-icons';
 import { loadGalaxyModel } from '../galaxy-model/load';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import type { Range } from '../galaxy-model/types';
@@ -103,7 +105,11 @@ export type RejectReason =
   | 'no-category'
   | 'unknown-category'
   | 'out-of-bounds'
-  | 'over-capacity';
+  | 'over-capacity'
+  // The last two the reader tests, so a record that is faulty in an earlier field
+  // reports that earlier reason.
+  | 'bad-icon'
+  | 'unknown-icon';
 
 /** One record the reader rejected. */
 export interface Reject {
@@ -153,6 +159,8 @@ export interface RealSystem {
   readonly primaryStar?: string;
   /** Up to 8 pictures, which the HUD shows as thumbnails. */
   readonly images?: readonly SystemImage[];
+  /** Up to 4 icons, which the map stacks over the marker, lowest first. */
+  readonly icons?: readonly ResolvedIcon[];
 }
 
 /**
@@ -189,6 +197,12 @@ export interface SystemRecordInput {
   readonly primaryStar?: string;
   /** Up to 8 pictures, which the HUD shows as thumbnails. */
   readonly images?: readonly SystemImage[];
+  /**
+   * Up to 4 icons over the marker, lowest first. An entry is the symbol of a built-in
+   * icon or an object with the host's own `url` and the `color` of its arrow. It is the
+   * one optional field a bad value rejects the record for, rather than drops.
+   */
+  readonly icons?: readonly SystemIconInput[];
   /** A field the reader drops. */
   readonly [field: string]: unknown;
 }
@@ -205,6 +219,17 @@ export interface RealSystemSet {
   clearSystemsAndCategories(): void;
   /** How many systems the set holds. */
   readonly count: number;
+  /**
+   * How many systems of the set hold at least one icon. The marker overlay skips its
+   * whole icon placement while this reads 0, because the icon switch is on by default
+   * and a set that names no icon must pay no per-frame work for it.
+   *
+   * The count may be high and never low. A record that replaces one with icons by one
+   * without leaves it where it is, because a correction would need a sweep of the set.
+   * A high count costs the fast path alone and every icon still draws; a low one would
+   * hide every icon on the map with no report.
+   */
+  readonly iconSystemCount: number;
   /** How many categories the table holds. */
   readonly categoryCount: number;
   /** Rises on every change to the set. */
@@ -421,6 +446,7 @@ interface MutableSystem {
   description?: string;
   primaryStar?: string;
   images?: SystemImage[];
+  icons?: ResolvedIcon[];
 }
 
 /** Creates an empty category table and an empty system set. */
@@ -446,6 +472,9 @@ export function createSystemSet(): RealSystemSet {
   // rather than a scan of the set for each record.
   const slotOf = new Map<string, number>();
   let version = 0;
+  // How many records hold at least one icon. It rises with a record that carries one
+  // and falls only where the set is emptied, so it reads high and never low.
+  let iconSystems = 0;
 
   // The filter text, and the same text folded to lower case once. The comparison folds
   // both sides to lower case, so it reads the same in every browser.
@@ -682,6 +711,16 @@ export function createSystemSet(): RealSystemSet {
           continue;
         }
 
+        // The icons come last, so a record that is faulty in an earlier field reports
+        // that earlier reason. A bad icon rejects the record where a bad image is
+        // dropped: an icon list is a short list a host writes by hand, so a misspelt
+        // symbol is a mistake to report and not a value to guess at.
+        const icons = readIcons(record['icons'], safeImageUrl);
+        if (typeof icons === 'string') {
+          rejected.push({ index, reason: icons });
+          continue;
+        }
+
         const system: MutableSystem = {
           name,
           position: [x, y, z],
@@ -699,6 +738,12 @@ export function createSystemSet(): RealSystemSet {
         }
         const images = readImages(record['images']);
         if (images !== null) system.images = images;
+        if (icons.length > 0) {
+          system.icons = icons;
+          // A replacement raises it again, so a record that loses its icons leaves the
+          // count high. The interface states why that direction is the safe one.
+          iconSystems += 1;
+        }
 
         if (slot === undefined) {
           const next = systems.length;
@@ -718,6 +763,7 @@ export function createSystemSet(): RealSystemSet {
     clearSystems(): void {
       systems.length = 0;
       slotOf.clear();
+      iconSystems = 0;
       boxEmpty = true;
       version += 1;
     },
@@ -725,6 +771,7 @@ export function createSystemSet(): RealSystemSet {
     clearSystemsAndCategories(): void {
       systems.length = 0;
       slotOf.clear();
+      iconSystems = 0;
       boxEmpty = true;
       categories.length = 0;
       categoryOf.clear();
@@ -736,6 +783,9 @@ export function createSystemSet(): RealSystemSet {
 
     get count(): number {
       return systems.length;
+    },
+    get iconSystemCount(): number {
+      return iconSystems;
     },
     get systemBox(): SystemBox {
       return {

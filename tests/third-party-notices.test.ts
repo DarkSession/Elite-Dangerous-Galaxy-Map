@@ -40,6 +40,28 @@ describe('the package notices', () => {
     }
   });
 
+  test('name the marker leaf, the vectors and the version they come from', () => {
+    const almanac = section(packageNotices, '`@elite-dangerous-almanac/core`');
+    // The package redistributes another project's artwork, so the notices say which
+    // published version the bytes came from. The version comes out of the manifest, so
+    // the next bump moves both or fails here.
+    const manifest: { dependencies?: Record<string, string> } = JSON.parse(
+      read('../packages/galaxy-map/package.json'),
+    ) as never;
+    const version = manifest.dependencies?.['@elite-dangerous-almanac/core'];
+
+    expect(version, 'the manifest pins the almanac').toBeDefined();
+    expect(almanac).toContain('galaxy-map/markers');
+    expect(almanac).toContain('assets/galaxy-map/');
+    expect(almanac).toContain(version as string);
+    expect(almanac).toMatch(/marker vectors/);
+    // The repository moved, which is the URL the published package's own `repository`
+    // field now carries.
+    expect(almanac).toContain(
+      'https://github.com/Elite-Dangerous-Almanac/Almanac-Core',
+    );
+  });
+
   test('name the non-commercial terms of the game data', () => {
     expect(packageNotices).toContain('non-commercial');
     expect(packageNotices).toContain('media-usage rules');

@@ -28,6 +28,22 @@ const stringCoords: SystemRecordInput = {
   primaryCategory: 'Core',
 };
 
+/** A record whose icons take both entry forms. */
+const withIcons: SystemRecordInput = {
+  name: 'Sol',
+  coords: { x: 0, y: 0, z: 0 },
+  primaryCategory: 'Core',
+  icons: ['titan', { url: '/a.svg', color: [1, 2, 3] }],
+};
+
+const iconWithNoColor: SystemRecordInput = {
+  name: 'Sol',
+  coords: { x: 0, y: 0, z: 0 },
+  primaryCategory: 'Core',
+  // @ts-expect-error an object icon entry carries a required colour
+  icons: [{ url: '/a.svg' }],
+};
+
 /** A category with a description and a field the reader drops. */
 const category: CategoryInput = {
   name: 'Core',
@@ -44,6 +60,7 @@ describe('the record input type', () => {
     expect(wellFormed.name).toBe('Sol');
     expect(wellFormed.id64).toBe('10477373803');
     expect(category.color).toEqual([153, 230, 255]);
+    expect(withIcons.icons).toHaveLength(2);
   });
 
   test('a malformed record still carries its values at run time', () => {
@@ -52,5 +69,6 @@ describe('the record input type', () => {
     expect(noPrimaryCategory.primaryCategory).toBeUndefined();
     expect(stringCoords.coords.x).toBe('0');
     expect(noColor.color).toBeUndefined();
+    expect(iconWithNoColor.icons?.[0]).toEqual({ url: '/a.svg' });
   });
 });

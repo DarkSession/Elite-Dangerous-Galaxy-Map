@@ -135,8 +135,8 @@ const SYSTEM_DISTANCES = [500, 4000, 20000, 120000];
  * Adds 10,000 systems of one category, spread over the model bounds. A fixed generator
  * makes the same set on every run.
  */
-async function addSpreadSystems(page: Page): Promise<number> {
-  return page.evaluate(() => {
+async function addSpreadSystems(page: Page, withIcons = false): Promise<number> {
+  return page.evaluate((icons: boolean) => {
     const map = window.galaxyMap;
     if (map === undefined) return -1;
     map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
@@ -155,11 +155,12 @@ async function addSpreadSystems(page: Page): Promise<number> {
           z: -24105 + unit() * 100000,
         },
         primaryCategory: 'Empire',
-      });
+        ...(icons ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] } : {}),
+      } as SystemRecordInput);
     }
     map.addSystems(records);
     return map.systemCount();
-  });
+  }, withIcons);
 }
 
 /** Measures the mean frame time of one view over 300 frames. */
@@ -483,6 +484,62 @@ test('the selection work stays inside its budget', async ({ page }) => {
   // The count is of drawn frames: the sampling runs inside the draw.
   expect(stats.frames).toBeGreaterThanOrEqual(110);
   expect(stats.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
+});
+
+// The scenario "The icon placement holds the budget at a full set" of
+// `system-selection`. It is the reading above with every record carrying four icons and
+// the icon switch on, and it reads the frame interval in the same window, because the
+// icon elements are painted by the browser and the draw time does not see them.
+test('the icon placement holds the selection budget', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page, true)).toBe(10000);
+
+  const position = await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return null;
+    map.setSystemNamesVisible(true);
+    map.setSystemIconsVisible(true);
+    map.setView({ cursor: [...system.position], distance: 500, yaw: 0, pitch: 35 });
+    return system.position;
+  });
+  expect(position).not.toBeNull();
+
+  await page.mouse.move(960, 540);
+  await waitFrames(page, 5);
+  const hovered = await page.evaluate(() => window.galaxyMap?.getHover()?.name ?? null);
+
+  await page.evaluate(() => {
+    window.__galaxyMap?.resetSelectionSampling?.();
+    window.__galaxyMap?.resetFrameIntervalStats?.();
+    window.__galaxyMap?.resetFrameStats?.();
+  });
+  await hoverFrames(page, 120, 960, 540);
+  const reading = await page.evaluate(() => ({
+    ...(window.__galaxyMap?.selectionSampling?.() ?? {
+      frames: 0,
+      meanMs: Number.POSITIVE_INFINITY,
+      worstMs: Number.POSITIVE_INFINITY,
+    }),
+    interval: window.__galaxyMap?.frameIntervalStats?.() ?? {
+      frames: 0,
+      meanMs: Number.POSITIVE_INFINITY,
+      worstMs: Number.POSITIVE_INFINITY,
+    },
+    icons: document.querySelectorAll('.gm-system-icon').length,
+    arrows: document.querySelectorAll('.gm-system-arrow').length,
+  }));
+  console.log('the selection work with 4 icons a record', { hovered, ...reading });
+
+  expect(hovered).not.toBeNull();
+  // The frame drew a stack. A frame that drew none would measure no placement at all.
+  expect(reading.icons).toBeGreaterThan(0);
+  expect(reading.arrows).toBeGreaterThan(0);
+  expect(reading.frames).toBeGreaterThanOrEqual(110);
+  expect(reading.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
+  expect(reading.interval.frames).toBeGreaterThanOrEqual(110);
+  expect(reading.interval.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
 });
 
 test('the frame interval holds with the selection work running', async ({ page }) => {

@@ -44,8 +44,8 @@ export function createHud(
   });
   const categories = createCategoryPanel(doc, map);
   // The panel is null where every switch it would hold is locked. The count is not
-  // fixed: a map with no nebula source holds four switches and a map with one holds
-  // five.
+  // fixed: a map with no nebula source holds five switches and a map with one holds
+  // six.
   const optionsPanel = createOptionsPanel(
     doc,
     map,

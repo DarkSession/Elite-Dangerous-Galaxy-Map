@@ -29,7 +29,9 @@ export type {
   GalaxyMapOptions,
   MapView,
   RealSystem,
+  ResolvedIcon,
   StartView,
+  SystemIconInput,
   SystemImage,
 } from './app/create-map';
 // The fragment writer and its two types. It is a host helper: it takes a `write`

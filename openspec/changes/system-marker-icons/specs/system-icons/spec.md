@@ -11,36 +11,49 @@ arrow.
 
 The library SHALL hold a catalogue of built-in icons. The symbols of the catalogue SHALL
 be exactly the symbols of `GALAXY_MAP_MARKERS` of
-`@elite-dangerous-almanac/core/galaxy-map/markers`, which holds 16 at version 0.2.14: `bookmark`,
+`@elite-dangerous-almanac/core/galaxy-map/markers`, which holds 16 at version 0.2.16: `bookmark`,
 `community-goal`, `conflict-zone`, `destination`, `engineer`, `fleet-carrier`,
 `front-line`, `mission`, `squadron-carrier`, `starter-zone`, `station-abandoned`,
 `station-damaged`, `station-repairing`, `station-under-attack`, `titan` and `waypoint`.
 
 Each symbol SHALL carry a vector the package ships and the **glyph colour** the catalogue
-record reports as `color`. The glyph colour is what the arrow of the requirement below
+record reports as `color`. The colours this specification writes out, and the list of 16
+symbols above, are a **deliberate pin** of the dependency at the version the package
+depends on. A browser test MAY assert them as literals. The day the almanac changes one,
+that test is meant to fail, and the catalogue test of this requirement names the source of
+truth. The glyph colour is what the arrow of the requirement below
 draws in. `front-line` is the one record whose `frameColor` differs from its `color`, and
 the arrow SHALL take `color` there as it does everywhere else.
 
-**The vectors ship with the package**, because the almanac's published package carries
-`assets/ships/` and not `assets/galaxy-map/`. A repository test SHALL compare the shipped
-set against the catalogue and SHALL fail where the two disagree: a symbol with no vector, a
-vector with no symbol, or a vector whose root `color` is not the catalogue's `color`. That
-test is what keeps a copied vector and its catalogue record together.
+**The vectors come from the dependency.** The library SHALL read each vector from
+`@elite-dangerous-almanac/core/assets/galaxy-map/<symbol>.svg` and SHALL NOT hold a copy of
+one. The catalogue and the artwork then have one source, so neither can drift from the
+other. A repository test SHALL compare the symbols the library resolves against the symbols
+of `GALAXY_MAP_MARKERS` and SHALL fail where the two disagree, which is what catches a
+catalogue that grows a symbol the library does not read.
+
+That test SHALL also compare each vector's root `color` attribute against its record's
+`color`. The glyph's colour is baked into the vector and the arrow's colour is read from the
+catalogue, so the two are separate values of one dependency and nothing outside this test
+makes them agree. Where they disagree, an arrow and the glyph above it draw in two
+colours.
 
 The built-in vectors SHALL be emitted as **files of the package build** rather than inlined
 into the JavaScript, so a host that names no icon downloads none of them. The library SHALL
 therefore reference a built-in vector by a URL relative to its own module and SHALL NOT
 name a third-party address.
 
-#### Scenario: Every catalogue symbol has a vector and every vector a symbol
+#### Scenario: Every catalogue symbol resolves to a vector
 
-- **WHEN** a repository test reads `GALAXY_MAP_MARKERS` and the shipped vector directory
-- **THEN** the two symbol sets are equal, and the set is not empty
+- **WHEN** a repository test reads `GALAXY_MAP_MARKERS` and the library's symbol table
+- **THEN** the two symbol sets are equal, the set is not empty, and every symbol resolves to
+  a non-empty URL
 
 #### Scenario: A vector carries the colour its record reports
 
-- **WHEN** the repository test reads the root `color` attribute of each shipped vector and
-  compares it to the `color` of that symbol's catalogue record, without case
+- **WHEN** the repository test resolves each vector out of the installed dependency, reads
+  its root `color` attribute, and compares it to the `color` of that symbol's catalogue
+  record, without case
 - **THEN** every pair is equal
 
 #### Scenario: The vectors are files of the build
@@ -148,8 +161,34 @@ The map SHALL draw each kept icon as an element in the overlay the library owns 
 region labels, the pin, the ring and the name labels — not as a pass on the canvas — so it
 stays a crisp vector at every device pixel ratio.
 
-**The size.** An icon SHALL be **16 CSS pixels** square at every zoom distance, as the pin
-holds a fixed size. Two icons of one stack SHALL sit **2 CSS pixels** apart.
+**The size.** An icon SHALL be **28 CSS pixels** square at every zoom distance, as the pin
+holds a fixed size. The marker under it grows as the camera comes in and the icon does
+not, so the icon reads smaller against a near marker than against a far one. That is the
+fixed size and not a change in the icon. Two icons of one stack SHALL sit **2 CSS pixels**
+apart.
+
+**The plate.** An icon SHALL draw on an opaque **black** box of its own size. A vector of
+the catalogue is a thin light line on nothing, and the galaxy behind a marker is neither
+dark nor one colour, so without the plate the line reads against whatever the camera puts
+there.
+
+**The depth order.** Where two stacks cross on the screen, the stack of the system nearer
+the camera SHALL draw over the stack of the one further away. The overlay hands an element
+of its pool to a system by its place in the frame and not by its depth, so the tree order
+cannot carry the rule and each stack SHALL take a stacking level from its depth.
+
+The library SHALL hold every stack in a **layer of its own**, which carries a stacking
+level and is therefore a stacking context. No stack level then reaches the page. The layer
+SHALL sit over the plane elements, which sit at 0, and over the ring, the pin and the name
+labels, which sit at 1. The layer SHALL sit **under the HUD**, which sits at 10 in the same
+parent as the overlay host. The overlay host is often one the caller gave and the library
+cannot rely on its style, so the bound belongs to the layer and not to the host.
+
+**Whole pixels.** The map SHALL place an icon and an arrow at whole CSS pixels. An icon is
+a bitmap the browser makes from a vector: at a fraction of a pixel the browser samples it
+at a new phase in every frame, and the glyph shakes while the camera moves. The rounding
+moves a stack by less than half a pixel, which is inside the tolerance the offset
+scenarios below give.
 
 **The place.** A stack SHALL be centred on the marker's projected centre on the horizontal
 axis. The first icon of the record SHALL be the **lowest** of the stack, and each later
@@ -173,8 +212,8 @@ pick or the click.
 
 - **WHEN** the browser test adds a system whose `icons` names three symbols, draws a frame
   and reads the icon elements of that system, top to bottom on the screen
-- **THEN** three icons are present, the lowest is the record's first, and each icon is
-  16 CSS pixels square
+- **THEN** three icons are present, the lowest is the record's first, each icon is
+  28 CSS pixels square, and each one has an opaque black background
 
 #### Scenario: The stack sits at the stated offset
 
@@ -209,6 +248,33 @@ pick or the click.
   icon's bottom and the marker's projected centre in the same frame at the start and at the
   end
 - **THEN** the offset between them is the same at both readings, within 1 CSS pixel
+
+#### Scenario: The HUD draws over an icon stack
+
+- **WHEN** the browser test opens a map with the HUD, adds a system with two icons, draws
+  a frame and reads the stacking level of the icon, of the stack layer and of the HUD root
+- **THEN** the icon sits inside the layer, the layer carries a level of its own, and that
+  level is below the HUD's
+
+#### Scenario: The nearer stack draws over the further one
+
+- **WHEN** the browser test adds two systems on one line of sight, each with one icon, so
+  their stacks cover each other on the screen, draws a frame and reads the stacking level
+  of each icon
+- **THEN** the level of the nearer system's icon is the higher of the two, and both are
+  over 0
+
+#### Scenario: The icon holds its size as the camera comes in
+
+- **WHEN** the browser test adds one system with one icon and reads the icon's box at the
+  camera distances 1,000, 200, 40 and 10 light years
+- **THEN** the icon is 28 CSS pixels square at each of the four
+
+#### Scenario: A camera move leaves the icon on whole pixels
+
+- **WHEN** the browser test adds a system with one icon, orbits it through 30 small steps
+  and reads the icon's `left` and `top` after each step
+- **THEN** every reading is a whole number of CSS pixels
 
 #### Scenario: An icon does not take the pick
 
@@ -247,7 +313,7 @@ A system with no icon SHALL carry no arrow. A system with four icons SHALL carry
 #### Scenario: The arrow takes a host icon's colour
 
 - **WHEN** the browser test adds a system whose one icon is
-  `{ url: '/demo-images/ruins-site.svg', color: [0, 205, 247] }`, draws a frame and reads
+  `{ url: 'demo-images/ruins-site.svg', color: [0, 205, 247] }`, draws a frame and reads
   the arrow's fill
 - **THEN** it reads within 2 on each channel of `rgb(0, 205, 247)`
 
@@ -317,11 +383,34 @@ the set:
   record holds at most 4 icons.
 - The placement SHALL allocate no element a frame before it did not need. The elements SHALL
   be held in a pool and reused.
+- A set in which **no record holds an icon** SHALL cost no per-frame placement work, whatever
+  the state of the switch. The switch defaults on, so without this a host that names no icon
+  would begin paying for a sweep of its whole set. The measure is the **reads the overlay
+  makes of the set** in a frame, not the element count: a set with no icon draws no icon
+  either way, so an element count cannot tell the fast path from its absence.
+
+#### Scenario: A set with no icon reads nothing
+
+- **WHEN** a map holds 10,000 systems, no record names an icon, the icon switch is on, the
+  name switch is off, and there is no hover and no selection
+- **THEN** the overlay reads no position and no system of the set, counted over a frame
+
+The hover and the selection place themselves before the sweep and read a position of their
+own, so the scenario excludes them. That is what lets the count be plainly zero rather than
+a count an implementer has to separate icon reads out of.
+
+#### Scenario: One icon turns the placement back on
+
+- **WHEN** one record of that same set is given an icon
+- **THEN** the overlay's reads of the set rise above zero, and the stack draws
+
+The second scenario is the control for the first. Without it, the first also passes on the
+day the overlay stops sweeping at all.
 
 There SHALL be **no overlap test** between two stacks, unlike the name labels. Two markers
 a few pixels apart hold their own icons, and dropping one of the two stacks on an overlap
 would make an icon blink in and out as the camera moves through a cluster. A name label
-carries text a reader must be able to read; an icon is a 16 pixel glyph that reads under a
+carries text a reader must be able to read; an icon is a 28 pixel glyph that reads under a
 partial cover.
 
 #### Scenario: The stack count is capped at a full set
@@ -366,12 +455,14 @@ restatement of that one.
 - **THEN** the mean is 7 ms or less, and the frame drew at least one icon, so a frame that
   drew none cannot pass the reading by measuring nothing
 
-### Requirement: The demo site shows both icon forms
+### Requirement: The demo site shows the icon stack
 
 One committed demo set SHALL carry icons, so the demo page shows the feature and the
-browser tests read a real record rather than one a test built. That set SHALL carry **both**
-entry forms: at least one record with a built-in symbol, and at least one with a host icon
-whose `url` names a file the demo site serves from its own `public/` directory.
+browser tests read a real record rather than one a test built. Every icon of that set SHALL
+be a **built-in symbol**. The set SHALL carry no host icon: a host icon is a drawing the
+demo site has to serve itself, and a drawing made for a 28 pixel box reads worse beside the
+game's own symbols. The requirement "A record names its icons" states the host form, and
+`e2e/system-icons.spec.ts` covers it with a file the demo site already serves.
 
 The icons SHALL come from a table in the converter script, as every other field of a
 committed set does, and SHALL NOT be a hand edit of the JSON. `dataset-catalog` states that
@@ -380,11 +471,11 @@ rule for the sets as a whole and this holds to it.
 The map SHALL reject no record of any committed set, which the demo set test already checks
 by feeding each set to the reader.
 
-#### Scenario: The committed set carries both forms
+#### Scenario: The committed set carries built-in symbols only
 
 - **WHEN** a unit test reads the committed demo set that carries icons
-- **THEN** at least one record carries a built-in symbol, at least one carries a host icon,
-  and every host icon's `url` names a file under the demo site's `public/` directory
+- **THEN** at least one record carries an icon, and every icon of the set is a name the
+  built-in catalogue holds
 
 #### Scenario: The converter writes the icons
 

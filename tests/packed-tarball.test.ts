@@ -31,6 +31,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { BUILT_IN_ICONS } from '../packages/galaxy-map/src/scene-data/marker-icons';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const libraryRoot = join(root, 'packages', 'galaxy-map');
@@ -133,6 +134,23 @@ describe('the packed tarball', () => {
     expect(packed).toContain('dist/testing.js');
   });
 
+  // The 16 built-in marker vectors. They are files of the build and not chunk text, so
+  // a `files` list or a build that dropped them would ship a library whose icons 404.
+  test('carries the marker vectors', () => {
+    const symbols = [...BUILT_IN_ICONS.keys()];
+    expect(symbols.length).toBeGreaterThan(0);
+    const vectors = packed.filter((path) => path.endsWith('.svg'));
+    console.log('the tarball carries the vectors', vectors);
+
+    expect(vectors).toHaveLength(symbols.length);
+    for (const symbol of symbols) {
+      const found = vectors.filter((path) =>
+        new RegExp(`^dist/assets/${symbol}-[\\w-]+\\.svg$`).test(path),
+      );
+      expect(found, `the tarball carries no ${symbol} vector`).toHaveLength(1);
+    }
+  });
+
   test('carries no source, no test and no artifact', () => {
     const allowed = [...TEXT_FILES, 'package.json'];
     for (const path of packed) {
@@ -172,9 +190,7 @@ describe('the packed tarball', () => {
     const readme = readFileSync(join(packDir, 'README.md'), 'utf8');
     expect(readme).toContain(PACKAGE_NAME);
     expect(readme).toContain(`from '${PACKAGE_NAME}'`);
-    expect(readme).toContain(
-      'https://github.com/Elite-Dangerous-Almanac/Galaxy-Map',
-    );
+    expect(readme).toContain('https://github.com/Elite-Dangerous-Almanac/Galaxy-Map');
     // It is the package's README and not the repository's. The repository's opens with
     // the repository name and describes the demo site, the dev container and the suites.
     const repositoryReadme = readFileSync(join(root, 'README.md'), 'utf8');

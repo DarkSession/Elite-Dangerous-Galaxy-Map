@@ -105,9 +105,9 @@ describe('the demo site build', () => {
     expect(libraryFiles.some((path) => path.endsWith('EDLoader1.svg'))).toBe(false);
   });
 
-  // The catalog holds six entries. Five import a committed file and the sixth fetches its
-  // records, so the built site names the dump URL as well as the five files.
-  test('carries the six catalog entries', () => {
+  // The catalog holds seven entries. Six import a committed file and one fetches its
+  // records, so the built site names the dump URL as well as the six files.
+  test('carries the seven catalog entries', () => {
     const text = demoFiles
       .filter((path) => path.endsWith('.js'))
       .map((path) => readFileSync(path, 'utf8'))
@@ -119,12 +119,14 @@ describe('the demo site build', () => {
       'uia',
       'adamastor',
       'multifaction',
+      'thargoid-war',
     ]) {
       expect(text).toContain(id);
     }
     expect(text).toContain('Canonn Factions');
     expect(text).toContain('https://downloads.spansh.co.uk/factions.json.gz');
-    // The spheres of the sixth entry are a committed file, as the other five sets are.
+    // The spheres of the Canonn Factions entry are a committed file, as the other six
+    // sets are.
     expect(text).toContain('Permit Unlocked Sector');
   });
 

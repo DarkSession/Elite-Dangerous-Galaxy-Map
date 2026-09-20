@@ -4,7 +4,7 @@
 // Every test of the first part builds a second map over a canvas of its own, with a
 // catalog the test wrote. Each entry's `load()` returns records the test made, so the
 // suite reaches no host but the page's own. The tests of the last part read the demo
-// page's own catalog: five entries that import a committed file and one that reads the
+// page's own catalog: six entries that import a committed file and one that reads the
 // factions dump, which those tests serve from a fixture of their own.
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
@@ -18,13 +18,14 @@ import {
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
-/** The five entries whose records the repository commits, in the order the page gives. */
+/** The six entries whose records the repository commits, in the order the page gives. */
 const COMMITTED_IDS = [
   'guardian-ruins',
   'guardian-structures',
   'notable-systems',
   'uia',
   'adamastor',
+  'thargoid-war',
 ];
 
 /**
@@ -712,7 +713,7 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
   expect(loads).toEqual(['one']);
 });
 
-test('the demo page carries the six Canonn sets', async ({ page }) => {
+test('the demo page carries the seven sets', async ({ page }) => {
   await openMap(page, '', { demoData: true });
 
   const catalog = await page.evaluate(() => ({
@@ -728,6 +729,7 @@ test('the demo page carries the six Canonn sets', async ({ page }) => {
     'uia',
     'adamastor',
     'multifaction',
+    'thargoid-war',
   ]);
   expect(catalog.collections).toEqual([
     'Canonn Research Group',
@@ -736,6 +738,7 @@ test('the demo page carries the six Canonn sets', async ({ page }) => {
     'Canonn Research Group',
     'Canonn Research Group',
     'Canonn Research Group',
+    'DCoH Overwatch archive',
   ]);
   expect(catalog.loaded).toBe('guardian-ruins');
 
@@ -758,13 +761,14 @@ test('the demo page carries the six Canonn sets', async ({ page }) => {
       }, id),
     );
   }
-  console.log('the five committed sets read', readings);
+  console.log('the six committed sets read', readings);
   expect(readings).toEqual([
     { systems: 212, categories: 3, spheres: 0, lines: 0 },
     { systems: 163, categories: 10, spheres: 0, lines: 0 },
     { systems: 16, categories: 4, spheres: 0, lines: 0 },
     { systems: 1116, categories: 19, spheres: 54, lines: 983 },
     { systems: 8, categories: 10, spheres: 0, lines: 8 },
+    { systems: 189, categories: 4, spheres: 0, lines: 0 },
   ]);
 });
 

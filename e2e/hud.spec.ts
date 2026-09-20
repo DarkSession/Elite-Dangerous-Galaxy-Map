@@ -33,7 +33,7 @@ interface HudBuild {
   readonly datasets?: boolean;
   /**
    * True builds the map with the nebula source the demo page holds, so the options
-   * panel carries the fifth switch. The default gives no source, which is the state a
+   * panel carries the sixth switch. The default gives no source, which is the state a
    * host that never asks for the nebulae is in.
    */
   readonly nebulae?: boolean;
@@ -41,6 +41,8 @@ interface HudBuild {
   readonly lockedOptions?: unknown;
   /** What `systemNames` the map is built with. A non-boolean reads the default. */
   readonly systemNames?: unknown;
+  /** What `systemIcons` the map is built with. A non-boolean reads the default. */
+  readonly systemIcons?: unknown;
   /** What `grid` the map is built with. */
   readonly grid?: boolean;
 }
@@ -111,6 +113,7 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
       hud,
       regions: options.regions,
       ...('systemNames' in options ? { systemNames: options.systemNames } : {}),
+      ...('systemIcons' in options ? { systemIcons: options.systemIcons } : {}),
       ...(options.grid === undefined ? {} : { grid: options.grid }),
       ...(datasets === undefined ? {} : { datasets }),
       ...(source === undefined ? {} : { nebulae: source }),
@@ -2034,6 +2037,7 @@ test.describe('the map options panel', () => {
     expect(switches).toEqual([
       'galactic-regions',
       'system-names',
+      'system-icons',
       'coordinate-grid',
       'shapes',
     ]);
@@ -2077,7 +2081,7 @@ test.describe('the map options panel', () => {
     ).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('the panel holds a fifth switch with a nebula source', async ({ page }) => {
+  test('the panel holds a sixth switch with a nebula source', async ({ page }) => {
     await openHud(page, { nebulae: true });
     const switches = await hud(page)
       .locator('.gm-hud__options-panel .gm-hud__toggle')
@@ -2086,6 +2090,7 @@ test.describe('the map options panel', () => {
     expect(switches).toEqual([
       'galactic-regions',
       'system-names',
+      'system-icons',
       'coordinate-grid',
       'shapes',
       'nebulae',
@@ -2185,31 +2190,116 @@ test.describe('the map options panel', () => {
     );
   });
 
+  // The scenario "The system icons switch moves the stacks".
+  test('the system icons switch moves the stacks', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await setView(page, { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 });
+    expect(
+      await addSystems(page, [
+        record('One', [0, 0, 0], 'Alpha', { icons: ['titan', 'mission'] }),
+      ]),
+    ).toBe(1);
+    const icons = hud(page).locator('.gm-hud__toggle[data-name="system-icons"]');
+    const count = async (): Promise<number> =>
+      page.evaluate(() => {
+        window.__hudMap?.debug.drawNow();
+        return document.querySelectorAll('.gm-system-icon').length;
+      });
+    await expect(icons).toHaveAttribute('aria-pressed', 'true');
+
+    await icons.click();
+    const off = await count();
+    await expect(icons).toHaveAttribute('aria-pressed', 'false');
+    await icons.click();
+    const on = await count();
+    console.log('the icon counts over the switch', { off, on });
+
+    expect(off).toBe(0);
+    expect(on).toBe(2);
+    await expect(icons).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // The scenario "The HUD draws over an icon stack". A stack takes a stacking level of
+  // its own for its depth order, and a level escapes into the page where its parent is
+  // not a stacking context. The stack layer carries a level, so it is one, and it holds
+  // every stack level inside it. The test reads the levels and the tree, because the two
+  // together are what CSS decides the paint order from: a HUD panel is part clear, so a
+  // reading of the picture cannot tell a stack behind it from one in front.
+  test('the HUD draws over an icon stack', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await setView(page, { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 });
+    expect(
+      await addSystems(page, [
+        record('One', [0, 0, 0], 'Alpha', { icons: ['titan', 'mission'] }),
+      ]),
+    ).toBe(1);
+
+    const reading = await page.evaluate(() => {
+      window.__hudMap?.debug.drawNow();
+      const icon = document.querySelector('.gm-system-icon');
+      const layer = document.querySelector('.gm-system-stacks');
+      const root = window.__hudMap?.hud?.element ?? null;
+      if (icon === null || layer === null || root === null) return null;
+      const levelOf = (element: Element): string => getComputedStyle(element).zIndex;
+      return {
+        icon: levelOf(icon),
+        layer: levelOf(layer),
+        hud: levelOf(root),
+        iconInLayer: layer.contains(icon),
+        sameParent: layer.parentElement?.parentElement === root.parentElement,
+      };
+    });
+    console.log('the levels of the stack and the HUD', reading);
+    if (reading === null) throw new Error('The page holds no stack or no HUD.');
+
+    // Every stack level lives inside the layer, so the page never reads it.
+    expect(reading.iconInLayer).toBe(true);
+    expect(reading.layer).not.toBe('auto');
+    expect(Number(reading.icon)).toBeGreaterThan(0);
+    // The layer and the HUD meet in one stacking context, and the HUD is over it.
+    expect(reading.sameParent).toBe(true);
+    expect(Number(reading.layer)).toBeLessThan(Number(reading.hud));
+  });
+
+  // The scenario "The system icons switch opens on the option". The test above, which
+  // builds the map with no `systemIcons`, reads the other half: the switch opens on.
+  test('the icons switch opens on the state the options named', async ({ page }) => {
+    await openHud(page, { systemIcons: false });
+    await expect(
+      hud(page).locator('.gm-hud__toggle[data-name="system-icons"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.evaluate(() => window.__hudMap?.areSystemIconsVisible())).toBe(
+      false,
+    );
+  });
+
   // The scenario "A locked option draws no switch".
   test('a locked option draws no switch', async ({ page }) => {
     await openHud(page, { lockedOptions: ['grid', 'shapes'] });
     const switches = await optionNames(page);
     console.log('the switches with the grid and the shapes locked', switches);
 
-    expect(switches).toEqual(['galactic-regions', 'system-names']);
+    expect(switches).toEqual(['galactic-regions', 'system-names', 'system-icons']);
   });
 
   // The first half of the scenario "Every switch locked drops the panel".
   test('every switch locked drops the panel', async ({ page }) => {
     await openHud(page, {
-      lockedOptions: ['regions', 'systemNames', 'grid', 'shapes'],
+      lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'],
     });
 
     expect(await hud(page).locator('.gm-hud__options-panel').count()).toBe(0);
     await expect(hud(page).locator('.gm-hud__category-panel')).toBeVisible();
   });
 
-  // The second half: the same four names on a map that holds a nebula source leave the
+  // The second half: the same five names on a map that holds a nebula source leave the
   // Nebulae switch, because the count of switches the panel would hold is not fixed.
-  test('the four names leave the nebulae switch', async ({ page }) => {
+  test('the five names leave the nebulae switch', async ({ page }) => {
     await openHud(page, {
       nebulae: true,
-      lockedOptions: ['regions', 'systemNames', 'grid', 'shapes'],
+      lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'],
     });
 
     expect(await optionNames(page)).toEqual(['nebulae']);
@@ -2219,7 +2309,14 @@ test.describe('the map options panel', () => {
   test('the nebulae switch locks with the rest', async ({ page }) => {
     await openHud(page, {
       nebulae: true,
-      lockedOptions: ['regions', 'systemNames', 'grid', 'shapes', 'nebulae'],
+      lockedOptions: [
+        'regions',
+        'systemNames',
+        'systemIcons',
+        'grid',
+        'shapes',
+        'nebulae',
+      ],
     });
     await expect
       .poll(() =>
@@ -2270,6 +2367,7 @@ test.describe('the map options panel', () => {
     expect(await optionNames(page)).toEqual([
       'galactic-regions',
       'system-names',
+      'system-icons',
       'coordinate-grid',
       'shapes',
     ]);
@@ -2282,6 +2380,7 @@ test.describe('the map options panel', () => {
     expect(await optionNames(page)).toEqual([
       'galactic-regions',
       'system-names',
+      'system-icons',
       'coordinate-grid',
       'shapes',
     ]);
@@ -3368,6 +3467,7 @@ test.describe('the keyboard', () => {
       'gm-hud__bulk-button|none',
       'gm-hud__toggle|galactic-regions',
       'gm-hud__toggle|system-names',
+      'gm-hud__toggle|system-icons',
       'gm-hud__toggle|coordinate-grid',
       'gm-hud__toggle|shapes',
       'gm-hud__reset|',
@@ -3377,7 +3477,7 @@ test.describe('the keyboard', () => {
     for (const entry of wanted) {
       expect(seen.filter((name) => name === entry)).toHaveLength(1);
     }
-    // This map holds no nebula source, so the panel builds no fifth switch and the ring
+    // This map holds no nebula source, so the panel builds no sixth switch and the ring
     // reaches none.
     expect(seen).not.toContain('gm-hud__toggle|nebulae');
   });
@@ -3393,7 +3493,7 @@ test.describe('the keyboard', () => {
     });
     console.log('the control after the shapes switch', after);
 
-    // The fifth switch follows the fourth one, so a keyboard user reaches it in the
+    // The sixth switch follows the fifth one, so a keyboard user reaches it in the
     // order the panel shows.
     expect(after).toBe('gm-hud__toggle|nebulae');
   });
@@ -3442,7 +3542,7 @@ test.describe('the keyboard', () => {
     await hud(page).locator('.gm-hud__options-panel .gm-hud__toggle').first().focus();
 
     const reached: { name: string; pressed: string | null; text: string }[] = [];
-    for (let step = 0; step < 4; step += 1) {
+    for (let step = 0; step < 5; step += 1) {
       const stop = await page.evaluate(() => {
         const active = document.activeElement;
         if (!(active instanceof HTMLElement)) return null;
@@ -3462,6 +3562,7 @@ test.describe('the keyboard', () => {
     expect(reached.map((one) => one.name)).toEqual([
       'galactic-regions',
       'system-names',
+      'system-icons',
     ]);
     for (const one of reached) {
       expect(one.pressed === 'true' || one.pressed === 'false').toBe(true);

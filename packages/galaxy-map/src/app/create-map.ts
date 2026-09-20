@@ -83,6 +83,10 @@ import type { MarkerOverlay } from './markers';
 // carries the three types.
 export type { Category, RealSystem, SystemImage } from '../scene-data/real-systems';
 
+// The two icon types, beside the three above: `SystemIconInput` is what a record names
+// an icon with, and `ResolvedIcon` is what `getSystem` gives back.
+export type { ResolvedIcon, SystemIconInput } from '../scene-data/marker-icons';
+
 // The HUD lists the shapes of a category through `getShapeInfo`, so the entry point
 // carries the two types that call reads and writes.
 export type { ShapeInfo, ShapeKind } from '../scene-data/shapes';
@@ -157,6 +161,12 @@ export interface GalaxyMapOptions {
    * otherwise. A value that is not a boolean takes the default.
    */
   readonly systemNames?: boolean;
+  /**
+   * False takes the system icon stacks off. The stacks are on unless the options turn
+   * them off, because an icon draws only where a record names one, so a set that names
+   * none opens on nothing new. A value that is not a boolean takes the default.
+   */
+  readonly systemIcons?: boolean;
   /**
    * False takes the cursor marker off. The marker is on unless the options turn it off,
    * because nothing else on the screen says where the cursor is. A host that draws its
@@ -724,6 +734,10 @@ export interface GalaxyMap {
   setSystemNamesVisible(on: boolean): void;
   /** True while the marker name labels draw. */
   areSystemNamesVisible(): boolean;
+  /** Turns the system icon stacks on or off. They are on when the map starts. */
+  setSystemIconsVisible(on: boolean): void;
+  /** True while the system icon stacks draw. */
+  areSystemIconsVisible(): boolean;
   /** Turns the cursor marker on or off. */
   setCursorMarkerVisible(on: boolean): void;
   /** True while the cursor marker draws. */
@@ -1086,6 +1100,9 @@ export function createGalaxyMap(
   // Off unless the options ask for the labels. The reading is `=== true`, so a value
   // that is not a boolean takes the default.
   let namesOn = options.systemNames === true;
+  // On unless the options turn it off, so a value that is not a boolean keeps the
+  // stacks on. `system-icons` states why the default is the other way to the labels.
+  let iconsOn = options.systemIcons !== false;
   let gridOn = options.grid === true;
   // On unless the options turn it off. The grid reads `=== true` because it is off by
   // default; the marker reads `!== false` because it is on by default.
@@ -1441,6 +1458,7 @@ export function createGalaxyMap(
       selectedIndex:
         selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity),
       namesOn,
+      iconsOn,
     });
     selectionWork.add(performance.now() - started);
     labels?.update(view, size, regionPassOn && regionsVisible, {
@@ -2121,8 +2139,13 @@ export function createGalaxyMap(
     },
     getSystem(index: number): RealSystem | null {
       // The call returns a copy, so a host cannot write the set through the reading.
+      // The icon list is copied as well, because a host that edits the array it is
+      // given would otherwise reach into the set.
       const system = set.system(index);
-      return system === null ? null : { ...system };
+      if (system === null) return null;
+      const copy = { ...system };
+      if (system.icons !== undefined) copy.icons = [...system.icons];
+      return copy;
     },
     categoryCount(): number {
       return set.categoryCount;
@@ -2178,6 +2201,14 @@ export function createGalaxyMap(
     },
     areSystemNamesVisible(): boolean {
       return namesOn;
+    },
+    setSystemIconsVisible(on: boolean): void {
+      if (typeof on !== 'boolean') return;
+      wake();
+      iconsOn = on;
+    },
+    areSystemIconsVisible(): boolean {
+      return iconsOn;
     },
     setCursorMarkerVisible(on: boolean): void {
       wake();

@@ -35,7 +35,7 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 | `pnpm dev`             | Starts the Vite dev server on port 5173                                    |
 | `pnpm build`           | Checks the types, then builds the library into `packages/galaxy-map/dist/` |
 | `pnpm build:demo-site` | Builds the demo site into `apps/demo/dist/`                                |
-| `pnpm build:demo-data` | Writes the six demo data files from the Canonn sources                     |
+| `pnpm build:demo-data` | Writes the seven demo data files from the Canonn and Overwatch sources     |
 | `pnpm preview`         | Serves `apps/demo/dist/` on port 4173                                      |
 | `pnpm test`            | Runs the Vitest unit tests                                                 |
 | `pnpm test:package`    | Reads what `npm pack` would ship and fails on a file that does not belong  |
@@ -51,16 +51,18 @@ crosses both hops, so `pnpm dev --host 0.0.0.0` reaches Vite.
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
 
-The demo page carries six data sets, which
+The demo page carries seven data sets, which
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) names: Guardian Ruins, 212 systems in 3
 categories; Guardian Structures, 163 systems in 10 categories; Notable Systems, 16
 systems in 4 categories; UIA Map, 1,116 systems in 19 categories with 54 spheres and 983
 lines;
-Adamastor Routes, 8 systems in 10 categories with 8 lines; and Canonn Factions, which
-fetches its records when the user loads it. It names them in the `datasets`
+Adamastor Routes, 8 systems in 10 categories with 8 lines; Canonn Factions, which
+fetches its records when the user loads it; and Thargoid War Cycle 2, 189 systems in 4
+categories. It names them in the `datasets`
 option any host uses, and it loads Guardian Ruins at start. The HUD's dataset field
 switches between them. `pnpm build:demo-data` writes the files of
-[apps/demo/demo-data/](apps/demo/demo-data/) again from the Canonn sources.
+[apps/demo/demo-data/](apps/demo/demo-data/) again from the Canonn sources and from the
+DCoH Overwatch archive.
 
 **Canonn Factions is the one entry that fetches.** Its `load()` fetches the 16.9 MB Spansh
 factions dump and moves the body to a worker, which decompresses it with the browser's own
@@ -72,14 +74,14 @@ page's own [apps/demo/src/multifaction.ts](apps/demo/src/multifaction.ts): the l
 itself, and a failed fetch leaves the map with the set it had. The 48 permit spheres of that set are
 committed, because they are a static literal and not a live dump.
 
-The last three sets carry shapes. `DatasetContent` carries records and no shape, so the
+Three of the sets carry shapes. `DatasetContent` carries records and no shape, so the
 page holds the shapes of each file by entry id and adds them from its own
 `onDatasetChange` listener with `addSpheres` and `addLines`.
 
 A Guardian Ruins record names its thumbnails at
 `https://ruins.canonn.tech/images/maps/`, so the browser loads them from Canonn and the
-repository holds no picture of them. The other five sets name no picture. The dev server
-and the demo site build both carry the six files, and the library build carries no
+repository holds no picture of them. The other six sets name no picture. The dev server
+and the demo site build both carry the seven files, and the library build carries no
 record of them. The browser suite serves the demo site and clears the set in its own
 helper, so a test that does not ask for a set opens an empty map. Open
 `#c=1500,0,-500&d=3000&p=35&y=0&g=1` to see the markers.
@@ -156,11 +158,14 @@ rejects with the reason. A record with an `id64`, or a name, that the set alread
 replaces the earlier one. The set holds at most 10,000 systems and the category table at
 most 256 categories.
 
-Three of the optional record fields hold what a dump does not carry, so the host adds
+Four of the optional record fields hold what a dump does not carry, so the host adds
 them itself. `description` is a paragraph about the system. `primaryStar` is the class
 of the primary star, for example `K5 V`. `images` is up to 8 pictures, each one a
-`{ url, caption }` object. The library never fetches a picture: the browser loads the
-URL the host gives when the HUD draws the thumbnail.
+`{ url, caption }` object. `icons` is up to 4 symbols, which the map stacks over the
+marker: a string names one of the 16 built-in symbols, and a `{ url, color }` object
+names a vector the host serves. The library never fetches a picture or a vector: the
+browser loads the URL the host gives when the HUD draws the thumbnail or the overlay
+draws the icon. The package README lists the built-in symbols.
 
 ```ts
 map.addSystems([
@@ -171,6 +176,7 @@ map.addSystems([
     primaryStar: 'A3 V',
     description: 'A Guardian beacon points to a ruins site.',
     images: [{ url: '/pictures/beacon.jpg', caption: 'The beacon' }],
+    icons: ['titan', { url: '/icons/ruins.svg', color: [255, 154, 60] }],
   },
 ]);
 ```
@@ -185,7 +191,8 @@ and a `debug` member the browser tests read. For the camera it carries `getBound
 `isCategoryVisible` reach its markers alone, and `setShapeCategoryVisible` and
 `isShapeCategoryVisible` reach its shapes alone. For the selection it carries `systemAt`,
 `getHover`, `getSelection`, `setSelection` and `onSelectionChange`. For the overlays it
-carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setGridVisible`,
+carries `setSystemNamesVisible`, `areSystemNamesVisible`, `setSystemIconsVisible`,
+`areSystemIconsVisible`, `setGridVisible`,
 `isGridVisible`, `onGridChange`, `setCursorMarkerVisible`, `getCursorMarkerVisible`,
 `regionNameAt` and `regionNameAtExact`. For the shapes it carries `addSpheres`,
 `addLines`, `clearShapes`, `sphereCount`, `lineCount`, `getSphere`, `getLine`,
@@ -779,7 +786,7 @@ packages/galaxy-map/        the library, published as @elite-dangerous-almanac/g
   THIRD_PARTY_NOTICES.md    the terms of the data and the art the package ships
 apps/demo/                  the demo site, private, which the Pages job publishes
   index.html, src/          the page
-  demo-data/                the six committed record sets
+  demo-data/                the seven committed record sets
   scripts/                  the build that writes them
   public/                   the loading picture
 e2e/                        the Playwright tests and the baseline image

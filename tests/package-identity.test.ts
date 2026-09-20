@@ -65,6 +65,24 @@ describe('the library package', () => {
     }
   });
 
+  // 0.2.16 is the first version whose `exports` map names `./assets/*`, which is what
+  // makes a marker vector reachable. The hold is a measure against a hijacked
+  // third-party maintainer account, and the almanac is the project's own package, so it
+  // is the one name the exclude list carries.
+  test('pins the almanac version and leaves the release hold alone', () => {
+    expect(library.dependencies?.['@elite-dangerous-almanac/core']).toBe('0.2.16');
+
+    const workspace = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8');
+    expect(workspace).toMatch(/^minimumReleaseAge: 10080$/m);
+    const exclude = /^minimumReleaseAgeExclude:\n((?:\s+- .+\n)+)/m.exec(workspace);
+    expect(exclude, 'the workspace holds an exclude list').not.toBeNull();
+    const names = (exclude?.[1] ?? '')
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.trim().replace(/^- /, '').replace(/'/g, ''));
+    expect(names).toEqual(['@elite-dangerous-almanac/core']);
+  });
+
   test('names its version', () => {
     expect(library.version).toBe('0.6.0');
   });
