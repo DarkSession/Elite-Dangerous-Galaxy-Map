@@ -554,10 +554,13 @@ test('the watcher reports the records, the index, the transfer file and the volu
   expect(names.filter((name) => /-colour[\w-]*\.ktx2$/.test(name)).length).toBe(33);
 });
 
-// The volumes are `.dds` block files, and the loader decodes the blocks on the CPU into
-// plain `R8` and `RGBA8` textures. It therefore asks for no compressed-texture extension.
-// The test refuses all three the formats belong to, so a run that started to upload the
-// blocks unchanged would find no format and draw nothing.
+// The volumes are `.ktx2` arrays of BC4 and BC1 blocks, and the map uploads the blocks
+// unchanged where the context carries both `EXT_texture_compression_rgtc` and
+// `WEBGL_compressed_texture_s3tc`. That is the fast path, and it is not a requirement:
+// a context that carries fewer than both decodes the blocks on the CPU and uploads
+// plain `R8` and `RGBA8` to the same array target. The test refuses all three
+// extensions the block formats belong to, so a build that had dropped the CPU decode
+// would find no format and draw nothing.
 test.describe('a card with no compressed-texture extension', () => {
   test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 

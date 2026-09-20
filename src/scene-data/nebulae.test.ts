@@ -169,7 +169,7 @@ describe('the committed nebula volumes', () => {
     expect(Object.keys(wanted)).toHaveLength(volumeIndex.assets.length * 2);
     for (const asset of volumeIndex.assets) {
       for (const kind of ['density', 'colour'] as const) {
-        const file = `${asset.name}-${kind}.dds`;
+        const file = `${asset.name}-${kind}.ktx2`;
         const bytes = readFileSync(`${volumeDir}${file}`);
         expect(createHash('sha256').update(bytes).digest('hex'), file).toBe(
           wanted[file],

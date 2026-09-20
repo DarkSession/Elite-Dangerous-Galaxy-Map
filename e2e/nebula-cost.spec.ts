@@ -141,6 +141,16 @@ test('a near view holds the budget', async ({ page }) => {
 // The baselines, taken on this card on the tree that still drew from the 3D textures,
 // are 0.523 ms at 60 light years, 0.512 at 120 and 0.485 at 260. The bounds are 1.5
 // times those three, rounded down to two places.
+//
+// Two indicative figures come before those: 0.655 ms at 120 light years and 0.614 at
+// 260, which `the box costs the same from inside as from outside` read as means of one
+// run before this change. The spec cites that pair, so it is written here and not
+// overwritten: a mean of one run is not a median of five, and the two are not the same
+// reading of the same tree.
+//
+// The swapped tree reads 0.528, 0.522 and 0.473, which is 1.01, 1.02 and 0.98 times
+// the baselines. The two extra fetches a step cost about 2 percent and not 50, because
+// they hit the neighbouring layer, which the first fetch already brought into cache.
 const FETCH_BOUND_MS: Record<number, number> = { 60: 0.78, 120: 0.76, 260: 0.72 };
 
 test('the worst camera holds the fetch bound', async ({ page }) => {
@@ -199,8 +209,10 @@ test('the worst camera holds the fetch bound', async ({ page }) => {
 // fragments and a camera outside it gets one layer and not two. The failure this guards
 // is the back faces drawing as well as the front, which doubles the fragments.
 //
-// The readings on the hardware renderer are 0.614 ms outside and 0.655 ms inside, a
-// difference of 6 percent, under the 20 percent bound.
+// The readings on the hardware renderer are 0.495 ms outside and 0.568 ms inside, a
+// difference of 13 percent, under the 20 percent bound. They were 0.614 and 0.655
+// before the volumes became slice arrays. These two are means of one run, so they move
+// more than the medians of five that `the worst camera holds the fetch bound` takes.
 test('the box costs the same from inside as from outside', async ({ page }) => {
   await openMap(page, '');
   await nebulaeAlone(page);

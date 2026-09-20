@@ -42,7 +42,7 @@ No other directory may import `src/render/nebula-pass`, `src/render/nebula-volum
 `src/scene-data/nebulae` **as a value**, and a third ESLint rule fails the lint on one. A
 type import is allowed, because the build erases it. The renderer reaches the nebulae
 through `src/render/nebula-slot.ts` alone, which holds types and three look defaults. The
-rule is what keeps 2,914,225 bytes of art and the nebula code out of the build of a host
+rule is what keeps 2,918,185 bytes of art and the nebula code out of the build of a host
 that asks for no nebulae.
 
 ## Stack

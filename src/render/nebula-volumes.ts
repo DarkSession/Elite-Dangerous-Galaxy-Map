@@ -22,9 +22,6 @@ const assetUrls = import.meta.glob<string>('./nebula-art/*', {
   eager: true,
 });
 
-/** Bytes a DX10 `.dds` header takes before the block payload. */
-export const NEBULA_DDS_HEADER_BYTES = 148;
-
 /** How many entries one transfer table holds. */
 export const NEBULA_TRANSFER_ENTRIES = 256;
 

@@ -31,9 +31,6 @@ const index = JSON.parse(readFileSync(`${artDir}nebula-volumes.json`, 'utf8')) a
   assets: NebulaVolumeEntry[];
 };
 
-/** The header of a `.dds` file with a `DX10` block, in bytes. */
-const DDS_HEADER_BYTES = 148;
-
 /** The two volumes of one asset, and the `vkFormat` each one takes. */
 const VOLUMES = [
   { kind: 'density', format: VK_FORMAT_BC4_UNORM_BLOCK },
@@ -141,28 +138,33 @@ describe('a KTX2 file the reader refuses', () => {
 // The conversion is provable: the writer moves no payload byte, so the blocks that go in
 // are the blocks that come out. It runs over all 66 volumes and not a sample, because
 // what it proves is that the art cannot drift through the container change.
+//
+// The `.dds` set the art arrived in is gone, so the round trip is of each committed
+// file against itself: the reader takes its blocks, the writer puts a header back
+// around them, and the result has to be the file on disk byte for byte. A writer that
+// moved one header byte would fail here, and so would a reader that read the level at
+// the wrong offset.
 describe('the round trip over the committed art', () => {
   test('gives back the blocks, the side, the layers and the format', () => {
     let checked = 0;
     for (const asset of index.assets) {
       for (const volume of VOLUMES) {
         const side = asset[volume.kind].size;
-        const file = `${asset.name}-${volume.kind}`;
-        const source = readFileSync(`${artDir}${file}.dds`);
-        const blocks = new Uint8Array(
-          source.buffer,
-          source.byteOffset + DDS_HEADER_BYTES,
-          source.byteLength - DDS_HEADER_BYTES,
-        );
-        const written = writeNebulaKtx2({ format: volume.format, side, blocks });
-        expect(written, file).toHaveLength(
-          NEBULA_KTX2_HEADER_BYTES + blocks.byteLength,
-        );
-        const read = readNebulaKtx2(written, `${volume.kind} ${asset.name}`);
+        const file = `${asset.name}-${volume.kind}.ktx2`;
+        const source = readFileSync(`${artDir}${file}`);
+        const read = readNebulaKtx2(source, file);
         expect(read.format, file).toBe(volume.format);
         expect(read.side, file).toBe(side);
         expect(read.layers, file).toBe(side);
-        expect(Buffer.from(read.blocks), file).toEqual(Buffer.from(blocks));
+        const written = writeNebulaKtx2({
+          format: volume.format,
+          side,
+          blocks: read.blocks,
+        });
+        expect(written, file).toHaveLength(
+          NEBULA_KTX2_HEADER_BYTES + read.blocks.byteLength,
+        );
+        expect(Buffer.from(written), file).toEqual(Buffer.from(source));
         checked += 1;
       }
     }

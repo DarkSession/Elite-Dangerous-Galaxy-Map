@@ -10,7 +10,6 @@ import {
   decodeBC4,
   nebulaAssetUrl,
   nebulaAssetUrlCount,
-  NEBULA_DDS_HEADER_BYTES,
   NEBULA_KTX2_BC1,
   NEBULA_KTX2_BC4,
   NEBULA_KTX2_HEADER_BYTES,
@@ -195,22 +194,20 @@ describe('the BC1 decode', () => {
 });
 
 describe('the asset URLs', () => {
-  // 33 density volumes, 33 colour volumes, the transfer file and the index. Each
-  // volume sits in the directory twice while the `.ktx2` set lands beside the `.dds`
-  // set, so the count is 134 until the `.dds` files go.
-  test('name all 134 files of the art directory', () => {
-    expect(nebulaAssetUrlCount()).toBe(134);
-    expect(nebulaAssetUrlCount()).toBe(index.assets.length * 4 + 2);
+  // 33 density volumes, 33 colour volumes, the transfer file and the index.
+  test('name all 68 files of the art directory', () => {
+    expect(nebulaAssetUrlCount()).toBe(68);
+    expect(nebulaAssetUrlCount()).toBe(index.assets.length * 2 + 2);
     for (const asset of index.assets) {
-      expect(nebulaAssetUrl(`${asset.name}-density.dds`)).toContain(asset.name);
-      expect(nebulaAssetUrl(`${asset.name}-colour.dds`)).toContain(asset.name);
+      expect(nebulaAssetUrl(`${asset.name}-density.ktx2`)).toContain(asset.name);
+      expect(nebulaAssetUrl(`${asset.name}-colour.ktx2`)).toContain(asset.name);
     }
     expect(nebulaAssetUrl('transfer.bin')).toContain('transfer');
     expect(nebulaAssetUrl('nebula-volumes.json')).toContain('nebula-volumes');
   });
 
   test('refuse a file the directory does not hold', () => {
-    expect(() => nebulaAssetUrl('no-such-asset-density.dds')).toThrow();
+    expect(() => nebulaAssetUrl('no-such-asset-density.ktx2')).toThrow();
   });
 });
 
@@ -349,15 +346,20 @@ describe('the upload', () => {
 describe('the committed set', () => {
   const files = [
     ...index.assets.flatMap((asset) => [
-      `${asset.name}-density.dds`,
-      `${asset.name}-colour.dds`,
+      `${asset.name}-density.ktx2`,
+      `${asset.name}-colour.ktx2`,
     ]),
     'transfer.bin',
     'nebula-volumes.json',
   ];
 
-  // Three different totals, each with a bound of its own. The committed readings are
-  // 1.05, 2.77 and 6.03 MiB.
+  // Four different totals, each with a bound of its own. The committed readings are
+  // 1.11, 2.78, 2.76 and 6.03 MiB.
+  //
+  // The two video-memory figures differ because the block path holds half a byte a
+  // texel where the decoding path holds one byte for the density and four for the
+  // colour. Both are read, because a context that carries fewer than both extensions
+  // still pays the second one.
   test('holds its budget over the wire, on disk and in video memory', () => {
     const MIB = 1024 * 1024;
     let wire = 0;
@@ -367,19 +369,32 @@ describe('the committed set', () => {
       disk += bytes.byteLength;
       wire += brotliCompressSync(bytes).byteLength;
     }
-    // The density uploads as `R8` and the colour as `RGBA8`, plus one transfer table
-    // of 256 entries of four `float32` an asset.
-    let decoded = index.assets.length * NEBULA_TRANSFER_BYTES;
+    // The transfer tables sit in video memory on both paths: one table of 256 entries
+    // of four `float32` an asset.
+    const tables = index.assets.length * NEBULA_TRANSFER_BYTES;
+    // The block path holds what the files hold, less their headers.
+    let blocks = tables;
+    for (const asset of index.assets) {
+      for (const { kind } of KINDS) {
+        blocks +=
+          readFileSync(`${artDir}${asset.name}-${kind}.ktx2`).byteLength -
+          NEBULA_KTX2_HEADER_BYTES;
+      }
+    }
+    // The decoding path uploads the density as `R8` and the colour as `RGBA8`.
+    let decoded = tables;
     for (const asset of index.assets) {
       decoded += asset.density.size ** 3 + asset.colour.size ** 3 * 4;
     }
     console.log('the volume set', {
       wire: wire / MIB,
       disk: disk / MIB,
+      blocks: blocks / MIB,
       decoded: decoded / MIB,
     });
     expect(wire).toBeLessThanOrEqual(1.3 * MIB);
     expect(disk).toBeLessThanOrEqual(3.0 * MIB);
+    expect(blocks).toBeLessThanOrEqual(3.0 * MIB);
     expect(decoded).toBeLessThanOrEqual(6.5 * MIB);
   });
 
@@ -390,13 +405,13 @@ describe('the committed set', () => {
     let disk = 0;
     for (const file of files) disk += readFileSync(`${artDir}${file}`).byteLength;
     expect(files).toHaveLength(68);
-    expect(disk).toBe(2_914_225);
+    expect(disk).toBe(2_918_185);
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(
         fileURLToPath(new URL(`../../${doc}`, import.meta.url)),
         'utf8',
       );
-      expect(text, `${doc} states another total`).toContain('2,914,225');
+      expect(text, `${doc} states another total`).toContain('2,918,185');
     }
   });
 
@@ -430,38 +445,19 @@ describe('the committed set', () => {
   });
 
   // The spec's scenario **The blocks are the blocks that were packed**. A block payload
-  // has no container, so the digest is the same number in the `.dds` file and in the
-  // `.ktx2` file. This is what makes the conversion provable.
-  test('holds the same blocks in the .dds file and the .ktx2 file', () => {
+  // has no container, so the digest recorded for the `.dds` file the art arrived in is
+  // the digest the `.ktx2` file carries. This is what makes the conversion provable.
+  test('holds the blocks that were packed', () => {
     const wanted = fixture.volume_blocks_sha256;
     expect(Object.keys(wanted)).toHaveLength(index.assets.length * 2);
     for (const asset of index.assets) {
       for (const { kind } of KINDS) {
         const name = `${asset.name}-${kind}`;
-        const fromDds = readFileSync(`${artDir}${name}.dds`).subarray(
-          NEBULA_DDS_HEADER_BYTES,
-        );
-        const fromKtx2 = readFileSync(`${artDir}${name}.ktx2`).subarray(
+        const blocks = readFileSync(`${artDir}${name}.ktx2`).subarray(
           NEBULA_KTX2_HEADER_BYTES,
         );
-        const digest = createHash('sha256').update(fromDds).digest('hex');
-        expect(createHash('sha256').update(fromKtx2).digest('hex'), name).toBe(digest);
-        expect(digest, name).toBe(wanted[name]);
-      }
-    }
-  });
-
-  // Every `.dds` is a DX10 file whose payload is 8 bytes a block of 4 by 4 by 1 texels.
-  test('holds a DX10 .dds of the size its side implies', () => {
-    for (const asset of index.assets) {
-      for (const [kind, side] of [
-        ['density', asset.density.size],
-        ['colour', asset.colour.size],
-      ] as const) {
-        const bytes = readFileSync(`${artDir}${asset.name}-${kind}.dds`);
-        expect(bytes.subarray(0, 4).toString('ascii')).toBe('DDS ');
-        expect(bytes.byteLength).toBe(
-          NEBULA_DDS_HEADER_BYTES + (side / 4) * (side / 4) * side * 8,
+        expect(createHash('sha256').update(blocks).digest('hex'), name).toBe(
+          wanted[name],
         );
       }
     }

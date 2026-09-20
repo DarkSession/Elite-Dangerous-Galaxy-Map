@@ -171,10 +171,16 @@ from the active list before task 1.1.
 
 ## 5. The decision
 
-- [ ] 5.1 Run task 3.1's test against the swapped tree and record all three readings here.
+- [x] 5.1 Run task 3.1's test against the swapped tree and record all three readings here.
       **If any camera is above its bound, take the abort branch** of task 5.1a. Otherwise go
       on to task 5.2.
-- [ ] 5.1a **The abort branch.** Revert the group 4 commit and the group 2 commit, which
+      **The readings, on the swapped tree:** 0.5275 ms at 60 light years against a bound of
+      0.78, 0.5217 at 120 against 0.76 and 0.4733 at 260 against 0.72, each the median of
+      five runs of 120 frames. Against the baselines of 0.523, 0.512 and 0.485 those are
+      ratios of 1.01, 1.02 and 0.98, where the bound is 1.5. The whole frame at the near
+      view, every pass on, read 1.095 ms against 16.7. **Every camera holds its bound, so
+      the change goes on to task 5.2** and the abort branch of 5.1a is not taken.
+- [ ] 5.1a **Not taken.** Every camera held its bound at task 5.1. **The abort branch.** Revert the group 4 commit and the group 2 commit, which
       removes the 66 `.ktx2` files, the `volume_blocks_sha256` map and the file-count edits
       together. Keep group 1: `readNebulaKtx2` and its tests are what a later attempt starts
       from, and the reader is dead code in the published bundle until then — move it and the
@@ -184,7 +190,7 @@ from the active list before task 1.1.
       mark the remaining tasks as not done with that reason, and do **not** archive it. The
       spec delta describes a tree that does not exist, so it must not reach
       `openspec/specs/nebulae/spec.md`.
-- [ ] 5.2 If the bound holds: delete the 66 `.dds` files and their entries from
+- [x] 5.2 If the bound holds: delete the 66 `.dds` files and their entries from
       `tests/fixtures/nebulae.json`, and fix everything that reads them. Named, because the
       proposal's "the tests that read any of them" is not a plan:
       `src/render/nebula-volumes.ts` (`NEBULA_DDS_HEADER_BYTES`, and `blocksOf` if task
@@ -218,21 +224,25 @@ from the active list before task 1.1.
       their digests, because the spec's scenario **The assets do not drift** needs it. The
       block digests of task 2.2 stay as they are, since a block payload has no container.
       Verify `src/render/nebula-art/` holds 68 files and the whole unit suite passes.
-- [ ] 5.3 Update the size figures everywhere they are written: the four-row table and
+- [x] 5.3 Update the size figures everywhere they are written: the four-row table and
       the on-disk paragraph in the spec delta, `AGENTS.md`, `README.md` and
       `THIRD_PARTY_NOTICES.md`. Read the total from the files rather than trusting this
       number; **the expected art-directory total is 2,918,185 bytes**, which is
       2,774,432 of volumes, 135,168 of transfer tables and 8,585 of index. Read the wire
       total from the files too: the proposal predicts none, because it depends on the
-      exact header bytes. Verify the unit test that pins the documented total passes —
+      exact header bytes. **The readings:** 2,918,185 bytes on disk, which is 2.783 MiB,
+      and 1,160,103 bytes over the wire, which is 1.106 MiB. The wire total rose by 4,376
+      bytes over the `.dds` set and sits far under the 1.3 MiB bound.
+      Verify the unit test that pins the documented total passes —
       it reads both `AGENTS.md` and `README.md` — and that
       `tests/third-party-notices.test.ts` passes.
-- [ ] 5.4 Add the video-memory reading for the block path to the budget test in
+- [x] 5.4 Add the video-memory reading for the block path to the budget test in
       `src/render/nebula-volumes.test.ts`: the block payload of every volume plus the transfer
       tables, against the spec's 3.0 MiB bound. Keep the decoded total and its 6.5 MiB bound
       beside it, because the decoding path still pays it. Verify both readings print and both
-      hold.
-- [ ] 5.4a Correct the comments that state a fact this change falsifies. None is covered by a
+      hold. **The readings:** 2,895,872 bytes on the block path, which is 2.762 MiB against
+      3.0, and 6,320,128 on the decoding path, which is 6.027 MiB against 6.5.
+- [x] 5.4a Correct the comments that state a fact this change falsifies. None is covered by a
       test, so each has to be found by hand:
       `e2e/nebula-cost.spec.ts` — the decode paragraph over `the volume decode holds the frame
       budget`, which says the loader decodes 33 assets in 16.9 ms from `.dds` blocks, and the
@@ -246,9 +256,10 @@ from the active list before task 1.1.
       After this change that is the fast path.
       `tests/main-bundle.test.ts` — "2.77 MiB of art" over the file-emission test.
       `src/render/buffers.ts` and `src/render/buffers.test.ts` — both state the art file
-      count, which is wrong from group 2 until task 5.2.
+      count, which is wrong from group 2 until task 5.2. Task 5.2 puts the directory back at
+      68 files and 66 volumes, so both read true again and neither is edited.
       `THIRD_PARTY_NOTICES.md` — "both in `.dds` block form".
-- [ ] 5.5 Verify the whole gate: `pnpm lint`, `pnpm exec vitest run`, `pnpm build`,
+- [x] 5.5 Verify the whole gate: `pnpm lint`, `pnpm exec vitest run`, `pnpm build`,
       `pnpm test:e2e` and `openspec validate store-nebula-volumes-as-slice-arrays`, and that
       the baseline screenshot still matches.
 

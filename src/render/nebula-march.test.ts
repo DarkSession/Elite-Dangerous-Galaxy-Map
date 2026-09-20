@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
   decodeBC4,
-  NEBULA_DDS_HEADER_BYTES,
+  readNebulaKtx2,
   NEBULA_TRANSFER_BYTES,
   NEBULA_TRANSFER_ENTRIES,
 } from './nebula-volumes';
@@ -35,9 +35,10 @@ interface Marched {
 
 function assetOf(entry: NebulaVolumeEntry, slot: number): Marched {
   const side = entry.density.size;
-  const blocks = readFileSync(`${artDir}${entry.name}-density.dds`).subarray(
-    NEBULA_DDS_HEADER_BYTES,
-  );
+  const blocks = readNebulaKtx2(
+    readFileSync(`${artDir}${entry.name}-density.ktx2`),
+    `density ${entry.name}`,
+  ).blocks;
   const at = slot * NEBULA_TRANSFER_BYTES;
   return {
     name: entry.name,

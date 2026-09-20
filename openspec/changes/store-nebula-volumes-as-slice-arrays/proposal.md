@@ -87,15 +87,16 @@ frame.
 | --- | --- | --- |
 | block payload | 2,760,704 | 2,760,704 |
 | art directory, on disk | 2,914,225 | 2,918,185 |
-| over the wire, brotli | 1,155,727 | read at task 5.3 |
+| over the wire, brotli | 1,155,727 | 1,160,103 |
 | video memory, block path | 6.03 MiB | **2.76 MiB** |
 | video memory, decoding path | 6.03 MiB | 6.03 MiB |
 | load decode, block path | 16.9 ms | **0** |
 
 The wire figure is `brotliCompressSync` at its defaults, which is the compressor the
-capability's budget is already stated against. The after figure is not predicted here: it
-depends on the exact header bytes, so task 5.3 reads it from the real files. Both sit far
-under the 1.3 MiB bound the capability states.
+capability's budget is already stated against. The after figure was not predicted here,
+because it depends on the exact header bytes; task 5.3 read it from the real files and it
+came out 4,376 bytes above the `.dds` set. Both sit far under the 1.3 MiB bound the
+capability states.
 
 KTX2 costs 60 bytes a file more on disk than DDS for the identical payload: a 208-byte
 header against DDS's fixed 148, so 3,960 bytes over 66 files. The 208 is 12 identifier

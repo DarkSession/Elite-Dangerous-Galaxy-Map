@@ -94,7 +94,7 @@ the density and four for the colour.
 
 |                                  | bound   | the committed set |
 | -------------------------------- | ------- | ----------------- |
-| over the wire, brotli            | 1.3 MiB | 1.10 MiB          |
+| over the wire, brotli            | 1.3 MiB | 1.11 MiB          |
 | on disk, as served               | 3.0 MiB | 2.78 MiB          |
 | in video memory, blocks uploaded | 3.0 MiB | 2.76 MiB          |
 | in video memory, decoded         | 6.5 MiB | 6.03 MiB          |
