@@ -521,20 +521,22 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       this project. PolyForm Noncommercial 1.0.0 is the candidate design names. Put the
       text in **`LICENSE.md` at the repository root**, which is what GitHub reads
 
-      **The maintainer chose MIT on 2026-09-20**, and `LICENSE.md` in the repository root
-      carries the published MIT text with the copyright line
-      `Copyright (c) 2026 Dark Session`. No word of the text is changed.
+      **PolyForm Noncommercial License 1.0.0**, at `LICENSE.md` in the repository root. The
+      text is the published one, taken from the SPDX license list data
+      (`text/PolyForm-Noncommercial-1.0.0.txt`), and no word of it is changed. One line is
+      added above the title, which the licence itself asks for:
+      `Required Notice: Copyright 2026 Dark Session (...)`. It names the licensor, which the
+      text does not otherwise carry.
 
-      The file carries one section below the text, `What these terms cover`. MIT is a
-      grant over this project's own work, and the map ships data and art of other
-      holders, which this project cannot license. The section names
-      `THIRD_PARTY_NOTICES.md` and says that part of what ships permits non-commercial use
-      only. It is informational and adds no condition, so the SPDX identifier stays `MIT`.
-
-      The first choice was **PolyForm Noncommercial License 1.0.0**, for the reason
-      `design.md` gives: the map's data is non-commercial and the code and the data ship in
-      one tarball. The maintainer replaced it. The task title still says "the
-      non-commercial licence", because that was the instruction when the task was written.
+      **MIT was tried and reverted on 2026-09-20.** The maintainer asked for MIT, read
+      what it grants, and put PolyForm back the same day. The reason is the one that chose
+      PolyForm first: MIT permits commercial use of this project's code, the tarball also
+      carries Frontier Developments' game data and art under media-usage rules that permit
+      non-commercial use only, and this project cannot widen those rules. A licence file
+      that reads as MIT alone over-states what ships, and a host who takes that grant at
+      face value breaches Frontier's rules rather than this licence. PolyForm says the
+      same thing as the data it ships beside. Do not change this without reading
+      `THIRD_PARTY_NOTICES.md` first.
 
 - [x] 6.1a Add a **`prepack`** script to `packages/galaxy-map/package.json` that copies the
       root `LICENSE.md` into the package. `prepack` and not `pnpm build`: `npm pack
@@ -558,24 +560,13 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       identifier is in `package.json`. The implementation does not tick this box. Read the
       file and write the approval and the date here before the first publish.
 
-      **The licence changed on 2026-09-20**, from PolyForm Noncommercial 1.0.0 to MIT, at
-      the maintainer's instruction. Two things to read before the approval. First, MIT
-      permits commercial use of this project's code, and the map ships Frontier
-      Developments' game data and art, whose media-usage rules permit non-commercial use
-      only. This project cannot widen those rules, so `LICENSE.md` states what the MIT
-      terms cover and names the notices; a reader who opens the licence alone must not
-      read it as a grant over the art. Second, a host who takes the MIT grant at face
-      value and uses the map for money is in breach of Frontier's rules and not of this
-      licence, and the notices are the only thing that warns them.
-
 - [x] 6.3 Set `license` in `package.json`: the SPDX identifier where npm accepts it, and
       `SEE LICENSE IN LICENSE.md` otherwise. Check which, rather than assuming, by running
       the packed-tarball check and reading npm's warning output
 
-      **npm accepts the SPDX identifier.** `license` is `MIT`, and `npm pack --dry-run`
-      prints no licence warning, so `SEE LICENSE IN LICENSE.md` is not needed. Checked by
-      running the pack and reading the whole output, first with
-      `PolyForm-Noncommercial-1.0.0` and again after the change to `MIT`.
+      **npm accepts the SPDX identifier.** `license` is `PolyForm-Noncommercial-1.0.0`, and
+      `npm pack --dry-run` prints no licence warning, so `SEE LICENSE IN LICENSE.md` is not
+      needed. Checked by running the pack and reading the whole output.
 
 - [x] 6.4 Write `packages/galaxy-map/README.md`: what the package is, how it is installed,
       what it needs beside itself, a smallest working example, the `nebulae` option and

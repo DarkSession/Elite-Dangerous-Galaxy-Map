@@ -739,10 +739,7 @@ first dispatch fails at its last step without them:
 3. The package's place in the **`@elite-dangerous-almanac`** npm organisation, which must
    allow this package to be published.
 
-The terms of this project's own code are [LICENSE.md](LICENSE.md), the **MIT** licence.
-The data and the art the map carries keep their own terms, which the two
-`THIRD_PARTY_NOTICES.md` files state, and the game data and visuals are non-commercial.
-The
+The terms are [LICENSE.md](LICENSE.md), the PolyForm Noncommercial License 1.0.0. The
 tarball carries a copy of it, the package's own `README.md` and
 `THIRD_PARTY_NOTICES.md`, and the build output; `pnpm test:package` fails on anything
 else.

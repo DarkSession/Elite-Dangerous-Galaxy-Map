@@ -151,14 +151,9 @@ describe('the packed tarball', () => {
     // it into the package, which is why the packed list holds it and the checkout does
     // not.
     const terms = readFileSync(join(root, 'LICENSE.md'), 'utf8');
-    expect(terms).toContain('MIT License');
-    expect(terms).toContain('Permission is hereby granted, free of charge');
-    expect(manifest.license).toBe('MIT');
-    // The MIT terms are this project's own work. The map also carries data and art of
-    // other holders, which this project cannot license, so the file says so and names
-    // the notices. A licence file that reads as MIT alone over-states what ships.
-    expect(terms).toContain('THIRD_PARTY_NOTICES.md');
-    expect(terms).toContain('non-commercial use');
+    expect(terms).toContain('PolyForm Noncommercial License 1.0.0');
+    expect(terms).toContain('Any noncommercial purpose is a permitted purpose.');
+    expect(manifest.license).toBe('PolyForm-Noncommercial-1.0.0');
     expect(packed).toContain('LICENSE.md');
     expect(readFileSync(join(packDir, 'LICENSE.md'), 'utf8')).toBe(terms);
   });

@@ -77,11 +77,10 @@ no version step. Build against the main entry point.
 
 ## Terms
 
-The package's own code is under the **MIT** licence, which `LICENSE.md` in this package
-states in full.
+The package is under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0),
+which `LICENSE.md` in this package states in full. Any noncommercial purpose is a
+permitted purpose.
 
-**The MIT terms do not cover everything the package carries.** The map draws data and art
-of other holders, and those files keep their own terms. `THIRD_PARTY_NOTICES.md` in this
-package states them one by one. The Elite Dangerous game data and visuals are Frontier
-Developments' property, under media-usage rules that permit **non-commercial use only**.
-Read both files before you use the map for money.
+`THIRD_PARTY_NOTICES.md` in this package states the terms of the data and the art the map
+draws. Read both: several of the sources are noncommercial as well.

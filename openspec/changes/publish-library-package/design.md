@@ -375,20 +375,11 @@ lines are present and correct, not that a computation is right.
 
 ### The licence
 
-`LICENSE.md` carries the **MIT** licence, which the maintainer chose. The implementation
-SHALL use a **published** licence rather than text written for this project: a ready-made
-licence has been read by lawyers, is recognised by tools, and says what a reader already
-expects it to say. MIT carries an SPDX identifier and npm accepts it.
-
-An earlier draft chose PolyForm Noncommercial 1.0.0, because the map's data is
-non-commercial and the code and the data ship in one tarball. The maintainer changed it
-to MIT on 2026-09-20. The two are not in conflict as long as the licence file says what
-it covers: MIT is a grant over **this project's own work**, and the game data and the art
-are Frontier Developments' property under media-usage rules this project cannot widen.
-`LICENSE.md` therefore carries a section below the MIT text that names
-`THIRD_PARTY_NOTICES.md` and says that part of what ships is non-commercial. The section
-is informational and adds no condition, so `license` stays the plain SPDX identifier
-`MIT`.
+`LICENSE.md` carries non-commercial terms, which the maintainer chose. The implementation
+SHALL use a **published** non-commercial licence rather than text written for this
+project: a ready-made licence has been read by lawyers, is recognised by tools, and says
+what a reader already expects it to say. PolyForm Noncommercial 1.0.0 is the obvious
+candidate and carries an SPDX identifier.
 
 `license` in `package.json` takes the SPDX identifier where npm accepts it, and
 `SEE LICENSE IN LICENSE.md` otherwise. The task list checks which, rather than assuming.
