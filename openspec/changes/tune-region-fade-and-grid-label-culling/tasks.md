@@ -86,19 +86,23 @@
       range at 6,500 against the paragraph "The ladder moves with the fade" in the delta, and
       soften its first sentence if the measurement disagrees with it. Verify with one
       Playwright run over that file.
-- [ ] 5.3 Update the two grid browser scenarios the new gate reaches, in
+- [x] 5.3 Update the two grid browser scenarios the new gate reaches, in
       `e2e/grid.spec.ts`: "Every label sits on a line" SHALL skip a label whose anchor is
       outside the viewport and SHALL NOT clamp the read rectangle into the canvas, and
       SHALL fail when no label is read; "A label does not draw stronger than its line"
       SHALL work out its expected weight at the same held point the placement reads.
-      Verify with one Playwright run over that file.
-- [ ] 5.4 Run `e2e/frame-budget.spec.ts` and the sampling budget scenario, and record the
+      Verify with one Playwright run over that file. Measured: 56 of 56 pass.
+- [x] 5.4 Run `e2e/frame-budget.spec.ts` and the sampling budget scenario, and record the
       mean and worst sampling times against the 2 ms and 4 ms bounds. The sweep now runs
-      in frames that skipped it, so this is a reading and not an assumption.
-- [ ] 5.5 Run `e2e/look.spec.ts`, read every snapshot that changed, confirm the change is
+      in frames that skipped it, so this is a reading and not an assumption. Measured: the
+      sampling budget scenario reads a mean of 0.261 ms and a worst of 0.900 ms over 300
+      frames, against 2 ms and 4 ms. `e2e/frame-budget.spec.ts` passes 21 of 21.
+- [x] 5.5 Run `e2e/look.spec.ts`, read every snapshot that changed, confirm the change is
       band drawn between 5,000 and 8,000 light years of range, or a grid label kept at the
       frame edge, and nothing else, and accept the new baselines. Name the views that
-      moved in the apply summary.
+      moved in the apply summary. Measured: 26 of 26 pass and no snapshot changed. The one
+      committed baseline is the default far view at 60,000 light years, where the zoom
+      fade takes the overlay to nothing and the grid is off, so no view moved.
 
 ## 6. The whole suite and the gate
 

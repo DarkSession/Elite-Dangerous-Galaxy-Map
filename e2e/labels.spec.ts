@@ -169,7 +169,7 @@ async function changedByRegionPass(page: Page): Promise<number> {
  * reads a figure of its own and not the one the page computed.
  */
 function rangeFade(rangeLy: number): number {
-  const t = Math.min(1, Math.max(0, (rangeLy - 8000) / (12000 - 8000)));
+  const t = Math.min(1, Math.max(0, (rangeLy - 5000) / (8000 - 5000)));
   return t * t * (3 - 2 * t);
 }
 
@@ -299,9 +299,14 @@ test.describe('the labels at 1280 by 720', () => {
     // Every zoom is every zoom the overlay draws in, which is the same set of zooms the
     // boundary draws in. The label takes the range fade at its own plane anchor, so the
     // name goes at the same distance the line beside it goes. The anchor sits near the
-    // cursor, so a zoom of 4,000 light years takes the name away and the HUD's top bar
+    // cursor, so a zoom of 3,000 light years takes the name away and the HUD's top bar
     // names the region there instead.
-    for (const distance of [20000, 15000, 10000, 7500, 4000]) {
+    //
+    // The ladder moves with the fade, which now runs from 5,000 to 8,000 light years.
+    // One rung must read an anchor strictly inside that band, and the test fails when
+    // none does, so the run measures the slope rather than assuming it.
+    const measured: { distance: number; rangeLy: number }[] = [];
+    for (const distance of [20000, 15000, 10000, 6500, 3000]) {
       await openView(page, `#c=0,0,0&d=${distance}&p=35&y=0`);
       await settleLabels(page);
       const ranges = await readRegionLabelRanges(page);
@@ -316,22 +321,34 @@ test.describe('the labels at 1280 by 720', () => {
         const box = await readLabelBox(page, 'Inner Orion Spur');
         expect(insideViewport(box as LabelReading, 1280, 720)).toBe(true);
       }
-      if (distance === 4000) {
-        // The anchor sits about 4,000 light years away, where the range fade reads 0.
-        expect(spur, 'an Inner Orion Spur label at 4,000 light years').toBeUndefined();
+      if (distance === 3000) {
+        // The anchor sits about 3,000 light years away, where the range fade reads 0.
+        expect(spur, 'an Inner Orion Spur label at 3,000 light years').toBeUndefined();
       }
       if (spur === undefined) continue;
+      measured.push({ distance, rangeLy: spur.rangeLy });
       // The zoom fade is 1 at and below 20,000 light years, so the opacity is the range
-      // fade alone, which is `smoothstep(8000, 12000, range)`.
+      // fade alone, which is `smoothstep(5000, 8000, range)`.
       expect(Math.abs(spur.opacity - rangeFade(spur.rangeLy))).toBeLessThan(0.05);
     }
+    console.log('the anchor range at each zoom', measured);
+    // At least one rung reads the slope. Without this clause the ladder could read the
+    // fade at 1 at every zoom that carries the label and at 0 at the one that does not.
+    const onTheSlope = measured.filter(
+      (reading) => reading.rangeLy > 5000 && reading.rangeLy < 8000,
+    );
+    console.log('the readings strictly inside the fade band', onTheSlope);
+    expect(onTheSlope.length, 'a reading strictly inside the fade band').toBeGreaterThan(
+      0,
+    );
   });
 
   test('the sweep does not run when the frame can carry no label', async ({ page }) => {
-    // The two views read the two halves of the gate. At a pitch of 89 degrees the whole
-    // frame lies inside the range floor, so the range half closes. At 60,000 light years
-    // the plane runs far past the floor and the zoom half closes.
-    for (const fragment of ['#c=0,0,0&d=4000&p=89&y=0', '#c=0,0,0&d=60000&p=35&y=0']) {
+    // The two views read the two halves of the gate. At a pitch of 89 degrees and a zoom
+    // of 2,500 light years the corner rays meet the plane at about 3,900 light years,
+    // under the floor of 5,000, so the range half closes. At 60,000 light years the plane
+    // runs far past the floor and the zoom half closes.
+    for (const fragment of ['#c=0,0,0&d=2500&p=89&y=0', '#c=0,0,0&d=60000&p=35&y=0']) {
       await openView(page, fragment);
       // The counter is cumulative, so it is reset after the view is set. An earlier
       // frame would otherwise leave the count above 0.
