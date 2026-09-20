@@ -253,6 +253,15 @@ a refusal on every stub context and three passing tests fail. This group comes f
       the requirement at line 233, and the `browser-suite` heading "The browser gate runs
       Chromium and Firefox" matches the requirement at line 12 of that spec. This change
       is the only one left to archive of the two.
-- [ ] 7.6 GATE — implementation review. Launch the `openspec-implementation-reviewer`
+- [x] 7.6 GATE — implementation review. Launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and state
-      the verdict and every finding when presenting the work.
+      the verdict and every finding when presenting the work. Done: the gate returned
+      APPROVE WITH NOTES. It reproduced the unit falsifications itself and confirmed the
+      probe is reachable on every exit path. Four of its five findings were answered in
+      `07b80e0`: the spec stated a decode range Firefox does not hold, a test could not
+      see a fast path that allocates nothing, the stub repeated the wrong error name, and
+      a third copy of the bright view survived. The fifth, a timed fetch-bound test that
+      failed four times for the gate, was not acted on: it belongs to an archived change,
+      a probe that runs twice at load cannot reach it, and it did not reproduce over four
+      runs here, which read medians of 0.585 to 0.682 against bounds of 0.78 and 0.76.
+      The gate measured 69 to 92 percent GPU use by another process during its own runs.

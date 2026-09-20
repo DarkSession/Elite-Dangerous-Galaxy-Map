@@ -154,6 +154,10 @@
       ladder, the sweep gate and the no-line view in `e2e/labels.spec.ts`; the three new
       grid scenarios in `src/app/grid-labels.test.ts`; and the two changed grid scenarios
       in `e2e/grid.spec.ts`.
-- [ ] 6.5 GATE — implementation review. Launch the `openspec-implementation-reviewer`
+- [x] 6.5 GATE — implementation review. Launch the `openspec-implementation-reviewer`
       subagent with this change id, wait for its verdict, fix what it blocks on, and
-      state the verdict and every finding when presenting the work.
+      state the verdict and every finding when presenting the work. Done: the gate returned
+      APPROVE WITH NOTES. It rebuilt both corrected figures and confirmed them, and added
+      that a lower band of 50 per cent would have passed on where the chains fall while 60
+      passes by geometry. Its five findings were all wrong records around correct work, and
+      all five were corrected in `e7318c1`.

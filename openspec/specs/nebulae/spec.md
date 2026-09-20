@@ -260,13 +260,28 @@ and no file in the repository SHALL carry such a name. The names are the library
 because the names it arrived under are not ours to publish and because two of them name the
 wrong nebula, so carrying them over would make the set harder to read, not easier.
 
-Each asset SHALL be a pair of 3D textures and an entry in one index file:
+Each asset SHALL be a pair of volumes and an entry in one index file:
 
 - a **density** volume in `BC4_UNORM`, one channel, which is the only channel the
   transmittance recurrence reads
 - a **colour** volume in `BC1_UNORM`, three channels, which is the emission
 - a **transfer function** of 256 entries of four floating-point values, which is an
   extinction coefficient the density indexes
+
+**Each volume SHALL ship as one KTX2 file holding an array of 2D slices**, one slice a
+texel of the third axis, in the order the march reads them. A BC4 or BC1 block is 4 by 4 by
+**1** texels, so a volume in either format is already stored slice by slice and the array
+form carries the same bytes in the same order.
+
+Each file SHALL hold `levelCount` 1, `faceCount` 1, `supercompressionScheme` 0,
+`layerCount` equal to the index's side for that volume, and a `vkFormat` of
+`VK_FORMAT_BC4_UNORM_BLOCK` for a density volume or `VK_FORMAT_BC1_RGB_UNORM_BLOCK` for a
+colour one. Its header SHALL be exactly **208 bytes**, which fixes the on-disk total.
+
+The files SHALL NOT use supercompression. Zstandard at level 19 over the block payloads
+gives 1,168,326 bytes where brotli at its defaults over the same payloads gives 1,105,946,
+and a supercompressed payload gains nothing from the brotli the serving path applies on
+top.
 
 The 33 transfer tables SHALL ship as **one binary file** of 33 by 256 by 4 `float32`, in the
 index's asset order, which is exactly 135,168 bytes. They SHALL NOT be written as numbers in
@@ -277,12 +292,61 @@ density volumes, 33 colour volumes, the transfer file and the index.
 The two volumes of one asset SHALL be able to differ in size. The density sizes in the
 committed set are 32, 48 and 64 to a side and the colour sides are 8, 16 and 32. The
 renderer SHALL take every side **from the index file** and SHALL hold none of them as a
-constant, so a repacked set is a drop-in.
+constant, so a repacked set is a drop-in. It SHALL check each file's own layer count and
+dimensions against the index and SHALL throw where they disagree.
 
-The renderer SHALL decode both block formats on load and SHALL upload plain `R8` and
-`RGBA8` 3D textures. It SHALL NOT require `WEBGL_compressed_texture_s3tc`,
-`EXT_texture_compression_rgtc` or `EXT_texture_compression_bptc`, because a WebGL2
-context is not guaranteed to carry them and the decode is a one-time cost on load.
+**Both volumes SHALL upload to a `TEXTURE_2D_ARRAY`, on both paths below.** The march
+therefore reads one sampler type and the renderer compiles one program, whichever path the
+context takes.
+
+**The renderer SHALL prove each block format on a `TEXTURE_2D_ARRAY` before it uses it,
+and SHALL NOT read the extension list as proof.** A context can carry an extension and
+still refuse its format on that target. On **2026-09-20**, on one RTX 4080, Firefox
+carried `EXT_texture_compression_rgtc` and refused `COMPRESSED_RED_RGTC1` on a
+`TEXTURE_2D_ARRAY` with `INVALID_OPERATION`, while it accepted the same format on a
+`TEXTURE_2D` and accepted `COMPRESSED_RGB_S3TC_DXT1` on both. Chromium accepted all four.
+
+That reading is **one browser, one driver, one day**, and this requirement does not depend
+on it staying true. The rule is the probe. A browser that later accepts the format takes
+the fast path with no change here, and the requirement still holds. The Firefox spec
+SHALL therefore log which path the browser took, as a diagnostic and not an assertion, so
+a reader of the run learns the answer for the browser in front of them rather than trusting
+the date above.
+
+The proof SHALL be a real allocation the driver answers, and not a version test, a browser
+test or a table of known drivers.
+
+**Where the context carries both `EXT_texture_compression_rgtc` and
+`WEBGL_compressed_texture_s3tc` and proves both formats, the renderer SHALL upload the
+blocks with no decode.** This is the fast path: the load does no block decode at all and
+the GPU holds the volumes compressed.
+
+**Where the context lacks either extension, or refuses either format, the renderer SHALL
+decode on the CPU and upload plain `R8` and `RGBA8`.** A refusal of one format SHALL take
+both volumes to the decode path. Mixing the two paths per format would work and would keep
+the compressed colour in Firefox, but it makes four states to hold instead of two for a
+gain the owner has weighed against the cost and declined. The map SHALL NOT require any
+compressed-texture extension, because a WebGL2 context is not guaranteed to carry them, and
+the decode is a one-time cost on load. The two paths SHALL draw the same frame within the
+fixture bound this capability already states.
+
+**The fallback decode is one synchronous task, and that is a stated property.** All 33
+assets decode inside one call, because the choice between the paths needs a context and the
+loader has none. It is paid once, at load, after the first frame. Nothing waits on the set,
+so it shows as one long frame and in no other way. A GPU that carries ETC or ASTC rather
+than S3TC and RGTC takes this path, and so does Firefox on a card that carries both.
+
+**The two browsers read different sums, and neither reading is the bound.** Chromium reads
+**14.2 to 19.2 ms** over twenty-eight readings on the development card. Firefox on the same
+card reads **13 to 23 ms** over nine, and every one of its figures is a whole number because
+Firefox rounds `performance.now()` to 1 ms, which quantises all 33 marks the sum is built
+from. A browser reading therefore belongs **beside** the other and not inside it, and
+neither is a promise.
+
+**The bound is the ratchet, and it SHALL be one figure both readings hold.** It is 24 ms
+today. The renderer SHALL hold the sum under it, so the cost cannot grow unseen, and the
+ratchet and not a browser's own range is what a test asserts. The one task straddles the
+16.7 ms frame budget on both browsers, which is the property this paragraph states.
 
 Both volumes SHALL be stored upside down against object space, and the march SHALL
 sample at `(u, 1 - v, w)`.
@@ -292,21 +356,23 @@ with `texelFetch` and `NEAREST` filtering. Both are core WebGL2. A `LINEAR` filt
 floating-point texture needs `OES_texture_float_linear`, which WebGL2 does not guarantee,
 so the march SHALL NOT filter the table.
 
-The set has three different sizes and the spec bounds each one. Decoding turns half a byte
-a texel into one byte for the density and four for the colour, so the video memory figure
-is neither of the other two.
+The set has four different sizes and the spec bounds each one. The two video-memory figures
+differ because the fast path holds half a byte a texel where the fallback holds one byte for
+the density and four for the colour.
 
-|                          | bound   | the committed set |
-| ------------------------ | ------- | ----------------- |
-| over the wire, brotli    | 1.3 MiB | 1.10 MiB          |
-| on disk, as served       | 3.0 MiB | 2.78 MiB          |
-| in video memory, decoded | 6.5 MiB | 6.03 MiB          |
+|                                  | bound   | the committed set |
+| -------------------------------- | ------- | ----------------- |
+| over the wire, brotli            | 1.3 MiB | 1.11 MiB          |
+| on disk, as served               | 3.0 MiB | 2.78 MiB          |
+| in video memory, blocks uploaded | 3.0 MiB | 2.76 MiB          |
+| in video memory, decoded         | 6.5 MiB | 6.03 MiB          |
 
-The video memory figure SHALL count the transfer tables as well as the volumes: 33 tables
+The video memory figures SHALL count the transfer tables as well as the volumes: 33 tables
 of 256 entries of four 32-bit values is 132 KiB, which is small but is not nothing.
 
-The on-disk reading SHALL count **every file the set serves**: the 66 `.dds` volumes, which
-are 2.64 MiB, the 132 KiB transfer file and the index. It is the bound a reader can check
+The on-disk reading SHALL count **every file the set serves**: the 66 `.ktx2` volumes, which
+are 2,774,432 bytes, the 132 KiB transfer file and the index, for 2,918,185 bytes in
+all. It is the bound a reader can check
 without trusting the index, because the files are served as they are stored and a serving
 path may or may not compress them. The assets SHALL
 load as fetched assets and SHALL NOT be bundled modules, so no chunk carries them.
@@ -332,19 +398,40 @@ the pass SHALL then draw nothing. This is the same handling the record file alre
 
 #### Scenario: The set holds its budget
 
-- **WHEN** a unit test sums the three totals of the 33 assets
+- **WHEN** a unit test sums the four totals of the 33 assets
 - **THEN** the total under **brotli at its default quality**, which is the compressor the
-  bound is stated against, is at most 1.3 MiB, the on-disk total read from the files
-  themselves is at most 3.0 MiB, **counting the transfer file and the index**, and the
-  decoded total — the volumes computed from their
-  sides, plus the transfer tables — is at most 6.5 MiB
+  bound is stated against, is at most 1.3 MiB; the on-disk total read from the files
+  themselves is at most 3.0 MiB, **counting the transfer file and the index**; the
+  block-uploaded total — the block payload of every volume, plus the transfer tables — is at
+  most 3.0 MiB; and the decoded total — the volumes computed from their sides, plus the
+  transfer tables — is at most 6.5 MiB
+
+#### Scenario: Every shipped file holds the shape the spec fixes
+
+- **WHEN** a unit test reads the header of all 66 committed `.ktx2` files
+- **THEN** each holds `levelCount` 1, `faceCount` 1, `supercompressionScheme` 0, a header of
+  exactly 208 bytes, a `vkFormat` that matches the volume's channel count, and a
+  `layerCount`, `pixelWidth` and `pixelHeight` all equal to the side the index gives
+
+#### Scenario: The blocks are the blocks that were packed
+
+- **WHEN** a unit test reads the block payload of every `.ktx2` volume and compares it
+  against the digest `tests/fixtures/nebulae.json` records for that asset
+- **THEN** every payload matches, so the container changed and the art did not
 
 #### Scenario: The sides come from the file and not from the code
 
 - **WHEN** a unit test loads an index whose density side is 16 and whose colour side is 4,
   with block payloads to match
-- **THEN** the loader uploads a 16 cubed density texture and a 4 cubed colour texture, and
-  throws nothing
+- **THEN** the loader uploads a 16-layer density array of 16 by 16 and a 4-layer colour
+  array of 4 by 4, and throws nothing
+
+#### Scenario: A file that disagrees with the index is refused
+
+- **WHEN** a unit test loads a volume whose container states a layer count or a dimension
+  that the index does not
+- **THEN** the loader throws its typed error, the map keeps running and the pass draws
+  nothing
 
 #### Scenario: The map needs no compressed-texture extension
 
@@ -352,6 +439,63 @@ the pass SHALL then draw nothing. This is the same handling the record file alre
   `WEBGL_compressed_texture_s3tc`, `EXT_texture_compression_rgtc` and
   `EXT_texture_compression_bptc` all refused
 - **THEN** the nebulae load, the pass draws, and the page shows no error
+
+#### Scenario: The blocks upload with no decode where the extensions are there
+
+- **WHEN** the browser test starts the map on a context that carries both
+  `EXT_texture_compression_rgtc` and `WEBGL_compressed_texture_s3tc` **and proves both
+  formats on a `TEXTURE_2D_ARRAY`**
+- **THEN** the load records no block decode at all, and the frame it draws differs from the
+  frame the decoding path draws by at most 0.01 RMSE in display units.
+
+  The name of this scenario is older than its condition. Carrying the two extensions is
+  **necessary and not sufficient**, which is what this change adds: the context must also
+  accept each format on the target the renderer uses. The test SHALL therefore read the
+  path the renderer took and SHALL NOT read the extension list as a stand-in for it
+
+#### Scenario: A refused format takes both volumes to the decode path
+
+- **WHEN** a unit test gives the renderer a context that reports both extensions and fails
+  the allocation of one of the two formats on a `TEXTURE_2D_ARRAY`
+- **THEN** the renderer reports no block format, both volumes decode, and the probe leaves
+  no texture bound and none allocated
+
+  **An error the context raised before the probe SHALL NOT read as the probe's own.** The
+  reading of an error clears it and reports one error at a time, so a probe that does not
+  clear the queue first reports a refusal for a fault that came from elsewhere. A context
+  that raises an error before the probe and then accepts both allocations SHALL report both
+  formats.
+
+  The test SHALL cover the refusal of **each** format on its own, not one of the two. The
+  fault this scenario answers refused one format and accepted the other, so a test that
+  refuses only the first would pass against a renderer that reads the first and trusts the
+  second.
+
+#### Scenario: The nebulae draw where the target refuses a block format
+
+- **WHEN** the browser test starts the map on a context whose `texStorage3D` refuses
+  `COMPRESSED_RED_RGTC1` on a `TEXTURE_2D_ARRAY` and accepts every other call, and reads the
+  frame with the nebulae on and again with them off
+- **THEN** the two frames differ, and the load records a block decode.
+
+  This scenario states the rule that the Firefox fault broke, in a form that does not need
+  Firefox to keep the fault. It SHALL run in the project that runs the whole suite, so the
+  guard holds on every run and on every machine. A browser that fixes its driver SHALL NOT
+  make this scenario vacuous, because the test refuses the format itself rather than asking
+  the driver to
+
+#### Scenario: The nebulae draw in Firefox
+
+- **WHEN** the browser test opens a close view of a bright nebula in Firefox, reads the
+  frame with the nebulae on and again with them off, and compares the two
+- **THEN** the two frames differ.
+
+  This scenario SHALL read **pixels** and SHALL NOT assert on a draw count alone. In the
+  fault it answers the records passed the selection and the draw calls ran, so every count
+  read correctly while the frame carried no nebula. Only the drawn frame shows it.
+
+  This scenario SHALL NOT compare against a committed baseline image, because the
+  `browser-suite` capability holds the one baseline to Chromium
 
 #### Scenario: The compaction error holds on every axis
 
@@ -388,8 +532,12 @@ A nebula SHALL draw by marching its volume front to back. Each step SHALL:
 4. add the colour times the light gain times the transmittance **after** the step, times
    the density, times the step length
 
-The output SHALL be the accumulated emission with `1 - transmittance.a` as its alpha,
-which is premultiplied.
+The output colour SHALL be the accumulated emission, which the composite adds to the
+frame directly. The march applies its own transmittance inside the sum, at step 4 above,
+so the finished sum SHALL NOT be scaled by it again.
+
+The output alpha SHALL be the record's transmittance, which is the factor the pass
+multiplies the scene behind the record by, and not one minus it.
 
 The **light gain** SHALL be three independent values, one per colour channel, that every
 record shares. It is the one brightness dial the sprite pass held, widened from one value
@@ -412,8 +560,10 @@ the transfer tables ask for and it is what gives those five their look: clamping
 percent. The transmittance reaches 6.0 on `cats-eye` at 32 steps per unit.
 
 The output alpha SHALL stay from 0 to 1 for every record in the set, at every step rate the
-map offers, because a premultiplied source-over blend has no meaning outside that range.
-The set meets this today; the requirement is what stops a repack from breaking it.
+map offers. The pass multiplies one accumulated transmittance by the alpha of every record
+it draws, so a value above 1 would raise the light of the scene behind a nebula and a value
+below 0 would turn it around. The set meets this today; the requirement is what stops a
+repack from breaking it.
 
 A camera **inside** the box SHALL start its march at the camera and not at the box's face,
 so a nebula the camera has entered draws the part of itself that is still in front.
@@ -531,39 +681,6 @@ or inside it.
 - **WHEN** a unit test draws two records over the same asset, from the same camera, whose
   rotations differ
 - **THEN** the two frames differ
-
-### Requirement: A nebula composites over the scene
-
-The pass SHALL composite each nebula with **premultiplied source-over** blending: the
-drawn colour is the nebula's emission plus the target's colour times one minus the
-nebula's alpha.
-
-One blend SHALL serve both a bright nebula and a dark one. A dark nebula attenuates
-because its transfer function holds a high extinction against a low emission; the pass
-SHALL NOT branch on the kind of a record and SHALL NOT use a second blend state.
-
-Because source-over depends on the order, the pass SHALL draw the selected nebulae from
-the furthest to the nearest.
-
-Two boxes MAY overlap in the frame. The pass SHALL NOT resolve the overlap and SHALL
-composite the nearer over the further, which is what the draw order gives.
-
-#### Scenario: A dark nebula attenuates
-
-- **WHEN** the browser test draws a dark nebula over a lit background and reads the mean
-  luminance of a block at its centre
-- **THEN** the mean is below the mean of the same block with the nebula pass switched off
-
-#### Scenario: A bright nebula adds light
-
-- **WHEN** the browser test draws a bright nebula over the background and reads the mean
-  luminance of a block at its centre
-- **THEN** the mean is above the mean of the same block with the nebula pass switched off
-
-#### Scenario: The order runs from the furthest to the nearest
-
-- **WHEN** a unit test selects two records at different ranges
-- **THEN** the pass draws the further one first
 
 ### Requirement: The material in front of a nebula attenuates it
 
@@ -880,13 +997,19 @@ alone.
 
 ### Requirement: The nebulae join the half-resolution target
 
-The pass SHALL draw into the half-resolution target, after the cloud sprites and before
-the target is read out. The glow therefore reads the nebulae with the volume and the
-clouds, and the tone map reads them with the rest of the scene.
+The pass SHALL draw into an accumulation target at the size of the half-resolution
+target. The composite SHALL apply that target to the half-resolution target after the
+cloud sprites and before the target is read out. The glow therefore reads the nebulae
+with the volume and the clouds, and the tone map reads them with the rest of the scene.
+
+The accumulation target SHALL hold the same number format as the half-resolution target,
+so a card that gives no floating point target draws the nebulae as it draws the rest of
+the scene.
 
 The renderer SHALL expose a switch that turns the nebulae off, a light gain that scales
 the emission of every nebula, and a step rate. Each SHALL be one value for every record
-and every asset.
+and every asset. The switch SHALL skip the accumulation target and the composite
+together, so a frame with the nebulae off pays for neither.
 
 #### Scenario: The switch removes the nebulae
 
@@ -909,3 +1032,208 @@ and every asset.
 - **WHEN** the browser test renders a view inside the band drawing a bright nebula, with
   the volume and the cloud switches off, the nebula switch on and the glow on
 - **THEN** a halo surrounds the nebula that the same view with the glow off does not hold
+
+#### Scenario: The composite runs once whatever the count
+
+- **WHEN** a unit test draws a frame that selects 1 record, a frame that selects 100 and a
+  frame that selects none
+- **THEN** the composite draws once in the first two and the accumulation target is
+  cleared once in each of them, and the third draws no composite and clears nothing
+
+### Requirement: The nebulae composite without an order
+
+The pass SHALL composite the nebulae through an accumulation target of its own, and the
+frame SHALL NOT depend on the order the records draw in.
+
+Each record SHALL contribute its emission to the accumulation target by addition, and its
+transmittance by multiplication. The accumulated colour is therefore the sum of the
+emissions of the drawn records, and the accumulated alpha is the product of their
+transmittances. The target SHALL start each frame at an emission of zero and a
+transmittance of one.
+
+One composite draw SHALL then apply the accumulation target to the scene: the scene
+colour becomes the accumulated emission plus the accumulated transmittance times the
+colour the scene held. The composite SHALL run once in a frame that draws a record, and
+once only, whatever the number of records.
+
+A frame that draws no record SHALL skip the target, the clear and the composite with the
+record draws. At a zoom weight of 0 the pass already issues no draw call, and the
+composite is a draw call like the others.
+
+One blend SHALL serve both a bright nebula and a dark one. A dark nebula attenuates
+because its transfer function holds a high extinction against a low emission; the pass
+SHALL NOT branch on the kind of a record and SHALL NOT use a second blend state.
+
+A dark nebula SHALL attenuate the scene behind the whole selection. It SHALL NOT
+attenuate another nebula of the same frame. Two records that overlap on the screen
+therefore both contribute their full emission, and the pass SHALL NOT resolve the
+overlap. This is the stated cost of the order independence above: the error it leaves is
+the light one record would take from another, and it does not change as the camera moves.
+
+The selection SHALL NOT order the records by range. It orders them by apparent size,
+which the covered-area budget needs, and the draw follows that order.
+
+The renderer SHALL carry a probe that draws the selected records in the reverse order, so
+a test can state the order independence rather than argue it. The probe SHALL NOT reach
+the supported surface, and the map SHALL draw with it off.
+
+#### Scenario: A dark nebula attenuates
+
+- **WHEN** the browser test draws a dark nebula over a lit background and reads the mean
+  luminance of a block at its centre
+- **THEN** the mean is below the mean of the same block with the nebula pass switched off
+
+#### Scenario: A bright nebula adds light
+
+- **WHEN** the browser test draws a bright nebula over the background and reads the mean
+  luminance of a block at its centre
+- **THEN** the mean is above the mean of the same block with the nebula pass switched off
+
+#### Scenario: The selection does not order by range
+
+- **WHEN** a unit test selects two records of the same apparent size at different ranges
+- **THEN** the order they come back in does not change when their ranges are exchanged
+
+#### Scenario: The overlap stays inside the light it was measured at
+
+- **WHEN** the browser test reads the mean frame luminance at Barnard's Loop at 120 light
+  years and at the Orion viewpoint at 800 and at 3,000, with every pass but the nebulae
+  off and the occlusion at 0
+- **THEN** each reading is at or below the bound written into the test
+
+  The light at a camera that draws overlapping records is higher under this blend than
+  under one that orders the records, because a record takes no light from another. The
+  bound at each camera is the figure the implementation measures, rounded up to the next
+  thousandth, in the manner of the march's own fixture bounds. The place is named so a
+  later reader can tell a near miss from the rounding.
+
+  A change that raises the light at any of the three cameras by more than **a tenth** is
+  outside what this capability accepts, and the bound does not move to fit it. That tenth
+  is a judgement about how much brightening the look can take. It is not a reading, and it
+  is the one figure here a reader is meant to argue with.
+
+#### Scenario: The frame does not change when the order is reversed
+
+- **WHEN** the browser test draws one camera twice, once with the selected records in the
+  order the selection gives them and once with that order reversed, at three cameras
+  inside the band, with every pass but the nebulae off and the occlusion at 0
+- **THEN** the two frames are one frame: no pixel differs by more than **1** of 255,
+  summed over the three channels, and the mean frame luminance agrees to seven places
+
+  This is the scenario that states the requirement. The two frames differ in the draw
+  order and in nothing else, so nothing but the order can move them.
+
+  The bound is not 0 because the accumulation target is `RGBA16F` and addition in it is
+  not associative: a sum of 120 emissions can land one step of the format either side of
+  the same sum added backwards. The implementation reads a frame of 87 records that is
+  byte for byte identical, a frame of 110 records that differs at 7 pixels of 921,600 and
+  a frame of 120 records that differs at 40, each by 1 of 255 in one channel. The means
+  differ by 6.1e-9 in 0.1933 at the worst of the three.
+
+#### Scenario: The frame does not step when two records change rank
+
+- **WHEN** the browser test orbits the camera about the Orion viewpoint at 3,000 light
+  years, with every pass but the nebulae switched off, and reads 720 pairs of frames, each
+  pair 0.004 degrees apart
+- **THEN** no pair differs at any pixel by more than **30**, summed over the three
+  channels on a 0 to 255 scale
+
+  This is the continuity reading beside the scenario above, and it measures more than a
+  step. The camera **orbits** the cursor, so 0.004 degrees turns it and also carries it
+  0.21 light years sideways at this radius. A record at range `r` therefore moves by
+  `turn * (1 - 3000 / r)` on the screen: nothing at the cursor's own range, a twentieth
+  of a pixel far beyond it, and about a third of a pixel at 400 light years, which is
+  well inside the orbit. The records nearest the camera move most and cover the most
+  pixels. The sweep therefore reads the motion plus any step, and never a step alone.
+
+  What the bound falsifies is the reading the ordered blend gives at the same sweep: a
+  worst pair of **71**. The implementation reads **26**, and 30 is that figure rounded up.
+  The count of pairs above the bound is not part of the assertion, because the motion puts
+  many pairs above any floor near the motion's own size: 163 of the 720 pairs sit above 8
+  under this blend and 167 sit above it under the ordered one.
+
+### Requirement: The march filters the third axis itself
+
+A `TEXTURE_2D_ARRAY` filters inside a layer and SHALL NOT be relied on to filter across
+layers. The march SHALL therefore read **two layers** at each sample point and interpolate
+between them, so the volume it samples is trilinear, as it is when the same data sits in a
+3D texture.
+
+The interpolation SHALL place layer centres at half-texel offsets, matching the convention
+a 3D texture uses, and SHALL clamp at both ends of the axis, so a sample past the last layer
+reads that layer and not a wrap.
+
+This doubles the volume fetches of one step, from two to four, in the fragment stage, which
+is where the pass spends most of its time. **The pass SHALL hold a measured cost bound.**
+
+The reading is the **nebula pass alone**, not the whole frame: every other pass off, the
+nebula occlusion at 0, at 1,280 by 720, in the timed pass of `scripts/e2e.mjs` on one worker,
+on the hardware renderer, as the median of five runs of 120 frames.
+
+**The camera SHALL be the worst of the set, not a convenient one.** A sweep of nine distances
+from Barnard's Loop — 20, 60, 120, 180, 200, 230, 260, 320 and 500 light years — ranks
+120 the
+most expensive, then 60. At 120 the camera is inside a record of radius 200, far enough in
+that the box fills the frame and far enough back that a ray crosses most of it. A camera
+deeper in is cheaper, because the segment from the eye to the far face is shorter.
+
+`e2e/nebula-cost.spec.ts` read the pass alone at 120 and at 260 light years before this
+change and recorded **0.655 ms** and **0.614 ms**. Those two are **means of one run** of 120
+frames, which is what `measureFrames` returns, and not medians of five. They are indicative
+and they are not the baseline.
+
+**The baselines are the three readings taken under the rule above**, on the tree that still
+drew from the 3D textures: **0.523 ms** at 60 light years, **0.512 ms** at 120 and
+**0.485 ms** at 260. The bounds are 1.5 times those three, rounded down to two places:
+**0.78 ms** at 60 light years, **0.76 ms** at 120 and **0.72 ms** at 260.
+
+Both indicative figures moved by more than a tenth against the baseline of the same camera,
+so all three baselines and all three bounds are stated from the readings in hand.
+
+The whole frame at the near view SHALL stay inside the 16.7 ms budget `far-view-rendering`
+states; it reads 1.17 ms today.
+
+The bound is 1.5 and not 2 because only the two volume fetches double: the transfer fetch,
+the recurrence, the emission and the early exit are unchanged. A pass that measured worse
+than 1.5 would mean the two extra fetches cost more than the rest of the step put together,
+which is a reason to keep the 3D textures and their decode.
+
+The 1.5 is measurable against the noise. Five runs at one camera spread by 5 to 15 percent of
+the reading, and the gap between 1.0 and 1.5 is 50 percent, so a run cannot cross the bound by
+drift alone.
+
+The figures above are absolutes taken on one card, and a slower card reads higher on both
+sides of the comparison. The suite is a local gate and not a continuous-integration one, so
+the rule is: **whenever a recorded baseline differs at all from the reading in hand, restate
+it and its bound here.** A tolerance would let the effective ratio drift away from 1.5, which
+is the one number this requirement exists to hold. The bound is a ratio against a recorded
+baseline; the absolute figure is only what the test asserts on the card that recorded it.
+
+#### Scenario: The layer interpolation matches a trilinear filter
+
+- **WHEN** a unit test runs the layer interpolation over a known volume at points between
+  layer centres, at both faces and past both ends
+- **THEN** every value equals the value a trilinear filter of the same data gives, within
+  one part in 10,000
+
+  The unit test runs a TypeScript statement of the arithmetic and **is not an oracle for the
+  shader**, because Vitest cannot run GLSL. It catches a wrong half-texel offset or a wrong
+  clamp in the arithmetic itself. What holds the shader to that arithmetic is the CPU fixture
+  comparison below, which marches the real shader on the GPU against a reference that
+  filters trilinearly.
+
+#### Scenario: The layer interpolation changes no frame
+
+- **WHEN** the browser test marches `barnards-loop` and `cats-eye` against the CPU fixtures
+  this capability already commits, under the requirement **A nebula marches a volume
+  integral**
+- **THEN** each reads within the bound that requirement already states, so the move from a
+  3D texture to a filtered array changed no frame
+
+#### Scenario: The worst camera holds the cost bound
+
+- **WHEN** the browser test measures the nebula pass alone at 60, 120 and 260 light years
+  from Barnard's Loop, under the conditions above
+- **THEN** the median of five runs is at most 0.78 ms at 60 light years, at most 0.76 ms at
+  120 and at most 0.72 ms at 260, which are 1.5 times the recorded baselines, and the whole
+  frame at the near view, every pass on, is inside 16.7 ms

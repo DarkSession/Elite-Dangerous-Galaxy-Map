@@ -385,8 +385,12 @@ itself runs.
   a line. A boundary bounds an area of the plane, so its width belongs to the picture and
   follows the picture.
 
-  **12,000 light years is the range at which the range fade reaches full**, so the band is at
-  its widest exactly where it first draws at full strength. The two figures are one figure.
+  **12,000 light years is the width's own reference range, and it is no longer the range at
+  which the range fade reaches full.** The two were one figure, and this change moves the
+  fade to 5,000 and 8,000 light years and leaves the reference range at 12,000. They are now
+  two figures: the fade says **where** a line draws and the reference range says **how wide**
+  it is. No line therefore changes width at any range, and the band is at its widest over the
+  whole of the fade band, which ends 4,000 light years nearer than the reference range.
 
   **The floor of 2 CSS pixels** keeps a far line drawn. At 1,080 rows it binds at a range of
   103,680 light years, which is past the far side of the galaxy from most views, so it is a
@@ -444,8 +448,8 @@ range term then narrows that width with depth, and the two terms multiply.
 data is a grid of 49.3494 light year cells. The change before this one answered the
 staircase with the band's width alone, on the reading that one cell measures
 `46,157 / range` CSS pixels at 1,080 rows and a 60 degree vertical field of view, so at the
-nearest range that draws, which is now **8,000** light years, a cell is **5.77** CSS pixels
-against a band of 34.6, which is **0.167** of it.
+nearest range that draws, which is now **5,000** light years, a cell is **9.23** CSS pixels
+against a band of 34.6, which is **0.267** of it.
 
 That reading is right and the conclusion drawn from it was wrong. It prices **one step in
 isolation**. The staircase is periodic and it runs along the boundary, so the eye reads the
@@ -483,14 +487,15 @@ the far end alone.** Two fades SHALL multiply.
 **The range fade** SHALL be read for each pixel, from the camera's distance to the point of
 the galactic plane under that pixel:
 
-- nothing at **8,000** light years and below,
-- rising on a smooth step to full at **12,000**,
-- full above 12,000.
+- nothing at **5,000** light years and below,
+- rising on a smooth step to full at **8,000**,
+- full above 8,000.
 
-**The two figures were 10,000 and 20,000.** They took the lines away further out than the
-owner wants: a line first drew at 10,000 light years and did not reach full strength until
-20,000, so a view of a neighbourhood carried no boundary at all over most of its frame. The
-band now opens 2,000 light years nearer and reaches full 8,000 light years nearer.
+**The two figures were 8,000 and 12,000, and 10,000 and 20,000 before that.** They still took
+the lines away further out than the owner wants: a line first drew at 8,000 light years and
+did not reach full strength until 12,000, so a view of a neighbourhood carried no boundary
+over the ground near the cursor. The band now opens 3,000 light years nearer again and
+reaches full 4,000 light years nearer.
 
 **The zoom fade** SHALL be read once for the frame, from the camera's distance to the
 cursor:
@@ -501,7 +506,7 @@ cursor:
 The zoom band has no close end. The range fade above holds that end per pixel instead,
 because a zoom is one number for the whole frame and the lines in that frame are not all at one
 range. At a zoom of 6,000 light years the boundary a few hundred light years from the cursor
-is under the 8,000 light year floor and the boundary near the horizon is 40,000 light years
+is under the 5,000 light year floor and the boundary near the horizon is 40,000 light years
 off, well above it. The close end of the old zoom band took both away, so a user who zoomed in
 to read a neighbourhood lost the region lines of the whole galaxy around them and not only the
 one under the cursor.
@@ -510,7 +515,7 @@ The close end is per pixel because one frame holds lines whose ranges are far ap
 floor cuts the near ones and keeps the far ones. **It is not there to hide a staircase.** The
 drawn set is smoothed, so the near line carries none, and the retired reading above is the one
 this paragraph used to rest on. What the floor buys is stated in "What the close zoom shows
-instead" below: under 10,000 light years the map names the region in the HUD's top bar, which
+instead" below: under 5,000 light years the map names the region in the HUD's top bar, which
 reads at every zoom, instead of drawing a boundary that would cross the frame as one band.
 
 **The plane point under the pixel** is what the range is measured to. The boundary chains
@@ -523,7 +528,7 @@ The range fade above is the only fade the line takes over its own distance, and 
 no second channel in the coverage buffer: the composite pass reads the plane point under
 each pixel from the frame's own projection, so the coverage buffer SHALL stay one channel.
 
-**What the close zoom shows instead.** Below 8,000 light years of range the map draws no
+**What the close zoom shows instead.** Below 5,000 light years of range the map draws no
 boundary, and it places no region name whose own anchor is that near either. The user reads the
 region from the HUD's top bar, which names the region under the cursor at every zoom. The
 requirement "The handle reports the region at a plane point" states that, and the handle
@@ -568,34 +573,36 @@ two parts of it, or compares it with the same window drawn another way, so the w
 must carry one strength of the range fade.
 
 **The one-chain search is exempt from every premise.** The view it finds is the one the fade
-scenarios open, at zooms of **7,000, 10,000, 12,000, 20,000, 25,000 and 31,000** light years.
+scenarios open, at zooms of **4,000, 6,500, 8,000, 20,000, 25,000 and 31,000** light years.
 It exists to be read inside both fades, so a premise that put it outside them would take away
 the only view that reads them. It keeps its viewport of **1280x720**, and its window of 8 CSS
 pixels SHALL hold one chain and no other at every one of those six zooms.
 
 The search was the **both-sets** search, and it held a point on a traced segment within half
 a light year of the smoothed set. The smoothed set is gone, so the search holds a point on the
-traced set alone, and its three close zooms follow the range fade to its new figures.
+traced set alone, and its three close zooms follow the range fade to its new figures. The
+three close zooms move again with this change, from 7,000, 10,000 and 12,000, so the search
+SHALL run again and `e2e/region-views.ts` SHALL hold what it finds.
 
 **Premise one: the reading point SHALL sit at a range of at least 20,000 light years from
 the camera.** Each of the three searches puts the **cursor on the reading point**, so the
 range of that point is the zoom itself, and a zoom of 20,000 light years holds the premise
 exactly.
 
-The range fade is a smooth step that ends at **12,000** light years, so its slope at 20,000 is
-**zero** with 8,000 light years to spare. The premise held at its own floor before this
-change, when the fade ended at 20,000; it now holds with room. A window around a point at that
+The range fade is a smooth step that ends at **8,000** light years, so its slope at 20,000 is
+**zero** with 12,000 light years to spare. The premise held at its own floor two changes ago,
+when the fade ended at 20,000; it holds with more room again. A window around a point at that
 range carries one strength over the whole of itself, to better than a millionth: the three
 searches work at a pitch of 89 degrees, where every plane point of a window a few tens of CSS
 pixels wide sits within about 3 light years of the cursor's own range.
 
 Inside the fade the strength follows the range, and the slope is steepest in the middle. At a
-range of 10,000 light years a window of 40 CSS pixels spans about 430 light years, which the
-fade reads as 16 per cent. A window there would fail the corner rule on the fade and not on
+range of 6,500 light years, the middle of the fade, a window of 40 CSS pixels spans about 280
+light years, which the fade reads as 14 per cent. A window there would fail the corner rule on the fade and not on
 the drawing. This is why the premise is a floor and not a band.
 
 **Premise one does not move, and no view moves with it.** A floor that followed the fade would
-put the three views at 12,000 light years, which would change every viewport of the table
+put the three views at 8,000 light years, which would change every viewport of the table
 below, every window stated in CSS pixels and every count. The premise is a floor, and a floor
 that is met with room is still met.
 
@@ -850,7 +857,7 @@ The definition above is enough to take them again. The
 join search moves the same way: scaling its bend reach changes what counts as a bend, and
 its count ran from 6,713 to 13,380 when this was tried.
 
-The premises themselves do not move. The range fade now reaches full at 12,000 light years,
+The premises themselves do not move. The range fade now reaches full at 8,000 light years,
 so premise one still holds at its floor of 20,000 with a slope of zero, and premise two still
 fixes the zoom of the three governed views at 20,000. The viewport table stays as it is: it
 was set by the premises and not by the kernel or by the band's width.
@@ -912,14 +919,28 @@ flat 0.25, because the viewport and the range are
   overlay on and with it off, and compares the two image files
 - **THEN** the two image files are byte-identical
 
+#### Scenario: The range fade reads its two figures
+
+- **WHEN** a unit test reads the range fade at 4,000, 5,000, 6,500, 8,000 and 20,000 light
+  years, and reads the two constants the composite pass and the labels take
+- **THEN** the fade is 0 at 4,000 and at 5,000, 0.5 at 6,500, and 1 at 8,000 and at 20,000,
+  and the two constants are 5,000 and 8,000
+
+#### Scenario: The band's width keeps its own reference range
+
+- **WHEN** a unit test reads the band's half width at 1,080 CSS rows at ranges of 5,000,
+  8,000, 12,000, 20,000 and 40,000 light years
+- **THEN** the whole band measures 34.6 CSS pixels at 5,000, 8,000 and 12,000 light years,
+  20.7 at 20,000 and 10.4 at 40,000, which is what it measured before the fade moved
+
 #### Scenario: The boundary draws in full at the close end of the band
 
-- **WHEN** the browser test opens the one-chain view, at a zoom of **12,000 light years** and
+- **WHEN** the browser test opens the one-chain view, at a zoom of **8,000 light years** and
   again at **4,000**, at 1280x720, with the overlay on and again with it off, and reads the
   frames within 8 CSS pixels of the projection of the centre
-- **THEN** at 12,000 light years the frame with the overlay differs from the frame without
+- **THEN** at 8,000 light years the frame with the overlay differs from the frame without
   it; at 4,000 the two frames are identical within that window, and no label names a region
-  whose anchor is within 8,000 light years of the camera.
+  whose anchor is within 5,000 light years of the camera.
 
   The label clause is about the anchor's range and not the zoom. At a pitch of 35 degrees the
   frame at 4,000 light years still holds plane points out to about 26,300 light years, so
@@ -929,17 +950,17 @@ flat 0.25, because the viewport and the range are
   The band this scenario reads is the range band and not the zoom band, so the reading at
   4,000 light years is a window and not the whole frame.
 
-  12,000 light years is the closest range at which a line draws in full: the range fade
-  reaches 1 at 12,000 and the zoom fade leaves 12,000 at 1, so both readings are 1 at the
+  8,000 light years is the closest range at which a line draws in full: the range fade
+  reaches 1 at 8,000 and the zoom fade leaves 8,000 at 1, so both readings are 1 at the
   cursor's own range. At 4,000 the centre sits at the cursor, where the range fade is 0. The
-  rest of the frame is not read there, because a line near the horizon is over 8,000 light
+  rest of the frame is not read there, because a line near the horizon is over 5,000 light
   years off and does draw, which is the whole point of the range fade
 
 #### Scenario: A far line still draws while the near line is gone
 
 - **WHEN** the browser test opens a view at a zoom of **4,000 light years** at a pitch of
   **30 degrees**, with the overlay on and again with it off, and counts the pixels the overlay
-  changed in the **top 10 per cent of the rows** and in the rows **below 35 per cent**
+  changed in the **top 20 per cent of the rows** and in the rows **below 60 per cent**
 - **THEN** the top band holds changed pixels and the lower band holds none.
 
   The bands are set by the geometry and not by eye. The vertical field of view is 60 degrees,
@@ -949,14 +970,61 @@ flat 0.25, because the viewport and the range are
   is why this scenario does not read at a pitch of 5.
 
   At a zoom of 4,000 light years and a pitch of 30 the camera sits **2,000 light years** above
-  the plane. The rows whose plane point is beyond 12,000 light years, where the range fade is
-  1, are the top **17.8 per cent**; the rows whose plane point is under 8,000, where the fade
-  is 0, are everything below **25.9 per cent**. The two bands this scenario reads, 10 per cent
-  and 35 per cent, sit inside those and do not touch.
+  the plane. The rows whose plane point is beyond 8,000 light years, where the range fade is
+  1, are the top **25.9 per cent**; the rows whose plane point is under 5,000, where the fade
+  is 0, are everything below **40.3 per cent**.
 
-  The two readings were 11.0 and 21.1 against the fade of 10,000 and 20,000, and the lower
-  band read 30 per cent. The fade opens nearer, so both rows move down the frame and the lower
-  band moves with them
+  **Those two figures are the centre column, and the reading takes whole rows.** The test
+  counts the pixels of a rectangle that runs the width of the frame, so a row is held only
+  when **every** column of it is under the floor. A ray at the side of the frame carries a
+  horizontal term, so it leaves the plane at a shallower angle than the centre ray of the
+  same row and meets it further away. The range at a row share `s` is
+  `2000 * |d| / s` for `d = (xn * tan30 * aspect, yn * tan30, -1)` and `yn = 1 - 2 s`. At
+  1280x720 the centre column reads **4,993.8** light years at `s = 0.403`, which is the
+  40.3 per cent above, while the corner column reads **7,133.4** there. The corner column
+  does not fall to 5,000 light years until `s = `**0.5743**.
+
+  **The lower band SHALL therefore clear the corner figure and not the centre one.** It is
+  **60 per cent**, which leaves 2.6 points of room over the 57.43. The top band is unaffected,
+  because a corner ray reads **longer** than the centre ray and the top band asks for a range
+  above 8,000 light years: at 20 per cent the centre column reads 10,583 light years and every
+  column beside it reads more.
+
+  **The measured reading.** The overlay changes pixels down to **row 341 of 720**, which is
+  **47.36 per cent**, at columns **1,085 to 1,102**. That is right of the middle of the frame
+  and not at its corner, because the band draws only where a boundary chain runs. The 60 per
+  cent bound is the geometry and the 47.36 is what this data draws inside it.
+
+  The two readings were 17.8 and 25.9 against the fade of 8,000 and 12,000, and the bands read
+  10 and 35 per cent. The fade opens nearer again, so both rows move down the frame and both
+  bands move with them.
+
+  **This scenario no longer reads the two fade figures.** The old bands of 10 and 35 per cent
+  did. Against the bands of 20 and 60 per cent the old fade of 8,000 to 12,000 would also
+  pass: the top band reads 10,583 to 14,743 light years, which draws, and the lower band
+  reads 4,792 and under, which does not. The claim this scenario holds is therefore the
+  narrow one, that a far line draws while a near line is gone, and not where the two figures
+  sit. The scenario "The boundary fades out across the close end" and the two unit tests of
+  `src/render/region-pass.test.ts` hold the figures themselves.
+
+  **Why 35 per cent held against the old floor.** The corner column under-read there as
+  well: at 35 per cent the corner ray met the plane at **8,249** light years, just past the
+  old floor of 8,000, where the fade reads **0.01107**. The band's alpha at that strength is
+  `0.62 * 0.01107`, which is 0.0069, and over dark space that moves red by 1.3 of 255 and
+  green by 1.0. That is 0.0036 of luminance, **above** the 0.001 the test counts a pixel at,
+  so the threshold alone does not explain why the row held.
+
+  **What the run reads is the true floor.** At the columns the band draws in, 1,085 to
+  1,102, the fade at row 341 works out at 0.0137 and at row 342 at 0.0126. The reading sees
+  0.0137 and does not see 0.0126, so its true floor sits near **0.013** of fade and not at
+  0.001. The old corner fade of 0.01107 sat just under that, by about one part in ten and
+  not by a factor. The row also held because no boundary chain runs at the frame corner in
+  this view, which is a property of the data and not of the rule.
+
+  **That is the reason for 60 per cent and not 50.** A bound of 50 per cent would pass this
+  run, because the drawn pixels stop at 47.36 per cent, but it would pass on where the
+  chains fall. Below 60 per cent every column, the corner included, reads 4,792 light years
+  or less, where the fade is exactly 0. The lower band then holds 0 by geometry
 
 #### Scenario: A boundary is visible at medium zoom
 
@@ -969,22 +1037,22 @@ flat 0.25, because the viewport and the range are
 #### Scenario: The overlay fades out across the close end of the band
 
 - **WHEN** the browser test opens the one-chain view, the same view the scenario "The boundary
-  draws in full at the close end of the band" opens, at zooms of **12,000**, **10,000** and
-  **7,000 light years**, with the overlay on and again with it off, and reads the overlay's
+  draws in full at the close end of the band" opens, at zooms of **8,000**, **6,500** and
+  **4,000 light years**, with the overlay on and again with it off, and reads the overlay's
   own contribution as the **largest** difference within 8 CSS pixels of the projection of the
   centre, the frame with the overlay less the frame without it
-- **THEN** the contribution at 10,000 is between a fifth and four fifths of the contribution
-  at 12,000, and the contribution at 7,000 is zero.
+- **THEN** the contribution at 6,500 is between a fifth and four fifths of the contribution
+  at 8,000, and the contribution at 4,000 is zero.
 
-  The centre sits at the cursor, so its range to the camera is the zoom. 10,000 light years is
-  the middle of the smooth step, where the range fade reads 0.5, and 7,000 is below the 8,000
+  The centre sits at the cursor, so its range to the camera is the zoom. 6,500 light years is
+  the middle of the smooth step, where the range fade reads 0.5, and 4,000 is below the 5,000
   at which it reaches 0. The bounds are wide because the reading is a pixel of the frame and
   not the fade itself.
 
-  **The contribution at 12,000 is read against a band at its widest**, because 12,000 is the
-  reference range of the width rule and the half width is `base` there. The two readings this
-  scenario compares sit at 12,000 and 10,000, where the half width is `base` at both, so the
-  width rule does not enter the ratio.
+  **Both contributions are read against a band at its widest.** The half width is `base` at
+  every range nearer than the width rule's reference range of 12,000 light years, and the two
+  readings this scenario compares sit at 8,000 and 6,500, so the width rule does not enter the
+  ratio.
 
   The view is named and not taken from the scenario before it, because the 8 CSS pixel window
   has to hold one chain and no other: the search that finds this view keeps every other chain
@@ -1522,10 +1590,10 @@ same two fades that the requirement
 - the **zoom fade**, read once for the frame from the camera's distance to the cursor: 1 at
   20,000 light years and below, falling on a smooth step to 0 at **30,000** and above;
 - the **range fade**, read from the camera's distance to the label's **own plane anchor**:
-  0 at **8,000** light years and below, rising on a smooth step to 1 at **12,000** and
+  0 at **5,000** light years and below, rising on a smooth step to 1 at **8,000** and
   above. These are `REGION_RANGE_NONE` and `REGION_RANGE_FULL`, the same two constants the
   composite pass takes, and no copy SHALL be made of them. The two figures moved with the
-  lines, and the label follows them because it reads the same constants.
+  lines again, and the label follows them because it reads the same constants.
 
 A label SHALL carry the product as the opacity of its element, and a label whose product is
 **0** SHALL be left out of the overlay and SHALL NOT be placed. Every scenario that counts
@@ -1554,7 +1622,7 @@ close step is gone, and a constant nobody reads is a rule a later reader will tr
 
 **What the user gives up, and what carries it.** The region the camera sits in has its
 anchor near the cursor, so it is the **first** label to go as the user zooms in, not the
-last. Below a zoom at which nothing on the plane reaches 8,000 light years, the frame
+last. Below a zoom at which nothing on the plane reaches 5,000 light years, the frame
 carries no region name at all. The HUD's top bar names the region under the cursor at every
 zoom, and the requirement "The handle reports the region at a plane point" states it, so the
 name is never lost; it moves from the map to the bar.
@@ -1594,7 +1662,7 @@ The placement rules above are a pure function of the frame's samples and do not 
 fade, so the unit scenarios below hold at every camera distance they name. Several of them
 sit at camera distances of 2,000, 640, 800 and 10 light years, where the label each of them
 reads no longer reaches the screen, the anchor scenarios among them. Other regions further up
-those frames do carry names, because the plane runs past 8,000 light years there. They are kept as regression bounds on the
+those frames do carry names, because the plane runs past 5,000 light years there. They are kept as regression bounds on the
 placement itself, and their figures were measured there; they are not claims about what a
 user sees at those zooms.
 
@@ -1615,17 +1683,62 @@ user sees at those zooms.
 #### Scenario: The region the camera is inside is named at every zoom
 
 - **WHEN** the browser test opens `#c=0,0,0&p=35&y=0` at each of 20,000, 15,000, 10,000,
-  7,500 and 4,000 light years, and at each zoom reads the `Inner Orion Spur` label, its
-  opacity, and the range from the camera to that label's own plane anchor
+  **2,500** and **1,000** light years, and at each zoom reads the `Inner Orion Spur` label,
+  its opacity, and the range from the camera to that label's own plane anchor
 - **THEN** at 20,000 the label is on the page with its box inside the viewport; at every
-  zoom at which it is on the page its opacity is `smoothstep(8000, 12000, range)` within
-  **0.05**; and at 4,000 the `Inner Orion Spur` label is not on the page at all, because its
-  anchor sits about 4,000 light years away and the range fade reads 0 there.
+  zoom at which it is on the page its opacity is `smoothstep(5000, 8000, range)` within
+  **0.05**; at least one zoom of the ladder reads a range **strictly inside** the fade band
+  of 5,000 to 8,000 light years, and the test SHALL fail when none does; and at 1,000 the
+  `Inner Orion Spur` label is not on the page at all, because its anchor falls under 5,000
+  light years there and the range fade reads 0.
+
+  **The ladder moves with the fade.** It read 20,000, 15,000, 10,000, 7,500 and 4,000
+  against the band of 8,000 to 12,000. Against 5,000 to 8,000 each of those four open zooms
+  puts the anchor at or above 8,000, so the ladder would read the fade at 1 at every zoom
+  that carries the label and never on its slope. The two close rungs therefore move, and the
+  clause above makes the reading of the slope a condition of the test rather than a hope
+  about one zoom.
+
+  **The anchor range runs far past the zoom, and the two are not one ratio.** The anchor at
+  a close zoom is not the region's centroid: the centroid does not project inside the frame
+  there, so the anchor is the part of the region the frame shows. At a pitch of 35 degrees
+  that part sits well **up** the frame and not at the cursor. An earlier reading of this rule
+  said the range was near the zoom itself, which the measurement below disproves.
+
+  The ratio runs from **1.17** at 20,000 light years to **2.60** at 2,500, so no single
+  factor states it. Over the close end the relation is **affine**: `range = 4,400 +
+  0.84 * zoom` fits the 1,500, 2,000, 2,500 and 3,000 rungs to a few light years. It drifts
+  above 4,000, where 10,000 reads 13,520 against the 12,800 the line gives. Read the table
+  below and not a factor. No test holds the affine rule, so a later change SHALL measure the
+  ladder again rather than take the rule from here.
+
+  **The measured ladder**, at 1280x720 and a pitch of 35 degrees:
+
+  | zoom (ly) | anchor range (ly) | opacity |
+  | --- | --- | --- |
+  | 20,000 | 23,347.76 | 1.000 |
+  | 15,000 | 18,411.43 | 1.000 |
+  | 10,000 | 13,520.29 | 1.000 |
+  | 8,000 | 11,590.2 | 1.000 |
+  | 6,500 | 10,160.61 | 1.000 |
+  | 5,000 | 8,754.2 | 1.000 |
+  | 4,000 | 7,836.4 | 0.991 |
+  | 3,000 | 6,940.58 | 0.713 |
+  | **2,500** | **6,504.6** | **0.501** |
+  | 2,000 | 6,077.8 | 0.294 |
+  | 1,500 | 5,663.5 | 0.125 |
+  | **1,000** | no label | — |
+
+  The rungs sit where they do because of that table. **2,500** is the rung that reads the
+  slope: 6,504.6 light years is strictly inside the band, and its opacity of 0.501 is the
+  middle of the smooth step. **1,000** is the first rung of the probe at which the label
+  leaves the page. **6,500 is dropped**, because it reads 10,160.61 light years at an opacity
+  of 1, which is the reading the 10,000 rung already gives. The four rungs above 2,500
+  therefore read the top of the fade, one rung reads its slope and one reads its floor.
 
   "Every zoom" is every zoom the overlay draws in, and that is now the same set of zooms the
-  boundary draws in. The label's anchor sits near the cursor, so the label goes as the user
-  zooms in, at the same distance the line beside it goes. The HUD's top bar names the region
-  at every zoom instead
+  boundary draws in. The label goes as the user zooms in, at the same distance the line
+  beside it goes. The HUD's top bar names the region at every zoom instead
 
 #### Scenario: A label and the line beside it read at the same strength
 
@@ -1664,16 +1777,16 @@ user sees at those zooms.
 
   | source | worst cost |
   | --- | --- |
-  | the 40 light year range window, at a slope of `1.5 / 4,000` a light year | 0.015 |
+  | the 40 light year range window, at a slope of `1.5 / 3,000` a light year | 0.020 |
   | 8-bit quantisation of the band's alpha, `1 / 255 / 0.62` | 0.006 |
-  | **sum** | **0.021** |
+  | **sum** | **0.026** |
 
-  **The window falls from 100 light years to 40 and the bound stays at 0.05.** The range fade
-  is a smooth step, whose steepest slope is `1.5` over the width of its band. The band was
-  10,000 light years wide and is now 4,000, so the slope is 2.5 times what it was, and a
-  window of 100 light years would cost 0.0375 of the 0.05 on its own. 40 light years costs
-  the 0.015 the table already carries, so every other term keeps the room it had. The test
-  SHALL fail if the narrower window holds no pixel under the background bound.
+  **The window stays at 40 light years and the bound stays at 0.05.** The range fade is a
+  smooth step, whose steepest slope is `1.5` over the width of its band. The band was 10,000
+  light years wide, then 4,000, and is now **3,000**, so the window's worst cost rises from
+  0.015 to 0.020 and the sum of 0.026 leaves **0.024** of the bound. A window of 100
+  light years would cost 0.05 on its own, which is the whole bound, so the window SHALL NOT
+  grow back. The test SHALL fail if the window holds no pixel under the background bound.
 
   The ridge profile carried a third term of **0.0025**, for reading the pixel nearest the
   middle of the line rather than the middle itself: its alpha reached 1 at one line of
@@ -1681,30 +1794,37 @@ user sees at those zooms.
   own flat part is `0.326 * halfWidth` CSS pixels wide, which is **5.6** at 1,080 CSS rows
   at the reference range and **3.4** at 1,080 rows and a range of 20,000 light years, so a
   pixel carries the full core tone wherever the pixel grid falls across the line, at every
-  viewport, every device pixel ratio and every range at which a line draws. That leaves more than half the bound for
-  the projection of the anchor and the plane point under the pixel.
+  viewport, every device pixel ratio and every range at which a line draws. That leaves the
+  **0.024** the table above states for the projection of the anchor and the plane point
+  under the pixel, which is a little under half the bound and was a little over it while
+  the fade band was 4,000 light years wide.
 
 #### Scenario: No label where no line draws
 
 - **WHEN** the browser test opens
   a view a unit test has searched for, where every plane point in the frame is under
-  **8,000** light years from the camera, and reads the region labels
+  **5,000** light years from the camera, and reads the region labels
 - **THEN** the page holds no region label, and the frame holds no boundary either. Before
   this requirement the names stood over a frame with no lines under them.
 
-  **The view is a recorded constant and it moves with the floor.** It was
-  `#c=1840.85884,-15539.75557,16507.94703&d=20016.72348&p=58.57998&y=24.66002&g=1`, found
-  against a floor of 10,000 light years. A frame whose farthest plane point is under 10,000
-  is not a frame whose farthest plane point is under 8,000, so the search SHALL run again and
-  `e2e/region-views.ts` SHALL hold what it finds
+  **The view is a recorded constant and it moves with the floor.** It was last found against
+  a floor of 8,000 light years. A frame whose farthest plane point is under 8,000 is not a
+  frame whose farthest plane point is under 5,000, so the search SHALL run again and
+  `e2e/region-views.ts` SHALL hold what it finds. The recorded view SHALL carry the floor it
+  was found against, and a unit test SHALL fail when that figure is not `REGION_RANGE_NONE`
 
 #### Scenario: The sweep is skipped only when nothing could draw
 
 - **WHEN** a unit test reads whether the sampling sweep ran, at a pitch of **89 degrees** at
-  a zoom of 4,000 light years, and at a pitch of **20 degrees** at the same zoom
+  a zoom of 2,500 light years, and at a pitch of **20 degrees** at the same zoom
 - **THEN** the sweep does not run at 89 degrees, where the whole frame is under the range
   floor, and does run at 20 degrees, where the frame holds the horizon and the plane runs
-  past 8,000 light years. A gate on the zoom alone would skip both
+  past 5,000 light years. A gate on the zoom alone would skip both.
+
+  The zoom was 4,000 light years against the floor of 8,000. At a pitch of 89 degrees the
+  corner rays of a 4,000 light year view meet the plane at 6,243 light years, which clears the
+  new floor of 5,000, so the view no longer reads the gate it is there for. At 2,500 light
+  years the same corners meet the plane at about 3,900 light years, under the floor
 
 #### Scenario: The greatest plane range reads the same under the plane
 
@@ -1737,15 +1857,17 @@ user sees at those zooms.
   **The zoom is 20,000 light years so that the range fade takes nothing.** The camera sits
   `20,000 * sin 35` = 11,472 light years above the plane, and the bottom edge ray is 65
   degrees below horizontal, so the nearest plane point in the frame is 12,657 light years
-  away. Every anchor therefore clears the 8,000 light year floor with 4,657 light years to
+  away. Every anchor therefore clears the 5,000 light year floor with 7,657 light years to
   spare, and the 5 per cent clause stays an invariant of the **placement**, which is what
   this scenario reads.
 
-  At a zoom of 12,000 it would not be. There the camera is 6,883 light years up, the nearest
-  plane point is 7,594, and the bottom **10.8** per cent of the frame's rows read ranges
-  under 8,000. That band held 37 per cent of the rows against the floor of 10,000. A region holding well over 5 per cent whose anchor landed in that band would draw
-  at opacity 0 and be left out, so the clause would pass or fail on where the shipped data
-  puts one centroid.
+  The zoom stays at 20,000 and the room under it grows. Against the floor of 8,000 a zoom of
+  12,000 would not have held: the camera is 6,883 light years up there, the nearest plane
+  point is 7,594, and the bottom **10.8** per cent of the frame's rows read ranges under
+  8,000. Against the floor of 5,000 no row of that view reads under the floor at all, because
+  the camera cannot be nearer the plane than its own height. The view does not move, because
+  every count below was measured at 20,000 and a view that holds with more room is still a
+  view that holds.
 
   **The centre rule fires in both views, and that is not what this scenario reads.** The
   Inner Orion Spur's centroid sits at `x = -2,451.1, z = 3,802.0`, which is 4,524 light years
@@ -2040,7 +2162,7 @@ user sees at those zooms.
 
 #### Scenario: The sweep does not run when the frame can carry no label
 
-- **WHEN** the browser test opens `#c=0,0,0&d=4000&p=89&y=0`, where the whole frame lies
+- **WHEN** the browser test opens `#c=0,0,0&d=2500&p=89&y=0`, where the whole frame lies
   inside the range floor, draws 60 frames and reads `labelSampling()`, which carries
   `frames`, `meanMs` and `worstMs`; then opens `#c=0,0,0&d=60000&p=35&y=0`, the default far
   view, and reads the same
@@ -2048,7 +2170,7 @@ user sees at those zooms.
   `worstMs` are 0, so the sweep ran in no frame of the sixty.
 
   The two views read the two halves of the gate. At a pitch of 89 degrees and a zoom of
-  4,000 the corner rays meet the plane at 6,243 light years, under the floor, so the
+  2,500 the corner rays meet the plane at about 3,900 light years, under the floor, so the
   range half closes. At 60,000 light years the plane runs out to about 395,000, so the range
   half is open and the **zoom** half closes it. A gate on either half alone lets one of these
 

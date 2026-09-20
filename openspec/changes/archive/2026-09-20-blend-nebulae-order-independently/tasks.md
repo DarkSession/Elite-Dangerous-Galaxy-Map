@@ -384,7 +384,9 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       share rises from 0.0057 to 0.0497 and stays far under 0.2: the extra draw is the
       same at both cameras, so it adds to two small readings that were nearly equal and
       the share of a difference of 0.025 ms moves easily. Neither share became lopsided.
-- [ ] 4.5 **The abort branch**, on either half of the gate: task 4.2 reading a rise above a
+- [ ] 4.5 **Not taken.** Task 4.2 read a rise of 5.96 per cent against a threshold of a
+      tenth, and task 4.3 moved no committed bound. **The abort branch**, on either half of
+      the gate: task 4.2 reading a rise above a
       tenth at any of its three cameras, or task 4.3 finding a committed bound it cannot
       hold. Revert
       the group 3 commit and the group 1 commit together: the accumulation target and the
@@ -420,13 +422,17 @@ gates the suite on it, and a cost reading on a software renderer says nothing.
       The two CPU fixture comparisons read **0.0018745** for `barnards-loop` against 0.02
       and **0.0036028** for `cats-eye` against 0.01, both against the reference rebuilt
       in task 3.4.
-- [ ] 5.1 Run the tests yourself first: `pnpm lint`, `pnpm exec vitest run` and
-      `pnpm test:e2e`. A reviewer sent into a broken tree wastes its run.
-- [ ] 5.2 Launch the `openspec-implementation-reviewer` subagent with this change id and
+- [x] 5.1 Run the tests yourself first: `pnpm lint`, `pnpm exec vitest run` and
+      `pnpm test:e2e`. A reviewer sent into a broken tree wastes its run. Done: all three
+      ran green before the gate.
+- [x] 5.2 Launch the `openspec-implementation-reviewer` subagent with this change id and
       wait for its verdict. On BLOCK, fix what it found and run it again. Do not carry a
-      blocked change to a human with the objections attached as caveats.
-- [ ] 5.3 Present the change: state the verdict, the findings, the readings of tasks 4.1 to
-      4.4, and any finding you decided against acting on with the reason.
+      blocked change to a human with the objections attached as caveats. Done: the gate
+      returned APPROVE, and the findings it raised were answered in `193d362`.
+- [x] 5.3 Present the change: state the verdict, the findings, the readings of tasks 4.1 to
+      4.4, and any finding you decided against acting on with the reason. Done: presented
+      with the overlap rise of 5.96 per cent, the order step of 71 to 26, and the look
+      reading. The owner approved the look trade-off.
 
 ## 6. The restated bound and the scenario with teeth
 
