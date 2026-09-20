@@ -15,7 +15,32 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    // The TypeScript half of the demo's alias table. `moduleResolution` is `bundler`, so
+    // without these three the demo's package-name imports resolve through the package's
+    // `exports` to `dist/types/`, which a fresh checkout does not hold. The check job
+    // runs the type check two steps before the library build, so the mapping removes the
+    // dependency rather than reordering the job.
+    //
+    // The two subpaths come **first**, as they do in the Vite alias table.
+    "paths": {
+      "@elite-dangerous-almanac/galaxy-map/nebulae": [
+        "./packages/galaxy-map/src/nebulae/index.ts"
+      ],
+      "@elite-dangerous-almanac/galaxy-map/testing": [
+        "./packages/galaxy-map/src/testing.ts"
+      ],
+      "@elite-dangerous-almanac/galaxy-map": ["./packages/galaxy-map/src/index.ts"]
+    }
   },
-  "include": ["src", "e2e", "tests", "*.config.ts", "*.config.js"]
+  "include": [
+    "packages/*/src",
+    "apps/*/src",
+    "e2e",
+    "tests",
+    "*.config.ts",
+    "*.config.js",
+    "packages/*/vite.config.ts",
+    "apps/*/vite.config.ts"
+  ]
 }

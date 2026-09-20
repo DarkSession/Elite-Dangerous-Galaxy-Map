@@ -35,7 +35,14 @@ import {
 } from './ktx2.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const artDirectory = join(root, 'src', 'render', 'nebula-art');
+const artDirectory = join(
+  root,
+  'packages',
+  'galaxy-map',
+  'src',
+  'render',
+  'nebula-art',
+);
 
 /** The header of a `.dds` file with a `DX10` block, in bytes. */
 const DDS_HEADER_BYTES = 148;

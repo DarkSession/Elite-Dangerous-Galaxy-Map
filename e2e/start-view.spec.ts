@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { openMap } from './helpers';
-import type { GalaxyMapOptions, MapView } from '../src/app/create-map';
+import type {
+  GalaxyMapOptions,
+  MapView,
+} from '../packages/galaxy-map/src/app/create-map';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 

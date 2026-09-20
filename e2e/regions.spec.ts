@@ -221,7 +221,9 @@ async function boundarySample(page: Page): Promise<BoundarySample> {
 /** Reads the shader source of a file in the tree. */
 function shaderSource(name: string): string {
   return readFileSync(
-    fileURLToPath(new URL(`../src/render/shaders/${name}`, import.meta.url)),
+    fileURLToPath(
+      new URL(`../packages/galaxy-map/src/render/shaders/${name}`, import.meta.url),
+    ),
     'utf8',
   );
 }

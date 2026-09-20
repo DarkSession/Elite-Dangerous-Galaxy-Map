@@ -30,17 +30,23 @@ version. [pnpm-workspace.yaml](pnpm-workspace.yaml) holds every package back for
 
 ## Scripts
 
-| Script                 | What it does                                           |
-| ---------------------- | ------------------------------------------------------ |
-| `pnpm dev`             | Starts the Vite dev server on port 5173                |
-| `pnpm build`           | Checks the types, then builds the library into `dist/` |
-| `pnpm build:demo-site` | Builds the demo site into `dist-demo/`                 |
-| `pnpm build:demo-data` | Writes the six demo data files from the Canonn sources |
-| `pnpm preview`         | Serves `dist-demo/` on port 4173                       |
-| `pnpm test`            | Runs the Vitest unit tests                             |
-| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests   |
-| `pnpm lint`            | Runs ESLint                                            |
-| `pnpm format`          | Runs Prettier over the repository                      |
+| Script                 | What it does                                                               |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `pnpm dev`             | Starts the Vite dev server on port 5173                                    |
+| `pnpm build`           | Checks the types, then builds the library into `packages/galaxy-map/dist/` |
+| `pnpm build:demo-site` | Builds the demo site into `apps/demo/dist/`                                |
+| `pnpm build:demo-data` | Writes the six demo data files from the Canonn sources                     |
+| `pnpm preview`         | Serves `apps/demo/dist/` on port 4173                                      |
+| `pnpm test`            | Runs the Vitest unit tests                                                 |
+| `pnpm test:package`    | Reads what `npm pack` would ship and fails on a file that does not belong  |
+| `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests                       |
+| `pnpm audit`           | Fails on a known high or critical advisory                                 |
+| `pnpm lint`            | Runs ESLint                                                                |
+| `pnpm format`          | Runs Prettier over the repository                                          |
+
+Every script but `pnpm test`, `pnpm test:package`, `pnpm test:e2e`, `pnpm audit`,
+`pnpm lint` and `pnpm format` delegates to a package with `pnpm --filter`. An argument
+crosses both hops, so `pnpm dev --host 0.0.0.0` reaches Vite.
 
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding
 reaches it.
@@ -54,7 +60,7 @@ Adamastor Routes, 8 systems in 10 categories with 8 lines; and Canonn Factions, 
 fetches its records when the user loads it. It names them in the `datasets`
 option any host uses, and it loads Guardian Ruins at start. The HUD's dataset field
 switches between them. `pnpm build:demo-data` writes the files of
-[demo-data/](demo-data/) again from the Canonn sources.
+[apps/demo/demo-data/](apps/demo/demo-data/) again from the Canonn sources.
 
 **Canonn Factions is the one entry that fetches.** Its `load()` fetches the 16.9 MB Spansh
 factions dump and moves the body to a worker, which decompresses it with the browser's own
@@ -62,7 +68,7 @@ factions dump and moves the body to a worker, which decompresses it with the bro
 It cancels the stream once it has both, so it reads about an eighth of the file. The page
 keeps the fetch, so the request comes from the page; the worker keeps the map drawing,
 because Chromium inflates a body it already holds in one burst. The reader is the demo
-page's own [src/app/multifaction.ts](src/app/multifaction.ts): the library fetches nothing
+page's own [apps/demo/src/multifaction.ts](apps/demo/src/multifaction.ts): the library fetches nothing
 itself, and a failed fetch leaves the map with the set it had. The 48 permit spheres of that set are
 committed, because they are a static literal and not a live dump.
 
@@ -80,20 +86,29 @@ helper, so a test that does not ask for a set opens an empty map. Open
 
 ## The entry point
 
-The package has two entries, and `package.json` names both in `exports`. The main one is
-[src/index.ts](src/index.ts). It exports `createGalaxyMap`, the three fragment calls
-`encodeView`, `decodeView` and `decodeGrid`, and the types the public calls name, so a
-host imports from the package root and reaches no module the list leaves out. The second
-one is [src/nebulae/index.ts](src/nebulae/index.ts), at the subpath
-`elite-dangerous-galaxy-map/nebulae`. It exports one name, `nebulae`, which is the
-nebula source of **[The nebulae](#the-nebulae)**. `pnpm build` writes the two modules to
-`dist/index.js` and `dist/nebulae.js`, and their declarations to `dist/types/`.
+The package is `@elite-dangerous-almanac/galaxy-map`. It has three entries, and
+`package.json` names all three in `exports`. The main one is
+[packages/galaxy-map/src/index.ts](packages/galaxy-map/src/index.ts). It exports
+`createGalaxyMap`, the four fragment calls `encodeView`, `decodeView`, `decodeGrid` and
+`createFragmentWriter`, and the types the public calls name, so a host imports from the
+package root and reaches no module the list leaves out. The second is
+[packages/galaxy-map/src/nebulae/index.ts](packages/galaxy-map/src/nebulae/index.ts), at
+the subpath `@elite-dangerous-almanac/galaxy-map/nebulae`. It exports one name,
+`nebulae`, which is the nebula source of **[The nebulae](#the-nebulae)**. The third is
+[packages/galaxy-map/src/testing.ts](packages/galaxy-map/src/testing.ts), at the subpath
+`@elite-dangerous-almanac/galaxy-map/testing`. It is **not** the supported surface: it
+gives a browser test the renderer probe the map writes on `window`, and its members
+change with no version step.
+
+`pnpm build` writes the three modules to `packages/galaxy-map/dist/index.js`,
+`dist/nebulae.js` and `dist/testing.js`, and their declarations to `dist/types/`.
 
 A host that imports the package root alone reaches no nebula module, so its bundler
 leaves the nebula code, the record file and the volume art out of its build.
 
 `createGalaxyMap(canvas, options)` in
-[src/app/create-map.ts](src/app/create-map.ts) builds a map. It returns a handle in the
+[packages/galaxy-map/src/app/create-map.ts](packages/galaxy-map/src/app/create-map.ts)
+builds a map. It returns a handle in the
 same tick, so the host can add its data before the first frame. The handle's `ready`
 promise settles when the map has loaded its scene data, and it rejects when the browser
 gives no WebGL2 context or the card reports a software renderer.
@@ -111,7 +126,7 @@ light years. It is 120,000 when the category names none, which is the far zoom l
 such a marker draws at every zoom the map reaches.
 
 ```ts
-import { createGalaxyMap } from 'elite-dangerous-galaxy-map';
+import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
 
 const canvas = document.getElementById('map') as HTMLCanvasElement;
 const map = createGalaxyMap(canvas);
@@ -220,7 +235,8 @@ light year grid and gives a promise: the region cell table is about 199 KiB and 
 the first call, so a host that never asks never fetches it. Both read the `x` and the `z`
 of the point and ignore its `y`. Use the first for a reading that follows the cursor every
 frame, and the second where one place is named as a fact. The library owns the render context, the scene data, the view, the controls and
-the frame loop. It does not read or write the URL: [src/app/main.ts](src/app/main.ts) is
+the frame loop. It does not read or write the URL:
+[apps/demo/src/main.ts](apps/demo/src/main.ts) is
 the demo page, and it owns the fragment, the message box and the test hooks.
 
 The boundary is one warm cream band with a soft edge. Its base half width is 1.6 per cent
@@ -267,8 +283,8 @@ radius and three rotation angles, so two records over one asset can differ. They
 it in the options:
 
 ```ts
-import { createGalaxyMap } from 'elite-dangerous-galaxy-map';
-import { nebulae } from 'elite-dangerous-galaxy-map/nebulae';
+import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
+import { nebulae } from '@elite-dangerous-almanac/galaxy-map/nebulae';
 
 const map = createGalaxyMap(canvas, { nebulae });
 ```
@@ -627,9 +643,11 @@ data set to hold that system.
 
 ## The galaxy model
 
-The map draws from [src/galaxy-model/galaxy-model.json](src/galaxy-model/galaxy-model.json),
+The map draws from
+[packages/galaxy-map/src/galaxy-model/galaxy-model.json](packages/galaxy-map/src/galaxy-model/galaxy-model.json),
 a 13 KB parameter file: 29 parameters and a 64x64 correction grid. A second file,
-[src/galaxy-model/galaxy-detail.png](src/galaxy-model/galaxy-detail.png), holds a
+[packages/galaxy-map/src/galaxy-model/galaxy-detail.png](packages/galaxy-map/src/galaxy-model/galaxy-detail.png),
+holds a
 1024x1024 detail grid as a 339 KB greyscale PNG, which refines the surface density to
 98 light years per cell.
 [docs/galaxy-density-model.md](docs/galaxy-density-model.md) gives the formulas the
@@ -664,9 +682,9 @@ settings. It does hide the card behind a generic name: it answers
 ## The pipeline
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push to `main` and on
-every pull request that targets `main`. It installs with a frozen lockfile, then runs
-`pnpm lint`, the type check, `pnpm test`, the library build and the demo site build, in
-that order. It stops at the first check that fails. Every action it uses is pinned to a
+every pull request that targets `main`. It installs with a frozen lockfile at the
+workspace root, then runs `pnpm lint`, the type check, `pnpm test`, the library build,
+the demo site build and `pnpm test:package`, in that order. It stops at the first check that fails. Every action it uses is pinned to a
 commit SHA, for the reason [pnpm-workspace.yaml](pnpm-workspace.yaml) holds each npm
 release for 7 days: a mutable tag gives whatever it points at on the day the run starts.
 
@@ -683,24 +701,98 @@ reads one of the two costs. `pnpm test:e2e` runs both, in two passes: every othe
 several workers, then the timed specs and Firefox on one worker.
 
 After the checks pass on a push to `main`, the workflow builds the demo site again and
-publishes `dist-demo/` to the repository's GitHub Pages address,
+publishes `apps/demo/dist/` to the repository's GitHub Pages address,
 <https://darksession.github.io/Elite-Dangerous-Galaxy-Map/>. It publishes nothing from a
-pull request, and it publishes no part of `dist/`, which is the library.
+pull request, and it publishes no part of `packages/galaxy-map/dist/`, which is the
+library.
+
+## The release
+
+[.github/workflows/publish-npm.yml](.github/workflows/publish-npm.yml) publishes
+`@elite-dangerous-almanac/galaxy-map` to npm. **A person starts it, and nothing else
+does**: the only trigger is `workflow_dispatch`, and it runs from `main` alone. Run
+`pnpm test:e2e` in the dev container before you dispatch it. That suite is the gate on
+the rendering, and no runner can run it.
+
+To release:
+
+1. Run `pnpm test:e2e` locally and read the result.
+2. Open the workflow on GitHub and dispatch it on `main`.
+
+The workflow chooses the version. It reads `major.minor` from the package manifest, asks
+the registry what is published, and takes one above the highest patch published on that
+line, which does not fill a hole in the series;
+[scripts/next-version.mjs](scripts/next-version.mjs) holds that rule and
+`tests/next-version.test.ts` reads it. To release a new minor or major, change the
+version in [packages/galaxy-map/package.json](packages/galaxy-map/package.json) first.
+The run then checks the registry and the tag, runs every check, builds, packs, checks
+the digest of the tarball it made, publishes with OIDC and provenance and no token, and
+tags the commit after the publish succeeds.
+
+### The first version went up by hand
+
+**0.6.0 is published**, from a maintainer's machine on 2026-09-20. The workflow could not
+do it: it publishes through npm Trusted Publishing, a publisher is set **on a package**,
+and the registry held nothing under this name to attach one to. That publish carries no
+provenance, because provenance needs the OIDC token a GitHub runner holds and a laptop
+does not. Every release from here goes through the workflow and carries it.
+
+The steps were: `pnpm test:e2e`, then `pnpm build` and `pnpm test:package`, then
+`npm pack` in `packages/galaxy-map/`, then `npm publish <tarball> --access public`. They
+are here in case the same bootstrap is ever needed for another package of this
+repository.
+
+**Three things live outside this repository, and no workflow step can create them.** The
+first dispatch fails at its last step without them:
+
+1. The **npm Trusted Publisher** for `@elite-dangerous-almanac/galaxy-map`, pointing at
+   this repository and at `.github/workflows/publish-npm.yml`.
+2. The **`npm` GitHub environment** the publish job names. Add a required reviewer there
+   to hold a release behind an approval.
+3. The package's place in the **`@elite-dangerous-almanac`** npm organisation, which must
+   allow this package to be published.
+
+**Then read the first dispatch.** It releases 0.6.1, which is what the version rule
+computes against a registry holding 0.6.0 alone. No test can run the workflow, so that
+run is where its guards run for the first time. Watch it to its last step, and read the
+published version afterwards.
+
+The terms are [LICENSE.md](LICENSE.md), the PolyForm Noncommercial License 1.0.0. The
+tarball carries a copy of it, the package's own `README.md` and
+`THIRD_PARTY_NOTICES.md`, and the build output; `pnpm test:package` fails on anything
+else.
 
 ## Layout
 
+The repository is a pnpm workspace with two packages.
+
 ```
-src/app/            the entry point, the demo page, the URL fragment
-src/galaxy-model/   the model port, the parameter file, the detail grid, its types
-src/scene-data/     the point cloud, the density volume, the workers
-src/render/         the WebGL2 context, the passes, the shaders
-src/camera/         the view state, the projection, the controls
-src/hud/            the heads-up display, its styles and the bundled fonts
-src/nebulae/        the nebula subpath entry, which is one source
-e2e/                the Playwright tests and the baseline image
-tests/fixtures/     the model fixture and the detail fixture
-docs/               the model formulas
+packages/galaxy-map/        the library, published as @elite-dangerous-almanac/galaxy-map
+  src/app/                  the entry point, the map handle, the URL fragment
+  src/galaxy-model/         the model port, the parameter file, the detail grid, its types
+  src/scene-data/           the point cloud, the density volume, the workers
+  src/render/               the WebGL2 context, the passes, the shaders
+  src/camera/               the view state, the projection, the controls
+  src/hud/                  the heads-up display, its styles and the bundled fonts
+  src/nebulae/              the nebula subpath entry, which is one source
+  src/testing.ts            the unsupported subpath the browser suite reads
+  THIRD_PARTY_NOTICES.md    the terms of the data and the art the package ships
+apps/demo/                  the demo site, private, which the Pages job publishes
+  index.html, src/          the page
+  demo-data/                the six committed record sets
+  scripts/                  the build that writes them
+  public/                   the loading picture
+e2e/                        the Playwright tests and the baseline image
+tests/                      the tests that read the repository rather than one package
+tests/fixtures/             the model fixture and the detail fixture
+docs/                       the model formulas
+scripts/                    the repository's own tools, and the release version rule
+LICENSE.md                  the terms of the code
+THIRD_PARTY_NOTICES.md      the terms of the demo data, the fixtures and the mockup
 ```
+
+Each build writes inside its own package, so neither can land where the other is looked
+for.
 
 `src/galaxy-model/` and `src/scene-data/` must not import `src/render/`. An ESLint rule
 holds that line, so a different density source can replace the data layers without a
@@ -709,4 +801,7 @@ change in the renderer. A second rule stops `src/hud/` importing `src/render/`,
 alone. A third rule stops every module but `src/nebulae/`, `src/render/nebula-pass.ts`
 and `src/render/nebula-volumes.ts` value-importing a nebula module, so the main entry
 reaches the nebula code through the source the host passes and a build without that
-source carries none of it.
+source carries none of it. A fourth stops a file of `apps/demo/src/` importing the
+library by a relative path: the demo reaches it by the package name, as any host does.
+The dev server resolves that name to the library's **source**, so a change in either
+package reloads at once.

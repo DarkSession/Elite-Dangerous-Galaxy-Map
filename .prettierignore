@@ -1,6 +1,8 @@
+# Neither entry carries an internal slash, so both match at any depth: the two package
+# build outputs and the temporary build directory inside the library package.
 dist
-dist-demo
 .library-build-*
+packages/galaxy-map/LICENSE.md
 node_modules
 coverage
 test-results
@@ -8,21 +10,21 @@ playwright-report
 blob-report
 
 # Committed data. Reformatting them would change the bytes the fixture hashes.
-src/galaxy-model/galaxy-model.json
-src/scene-data/nebulae.json
-src/render/nebula-art/
+packages/galaxy-map/src/galaxy-model/galaxy-model.json
+packages/galaxy-map/src/scene-data/nebulae.json
+packages/galaxy-map/src/render/nebula-art/
 tests/fixtures/galaxy-model.json
 tests/fixtures/galaxy-detail.json
 
-# Committed data a script writes. `scripts/build-demo-systems.mjs` writes both with
+# Committed data a script writes. `apps/demo/scripts/build-demo-systems.mjs` writes both with
 # `JSON.stringify(set, null, 2)`, so Prettier and the script would give each file a
 # different shape and `pnpm build:demo-data` would make the tree dirty at once.
-demo-data/guardian-ruins.json
-demo-data/guardian-structures.json
-demo-data/notable-systems.json
-demo-data/uia.json
-demo-data/adamastor.json
-demo-data/multifaction-spheres.json
+apps/demo/demo-data/guardian-ruins.json
+apps/demo/demo-data/guardian-structures.json
+apps/demo/demo-data/notable-systems.json
+apps/demo/demo-data/uia.json
+apps/demo/demo-data/adamastor.json
+apps/demo/demo-data/multifaction-spheres.json
 tests/fixtures/guardian-ruins-demo-set.json
 tests/fixtures/guardian-structures-demo-set.json
 tests/fixtures/notable-systems-demo-set.json

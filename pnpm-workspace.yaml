@@ -13,3 +13,15 @@
 #   minimumReleaseAgeExclude:
 #     - some-package
 minimumReleaseAge: 10080
+
+# The organisation's own package, which this project releases. The hold is a measure
+# against a hijacked third-party maintainer account, and this account is the project's
+# own, so the week of distance buys nothing here and costs a week on every fix.
+minimumReleaseAgeExclude:
+  - '@elite-dangerous-almanac/core'
+
+# The workspace. `packages/` holds what publishes and `apps/` holds what does not, so a
+# reader knows which a directory is by where it sits.
+packages:
+  - 'packages/*'
+  - 'apps/*'

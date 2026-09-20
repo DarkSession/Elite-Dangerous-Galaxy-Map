@@ -1,0 +1,16 @@
+{
+  // The declaration build. Vite emits the JavaScript and `tsc` emits the types, so the
+  // package needs no declaration plugin. `pnpm build` runs the Vite build first: Vite
+  // empties `dist/`, which would take `dist/types` with it.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "rootDir": "src",
+    "outDir": "dist/types"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

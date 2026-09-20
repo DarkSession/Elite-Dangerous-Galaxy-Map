@@ -17,9 +17,13 @@ import {
   buildNebulaSet,
   nebulaFocalPixels,
   selectNebulae,
-} from '../src/scene-data/nebulae';
-import { decodeBC1, decodeBC4, readNebulaKtx2 } from '../src/render/nebula-volumes';
-import { nebulaRotationMatrix } from '../src/render/nebula-pass';
+} from '../packages/galaxy-map/src/scene-data/nebulae';
+import {
+  decodeBC1,
+  decodeBC4,
+  readNebulaKtx2,
+} from '../packages/galaxy-map/src/render/nebula-volumes';
+import { nebulaRotationMatrix } from '../packages/galaxy-map/src/render/nebula-pass';
 import {
   cameraPosition,
   decodeBC1 as fixtureBC1,
@@ -33,6 +37,8 @@ import {
 import type { FixtureInstance, FixtureView } from '../scripts/build-nebula-fixture.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+/** The library package. The records and the art are its own files. */
+const library = `${root}packages/galaxy-map/`;
 
 const meta = JSON.parse(
   readFileSync(`${root}e2e/fixtures/nebula-fixtures.json`, 'utf8'),
@@ -44,7 +50,7 @@ const meta = JSON.parse(
   >;
 };
 
-const recordFile = readFileSync(`${root}src/scene-data/nebulae.json`);
+const recordFile = readFileSync(`${library}src/scene-data/nebulae.json`);
 const set = buildNebulaSet(JSON.parse(recordFile.toString('utf8')));
 
 describe('the nebula fixture generator', () => {
@@ -84,7 +90,7 @@ describe('the nebula fixture generator', () => {
     expect(assets).toHaveLength(33);
     for (const asset of assets) {
       const blocks = (file: string): Uint8Array =>
-        readNebulaKtx2(readFileSync(`${root}src/render/nebula-art/${file}`), file)
+        readNebulaKtx2(readFileSync(`${library}src/render/nebula-art/${file}`), file)
           .blocks;
       // The density runs 32, 48 or 64 texels a side and the colour 8, 16 or 32.
       expect([32, 48, 64], `${asset.name} density side`).toContain(asset.densitySide);

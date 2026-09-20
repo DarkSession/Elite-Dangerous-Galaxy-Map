@@ -2,9 +2,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { boxelSeed, starOffsets, starSpreadValue } from '../src/scene-data/boxel';
+import {
+  boxelSeed,
+  starOffsets,
+  starSpreadValue,
+} from '../packages/galaxy-map/src/scene-data/boxel';
 import { meanLuminanceFrame, openMap, settleLabels } from './helpers';
-import type { SystemRecordInput } from '../src/scene-data/real-systems';
+import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -174,7 +178,9 @@ async function centreGrain(
 /** Reads a shader source file from the tree. */
 function shaderSource(name: string): string {
   return readFileSync(
-    fileURLToPath(new URL(`../src/render/shaders/${name}`, import.meta.url)),
+    fileURLToPath(
+      new URL(`../packages/galaxy-map/src/render/shaders/${name}`, import.meta.url),
+    ),
     'utf8',
   );
 }

@@ -58,7 +58,8 @@ exist yet. Never report a suite as passing that you did not run.
 - pnpm only. A `package-lock.json` or `yarn.lock` in the diff is a finding, and so is a
   weakened `minimumReleaseAge` or a new `minimumReleaseAgeExclude` entry that the
   proposal did not justify.
-- Application code lives in `src/`.
+- The repository is a pnpm workspace. Library code lives in
+  `packages/galaxy-map/src/` and demo code in `apps/demo/`.
 - No committed galaxy data dumps.
 
 ## What to report

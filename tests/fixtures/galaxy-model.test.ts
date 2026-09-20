@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 const parameterPath = fileURLToPath(
-  new URL('../../src/galaxy-model/galaxy-model.json', import.meta.url),
+  new URL(
+    '../../packages/galaxy-map/src/galaxy-model/galaxy-model.json',
+    import.meta.url,
+  ),
 );
 const fixturePath = fileURLToPath(new URL('./galaxy-model.json', import.meta.url));
 

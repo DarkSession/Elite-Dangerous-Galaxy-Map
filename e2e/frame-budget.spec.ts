@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { dumpFaction, dumpSystem, openMap, serveFactionsDump } from './helpers';
 import { TRACED_CORNER } from './region-views';
-import type { SystemRecordInput } from '../src/scene-data/real-systems';
+import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 /** The frame time the map must stay under, in milliseconds. */
 const BUDGET_MS = 16.7;

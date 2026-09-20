@@ -30,6 +30,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+/**
+ * The library package. Every build this file runs starts here: the repository root holds
+ * no Vite configuration and no `tsconfig.build.json` after the restructure.
+ */
+const libraryRoot = join(root, 'packages', 'galaxy-map');
 
 /**
  * How large the library's entry chunk may be, in bytes. The guard is for the 199 KiB
@@ -211,6 +216,8 @@ const PUBLIC_TYPES = [
   'BrowseBounds',
   'InteractionSwitches',
   'NebulaSource',
+  'FragmentWriter',
+  'FragmentWriterOptions',
   'SystemDetails',
   'SystemDetailValue',
   'HudInfoFields',
@@ -367,9 +374,11 @@ function hostConfig(dir: string): string {
  * Builds one host application against the fresh library build, and reads what it made.
  *
  * The host directory sits inside the temporary build directory, which sits inside the
- * repository, because the host build resolves `gl-matrix` and
- * `@elite-dangerous-almanac/core` by walking up to `node_modules/`. The host bundles
- * both, as a host application does.
+ * library package, because the host build resolves `gl-matrix` and
+ * `@elite-dangerous-almanac/core` by walking up to a `node_modules/`. Those two are the
+ * library package's own dependencies, so the walk finds them at
+ * `packages/galaxy-map/node_modules/`. The host bundles both, as a host application
+ * does.
  */
 function buildHost(name: string, entry: string): HostBuild {
   const dir = join(outDir, name);
@@ -381,7 +390,7 @@ function buildHost(name: string, entry: string): HostBuild {
     'pnpm',
     ['exec', 'vite', 'build', '--config', join(dir, 'vite.config.mjs')],
     {
-      cwd: root,
+      cwd: libraryRoot,
       stdio: 'pipe',
     },
   );
@@ -413,7 +422,7 @@ function buildHost(name: string, entry: string): HostBuild {
  * hold that assumption.
  */
 const VOLUME_INDEX_BASE64 = readFileSync(
-  join(root, 'src/render/nebula-art/nebula-volumes.json'),
+  join(libraryRoot, 'src/render/nebula-art/nebula-volumes.json'),
 )
   .toString('base64')
   .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -500,11 +509,15 @@ let plainHost: HostBuild = { names: [], text: '' };
 let nebulaHost: HostBuild = { names: [], text: '' };
 
 beforeAll(() => {
-  // The directory sits in the repository and not in the system temporary directory,
-  // because one test imports the built module and node resolves `gl-matrix` and
-  // `@elite-dangerous-almanac/core` by walking up to `node_modules/`.
+  // The directory sits inside the **library package** and not in the system temporary
+  // directory, because one test imports the built module and node resolves `gl-matrix`
+  // and `@elite-dangerous-almanac/core` by walking up to a `node_modules/`. Those two
+  // are the library package's own dependencies, so pnpm's isolated linker puts them at
+  // `packages/galaxy-map/node_modules/` and not at the repository root. A build under
+  // the root would fail with `ERR_MODULE_NOT_FOUND: gl-matrix`, which names a package
+  // rather than a layout and sends the reader to the wrong place.
   const started = Date.now();
-  outDir = mkdtempSync(join(root, '.library-build-'));
+  outDir = mkdtempSync(join(libraryRoot, '.library-build-'));
   // This repository uses pnpm. `npx` is npm tooling and would fetch from the registry
   // outside the 7-day release hold if the local binary were ever missing.
   execFileSync(
@@ -514,17 +527,17 @@ beforeAll(() => {
       'vite',
       'build',
       '--config',
-      'vite.config.lib.ts',
+      'vite.config.ts',
       '--outDir',
       outDir,
       '--emptyOutDir',
     ],
-    { cwd: root, stdio: 'pipe' },
+    { cwd: libraryRoot, stdio: 'pipe' },
   );
   execFileSync(
     'pnpm',
     ['exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', join(outDir, 'types')],
-    { cwd: root, stdio: 'pipe' },
+    { cwd: libraryRoot, stdio: 'pipe' },
   );
   console.log('the library build took', Date.now() - started, 'ms');
   files = listFiles(outDir);
@@ -560,7 +573,10 @@ describe('the library build', () => {
 
   test('carries no page, no demo data and no file of public', () => {
     const demo: { systems: { name: string }[] } = JSON.parse(
-      readFileSync(join(root, 'demo-data', 'guardian-ruins.json'), 'utf8'),
+      readFileSync(
+        join(root, 'apps', 'demo', 'demo-data', 'guardian-ruins.json'),
+        'utf8',
+      ),
     ) as { systems: { name: string }[] };
     const demoName = demo.systems[0]?.name as string;
     expect(demoName.length).toBeGreaterThan(0);
@@ -601,7 +617,10 @@ describe('the library build', () => {
       names.filter((name) => name.startsWith('nebulae') && name.endsWith('.json')),
     ).toHaveLength(1);
 
-    const file = readFileSync(join(root, 'src', 'scene-data', 'nebulae.json'), 'utf8');
+    const file = readFileSync(
+      join(libraryRoot, 'src', 'scene-data', 'nebulae.json'),
+      'utf8',
+    );
     const records = JSON.parse(file) as {
       records: [
         number,
@@ -730,7 +749,9 @@ describe('the library build', () => {
     // walk reads the whole of `src/`. Without them a broken reader or an empty walk
     // passes the reading below for the wrong reason.
     expect(importsOf("import './styles.css';\n").some(isStylesheet)).toBe(true);
-    const modules = listFiles(join(root, 'src')).filter((path) => path.endsWith('.ts'));
+    const modules = listFiles(join(libraryRoot, 'src')).filter((path) =>
+      path.endsWith('.ts'),
+    );
     expect(modules.length).toBeGreaterThan(50);
 
     const carriers: string[] = [];
@@ -761,9 +782,9 @@ describe('the library build', () => {
     console.log('the chunks the entry chunk loads with', atLoad);
 
     // How many chunks carry the table follows the build, so this test asserts no count.
-    // `vite.config.lib.ts` keeps `@elite-dangerous-almanac/core` external, so the library
-    // build leaves the specifier bare and the worker chunk is the only carrier. A build
-    // that bundles the package instead carries it in the worker chunk and in one lazily
+    // The library's `vite.config.ts` keeps `@elite-dangerous-almanac/core` external, so
+    // the build leaves the specifier bare and the worker chunk is the only carrier. A
+    // build that bundles the package carries it in the worker chunk and in one lazily
     // loaded chunk. Both shapes hold the two rules below, which are what the bound is for.
     for (const name of carriers) {
       expect(name, `${name} is the entry chunk`).not.toBe('index.js');
@@ -806,7 +827,7 @@ describe('the library build', () => {
   test('packs one boundary set in the region worker', () => {
     // The entry point is gone from the source, so nothing can call it.
     const source = readFileSync(
-      join(root, 'src', 'scene-data', 'region-lines.ts'),
+      join(libraryRoot, 'src', 'scene-data', 'region-lines.ts'),
       'utf8',
     );
     expect(source, 'the source holds the smoothed packer').not.toContain(
@@ -853,10 +874,19 @@ describe('the library build', () => {
       version?: string;
       sideEffects?: boolean;
       exports?: Record<string, Record<string, string>>;
-    } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as never;
+    } = JSON.parse(readFileSync(join(libraryRoot, 'package.json'), 'utf8')) as never;
 
     expect(manifest.private).toBeUndefined();
-    expect(manifest.files).toEqual(['dist']);
+    // `files` carries the build output and the three text files the tarball states the
+    // terms with. `tests/packed-tarball.test.ts` reads what `npm pack` would ship, which
+    // is the stronger guard: `files` interacts with `.npmignore`, with `.gitignore` and
+    // with npm's own lists, and the result is what ships.
+    expect(manifest.files).toEqual([
+      'dist',
+      'README.md',
+      'LICENSE.md',
+      'THIRD_PARTY_NOTICES.md',
+    ]);
     // `setCategoryVisible` and `isCategoryVisible` reach the markers of a category alone.
     // They reached its shapes as well, so a host that called them to clear both keeps its
     // shapes on the screen and calls `setShapeCategoryVisible` for them. The call still
@@ -880,7 +910,7 @@ describe('the library build', () => {
     // two more paths, and a reading of the main entry alone would leave them unchecked.
     const named = [manifest.types as string];
     const exported = manifest.exports ?? {};
-    expect(Object.keys(exported).sort()).toEqual(['.', './nebulae']);
+    expect(Object.keys(exported).sort()).toEqual(['.', './nebulae', './testing']);
     for (const entry of Object.keys(exported)) {
       const condition = exported[entry] as Record<string, string>;
       expect(Object.keys(condition).sort(), `${entry} names no types`).toEqual([
@@ -901,15 +931,16 @@ describe('the library build', () => {
     }
   });
 
-  // The build has two entry points, and `lib.fileName` is left out so the entry keys
-  // name the files. A string there would send both entries to `index.js`, so the test
+  // The build has three entry points, and `lib.fileName` is left out so the entry keys
+  // name the files. A string there would send every entry to `index.js`, so the test
   // reads the emitted names rather than assuming them.
-  test('emits a file and a declaration for each of the two entry points', () => {
+  test('emits a file and a declaration for each of the three entry points', () => {
     const names = files.map(nameOf);
     expect(names).toContain('index.js');
     expect(names).toContain('nebulae.js');
+    expect(names).toContain('testing.js');
 
-    for (const path of ['index.d.ts', join('nebulae', 'index.d.ts')]) {
+    for (const path of ['index.d.ts', join('nebulae', 'index.d.ts'), 'testing.d.ts']) {
       const declaration = join(outDir, 'types', path);
       expect(statSync(declaration).isFile(), `${path} is not declared`).toBe(true);
     }
@@ -921,8 +952,9 @@ describe('the library build', () => {
       pathToFileURL(entry).href
     )) as Record<string, unknown>;
     expect(typeof library['createGalaxyMap']).toBe('function');
-    // The barrel exports four values and the rest are types, which carry no run-time name.
+    // The barrel exports five values and the rest are types, which carry no run-time name.
     expect(Object.keys(library).sort()).toEqual([
+      'createFragmentWriter',
       'createGalaxyMap',
       'decodeGrid',
       'decodeView',
@@ -1045,6 +1077,88 @@ describe('the library build', () => {
     expect(typeCheck(host)).toBe('');
   }, 60_000);
 
+  // The view calls name `MapView` and not `View`. `src/camera/view.ts`'s `View` is not
+  // exported from the entry point, so a signature that named it would put a name a host
+  // cannot import into the published declaration. The reading is of
+  // `types/app/url-view.d.ts`, which is the file that carried the defect: `index.d.ts` is
+  // re-export lines and names no type at all, so a check on it passes either way.
+  test('the view calls name no unexported view type', () => {
+    const text = readFileSync(join(outDir, 'types', 'app', 'url-view.d.ts'), 'utf8');
+    console.log('the url-view declaration', text);
+
+    // The control: the file declares the three calls this reading is about.
+    expect(text).toContain('encodeView');
+    expect(text).toContain('decodeView');
+    expect(text).toContain('createFragmentWriter');
+    // `View` as a whole word. `MapView` holds no word boundary before `View`, so the
+    // pattern reads the unexported name alone.
+    expect(/\bView\b/.test(text)).toBe(false);
+    expect(text).toContain('MapView');
+  });
+
+  // The fragment writer is part of the surface now, because the demo page reached it by a
+  // deep import and the split gives it no such reach. The reading compiles a host module
+  // against the built declaration, so it covers the two types as well as the call.
+  test('the entry point exports the fragment writer', () => {
+    const host = join(outDir, 'reads-the-fragment-writer.ts');
+    writeFileSync(
+      host,
+      'import type { FragmentWriter, FragmentWriterOptions, MapView } from ' +
+        "'./types/index';\n" +
+        "import { createFragmentWriter } from './types/index';\n" +
+        'declare const view: MapView;\n' +
+        'const options: FragmentWriterOptions = { write: (text: string) => void text };\n' +
+        'const writer: FragmentWriter = createFragmentWriter(view, options);\n' +
+        'writer.schedule();\n' +
+        'writer.flush();\n' +
+        'writer.dispose();\n',
+      'utf8',
+    );
+    expect(typeCheck(host)).toBe('');
+    // No deep import of the module: the host names the entry point alone.
+    expect(readFileSync(host, 'utf8')).not.toContain('app/url-view');
+  }, 60_000);
+
+  // The third entry point, read both ways. A negative reading alone passes on an entry
+  // point that exports nothing at all, so the positive half runs the call.
+  test('the testing entry point carries the probe object', async () => {
+    const entry = scripts.find((path) => nameOf(path) === 'testing.js') as string;
+    const probes: Record<string, unknown> = (await import(
+      pathToFileURL(entry).href
+    )) as Record<string, unknown>;
+    expect(Object.keys(probes).sort()).toEqual(['galaxyMapGlobal']);
+
+    // The call takes `scope: Window = window`, so a stub stands in for the browser.
+    const read = probes['galaxyMapGlobal'] as (scope: unknown) => {
+      renderer: string;
+      ready: boolean;
+      error: string | null;
+    };
+    const scope: Record<string, unknown> = {};
+    const made = read(scope);
+    expect(made).toEqual({ renderer: '', ready: false, error: null });
+    // A second call reads the object the first one left, rather than making another.
+    expect(read(scope)).toBe(made);
+
+    // The declaration carries the three names.
+    const declaration = readFileSync(join(outDir, 'types', 'testing.d.ts'), 'utf8');
+    for (const name of ['galaxyMapGlobal', 'GalaxyMapGlobal', 'TestView']) {
+      expect(declaration).toContain(name);
+    }
+
+    // The negative half: the main entry point does not re-export the probe object.
+    expect(readFileSync(join(outDir, 'types', 'index.d.ts'), 'utf8')).not.toContain(
+      'galaxyMapGlobal',
+    );
+    const bad = join(outDir, 'reads-the-probe-from-the-main-entry.ts');
+    writeFileSync(
+      bad,
+      "import { galaxyMapGlobal } from './types/index';\nvoid galaxyMapGlobal;\n",
+      'utf8',
+    );
+    expect(typeCheck(bad)).not.toBe('');
+  }, 60_000);
+
   // The two shape category members take a string and a boolean and add no type, so the
   // export list does not move. A host still needs them on `GalaxyMap`, because
   // `setCategoryVisible` reaches the markers alone.
@@ -1108,7 +1222,7 @@ function typeCheck(path: string): string {
         'ES2022,DOM,DOM.Iterable,WebWorker',
         path,
       ],
-      { cwd: root, stdio: 'pipe' },
+      { cwd: libraryRoot, stdio: 'pipe' },
     );
     return '';
   } catch (error) {

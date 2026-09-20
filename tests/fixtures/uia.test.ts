@@ -4,10 +4,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { createSystemSet } from '../../src/scene-data/real-systems';
-import { createShapeSet } from '../../src/scene-data/shapes';
-import type { CategoryInput } from '../../src/scene-data/real-systems';
-import type { LineInput, SphereInput } from '../../src/scene-data/shapes';
+import { createSystemSet } from '../../packages/galaxy-map/src/scene-data/real-systems';
+import { createShapeSet } from '../../packages/galaxy-map/src/scene-data/shapes';
+import type { CategoryInput } from '../../packages/galaxy-map/src/scene-data/real-systems';
+import type {
+  LineInput,
+  SphereInput,
+} from '../../packages/galaxy-map/src/scene-data/shapes';
 import {
   convertUia,
   parseCsv,
@@ -17,7 +20,7 @@ import {
   uiaWaypointSet,
   MODEL_BOUNDS,
   UIA_SPHERE_LISTS,
-} from '../../scripts/build-demo-systems.mjs';
+} from '../../apps/demo/scripts/build-demo-systems.mjs';
 
 const source = readFileSync(
   fileURLToPath(new URL('./uia-extract.js', import.meta.url)),
