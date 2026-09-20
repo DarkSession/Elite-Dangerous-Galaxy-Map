@@ -148,32 +148,65 @@ a refusal on every stub context and three passing tests fail. This group comes f
 
 ## 5. The cost spec's own probe
 
-- [ ] 5.1 Change how `e2e/nebula-cost.spec.ts` decides whether the run took the block path.
+- [x] 5.1 Change how `e2e/nebula-cost.spec.ts` decides whether the run took the block path.
       It calls `getExtension` on a throwaway context, which is the reasoning this change
       declares wrong, and it reads correctly on the development card by luck. Make it
       allocate on a `TEXTURE_2D_ARRAY` instead, the way the renderer's probe does. Verify
-      with one Playwright run over that file.
-- [ ] 5.2 Confirm the scenario "The blocks upload with no decode where the extensions are
+      with one Playwright run over that file. **Read:** the page now allocates 4 by 4 by 1
+      texels of each format on a `TEXTURE_2D_ARRAY` and reads `getError`, as the
+      renderer's probe does. `e2e/nebula-cost.spec.ts` reads **8 of 8 passed** in
+      `chromium-timed`, and the decode test reads
+      `blocks true, files 66, assets 0, decodeMs 0`.
+- [x] 5.2 Confirm the scenario "The blocks upload with no decode where the extensions are
       there" is held by the changed test. The delta widened its WHEN from carrying the two
       extensions to carrying them **and** proving both formats, and the scenario keeps its
       older name because a MODIFIED requirement replaces the whole block and a renamed
-      scenario reads to the validator as a dropped one.
+      scenario reads to the validator as a dropped one. **Read:** two tests hold it and
+      neither reads the extension list as a stand-in for the path. The Chromium test "the
+      blocks upload with no decode where the extensions are there" reads `nebula-decode`,
+      which is the path the renderer took, and asserts 0 on the block path, 33 on the
+      decoding path and 0.01 RMSE between the two frames. `e2e/nebula-cost.spec.ts` reads
+      `blocks` from the allocation of task 5.1.
 
 ## 6. The readings the change states
 
-- [ ] 6.1 Record the probe's readings in Firefox and Chromium, from the runs of tasks 3.2
+- [x] 6.1 Record the probe's readings in Firefox and Chromium, from the runs of tasks 3.2
       and 4.3: which format each browser refuses on `TEXTURE_2D_ARRAY`, and which path each
       browser then takes. Confirm they match the table in `proposal.md`, and correct the
-      table where they do not.
-- [ ] 6.2 Read the decode mark in Firefox on the fallback path and record the sum, so the
+      table where they do not. **Read**, as `getError` after a 4 by 4 allocation, where 0
+      is `NO_ERROR`:
+
+      | browser  | BC4 2D | BC4 2D array | BC1 2D | BC1 2D array | path       |
+      | -------- | ------ | ------------ | ------ | ------------ | ---------- |
+      | Firefox  | 0      | **1282**     | 0      | 0            | decode, 33 |
+      | Chromium | 0      | 0            | 0      | 0            | blocks, 0  |
+
+      Firefox refuses BC4 on the array target alone, which is the table of `proposal.md`.
+      The error code is **not** the one the table stated: 1282 is `INVALID_OPERATION` and
+      the table said `INVALID_ENUM`. The table, the `nebulae` delta and the Chromium guard
+      are corrected to `INVALID_OPERATION`.
+- [x] 6.2 Read the decode mark in Firefox on the fallback path and record the sum, so the
       14.2 to 19.2 ms the `nebulae` delta states is read in the browser that now takes that
       path. Record it whatever it says. If it lies outside the stated range, do not move the
       range in this task; report it, because the range is a Chromium figure and a second
-      browser's reading may belong beside it rather than inside it.
-- [ ] 6.3 Confirm the fallback path itself renders in Firefox, and not only that the fast
+      browser's reading may belong beside it rather than inside it. **Read:** eight
+      readings of the sum in Firefox are **16, 17, 20, 15, 21, 20, 13, 21 ms**, and the
+      worst single asset is 1 to 2 ms. The range is therefore **13 to 21 ms**, which sits
+      **outside** the stated 14.2 to 19.2 at both ends. Firefox rounds `performance.now()`
+      to 1 ms, so every one of the 33 marks is quantized and the sum carries that error;
+      the figures are integers for that reason. The range is not moved here. Five Chromium
+      readings taken beside these, on the same tree, are 16.2, 16.7, 16.0, 16.9 and
+      17.2 ms, which are all inside the stated range, so the Chromium figure holds and the
+      Firefox reading belongs beside it and not inside it.
+- [x] 6.3 Confirm the fallback path itself renders in Firefox, and not only that the fast
       path is avoided. The fallback uploads plain `R8` and `RGBA8` to a `TEXTURE_2D_ARRAY`,
       where before the slice arrays it uploaded to a `TEXTURE_3D`. Task 4.1 reads a drawn
-      frame, so this is a check of that result and not a second run.
+      frame, so this is a check of that result and not a second run. **Read:** the Firefox
+      run of task 4.3 reads `decodes 33` and `added 0.00234` in one reading. The 33 decodes
+      are the fallback path and the added light is the frame it drew, so Firefox uploads
+      plain `R8` and `RGBA8` to a `TEXTURE_2D_ARRAY` and the march reads them. The added
+      light matches the Chromium decode path of task 3.2 to five places, 0.0023389 against
+      0.0023389, so the two browsers draw the same frame on that path.
 
 ## 7. The whole suite and the gate
 

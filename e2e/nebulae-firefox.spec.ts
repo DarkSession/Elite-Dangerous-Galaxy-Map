@@ -53,19 +53,30 @@ async function frameWithNebulae(page: Page, on: boolean): Promise<number> {
  * browser in front of them rather than trusting a date.
  *
  * `decodes` is the path the map took: 0 is the block path and 33 is the decode path.
- * Each format reads the `getError` of a throwaway allocation, where 0 is `NO_ERROR`.
+ * `decodeMs` is what that path cost, which the `nebulae` capability states as a property
+ * of the fallback. Each format reads the `getError` of a throwaway allocation, where 0
+ * is `NO_ERROR`.
  */
 async function pathReport(page: Page): Promise<{
   decodes: number;
+  decodeMs: number;
+  worstAssetMs: number;
   extensions: string[];
   formats: Record<string, number>;
 }> {
   return page.evaluate(() => {
-    const decodes = performance.getEntriesByName('nebula-decode').length;
+    const durations = performance
+      .getEntriesByName('nebula-decode')
+      .map((entry) => entry.duration);
+    const decodes = durations.length;
+    const decodeMs = durations.reduce((sum, value) => sum + value, 0);
+    const worstAssetMs = Math.max(0, ...durations);
     const gl = document.createElement('canvas').getContext('webgl2');
     const formats: Record<string, number> = {};
     const extensions: string[] = [];
-    if (gl === null) return { decodes, extensions, formats };
+    if (gl === null) {
+      return { decodes, decodeMs, worstAssetMs, extensions, formats };
+    }
     const rgtc = gl.getExtension('EXT_texture_compression_rgtc') as {
       COMPRESSED_RED_RGTC1_EXT: number;
     } | null;
@@ -94,7 +105,7 @@ async function pathReport(page: Page): Promise<{
       read('BC1 on TEXTURE_2D', s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT, false);
       read('BC1 on TEXTURE_2D_ARRAY', s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT, true);
     }
-    return { decodes, extensions, formats };
+    return { decodes, decodeMs, worstAssetMs, extensions, formats };
   });
 }
 

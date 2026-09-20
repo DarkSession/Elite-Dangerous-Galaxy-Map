@@ -42,9 +42,10 @@ async function nebulaeAlone(page: Page): Promise<void> {
 // BC1 blocks, and what happens next depends on the context.
 //
 // Where it carries both `EXT_texture_compression_rgtc` and
-// `WEBGL_compressed_texture_s3tc` the blocks reach the card unchanged and there is no
-// decode at all, which is the point of this change. Where it carries fewer than both,
-// the upload decodes on the main thread, one asset a task, so the cost is paid once,
+// `WEBGL_compressed_texture_s3tc` **and allocates each format on a `TEXTURE_2D_ARRAY`**,
+// the blocks reach the card unchanged and there is no decode at all, which is the point
+// of this change. Where it carries fewer than both, or refuses either format, the
+// upload decodes on the main thread, one asset a task, so the cost is paid once,
 // after the first frame. The map waits on nothing, so a decode that held a frame would
 // show as a long frame and in no other way.
 //
@@ -69,12 +70,31 @@ test('the volume decode holds the frame budget', async ({ page }) => {
     const first = Math.min(...volumes.map((entry) => entry.startTime));
     const last = Math.max(...volumes.map((entry) => entry.responseEnd));
     const probe = document.createElement('canvas').getContext('webgl2');
+    // Whether this context allocates one block of `format` on a `TEXTURE_2D_ARRAY`.
+    // A present extension is not proof: a context can carry one and still refuse its
+    // format on that target, which is what Firefox does with `COMPRESSED_RED_RGTC1`.
+    // The reading is therefore the allocation the renderer's own probe makes.
+    const takes = (name: string, key: string): boolean => {
+      if (probe === null) return false;
+      const extension = probe.getExtension(name) as Record<string, number> | null;
+      if (extension === null) return false;
+      const texture = probe.createTexture();
+      probe.bindTexture(probe.TEXTURE_2D_ARRAY, texture);
+      for (let drained = 0; drained < 32; drained += 1) {
+        if (probe.getError() === probe.NO_ERROR) break;
+      }
+      probe.texStorage3D(probe.TEXTURE_2D_ARRAY, 1, extension[key] as number, 4, 4, 1);
+      const refused = probe.getError() !== probe.NO_ERROR;
+      probe.deleteTexture(texture);
+      return !refused;
+    };
     return {
       attached: window.__galaxyMap?.nebulaeAttached?.() ?? false,
-      // Whether this context takes the block path, which needs both extensions.
+      // Whether this context takes the block path, which needs both extensions and an
+      // allocation of each format on the target the renderer uses.
       blocks:
-        probe?.getExtension('EXT_texture_compression_rgtc') != null &&
-        probe?.getExtension('WEBGL_compressed_texture_s3tc') != null,
+        takes('EXT_texture_compression_rgtc', 'COMPRESSED_RED_RGTC1_EXT') &&
+        takes('WEBGL_compressed_texture_s3tc', 'COMPRESSED_RGB_S3TC_DXT1_EXT'),
       files: volumes.length,
       assets: entries.length,
       fetchMs: last - first,
