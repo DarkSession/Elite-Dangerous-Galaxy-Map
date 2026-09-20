@@ -226,7 +226,9 @@ the demo page, and it owns the fragment, the message box and the test hooks.
 The boundary is one warm cream band with a soft edge. Its base half width is 1.6 per cent
 of the viewport height in CSS pixels, held between 8 and 24, so the whole band measures
 34.6 CSS pixels at 1,080 rows. **The band takes that width at 12,000 light years and
-nearer, and it falls as `1 / range` beyond it**, held at a floor of 2 CSS pixels. The band
+nearer, and it falls as `1 / range` beyond it**, held at a floor of 2 CSS pixels. That
+12,000 is the width's own reference range and not the range at which the fade below
+reaches full, so no line changes width at any range. The band
 bounds an area of the plane, so it belongs to the picture and takes a size in the picture:
 a band of one width at every range covered a far region from edge to edge. The width is
 **not** what hides the raster — the line is smoothed
@@ -236,7 +238,7 @@ distance to the nearest segment under a `MAX` blend, so the sharpest corner of t
 draws as a round turn of the band's own half width.
 
 Two fades multiply. The **range fade** is read for each pixel, from the camera to the
-plane point under it: nothing at 8,000 light years and below, rising to full at 12,000.
+plane point under it: nothing at 5,000 light years and below, rising to full at 8,000.
 The **zoom fade** is read once for the frame, from the camera to the cursor: full at
 20,000 light years and below, falling to nothing at 30,000. A region label takes the same
 two fades, the range one read at the label's own plane anchor, so a name and the line

@@ -2020,25 +2020,22 @@ test.describe('the grid labels and their lines', () => {
       // The reading is taken at the label's **anchor**, which is the crossing itself.
       // The label's own box stands clear of the crossing by design, so the middle of the
       // box lies inside the cell, where no line draws.
+      //
+      // A label stays while any part of its box is on the screen, so a label the user can
+      // see can carry an anchor the frame does not hold. There is no pixel to read there,
+      // so the reading skips such a label. It does not move the point to the frame edge:
+      // that would read a pixel of another part of the grid and pass or fail by accident.
       const spots: { text: string; x: number; y: number }[] = [];
       for (const held of map.debug.gridLabelReadings()) {
-        spots.push({
-          text: held.text,
-          x: Math.round(held.x),
-          y: Math.round(held.y),
-        });
+        const x = Math.round(held.x);
+        const y = Math.round(held.y);
+        if (x < 3 || y < 3) continue;
+        if (x > canvas.clientWidth - 4 || y > canvas.clientHeight - 4) continue;
+        spots.push({ text: held.text, x, y });
       }
       const readAll = (): number[] =>
         spots.map((spot) => {
-          const left = Math.min(
-            Math.max(0, spot.x - 3),
-            Math.max(0, canvas.clientWidth - 7),
-          );
-          const top = Math.min(
-            Math.max(0, spot.y - 3),
-            Math.max(0, canvas.clientHeight - 7),
-          );
-          const bytes = map.debug.readRect(left, top, 7, 7);
+          const bytes = map.debug.readRect(spot.x - 3, spot.y - 3, 7, 7);
           let best = 0;
           for (let index = 0; index < bytes.length; index += 4) {
             best = Math.max(best, bytes[index] as number);
@@ -2060,7 +2057,9 @@ test.describe('the grid labels and their lines', () => {
     const labels = reading as NonNullable<typeof reading>;
     console.log('the labels and the light under them', labels);
 
-    expect(labels.length).toBeGreaterThan(0);
+    // The reading fails when no label is read, so a gate that dropped every label could
+    // not make this scenario pass by holding nothing.
+    expect(labels.length, 'a label whose anchor the frame holds').toBeGreaterThan(0);
     expect(labels.length).toBeLessThanOrEqual(8);
     for (const label of labels) {
       expect(label.light, `the label "${label.text}"`).toBeGreaterThan(0.01);
@@ -2197,11 +2196,16 @@ test.describe('the grid label readings', () => {
           y: at.top + at.height / 2 - box.top,
         };
       });
-      // The same background weight rule the module uses, read at the centre of the
-      // label's own box.
+      // The same background weight rule the module uses, read at the same point the
+      // placement reads: the centre of the label's own box, held inside the frame. A
+      // reading that took the unheld centre would read no pixel for a label at the edge
+      // and fall back to a weight of 1, and the two figures would then disagree by the
+      // whole of the background term.
       const weightAt = (x: number, y: number): number => {
-        const column = Math.floor((x / 1920) * background.width);
-        const row = Math.floor((y / 1080) * background.height);
+        const heldX = Math.min(Math.max(x, 0), 1920 - 1);
+        const heldY = Math.min(Math.max(y, 0), 1080 - 1);
+        const column = Math.floor((heldX / 1920) * background.width);
+        const row = Math.floor((heldY / 1080) * background.height);
         const texel = background.texels[row * background.width + column];
         if (texel === undefined) return 1;
         const merge = Math.min(

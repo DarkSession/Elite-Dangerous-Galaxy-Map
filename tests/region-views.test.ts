@@ -60,7 +60,7 @@ const ONE_CHAIN_VIEWPORT: Viewport = { width: 1280, height: 720 };
 const ONE_CHAIN_ZOOM = 12000;
 
 /** The zooms the fade scenarios open the one-chain point at, in light years. */
-const ONE_CHAIN_ZOOMS = [7000, 10000, 12000, 20000, 25000, 31000] as const;
+const ONE_CHAIN_ZOOMS = [4000, 6500, 8000, 20000, 25000, 31000] as const;
 
 /** How many light years one CSS pixel covers at the cursor. */
 function lightYearsPerPixel(distance: number, viewport: Viewport): number {
@@ -333,7 +333,8 @@ describe('the point whose window holds one chain', () => {
     expect(ONE_CHAIN_POINT.segmentLengthLy).toBeGreaterThan(100);
     // One CSS pixel covers 19.2 light years at 1280x720 and 12,000, and the clearance is
     // measured from the edge of the band, whose half width is 11.52 CSS pixels there,
-    // so 20 CSS pixels of clear frame ask for 606 light years.
+    // so 20 CSS pixels of clear frame ask for 606 light years. The band keeps that half
+    // width, because the width reference range stays at 12,000 light years.
     expect(ONE_CHAIN_POINT.clearanceLy).toBeGreaterThan(
       (regionBandHalfWidthAtRange(ONE_CHAIN_VIEWPORT.height, ONE_CHAIN_ZOOM) + 20) *
         lightYearsPerPixel(ONE_CHAIN_ZOOM, ONE_CHAIN_VIEWPORT),
@@ -366,7 +367,7 @@ describe('the view where no line draws', () => {
 
   test('holds every plane point of the frame under the range floor', () => {
     expect(NO_LINE_VIEW.rangeFloorLy).toBe(REGION_RANGE_NONE);
-    expect(NO_LINE_VIEW.rangeFloorLy).toBe(8000);
+    expect(NO_LINE_VIEW.rangeFloorLy).toBe(5000);
     const farthest = farthestPlaneRange(
       NO_LINE_VIEW.view as View,
       NO_LINE_VIEW.viewport,

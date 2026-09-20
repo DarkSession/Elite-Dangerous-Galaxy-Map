@@ -101,11 +101,27 @@ export const REGION_FADE_IN_NEAR = 20000;
  * takes away the lines near the cursor, where one band would cross the whole frame. The
  * region labels read the same two figures at their own plane anchor, so a name and the
  * line under it read at the same strength.
+ *
+ * The figure is 5,000 light years. It was 8,000, which took the lines away further out
+ * than the owner wants.
  */
-export const REGION_RANGE_NONE = 8000;
+export const REGION_RANGE_NONE = 5000;
 
-/** The range at and above which a line draws in full, in light years. */
-export const REGION_RANGE_FULL = 12000;
+/**
+ * The range at and above which a line draws in full, in light years. The figure is
+ * 8,000. It was 12,000, which is now `REGION_WIDTH_RANGE` alone.
+ */
+export const REGION_RANGE_FULL = 8000;
+
+/**
+ * The range at which the band carries its base width, in light years. Beyond it the
+ * half width falls as `1 / range`.
+ *
+ * This is the width's own figure and not the range at which the fade reaches full. The
+ * two were one constant. They are two now: the fade says where a line draws, and this
+ * range says how wide it is.
+ */
+export const REGION_WIDTH_RANGE = 12000;
 
 /** The four corners of the ribbon quad, as a triangle strip. */
 const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
@@ -162,7 +178,7 @@ export function regionBandHalfWidthAtRange(
   range: number,
 ): number {
   const base = regionBandHalfWidthCss(viewportHeightCss);
-  const width = (base * REGION_RANGE_FULL) / Math.max(range, 1);
+  const width = (base * REGION_WIDTH_RANGE) / Math.max(range, 1);
   return Math.min(base, Math.max(REGION_BAND_HALF_WIDTH_FLOOR_CSS, width));
 }
 
@@ -411,9 +427,9 @@ export function createRegionPass(
       gl.uniform2f(ribbon.uniforms['uTargetSize'] ?? null, width, height);
       gl.uniform1f(ribbon.uniforms['uBaseHalfWidth'] ?? null, halfWidth);
       gl.uniform1f(ribbon.uniforms['uFloorHalfWidth'] ?? null, floorHalfWidth);
-      // The reference range is the range at which the band carries its base width, and it
-      // is the same figure the composite's range fade ends at. One figure, one constant.
-      gl.uniform1f(ribbon.uniforms['uReferenceRange'] ?? null, REGION_RANGE_FULL);
+      // The reference range is the range at which the band carries its base width. It is
+      // its own constant, and it is not the range at which the fade reaches full.
+      gl.uniform1f(ribbon.uniforms['uReferenceRange'] ?? null, REGION_WIDTH_RANGE);
 
       gl.bindVertexArray(drawn.vertexArray);
       gl.bindBuffer(gl.ARRAY_BUFFER, drawn.positionBuffer);

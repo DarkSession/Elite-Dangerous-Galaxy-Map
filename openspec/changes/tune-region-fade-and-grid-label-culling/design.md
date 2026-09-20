@@ -120,6 +120,21 @@ they run again and the constants they give are written back. The counts they rep
 - **The label zoom ladder stops reading the slope.** The scenario "The region the camera is
   inside is named at every zoom" read 20,000, 15,000, 10,000, 7,500 and 4,000 light years
   against the old band. Against 5,000 to 8,000 every one of those zooms puts the anchor at
-  the top or the bottom of the fade. → The ladder moves to 20,000, 15,000, 10,000, 6,500 and
-  3,000, and the delta makes a reading strictly inside the band a condition of the test, so
-  the implementation must measure the anchor range rather than assume it.
+  the top or the bottom of the fade. → The ladder moves to 20,000, 15,000, 10,000, **2,500**
+  and **1,000**, and the delta makes a reading strictly inside the band a condition of the
+  test, so the implementation must measure the anchor range rather than assume it.
+
+  The two close rungs are the measured ones. The anchor range runs far past the zoom at a
+  pitch of 35 degrees, because the anchor is the part of the region the frame shows and that
+  part sits up the frame. The ratio is not one figure: it runs from 1.17 at 20,000 light
+  years to 2.60 at 2,500, and over the close end `range = 4,400 + 0.84 * zoom` fits it. 2,500 light years reads an anchor at 6,504.6, which
+  is strictly inside the band, and 1,000 is the first rung at which the label leaves the
+  page. A first reading of this bullet named 6,500 and 3,000, which read 10,160.61 and
+  6,940.58: the first is the top of the fade and the second still carries a label.
+- **The far-line bands read whole rows and the geometry was taken at the centre column.**
+  The scenario "A far line still draws while the near line is gone" counts the pixels of a
+  rectangle that runs the width of the frame, so a row holds only when every column of it is
+  under the floor. A ray at the side of the frame meets the plane further away than the
+  centre ray of the same row. → The lower band is **60 per cent** and not 45. The centre
+  column falls under 5,000 light years at 40.3 per cent and the corner column at 57.43, and
+  60 clears the corner figure with 2.6 points of room.

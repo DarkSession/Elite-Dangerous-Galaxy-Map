@@ -117,6 +117,19 @@ function numbersOf(text: string): number[] {
   return text.split(' : ').map((part) => Number(part.replace(/,/g, '')));
 }
 
+/** True when a label's screen bounding box covers some part of the viewport. */
+function onTheFrame(
+  box: { left: number; top: number; width: number; height: number },
+  viewport: { width: number; height: number } = VIEWPORT,
+): boolean {
+  return (
+    box.left < viewport.width &&
+    box.left + box.width > 0 &&
+    box.top < viewport.height &&
+    box.top + box.height > 0
+  );
+}
+
 /** The CSS pixels per light year of the projection at one light year of range. */
 function focalCss(height: number): number {
   return height / 2 / Math.tan(Math.PI / 6);
@@ -243,6 +256,35 @@ describe('the crossing labels', () => {
     expect(placed.length).toBeLessThanOrEqual(MAX_GRID_LABELS);
   });
 
+  // The scenario "A label whose crossing is off the frame stays" of `coordinate-grid`.
+  test('keep a label whose crossing is off the frame', () => {
+    // The cursor sits 40 light years left of the crossing row, so the crossing at
+    // x = 1,000 projects past the right edge while the label, which lies toward -x of
+    // it, still covers the frame. The gate read the crossing and took the whole label.
+    const frame = {
+      view: viewAt([-40, 0, 0], 1000),
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      browse: BROWSE,
+      background: null,
+      spacingLy: 1000,
+    };
+
+    const placed = gridLabelPlacements(frame, measure);
+    const kept = placed.find((placement) => placement.text === '1,000 : 0 : 0');
+
+    expect(kept).toBeDefined();
+    const label = kept as (typeof placed)[number];
+    // The anchor is the crossing, which the frame does not hold.
+    expect(label.x).toBeGreaterThan(VIEWPORT.width);
+    // The label itself does cover the frame.
+    const box = label.placed.box;
+    expect(box.left).toBeLessThan(VIEWPORT.width);
+    expect(box.left + box.width).toBeGreaterThan(0);
+    expect(box.top).toBeLessThan(VIEWPORT.height);
+    expect(box.top + box.height).toBeGreaterThan(0);
+  });
+
   test('drop a candidate outside the viewport', () => {
     const frame = {
       view: viewAt([0, 0, 0], 1000),
@@ -253,12 +295,38 @@ describe('the crossing labels', () => {
       spacingLy: 1000,
     };
 
-    for (const placement of gridLabelPlacements(frame, measure)) {
-      expect(placement.x).toBeGreaterThanOrEqual(0);
-      expect(placement.y).toBeGreaterThanOrEqual(0);
-      expect(placement.x).toBeLessThanOrEqual(VIEWPORT.width);
-      expect(placement.y).toBeLessThanOrEqual(VIEWPORT.height);
+    const placed = gridLabelPlacements(frame, measure);
+    expect(placed.length).toBeGreaterThan(0);
+    // The gate reads the label's own screen bounding box and not its anchor, so every
+    // placement covers some part of the frame.
+    for (const placement of placed) {
+      expect(onTheFrame(placement.placed.box)).toBe(true);
     }
+  });
+
+  // The scenario "A label goes when no part of it is on the frame" of `coordinate-grid`.
+  test('drop a label when no part of it is on the frame', () => {
+    // The cursor sits 3 spacings left of the crossing row that carries `3,000`, so that
+    // crossing and its whole label lie past the right edge of the frame.
+    const frame = {
+      view: viewAt([-500, 0, 0], 1000),
+      viewport: { width: 640, height: 360 },
+      bounds: BOUNDS,
+      browse: BROWSE,
+      background: null,
+      spacingLy: 1000,
+    };
+
+    const placed = gridLabelPlacements(frame, measure);
+    expect(placed.length).toBeGreaterThan(0);
+    for (const placement of placed) {
+      expect(onTheFrame(placement.placed.box, frame.viewport)).toBe(true);
+    }
+    // The crossing at x = 1,000 sits 1,500 light years right of the cursor. The reach
+    // gate does not drop it: `gridLabelReach(1500, 1000)` reads 0.25. The quad gate of
+    // `planePlacement` drops it, because the whole label lies past the right edge of
+    // this narrow frame. That is the gate this test reads.
+    expect(placed.some((placement) => placement.text === '1,000 : 0 : 0')).toBe(false);
   });
 
   test('skip a label whose screen box overlaps one already placed', () => {
@@ -795,6 +863,41 @@ describe('the label overlay', () => {
     expect(first.text).toBe('0 : 0 : 0');
     // The dark column leaves the whole opacity. The bright one would give 0.75 of it.
     expect(first.opacity).toBeCloseTo(GRID_LABEL_OPACITY, 6);
+  });
+
+  // The scenario "A label at the edge reads the background inside the frame" of
+  // `coordinate-grid`.
+  test('reads the background inside the frame for a label at the edge', () => {
+    const { host, made } = fakeHost();
+    const overlay = createGridLabelOverlay(host);
+
+    overlay.update({
+      view: viewAt([-40, 0, 0], 1000),
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      browse: BROWSE,
+      background: flatReading(4, 4, [240, 235, 230]),
+      spacingLy: 1000,
+    });
+
+    // This label's box reaches past the left edge, so its centre sits outside the
+    // viewport at about -120 CSS pixels while the box still covers the frame.
+    const readings = overlay.readings();
+    const index = readings.findIndex((reading) => reading.text === '-1,000 : 0 : 0');
+    expect(index).toBeGreaterThanOrEqual(0);
+    const edge = readings[index] as (typeof readings)[number];
+    const corners = edge.corners.map((point) => point.x);
+    expect((Math.min(...corners) + Math.max(...corners)) / 2).toBeLessThan(0);
+    expect(Math.max(...corners)).toBeGreaterThan(0);
+
+    // The bright background inside the frame is what the label reads, so it takes the
+    // merge floor and the deep colour and not the full opacity and the cyan.
+    expect(edge.opacity).toBeCloseTo(
+      GRID_LABEL_OPACITY * GRID_LABEL_MERGE_FLOOR * edge.reach,
+      6,
+    );
+    const element = labelsOf(made)[index] as FakeElement;
+    expect(element.style.getPropertyValue('color')).toBe('rgb(20, 88, 140)');
   });
 
   test('carries a drawn stroke, no blurred shadow and no pure black', () => {

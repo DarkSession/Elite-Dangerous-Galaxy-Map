@@ -637,7 +637,7 @@ function indexSegments(lines: RegionLines): SegmentIndex {
 const ONE_CHAIN_CLEARANCE_PIXELS = 20;
 
 /** The zooms the fade scenarios open the chosen point at, in light years. */
-const ONE_CHAIN_ZOOMS: readonly number[] = [7000, 10000, 12000, 20000, 25000, 31000];
+const ONE_CHAIN_ZOOMS: readonly number[] = [4000, 6500, 8000, 20000, 25000, 31000];
 
 /** How wide the window the fade scenarios read around the point is, in CSS pixels. */
 const ONE_CHAIN_WINDOW_PIXELS = 8;
@@ -647,8 +647,9 @@ const ONE_CHAIN_WINDOW_PIXELS = 8;
  * other.
  *
  * The scenario "The boundary draws in full at the close end of the band" and the two fade
- * scenarios read the same 8 CSS pixel window around this point, at six zooms from 7,000 to
- * 31,000 light years. A point chosen only for sitting on a line can carry a second chain
+ * scenarios read the same 8 CSS pixel window around this point, at six zooms from 4,000 to
+ * 31,000 light years. The three close zooms follow the range fade, which now runs from
+ * 5,000 to 8,000. A point chosen only for sitting on a line can carry a second chain
  * inside that window, and the reading would then follow two bands and not one.
  *
  * The search takes the midpoint of the longest segment that holds every premise, so the

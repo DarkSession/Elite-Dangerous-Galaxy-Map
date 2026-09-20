@@ -52,7 +52,11 @@ None.
 Scale: both readings are per frame and fixed in cost. The region composite is one
 full-screen pass, whatever the fade figures are. The grid label sweep reads at most 25
 crossings a frame, which the coordinate-grid spec fixes, so a gate that drops fewer of
-them still projects 25 points and places at most 8 labels. Neither follows the host's
+them still reads 25 crossings and places at most 8 labels. The work for each crossing
+grows: the sweep now solves the Jacobian, the four corner projections and the homography
+for every crossing inside the reach, where it solved them only for a crossing that
+projected inside the viewport. The count is fixed at 25 either way, and
+`e2e/frame-budget.spec.ts` reads the cost. Neither follows the host's
 data set, and neither follows the ~400 billion systems of the galaxy.
 
 Code:

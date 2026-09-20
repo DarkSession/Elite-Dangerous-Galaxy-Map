@@ -44,7 +44,7 @@ flat out float vHalfEnd;
 /**
  * The half width at one endpoint, in device pixels. The point is camera-relative, so its
  * length is its range. The range is read before the near-plane clip below: the range fade
- * takes away every pixel nearer than 8,000 light years, and a segment that reaches the
+ * takes away every pixel nearer than 5,000 light years, and a segment that reaches the
  * near plane is well inside that, so no pixel the pass writes reads this width.
  */
 float halfWidthAt(vec3 point) {

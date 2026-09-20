@@ -507,18 +507,19 @@ describe('the label fade', () => {
     expect(labelFade(0)).toBe(1);
   });
 
+  // The scenario "The range fade reads its two figures" of `galactic-regions`.
   test('reads the range fade at the label own anchor', () => {
-    expect(labelRangeFade(REGION_RANGE_NONE)).toBe(0);
-    expect(labelRangeFade(8000)).toBe(0);
     expect(labelRangeFade(4000)).toBe(0);
+    expect(labelRangeFade(5000)).toBe(0);
+    expect(labelRangeFade(6500)).toBeCloseTo(0.5, 12);
+    expect(labelRangeFade(8000)).toBe(1);
+    expect(labelRangeFade(20000)).toBe(1);
+    expect(labelRangeFade(REGION_RANGE_NONE)).toBe(0);
     expect(labelRangeFade(REGION_RANGE_FULL)).toBe(1);
-    expect(labelRangeFade(12000)).toBe(1);
-    expect(labelRangeFade(30000)).toBe(1);
-    expect(labelRangeFade(10000)).toBeCloseTo(0.5, 12);
     // The two constants are the composite pass's own, so no copy is made and the label
     // fade moves with the band fade.
-    expect(REGION_RANGE_NONE).toBe(8000);
-    expect(REGION_RANGE_FULL).toBe(12000);
+    expect(REGION_RANGE_NONE).toBe(5000);
+    expect(REGION_RANGE_FULL).toBe(8000);
   });
 });
 
@@ -2210,12 +2211,15 @@ describe('the handover between the two target rules', () => {
 
 describe('the sweep skip gate', () => {
   test('is skipped only when nothing could draw', () => {
-    // A pitch of 89 degrees puts the whole frame inside the range floor, so no label
-    // could draw and the sweep does not run. A pitch of 20 degrees at the same zoom
-    // holds the horizon, the plane runs past 10,000 light years and the sweep runs. A
-    // gate on the zoom alone would skip both.
-    const steep = viewAt(4000, 89);
-    const shallow = viewAt(4000, 20);
+    // A pitch of 89 degrees at a zoom of 2,500 light years puts the whole frame inside
+    // the range floor, so no label could draw and the sweep does not run. A pitch of 20
+    // degrees at the same zoom holds the horizon and the sweep runs. A gate on the zoom
+    // alone would skip both.
+    //
+    // The zoom was 4,000 light years against the floor of 8,000. Its corner rays reach
+    // 6,243 light years, which clears the floor of 5,000.
+    const steep = viewAt(2500, 89);
+    const shallow = viewAt(2500, 20);
     console.log('the greatest plane range', {
       steep: farthestPlaneRange(steep, WIDE),
       shallow: farthestPlaneRange(shallow, WIDE),

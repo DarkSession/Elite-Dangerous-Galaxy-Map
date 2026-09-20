@@ -27,26 +27,26 @@ const MEDIUM_DISTANCE = 15000;
 /**
  * The close end of the range band, in light years. The band is the range band and not
  * the zoom band: the centre of the frame sits at the cursor, so its range is the zoom. A
- * line draws in full at 12,000 and draws nothing at 4,000.
+ * line draws in full at 8,000 and draws nothing at 4,000.
  *
  * At 4,000 light years the reading is a window around the centre and not the whole
- * frame. A line near the horizon is over 8,000 light years off and does draw there,
+ * frame. A line near the horizon is over 5,000 light years off and does draw there,
  * which is what the range fade is for.
  */
-const CLOSE_END_FULL = 12000;
+const CLOSE_END_FULL = 8000;
 const CLOSE_END_NONE = 4000;
 
 /**
  * The range floor, in light years. A line at this range or nearer draws nothing, and no
  * label names a region whose anchor is inside it. `src/render/region-pass.ts` owns it.
  */
-const RANGE_FLOOR = 8000;
+const RANGE_FLOOR = 5000;
 
 /**
  * The three zooms the close end reading takes, in light years. The range fade is 1 at
- * 12,000, 0.5 at 10,000 and 0 at 7,000, which is below the 8,000 it reaches 0 at.
+ * 8,000, 0.5 at 6,500 and 0 at 4,000, which is below the 5,000 it reaches 0 at.
  */
-const FADE_DISTANCES = [12000, 10000, 7000];
+const FADE_DISTANCES = [8000, 6500, 4000];
 
 /**
  * The three zooms the far end reading takes, in light years. The zoom fade is 1 at
@@ -473,8 +473,8 @@ test('the boundary draws in full at the close end of the band', async ({ page })
   // The centre is the plane point a unit test found whose 8 CSS pixel window holds one
   // chain and no other at every zoom this file reads it at.
   //
-  // 12,000 light years is the closest range at which the line draws in full: the range
-  // fade reaches 1 there and the zoom fade leaves 12,000 at 1.
+  // 8,000 light years is the closest range at which the line draws in full: the range
+  // fade reaches 1 there and the zoom fade leaves 8,000 at 1.
   await look(page, ONE_CHAIN_POINT.point, CLOSE_END_FULL);
   await setPasses(page, { regions: true });
   const drawn = await canvasDigest(page);
@@ -484,7 +484,7 @@ test('the boundary draws in full at the close end of the band', async ({ page })
 
   // At 4,000 light years the centre sits at the cursor, where the range fade is 0, so
   // the window around it is the frame it was without the overlay. The rest of the frame
-  // is not read: a line near the horizon is over 8,000 light years off.
+  // is not read: a line near the horizon is over 5,000 light years off.
   await look(page, ONE_CHAIN_POINT.point, CLOSE_END_NONE);
   const closeChange = await contributionNear(page, ONE_CHAIN_POINT.point);
   expect(closeChange, `at ${CLOSE_END_NONE} light years`).toBe(0);
@@ -543,13 +543,14 @@ test('the overlay fades out across the close end of the band', async ({ page }) 
 
   const [full, half, none] = readings as [number, number, number];
   // The centre sits at the cursor, so its range is the zoom. The range fade is 1 at
-  // 12,000 light years, 0.5 at 10,000 and 0 at 7,000. The bounds are wide because the
+  // 8,000 light years, 0.5 at 6,500 and 0 at 4,000. The bounds are wide because the
   // reading is a pixel of the frame and not the fade itself. The half width is `base` at
-  // both 12,000 and 10,000, so the width rule does not enter the ratio.
-  expect(full, 'at 12,000 light years').toBeGreaterThan(0.05);
-  expect(half, 'at 10,000 light years').toBeGreaterThan(full / 5);
-  expect(half, 'at 10,000 light years').toBeLessThan((full * 4) / 5);
-  expect(none, 'at 7,000 light years').toBe(0);
+  // every range nearer than the width rule's own reference range of 12,000 light years,
+  // so the width rule does not enter the ratio.
+  expect(full, 'at 8,000 light years').toBeGreaterThan(0.05);
+  expect(half, 'at 6,500 light years').toBeGreaterThan(full / 5);
+  expect(half, 'at 6,500 light years').toBeLessThan((full * 4) / 5);
+  expect(none, 'at 4,000 light years').toBe(0);
 });
 
 test('the overlay fades out across the far end of the zoom band', async ({ page }) => {
@@ -564,7 +565,7 @@ test('the overlay fades out across the far end of the zoom band', async ({ page 
 
   const [full, half, none] = readings as [number, number, number];
   // The range fade is 1 at all three, because the centre's range is the zoom and every
-  // zoom here is 12,000 light years or more. The zoom fade is 1 at 20,000, 0.5 at 25,000
+  // zoom here is 8,000 light years or more. The zoom fade is 1 at 20,000, 0.5 at 25,000
   // and 0 at 31,000. The band narrows over the three zooms, and the reading is the
   // largest difference in the window, which sits at the middle of the line and follows
   // the opacity and not the width.
@@ -615,9 +616,15 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
   await openMap(page);
   // A pitch of 30 degrees puts the horizon at the top edge, because the vertical field
   // of view is 60 degrees, so every row of the frame reads the plane. At a zoom of
-  // 4,000 light years the camera sits 2,000 above the plane. The rows whose plane point
-  // is beyond 12,000 light years are the top 17.8 per cent, and the rows whose plane
-  // point is under 8,000 are everything below 25.9 per cent.
+  // 4,000 light years the camera sits 2,000 above the plane.
+  //
+  // Those two row figures are the centre column: 8,000 light years at 25.9 per cent and
+  // 5,000 at 40.3. The reading takes whole rows, so a row holds only when every column
+  // of it is under the floor, and a ray at the side of the frame meets the plane further
+  // away than the centre ray of the same row. The corner column does not fall under
+  // 5,000 light years until 57.43 per cent, so the lower band is 60 per cent. The top
+  // band needs no such room, because a corner ray reads longer and the band asks for a
+  // range above 8,000.
   await page.evaluate(() => {
     window.__galaxyMap?.setView?.({
       cursor: [0, 0, 0],
@@ -628,12 +635,12 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
     window.__galaxyMap?.drawNow?.();
   });
 
-  const top = await changedInRows(page, 0, 0.1);
-  const lower = await changedInRows(page, 0.35, 1);
+  const top = await changedInRows(page, 0, 0.2);
+  const lower = await changedInRows(page, 0.6, 1);
   console.log('the changed pixels by band', { top, lower });
 
-  expect(top, 'the top 10 per cent of the rows').toBeGreaterThan(0);
-  expect(lower, 'the rows below 35 per cent').toBe(0);
+  expect(top, 'the top 20 per cent of the rows').toBeGreaterThan(0);
+  expect(lower, 'the rows below 60 per cent').toBe(0);
 });
 
 /**
@@ -1789,9 +1796,11 @@ test.describe('the label and the line at the same range', () => {
     // so the reading turns a pixel into an alpha through the core tone. The two tone
     // luminances are 0.581 and 0.794, so a background bound of 0.5 keeps every pixel that
     // is read below both tones.
-    // The window is 40 light years. The range fade now runs over 4,000 light years and
-    // not 10,000, so its steepest slope is 2.5 times what it was. A window of 100 would
-    // cost 0.0375 of the 0.05 bound on its own; 40 costs 0.015.
+    // The window is 40 light years. The range fade now runs over 3,000 light years and
+    // not 4,000, so its steepest slope is `1.5 / 3000` a light year. The window's worst
+    // cost is therefore 0.020 and the 8-bit quantisation costs 0.006, which leaves 0.024
+    // of the 0.05 bound. A window of 100 light years would cost 0.05 on its own, so the
+    // window does not grow back.
     const reading = await readStrengthAtRange(
       page,
       chosen.rangeLy,
