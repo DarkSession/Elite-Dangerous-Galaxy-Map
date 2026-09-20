@@ -27,17 +27,22 @@ test('every view stays inside the frame budget', async ({ page }) => {
   );
   expect(size).toEqual([1920, 1080]);
 
-  // The nebula march reads the density volume between the camera and each sprite. The
+  // The nebula march reads the density volume between the camera and each record. The
   // constant is at its default here, and the test sets it so the reading states which
   // frame it measured.
   await page.evaluate(() => {
     window.__galaxyMap?.setNebulaOcclusion?.(1);
   });
 
-  // The most nebula sprites any one view draws. The nebulae fade out above 20,000
-  // light years, so some views in the list draw none. One view with sprites is enough
+  // The most nebula records any one view draws. The nebulae fade out above 20,000
+  // light years, so some views in the list draw none. One view with nebulae is enough
   // to state the budget holds with the nebula pass at work.
   let mostNebulae = 0;
+  // The worst covered area and the worst dropped count over the 16 views. The drawing
+  // buffer here is 1,920 by 1,080, which is the largest screen the suite visits and so
+  // the hardest case for a budget stated in screen areas.
+  let mostCovered = 0;
+  let mostDropped = 0;
 
   for (const cursor of [SOL, GALACTIC_CENTRE]) {
     for (const distance of DISTANCES) {
@@ -51,15 +56,27 @@ test('every view stays inside the frame budget', async ({ page }) => {
           });
           const mean =
             window.__galaxyMap?.measureFrames?.(300) ?? Number.POSITIVE_INFINITY;
-          return { mean, nebulae: window.__galaxyMap?.nebulaDrawnCount?.() ?? 0 };
+          const drawn = window.__galaxyMap?.nebulaDrawnCount?.() ?? 0;
+          return {
+            mean,
+            nebulae: drawn,
+            covered: window.__galaxyMap?.nebulaCoveredArea?.() ?? 0,
+            dropped: (window.__galaxyMap?.nebulaAboveFloorCount?.() ?? 0) - drawn,
+          };
         },
         { cursor, distance },
       );
       console.log(
         `cursor ${cursor.join(',')} distance ${distance}: ` +
-          `${report.mean.toFixed(3)} ms, ${report.nebulae} nebulae`,
+          `${report.mean.toFixed(3)} ms, ${report.nebulae} nebulae, ` +
+          `${report.covered.toFixed(3)} screen areas, ${report.dropped} dropped`,
       );
       mostNebulae = Math.max(mostNebulae, report.nebulae);
+      mostCovered = Math.max(mostCovered, report.covered);
+      // Above the band the zoom weight is 0, so the selection keeps nothing and every
+      // record above the size floor reads as dropped. The budget is what this counts,
+      // so the reading is taken at the views that draw.
+      if (report.nebulae > 0) mostDropped = Math.max(mostDropped, report.dropped);
       expect(report.mean).toBeGreaterThan(0);
       expect(report.mean).toBeLessThan(BUDGET_MS);
     }
@@ -67,12 +84,21 @@ test('every view stays inside the frame budget', async ({ page }) => {
 
   // A measured floor, not an estimate. The near end of the band is open, so 500, 1,000,
   // 2,000, 4,000 and 12,000 light years all draw at weight 1, and the floor is set by a
-  // near view: the cursor at Sol and 500 light years draws 178 sprites. The size floor
-  // admits at most 184 records, which `src/scene-data/nebulae.ts` states beside the
-  // budget, so the count stays under `NEBULA_MAX_DRAWN`. Over the 16 views, the run
-  // that set this floor read a mean of 1.063 ms and a worst of 1.597 ms, against the
-  // 16.7 ms budget.
+  // near view. The count is no longer capped: the covered-area budget of
+  // `src/scene-data/nebulae.ts` stops at 4 screen areas, and the committed record file
+  // does not reach that at any view this suite visits, so every record above the size
+  // floor draws. The floor is the cursor at Sol and 500 light years, which draws 178
+  // records. Over the 16 views the run that set this floor read a worst mean of 1.649 ms
+  // against the 16.7 ms budget.
   expect(mostNebulae).toBeGreaterThanOrEqual(178);
+
+  // The covered-area reading of this change, over every camera this suite visits that
+  // draws a nebula, at 1,920 by 1,080. The worst is 0.047 screen areas against a budget
+  // of 4, and the dropped count is 0 at every one of those views, so the budget is never
+  // reached and no record the size floor admits is left out.
+  console.log('the worst covered area', { mostCovered, mostDropped });
+  expect(mostCovered).toBeLessThan(4);
+  expect(mostDropped).toBe(0);
 });
 
 // The 10 light year view is the new closest zoom. The field adds no light there, but it

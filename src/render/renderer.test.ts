@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRangeBuffer, RANGE_EMPTY, readsFloatTargets } from './buffers';
-import type { NebulaAtlasImage } from './nebula-atlas';
 import { createFrameAccumulator, createRenderer } from './renderer';
 import { createShapeSet } from '../scene-data/shapes';
 import { createSystemSet } from '../scene-data/real-systems';
@@ -8,8 +7,12 @@ import type { View } from '../camera/view';
 import { buildNebulaSet } from '../scene-data/nebulae';
 import type { NebulaSet } from '../scene-data/nebulae';
 import { createNebulaPass, createNebulaProgram } from './nebula-pass';
-import { createNebulaAtlasTexture } from './nebula-atlas';
-import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import type { NebulaVolumeTextures } from './nebula-volumes';
+import {
+  DEFAULT_NEBULA_LIGHT_GAIN,
+  DEFAULT_NEBULA_OCCLUSION,
+  DEFAULT_NEBULA_STEP_RATE,
+} from './nebula-slot';
 import type { NebulaDraw } from './nebula-slot';
 import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
 
@@ -424,14 +427,25 @@ function oneCloud(): CloudSet {
 /** One nebula at the cursor, large enough to pass the size floor at 12,000 ly. */
 function oneNebula(): NebulaSet {
   return buildNebulaSet({
-    tiles: Array.from({ length: 34 }, (_unused, index) => `tile-${index}`),
-    records: [[0, 0, 0, 200, 0, 'one']],
+    records: [[0, 0, 0, 200, 0, 0, 0, 0, 'one']],
   });
 }
 
-/** A decoded atlas file, which the upload reads the tile side from. */
-function atlasImage(): NebulaAtlasImage {
-  return { width: 384, height: 384 } as unknown as NebulaAtlasImage;
+/** One uploaded asset, which the pass binds and reads nothing of. */
+function oneVolume(): NebulaVolumeTextures {
+  return {
+    assets: [
+      {
+        name: 'one',
+        density: { name: 'density' } as unknown as WebGLTexture,
+        colour: { name: 'colour' } as unknown as WebGLTexture,
+        transfer: { name: 'transfer' } as unknown as WebGLTexture,
+        densitySide: 32,
+        colourSide: 8,
+      },
+    ],
+    dispose: (): void => undefined,
+  };
 }
 
 /** A draw that draws nothing and counts how many times it was freed. */
@@ -441,6 +455,8 @@ function countingDraw(): NebulaDraw & { disposals(): number } {
     draw: (): void => undefined,
     drawnCount: 0,
     drawCalls: 0,
+    aboveFloorCount: 0,
+    coveredArea: 0,
     dispose(): void {
       freed += 1;
     },
@@ -452,21 +468,22 @@ function countingDraw(): NebulaDraw & { disposals(): number } {
 
 /**
  * The draw a nebula source builds. The renderer takes the draw and not the records and
- * the atlas, so the test builds it here the way `src/nebulae/index.ts` builds it.
+ * the art, so the test builds it here the way `src/nebulae/index.ts` builds it.
  */
 function nebulaDrawOf(gl: WebGL2RenderingContext): NebulaDraw {
-  return createNebulaPass(
-    gl,
-    createNebulaProgram(gl),
-    oneNebula(),
-    createNebulaAtlasTexture(gl, atlasImage()),
-  );
+  return createNebulaPass(gl, createNebulaProgram(gl), oneNebula(), oneVolume());
 }
 
-/** The pass a draw belongs to, read from the shaders its program was linked from. */
+/**
+ * The pass a draw belongs to, read from the shaders its program was linked from.
+ *
+ * The nebula test runs first and names a uniform the nebula program alone carries: the
+ * nebula program also carries `uAbsorption`, because its vertex stage marches the same
+ * volume, so the `volume` branch would answer for it.
+ */
 function scenePassOf(sources: readonly string[]): string {
   const source = sources.join('\n');
-  if (source.includes('uAtlasSide')) return 'nebulae';
+  if (source.includes('uNebulaTransfer')) return 'nebulae';
   if (source.includes('uSpreadPower')) return 'clouds';
   if (source.includes('uAbsorption')) return 'volume';
   return 'other';
@@ -497,11 +514,14 @@ describe('the nebula pass in the frame', () => {
     return { context, renderer, order };
   }
 
-  test('carries a brightness of its own, which the caller may change', () => {
+  test('carries a light gain and a step rate, which the caller may change', () => {
     const { renderer } = sceneFrame(12000);
-    expect(renderer.look.nebulaBrightness).toBe(DEFAULT_NEBULA_BRIGHTNESS);
-    renderer.look.nebulaBrightness = 3.5;
-    expect(renderer.look.nebulaBrightness).toBe(3.5);
+    expect(renderer.look.nebulaLightGain).toEqual([...DEFAULT_NEBULA_LIGHT_GAIN]);
+    expect(renderer.look.nebulaStepRate).toBe(DEFAULT_NEBULA_STEP_RATE);
+    renderer.look.nebulaLightGain = [3.5, 3.5, 3.5];
+    renderer.look.nebulaStepRate = 25;
+    expect(renderer.look.nebulaLightGain).toEqual([3.5, 3.5, 3.5]);
+    expect(renderer.look.nebulaStepRate).toBe(25);
     renderer.dispose();
   });
 
@@ -663,9 +683,13 @@ describe('the volume texture the renderer owns', () => {
           call.args[1] !== null,
       )
       .map((call) => call.args[1]);
-    // The volume pass binds it and the nebula pass binds it, and it is one texture.
-    expect(bound.length).toBe(2);
-    expect(new Set(bound).size).toBe(1);
+    // Three 3D textures reach the card: the galaxy volume, and the density and colour
+    // of the one asset the nebula draws. The volume is the one both passes bind, and it
+    // is one texture and not a copy for each.
+    const times = new Map<unknown, number>();
+    for (const texture of bound) times.set(texture, (times.get(texture) ?? 0) + 1);
+    expect(times.size).toBe(3);
+    expect([...times.values()].filter((count) => count === 2)).toHaveLength(1);
     renderer.dispose();
   });
 

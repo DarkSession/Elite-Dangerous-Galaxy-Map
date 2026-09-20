@@ -329,6 +329,8 @@ function start(target: HTMLCanvasElement): void {
   global.systemMarkerCount = () => debug.systemMarkerCount();
   global.nebulaDrawnCount = () => debug.nebulaDrawnCount();
   global.nebulaDrawCalls = () => debug.nebulaDrawCalls();
+  global.nebulaAboveFloorCount = () => debug.nebulaAboveFloorCount();
+  global.nebulaCoveredArea = () => debug.nebulaCoveredArea();
   global.nebulaeAttached = () => debug.nebulaeAttached();
   global.setCloseFade = (value) => debug.setCloseFade(value);
   global.setNearPlane = (value) => debug.setNearPlane(value);

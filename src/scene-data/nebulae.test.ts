@@ -6,15 +6,11 @@ import { cameraPosition } from '../camera/projection';
 import { createDefaultView, FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import {
   buildNebulaSet,
-  drawnNebulaRadius,
-  NEBULA_CAP_FRACTION,
-  NEBULA_FADE_START_FRACTION,
-  NEBULA_MAX_DRAWN,
   NEBULA_MAX_RADIUS_LY,
+  NEBULA_COVERED_AREA_BUDGET,
+  nebulaCoveredArea,
   NEBULA_MIN_PIXELS,
-  NEBULA_SIZE_FADE_ZERO,
-  NEBULA_TILE_COUNT,
-  NEBULA_BUDGET_FADE_FULL,
+  NEBULA_BUDGET_FADE_START,
   NEBULA_FLOOR_FADE_FULL,
   NEBULA_ZOOM_FAR_FULL,
   NEBULA_ZOOM_FAR_ZERO,
@@ -22,15 +18,13 @@ import {
   nebulaBudgetFade,
   nebulaFloorFade,
   nebulaFocalPixels,
-  nebulaInsideFade,
-  nebulaSizeFade,
   nebulaZoomWeight,
   selectNebulae,
 } from './nebulae';
 import type { NebulaSet } from './nebulae';
 
 const recordsPath = fileURLToPath(new URL('./nebulae.json', import.meta.url));
-const atlasPath = fileURLToPath(new URL('../render/nebula-art.webp', import.meta.url));
+const volumeDir = fileURLToPath(new URL('../render/nebula-art/', import.meta.url));
 const fixturePath = fileURLToPath(
   new URL('../../tests/fixtures/nebulae.json', import.meta.url),
 );
@@ -39,19 +33,33 @@ interface NebulaFixture {
   records_sha256: string;
   records_bytes: number;
   record_count: number;
-  tile_count: number;
-  atlas_sha256: string;
-  atlas_bytes: number;
+  volume_index_sha256: string;
+  transfer_sha256: string;
+  volume_files_sha256: Record<string, string>;
+}
+
+/** One entry of the volume index, which holds only what the map reads. */
+interface VolumeEntry {
+  name: string;
+  density: { size: number };
+  colour: { size: number };
+  error: { per_axis: { x: number; y: number; z: number } };
+}
+
+interface VolumeIndex {
+  assets: VolumeEntry[];
 }
 
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as NebulaFixture;
 const recordBytes = readFileSync(recordsPath);
-const atlasBytes = readFileSync(atlasPath);
+const volumeIndexBytes = readFileSync(`${volumeDir}nebula-volumes.json`);
+const volumeIndex = JSON.parse(volumeIndexBytes.toString('utf8')) as VolumeIndex;
 const parsed = JSON.parse(recordBytes.toString('utf8')) as unknown;
 const set: NebulaSet = buildNebulaSet(parsed);
 
 /** The canvas the browser tests use, in CSS pixels. */
 const CANVAS_HEIGHT = 720;
+const CANVAS_WIDTH = 1280;
 const FOCAL = nebulaFocalPixels(CANVAS_HEIGHT, FIELD_OF_VIEW_DEGREES);
 
 /** The camera of the default view, in game coordinates. */
@@ -62,10 +70,9 @@ function defaultCamera(distance: number): [number, number, number] {
 /** A set of two records, built by hand. */
 function pairSet(): NebulaSet {
   return buildNebulaSet({
-    tiles: set.tileNames,
     records: [
-      [0, 0, 10000, 200, 0, 'far'],
-      [0, 0, 5000, 100, 1, 'near'],
+      [0, 0, 10000, 200, 0, 0, 0, 0, 'far'],
+      [0, 0, 5000, 100, 1, 0, 0, 0, 'near'],
     ],
   });
 }
@@ -75,19 +82,20 @@ afterEach(() => {
 });
 
 describe('the committed nebula records', () => {
-  test('hold 358 records, with a radius, a tile and a finite position each', () => {
+  test('hold 358 records, with a radius, an asset and a finite position each', () => {
     expect(set.count).toBe(fixture.record_count);
     expect(set.count).toBe(358);
     for (let index = 0; index < set.count; index += 1) {
       const radius = set.radii[index] as number;
       expect(radius).toBeGreaterThan(0);
       expect(radius).toBeLessThanOrEqual(NEBULA_MAX_RADIUS_LY);
-      const tile = set.tiles[index] as number;
-      expect(tile).toBeGreaterThanOrEqual(0);
-      expect(tile).toBeLessThan(NEBULA_TILE_COUNT);
-      expect(Number.isFinite(set.positions[index * 3] as number)).toBe(true);
-      expect(Number.isFinite(set.positions[index * 3 + 1] as number)).toBe(true);
-      expect(Number.isFinite(set.positions[index * 3 + 2] as number)).toBe(true);
+      const asset = set.assets[index] as number;
+      expect(Number.isInteger(asset)).toBe(true);
+      expect(asset).toBeGreaterThanOrEqual(0);
+      for (let axis = 0; axis < 3; axis += 1) {
+        expect(Number.isFinite(set.positions[index * 3 + axis] as number)).toBe(true);
+        expect(Number.isFinite(set.rotations[index * 3 + axis] as number)).toBe(true);
+      }
     }
   });
 
@@ -102,25 +110,41 @@ describe('the committed nebula records', () => {
 
   test('hold no field a reader can derive', () => {
     const file = parsed as Record<string, unknown>;
-    expect(Object.keys(file).sort()).toEqual(['records', 'tiles']);
+    expect(Object.keys(file)).toEqual(['records']);
     expect(file['count']).toBeUndefined();
     expect(file['fields']).toBeUndefined();
     expect(file['units']).toBeUndefined();
   });
 
-  // The atlas holds 34 tiles, and every record names one of them. A tile no record
-  // names is art the map can never draw; a record whose tile is outside the atlas is a
-  // record the map cannot draw.
-  test('name every one of the 34 tiles, and every record names one', () => {
+  // The loader holds no asset count on purpose, so this is what pairs the two files.
+  // A record naming an asset the set does not hold, or an asset no record draws, is a
+  // set that does not match its records, and it is caught here rather than at runtime.
+  test('every record names an asset the set holds, and every asset is named', () => {
     const named = new Set<number>();
     for (let index = 0; index < set.count; index += 1) {
-      named.add(set.tiles[index] as number);
+      named.add(set.assets[index] as number);
     }
-    expect(named.size).toBe(NEBULA_TILE_COUNT);
-    expect(set.tileNames).toHaveLength(NEBULA_TILE_COUNT);
-    for (let tile = 0; tile < NEBULA_TILE_COUNT; tile += 1) {
-      expect(named.has(tile)).toBe(true);
-      expect((set.tileNames[tile] as string).length).toBeGreaterThan(0);
+    expect(named.size).toBe(volumeIndex.assets.length);
+    for (let asset = 0; asset < volumeIndex.assets.length; asset += 1) {
+      expect(named.has(asset)).toBe(true);
+    }
+  });
+
+  // The renderer builds the matrix. The file ships the three angles the art template
+  // carries, so a correction to the convention needs no data regeneration.
+  test('hold the raw angles of the five records that carry a rotation', () => {
+    const rows = (parsed as { records: unknown[][] }).records;
+    const rotated = rows.filter((row) => row.slice(5, 8).some((angle) => angle !== 0));
+    expect(rotated).toHaveLength(5);
+    for (const row of rows) {
+      // Three angles, not a matrix: no row holds a nested array or a longer run.
+      expect(row.length).toBeLessThanOrEqual(9);
+      for (const field of row) expect(Array.isArray(field)).toBe(false);
+      for (const angle of row.slice(5, 8)) {
+        expect(typeof angle).toBe('number');
+        expect(Number.isFinite(angle)).toBe(true);
+        expect(Math.abs(angle as number)).toBeLessThan(2 * Math.PI + 1);
+      }
     }
   });
 
@@ -132,52 +156,120 @@ describe('the committed nebula records', () => {
   });
 });
 
-describe('the committed nebula atlas', () => {
-  test('does not drift', () => {
-    expect(createHash('sha256').update(atlasBytes).digest('hex')).toBe(
-      fixture.atlas_sha256,
+describe('the committed nebula volumes', () => {
+  // Every digest sits in the fixture and none of them sits in the index. The index is
+  // downloaded by every host that asks for the nebulae and no runtime code reads a
+  // digest, so 67 of them there would be 5,778 bytes on the wire for a check that runs
+  // here. The fixture ships in no build.
+  test('do not drift', () => {
+    expect(createHash('sha256').update(volumeIndexBytes).digest('hex')).toBe(
+      fixture.volume_index_sha256,
     );
-    expect(atlasBytes.byteLength).toBe(fixture.atlas_bytes);
+    const wanted = fixture.volume_files_sha256;
+    expect(Object.keys(wanted)).toHaveLength(volumeIndex.assets.length * 2);
+    for (const asset of volumeIndex.assets) {
+      for (const kind of ['density', 'colour'] as const) {
+        const file = `${asset.name}-${kind}.dds`;
+        const bytes = readFileSync(`${volumeDir}${file}`);
+        expect(createHash('sha256').update(bytes).digest('hex'), file).toBe(
+          wanted[file],
+        );
+      }
+    }
+    const transferBytes = readFileSync(`${volumeDir}transfer.bin`);
+    expect(createHash('sha256').update(transferBytes).digest('hex')).toBe(
+      fixture.transfer_sha256,
+    );
+    expect(transferBytes.byteLength).toBe(volumeIndex.assets.length * 256 * 4 * 4);
   });
 
-  // The atlas is one fetch, beside the map and not in the entry chunk, so the bound is
-  // what a first paint can carry rather than what a module may hold. 2 MiB covers a
-  // pack of 34 tiles of 256 texels with the alpha stored losslessly.
-  test('is at most 2 MiB on disk', () => {
-    expect(atlasBytes.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024);
+  // The index holds what the map reads and nothing else. No path, no name from another
+  // source and no spare total reaches the tree.
+  test('the index carries no field the map does not read', () => {
+    expect(Object.keys(volumeIndex)).toEqual(['assets']);
+    for (const asset of volumeIndex.assets) {
+      expect(Object.keys(asset).sort()).toEqual(['colour', 'density', 'error', 'name']);
+      expect(Object.keys(asset.density)).toEqual(['size']);
+      expect(Object.keys(asset.colour)).toEqual(['size']);
+      expect(Object.keys(asset.error)).toEqual(['per_axis']);
+      expect(Object.keys(asset.error.per_axis).sort()).toEqual(['x', 'y', 'z']);
+    }
   });
 
-  // The file is a RIFF WebP. The header check is what a unit test in Node can hold:
-  // Node decodes no WebP, so the browser suite reads the texels.
-  test('is a WebP file', () => {
-    expect(atlasBytes.subarray(0, 4).toString('ascii')).toBe('RIFF');
-    expect(atlasBytes.subarray(8, 12).toString('ascii')).toBe('WEBP');
+  test("every asset name is the library's own", () => {
+    const names = volumeIndex.assets.map((asset) => asset.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const name of names) {
+      expect(name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(name).not.toMatch(/^[A-Za-z]+_[A-Za-z]+_\d\d/);
+    }
+  });
+
+  // Two scenarios argue from these two assets by name. A wrong name would ship in
+  // silence, so read the extremes from the data instead.
+  test('names the two assets the step-rate and march scenarios argue from', () => {
+    const bytes = readFileSync(`${volumeDir}transfer.bin`);
+    const transfer = new Float32Array(
+      bytes.buffer,
+      bytes.byteOffset,
+      bytes.byteLength / 4,
+    );
+    const extremes = volumeIndex.assets.map((asset, index) => {
+      const table = transfer.subarray(index * 1024, (index + 1) * 1024);
+      return { name: asset.name, low: Math.min(...table), high: Math.max(...table) };
+    });
+    const largest = extremes.reduce((a, b) => (b.high > a.high ? b : a));
+    expect(largest.name).toBe('dark-02');
+    expect(largest.high).toBeCloseTo(3066, 0);
+    const smallest = extremes.reduce((a, b) => (b.low < a.low ? b : a));
+    expect(smallest.name).toBe('cats-eye');
+    expect(smallest.low).toBeCloseTo(-193.5, 1);
+  });
+
+  // Each asset is packed to a budget of 0.03 emission RMSE over peak on the worst of
+  // three axes. This reads every axis of every asset, not the worst alone.
+  test('the compaction error holds on every axis', () => {
+    for (const asset of volumeIndex.assets) {
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(asset.error.per_axis[axis]).toBeLessThanOrEqual(0.03);
+      }
+    }
   });
 });
 
 describe('building the set', () => {
-  // The tile count is what tells a nebula record file from another file. The set
-  // carries no version string, so this check is the one that refuses a wrong file.
-  test('refuses a file that names the wrong number of tiles', () => {
-    expect(() => buildNebulaSet({ tiles: [], records: [] })).toThrow(NebulaError);
-    expect(() => buildNebulaSet({ records: [] })).toThrow(NebulaError);
+  // The record shape is what tells a nebula record file from another file. The set
+  // carries no name list and no version string, so this check is the whole refusal.
+  test('refuses a file that is not a record set', () => {
+    expect(() => buildNebulaSet(null)).toThrow(NebulaError);
+    expect(() => buildNebulaSet({ tiles: [] })).toThrow(NebulaError);
+    expect(() => buildNebulaSet({ records: [[0, 0, 0, 1, 0]] })).toThrow(NebulaError);
   });
 
-  test('refuses a tile index outside the atlas', () => {
+  // The loader holds no asset count, so the only bound it can apply is the one that
+  // needs no second source of truth. A unit test pairs the two committed files.
+  test('refuses an asset index that is not a non-negative whole number', () => {
+    for (const asset of [-1, 1.5, '0']) {
+      expect(() => buildNebulaSet({ records: [[0, 0, 0, 1, asset, 0, 0, 0]] })).toThrow(
+        NebulaError,
+      );
+    }
     expect(() =>
-      buildNebulaSet({
-        tiles: set.tileNames,
-        records: [[0, 0, 0, 1, NEBULA_TILE_COUNT]],
-      }),
-    ).toThrow(NebulaError);
+      buildNebulaSet({ records: [[0, 0, 0, 1, 9999, 0, 0, 0]] }),
+    ).not.toThrow();
+  });
+
+  test('refuses a rotation that is not finite', () => {
+    expect(() => buildNebulaSet({ records: [[0, 0, 0, 1, 0, 0, null, 0]] })).toThrow(
+      NebulaError,
+    );
   });
 
   test('refuses a radius of 0 and a radius above the largest', () => {
     for (const radius of [0, NEBULA_MAX_RADIUS_LY + 1]) {
       expect(() =>
         buildNebulaSet({
-          tiles: set.tileNames,
-          records: [[0, 0, 0, radius, 0]],
+          records: [[0, 0, 0, radius, 0, 0, 0, 0]],
         }),
       ).toThrow(NebulaError);
     }
@@ -186,8 +278,7 @@ describe('building the set', () => {
   test('refuses a position that is not finite', () => {
     expect(() =>
       buildNebulaSet({
-        tiles: set.tileNames,
-        records: [[0, null, 0, 1, 0]],
+        records: [[0, null, 0, 1, 0, 0, 0, 0]],
       }),
     ).toThrow(NebulaError);
   });
@@ -200,16 +291,41 @@ describe('the apparent size', () => {
     expect(Math.abs(big - small) / big).toBeLessThan(1e-3);
   });
 
-  // The cap holds the fill cost alone. It sits at the size the fade has already taken
-  // to 0, so a sprite the viewer can see keeps the size the perspective gives it.
-  test('caps one sprite where the size fade is already 0', () => {
-    expect(NEBULA_CAP_FRACTION * CANVAS_HEIGHT).toBe(540);
-    expect(drawnNebulaRadius(2000, CANVAS_HEIGHT)).toBe(540);
-    expect(nebulaSizeFade(540, CANVAS_HEIGHT)).toBe(0);
-    // Every sprite below the cap draws at the size the perspective gives it, which
-    // includes every size the fade still lets through.
-    expect(drawnNebulaRadius(20, CANVAS_HEIGHT)).toBe(20);
-    expect(drawnNebulaRadius(400, CANVAS_HEIGHT)).toBe(400);
+  // A box can be entered, so nothing holds it back from the size the perspective gives
+  // it. The fill cost is held by the covered-area budget instead of by a size cap.
+  test('keeps growing as the camera comes toward a record', () => {
+    const one = buildNebulaSet({ records: [[0, 0, 0, 200, 0, 0, 0, 0]] });
+    let last = 0;
+    for (const range of [10000, 5000, 1000, 400, 100, 10, 1]) {
+      const result = selectNebulae(one, {
+        camera: [0, 0, range],
+        distance: 12000,
+        focalPixels: FOCAL,
+        canvasHeightCss: CANVAS_HEIGHT,
+        canvasWidthCss: CANVAS_WIDTH,
+      });
+      const pixels = result.instances[0]?.pixels as number;
+      expect(pixels).toBeGreaterThan(last);
+      last = pixels;
+    }
+    // Far past either cap the sprite pass applied, at 400 and at 2,000 CSS pixels.
+    expect(last).toBeGreaterThan(2000);
+  });
+
+  // The size rule itself does not change: a record of radius 200 draws 400 light years
+  // across, so its apparent radius is the world radius over the range at every distance.
+  test('holds the world size at every distance in the band', () => {
+    for (const range of [400, 2000, 10000]) {
+      const one = buildNebulaSet({ records: [[0, 0, range, 200, 0, 0, 0, 0]] });
+      const result = selectNebulae(one, {
+        camera: [0, 0, 0],
+        distance: 12000,
+        focalPixels: FOCAL,
+        canvasHeightCss: CANVAS_HEIGHT,
+        canvasWidthCss: CANVAS_WIDTH,
+      });
+      expect(result.instances[0]?.pixels).toBeCloseTo((FOCAL * 200) / range, 3);
+    }
   });
 });
 
@@ -235,46 +351,6 @@ describe('the zoom band', () => {
   });
 });
 
-describe('the size fade', () => {
-  const start = NEBULA_FADE_START_FRACTION * CANVAS_HEIGHT;
-
-  test('is 1 up to a quarter of the canvas height and 0 at three times it', () => {
-    expect(start).toBe(180);
-    expect(nebulaSizeFade(20, CANVAS_HEIGHT)).toBe(1);
-    expect(nebulaSizeFade(start, CANVAS_HEIGHT)).toBe(1);
-    expect(nebulaSizeFade(NEBULA_SIZE_FADE_ZERO * start, CANVAS_HEIGHT)).toBe(0);
-    expect(nebulaSizeFade(10000, CANVAS_HEIGHT)).toBe(0);
-  });
-
-  test('moves smoothly between the start and three times it', () => {
-    const half = nebulaSizeFade(2 * start, CANVAS_HEIGHT);
-    expect(half).toBeGreaterThan(0);
-    expect(half).toBeLessThan(1);
-  });
-
-  test('follows the canvas, so the fade reads the same share of the frame', () => {
-    expect(nebulaSizeFade(2 * start, CANVAS_HEIGHT)).toBeCloseTo(
-      nebulaSizeFade(4 * start, 2 * CANVAS_HEIGHT),
-      12,
-    );
-  });
-});
-
-describe('the camera-inside fade', () => {
-  test('is 0 at the centre of the record and 1 at three radii', () => {
-    expect(nebulaInsideFade(0, 200)).toBe(0);
-    expect(nebulaInsideFade(200, 200)).toBe(0);
-    expect(nebulaInsideFade(600, 200)).toBe(1);
-    expect(nebulaInsideFade(10000, 200)).toBe(1);
-  });
-
-  test('moves smoothly between one radius and three', () => {
-    const half = nebulaInsideFade(400, 200);
-    expect(half).toBeGreaterThan(0);
-    expect(half).toBeLessThan(1);
-  });
-});
-
 describe('the floor fade', () => {
   test('gives 0 at the floor and 1 at twice the floor', () => {
     expect(nebulaFloorFade(NEBULA_MIN_PIXELS)).toBe(0);
@@ -290,18 +366,22 @@ describe('the floor fade', () => {
 });
 
 describe('the budget fade', () => {
-  test('gives 1 to every record when the budget dropped none', () => {
-    expect(nebulaBudgetFade(2, 0)).toBe(1);
-    expect(nebulaBudgetFade(200, 0)).toBe(1);
+  const start = NEBULA_BUDGET_FADE_START * NEBULA_COVERED_AREA_BUDGET;
+
+  test('gives 1 to every record while the budget is far from full', () => {
+    expect(nebulaBudgetFade(0)).toBe(1);
+    expect(nebulaBudgetFade(start)).toBe(1);
   });
 
-  test('gives 0 at the cut and 1 a quarter above it', () => {
-    expect(nebulaBudgetFade(8, 8)).toBe(0);
-    expect(nebulaBudgetFade(NEBULA_BUDGET_FADE_FULL * 8, 8)).toBe(1);
+  // The fade reaches 0 exactly where the budget stops keeping records, so the record
+  // the scan stops on is one that would have drawn nothing.
+  test('gives 0 at the budget itself', () => {
+    expect(nebulaBudgetFade(NEBULA_COVERED_AREA_BUDGET)).toBe(0);
+    expect(nebulaBudgetFade(2 * NEBULA_COVERED_AREA_BUDGET)).toBe(0);
   });
 
-  test('rises smoothly between the cut and full weight', () => {
-    const middle = nebulaBudgetFade(9, 8);
+  test('falls smoothly over the last share of the budget', () => {
+    const middle = nebulaBudgetFade((start + NEBULA_COVERED_AREA_BUDGET) / 2);
     expect(middle).toBeGreaterThan(0);
     expect(middle).toBeLessThan(1);
   });
@@ -316,6 +396,7 @@ describe('the selection', () => {
       distance: 60000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     expect(result.aboveFloor).toBe(1);
     expect(result.weight).toBe(0);
@@ -330,6 +411,7 @@ describe('the selection', () => {
       distance: 2000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     expect(result.weight).toBe(1);
     expect(result.instances.length).toBeGreaterThan(0);
@@ -342,46 +424,85 @@ describe('the selection', () => {
         distance,
         focalPixels: FOCAL,
         canvasHeightCss: CANVAS_HEIGHT,
+        canvasWidthCss: CANVAS_WIDTH,
       });
       expect(result.weight).toBe(1);
       expect(result.instances.length).toBeGreaterThan(0);
     }
   });
 
-  test('draws at most the budget, and takes the largest first', () => {
-    // The committed set never reaches the budget, so this builds one that does. The
-    // records stand in a line, so the nearest are the largest.
+  /**
+   * A set the covered-area budget cuts. The records stand in a line, so the nearest are
+   * the largest, and all 400 together cover 9.33 screens against a budget of 4.
+   */
+  function crowdSet(): NebulaSet {
     const records: unknown[] = [];
-    for (let index = 0; index < NEBULA_MAX_DRAWN + 40; index += 1) {
-      records.push([0, 0, 2000 + index * 20, 60, index % NEBULA_TILE_COUNT]);
+    for (let index = 0; index < 400; index += 1) {
+      records.push([0, 0, 100 + index * 5, 60, index % 33, 0, 0, 0]);
     }
-    const crowd = buildNebulaSet({
-      tiles: set.tileNames,
-      records,
-    });
-    const distance = 12000;
+    return buildNebulaSet({ records });
+  }
+
+  test('draws at most the covered-area budget, and takes the largest first', () => {
+    const crowd = crowdSet();
     const result = selectNebulae(crowd, {
       camera: [0, 0, 0],
-      distance,
+      distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
-    expect(result.aboveFloor).toBeGreaterThan(NEBULA_MAX_DRAWN);
-    expect(result.instances).toHaveLength(NEBULA_MAX_DRAWN);
+
+    expect(result.coveredArea).toBeLessThanOrEqual(NEBULA_COVERED_AREA_BUDGET);
+    expect(result.instances.length).toBeLessThan(result.aboveFloor);
     const smallestKept = Math.min(...result.instances.map((one) => one.pixels));
     expect(smallestKept).toBeGreaterThanOrEqual(NEBULA_MIN_PIXELS);
-    const dropped = result.aboveFloor - result.instances.length;
-    expect(dropped).toBe(40);
     // Everything the budget dropped is smaller than everything it kept. The records
     // stand in a line, so a record the budget dropped is one the result never names.
     const kept = new Set(result.instances.map((one) => one.index));
     let largestDropped = 0;
     for (let index = 0; index < crowd.count; index += 1) {
       if (kept.has(index)) continue;
-      const range = 2000 + index * 20;
-      largestDropped = Math.max(largestDropped, (FOCAL * 60) / range);
+      largestDropped = Math.max(largestDropped, (FOCAL * 60) / (100 + index * 5));
     }
     expect(largestDropped).toBeLessThan(smallestKept);
+  });
+
+  // The cap is the point. Without it one record the camera sits inside would cover
+  // about 53,000 screens and drop every other record in the frame.
+  test('counts a record the camera is inside as one screen, not as its disc', () => {
+    expect(
+      nebulaCoveredArea(187000, {
+        canvasHeightCss: 1080,
+        canvasWidthCss: 1920,
+      }),
+    ).toBe(1);
+    // A small record counts as the disc its apparent radius gives.
+    const screen = CANVAS_WIDTH * CANVAS_HEIGHT;
+    expect(
+      nebulaCoveredArea(100, {
+        canvasHeightCss: CANVAS_HEIGHT,
+        canvasWidthCss: CANVAS_WIDTH,
+      }),
+    ).toBeCloseTo((Math.PI * 100 * 100) / screen, 9);
+  });
+
+  // A camera at a record's centre holds the whole budget on its own, and the records
+  // behind it are what the fade then takes out smoothly.
+  test('a near view holds the budget, and drops nothing of the committed set', () => {
+    const result = selectNebulae(set, {
+      camera: [
+        set.positions[0] as number,
+        set.positions[1] as number,
+        set.positions[2] as number,
+      ],
+      distance: 100,
+      focalPixels: FOCAL,
+      canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
+    });
+    expect(result.coveredArea).toBeLessThanOrEqual(NEBULA_COVERED_AREA_BUDGET);
+    expect(result.aboveFloor - result.instances.length).toBe(0);
   });
 
   /**
@@ -413,6 +534,7 @@ describe('the selection', () => {
         distance: 6000,
         focalPixels: focal,
         canvasHeightCss,
+        canvasWidthCss: (canvasHeightCss * 16) / 9,
       });
       worst = Math.max(worst, result.aboveFloor);
     }
@@ -430,7 +552,6 @@ describe('the selection', () => {
     (height, most) => {
       const worst = worstAboveFloor(height);
       expect(worst).toBe(most);
-      expect(worst).toBeLessThan(NEBULA_MAX_DRAWN);
     },
   );
 
@@ -441,10 +562,11 @@ describe('the selection', () => {
       distance,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     // The floor is the bound this set meets, not the budget, so no record is cut and
     // no record can go out as the camera turns.
-    expect(result.aboveFloor).toBeLessThan(NEBULA_MAX_DRAWN);
+    expect(result.coveredArea).toBeLessThan(NEBULA_COVERED_AREA_BUDGET);
     expect(result.instances).toHaveLength(result.aboveFloor);
   });
 
@@ -453,14 +575,14 @@ describe('the selection', () => {
   // if the selection divides by the true range.
   test('holds the range at 1 light year, as the shader does', () => {
     const small = buildNebulaSet({
-      tiles: set.tileNames,
-      records: [[0, 0, 0.5, 0.1, 0, 'small']],
+      records: [[0, 0, 0.5, 0.1, 0, 0, 0, 0, 'small']],
     });
     const result = selectNebulae(small, {
       camera: [0, 0, 0],
       distance: 500,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     // The set holds the radius as a float32, so the two agree to five places, not more.
     expect(result.instances[0]?.pixels).toBeCloseTo(FOCAL * 0.1, 4);
@@ -468,14 +590,14 @@ describe('the selection', () => {
 
   test('leaves out a record below the size floor', () => {
     const tiny = buildNebulaSet({
-      tiles: set.tileNames,
-      records: [[0, 0, 10000, 0.1, 0]],
+      records: [[0, 0, 10000, 0.1, 0, 0, 0, 0]],
     });
     const result = selectNebulae(tiny, {
       camera: [0, 0, 0],
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     expect((FOCAL * 0.1) / 10000).toBeLessThan(NEBULA_MIN_PIXELS);
     expect(result.aboveFloor).toBe(0);
@@ -490,6 +612,7 @@ describe('the selection', () => {
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     expect(result.instances).toHaveLength(2);
     expect(result.instances[0]?.range).toBeGreaterThan(
@@ -498,36 +621,38 @@ describe('the selection', () => {
     expect(result.instances[0]?.index).toBe(0);
   });
 
-  test('carries both fades of each record, multiplied', () => {
+  // The two fades a record can still take are the floor fade and the budget fade. The
+  // camera-inside fade and the size fade are gone: a camera that flies into a nebula
+  // sees the volume fill the view.
+  test('carries the floor fade and the budget fade alone', () => {
     const one = buildNebulaSet({
-      tiles: set.tileNames,
-      records: [[0, 0, 400, 200, 0]],
+      records: [[0, 0, 400, 200, 0, 0, 0, 0]],
     });
     const result = selectNebulae(one, {
       camera: [0, 0, 0],
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     const pixels = (FOCAL * 200) / 400;
-    expect(result.instances[0]?.fade).toBe(
-      nebulaInsideFade(400, 200) * nebulaSizeFade(pixels, CANVAS_HEIGHT),
-    );
-    expect(result.instances[0]?.fade).toBeLessThan(1);
-    expect(result.instances[0]?.fade).toBeGreaterThan(0);
+    // A record well above the floor, with nothing dropped beside it, takes no fade at
+    // all. The old size fade would have taken this one to 0.
+    expect(pixels).toBeGreaterThan(NEBULA_MIN_PIXELS);
+    expect(result.instances[0]?.fade).toBe(nebulaFloorFade(pixels));
+    expect(result.instances[0]?.fade).toBe(1);
   });
 
-  // A record far enough away to be small takes neither fade.
-  test('takes no fade from a record that draws under the cap', () => {
+  test('takes no fade from a record well above the floor', () => {
     const one = buildNebulaSet({
-      tiles: set.tileNames,
-      records: [[0, 0, 5000, 200, 0]],
+      records: [[0, 0, 5000, 200, 0, 0, 0, 0]],
     });
     const result = selectNebulae(one, {
       camera: [0, 0, 0],
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     expect(result.instances[0]?.fade).toBe(1);
   });
@@ -539,6 +664,7 @@ describe('the selection', () => {
   function sweepYaw(
     over: NebulaSet,
     cursor: [number, number, number],
+    orbit = 6000,
   ): { worstEntry: number; worstStep: number } {
     const pitch = (35 * Math.PI) / 180;
     let worstEntry = 0;
@@ -546,7 +672,7 @@ describe('the selection', () => {
     let before = new Map<number, number>();
     for (let degrees = 0; degrees <= 360; degrees += 1) {
       const yaw = (degrees * Math.PI) / 180;
-      const distance = 6000;
+      const distance = orbit;
       const camera: [number, number, number] = [
         cursor[0] + Math.cos(pitch) * Math.sin(yaw) * distance,
         cursor[1] + Math.sin(pitch) * distance,
@@ -557,6 +683,7 @@ describe('the selection', () => {
         distance,
         focalPixels: FOCAL,
         canvasHeightCss: CANVAS_HEIGHT,
+        canvasWidthCss: CANVAS_WIDTH,
       });
       const now = new Map(result.instances.map((one) => [one.index, one.fade]));
       if (degrees > 0) {
@@ -591,30 +718,35 @@ describe('the selection', () => {
   // stays under the budget, so this crowds one to reach the cut.
   test('lets no record enter or leave the frame with weight at the budget', () => {
     const records: unknown[] = [];
-    for (let index = 0; index < NEBULA_MAX_DRAWN + 60; index += 1) {
+    for (let index = 0; index < 400; index += 1) {
       const angle = index * 2.39996;
       records.push([
         -4000 + Math.cos(angle) * (400 + index * 30),
         998 + Math.sin(angle * 1.7) * 300,
         12500 + Math.sin(angle) * (400 + index * 30),
-        60,
-        index % NEBULA_TILE_COUNT,
+        200,
+        index % 33,
+        0,
+        0,
+        0,
       ]);
     }
     const crowd = buildNebulaSet({
-      tiles: set.tileNames,
       records,
     });
+    // The sweep orbits at 800 light years, close enough that the records near the
+    // cursor are large and the covered area reaches the budget.
     const middle = selectNebulae(crowd, {
-      camera: [-4000, 998, 6500],
-      distance: 6000,
+      camera: [-4000, 998, 11700],
+      distance: 800,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
     // The set reaches the budget, so the sweep reads the budget's cut and not the floor.
-    expect(middle.aboveFloor).toBeGreaterThan(NEBULA_MAX_DRAWN);
+    expect(middle.instances.length).toBeLessThan(middle.aboveFloor);
 
-    const worst = sweepYaw(crowd, [-4000, 998, 12500]);
+    const worst = sweepYaw(crowd, [-4000, 998, 12500], 800);
     expect(worst.worstEntry).toBeLessThan(0.05);
     expect(worst.worstStep).toBeLessThan(0.2);
   });
@@ -625,8 +757,9 @@ describe('the selection', () => {
       distance: 12000,
       focalPixels: FOCAL,
       canvasHeightCss: CANVAS_HEIGHT,
+      canvasWidthCss: CANVAS_WIDTH,
     });
-    expect(result.aboveFloor).toBeLessThanOrEqual(NEBULA_MAX_DRAWN);
+    expect(result.coveredArea).toBeLessThan(NEBULA_COVERED_AREA_BUDGET);
     for (const one of result.instances) expect(one.fade).toBe(1);
   });
 });

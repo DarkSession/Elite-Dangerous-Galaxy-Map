@@ -58,18 +58,21 @@ which permit non-commercial use only:
 > endorsed by nor reflects the views or opinions of Frontier Developments and no
 > employee of Frontier Developments was involved in the making of it.
 
-## The nebula records and the sprite atlas
+## The nebula records and the volume art
 
-`src/scene-data/nebulae.json` holds 358 nebula records: a position, a radius, a tile
-index and, for 190 of them, a name. `src/render/nebula-art.webp` holds the sprite art
-those records draw, as 34 tiles of 256 by 256 texels.
+`src/scene-data/nebulae.json` holds 358 nebula records: a position, a radius, an asset
+index, three rotation angles and, for 190 of them, a name. `src/render/nebula-art/` holds
+the art those records draw, as 33 volume assets. Each asset is a pair of files: a
+one-channel density volume of 32, 48 or 64 texels a side, and a three-channel colour
+volume of 8, 16 or 32 texels a side, both in `.dds` block form. `src/render/nebula-art/nebula-volumes.json` indexes the pairs and
+`src/render/nebula-art/transfer.bin` holds one 256-entry transfer function per asset.
 
 The nebulae are of the game's galaxy, so the Frontier Developments terms above apply to
-both files, and those terms permit non-commercial use only. The atlas is the stronger
-case of the two, because it carries art and not a table of numbers.
+every one of these files, and those terms permit non-commercial use only. The volume art
+is the stronger case, because it carries art and not a table of numbers.
 
-The maintainer reviews these terms before a release carries either file. This notice
-records what the files are; it does not settle whether they may ship.
+The maintainer reviews these terms before a release carries any of these files. This
+notice records what the files are; it does not settle whether they may ship.
 
 ## The galaxy density model
 

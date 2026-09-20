@@ -10,6 +10,7 @@ import {
 import type { LineInput, ShapeSet, SphereInput, SystemLookup } from './shapes';
 import { createSystemSet } from './real-systems';
 import type { CategoryInput, RealSystemSet } from './real-systems';
+import { TIMED_TEST } from '../../tests/timed';
 
 /**
  * Casts a hand-made array to the input type. The reader checks every field at run time,
@@ -406,7 +407,7 @@ describe('a line point', () => {
 });
 
 describe('the read budget', () => {
-  test('reads a full shape set inside its budget', () => {
+  test('reads a full shape set inside its budget', TIMED_TEST, () => {
     const set = emptySet();
     const spheres: SphereInput[] = Array.from({ length: MAX_SPHERES }, (_, index) => ({
       position: [index, 0, index],
@@ -932,71 +933,75 @@ describe('a shape read without its points', () => {
 });
 
 describe('the sweep budget', () => {
-  test('sweeps a full set of four-category shapes inside its budget', () => {
-    // Eight categories, so a shape names four of them and half the table stays on.
-    const categories: CategoryInput[] = Array.from({ length: 8 }, (_, index) => ({
-      name: `C${index}`,
-      color: [index * 8, 128, 255 - index * 8],
-    }));
-    const { shapes } = setOver(categories);
-    /** The four category names one shape carries, from its place in the set. */
-    const namesOf = (index: number): [string, string[]] => [
-      `C${index % 8}`,
-      [`C${(index + 1) % 8}`, `C${(index + 2) % 8}`, `C${(index + 3) % 8}`],
-    ];
-    const spheres: SphereInput[] = Array.from({ length: MAX_SPHERES }, (_, index) => {
-      const [primaryCategory, secondaryCategories] = namesOf(index);
-      return {
-        position: [index, 0, index],
-        radius: 10 + index,
-        name: `Sphere ${index}`,
-        primaryCategory,
-        secondaryCategories,
-      };
-    });
-    const perLine = MAX_LINE_POINTS / MAX_LINES;
-    const lines: LineInput[] = Array.from({ length: MAX_LINES }, (_, index) => {
-      const [primaryCategory, secondaryCategories] = namesOf(index);
-      return {
-        points: Array.from(
-          { length: perLine },
-          (_unused, step) => [index, 0, step] as [number, number, number],
-        ),
-        name: `Line ${index}`,
-        primaryCategory,
-        secondaryCategories,
-      };
-    });
+  test(
+    'sweeps a full set of four-category shapes inside its budget',
+    TIMED_TEST,
+    () => {
+      // Eight categories, so a shape names four of them and half the table stays on.
+      const categories: CategoryInput[] = Array.from({ length: 8 }, (_, index) => ({
+        name: `C${index}`,
+        color: [index * 8, 128, 255 - index * 8],
+      }));
+      const { shapes } = setOver(categories);
+      /** The four category names one shape carries, from its place in the set. */
+      const namesOf = (index: number): [string, string[]] => [
+        `C${index % 8}`,
+        [`C${(index + 1) % 8}`, `C${(index + 2) % 8}`, `C${(index + 3) % 8}`],
+      ];
+      const spheres: SphereInput[] = Array.from({ length: MAX_SPHERES }, (_, index) => {
+        const [primaryCategory, secondaryCategories] = namesOf(index);
+        return {
+          position: [index, 0, index],
+          radius: 10 + index,
+          name: `Sphere ${index}`,
+          primaryCategory,
+          secondaryCategories,
+        };
+      });
+      const perLine = MAX_LINE_POINTS / MAX_LINES;
+      const lines: LineInput[] = Array.from({ length: MAX_LINES }, (_, index) => {
+        const [primaryCategory, secondaryCategories] = namesOf(index);
+        return {
+          points: Array.from(
+            { length: perLine },
+            (_unused, step) => [index, 0, step] as [number, number, number],
+          ),
+          name: `Line ${index}`,
+          primaryCategory,
+          secondaryCategories,
+        };
+      });
 
-    expect(shapes.addSpheres(spheres).added).toBe(MAX_SPHERES);
-    expect(shapes.addLines(lines).added).toBe(MAX_LINES);
-    // The read sweeps the set the two calls above filled, so each reading below is of one
-    // switch alone.
-    expect(shapes.sphereFlags[0]).toBe(1);
-
-    // One switch, five times. Every shape names four of the eight categories, so `C0` off
-    // leaves each one drawn and the sweep reads every name of every shape.
-    const readings: number[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      shapes.setCategoryVisible('C0', run % 2 === 1);
+      expect(shapes.addSpheres(spheres).added).toBe(MAX_SPHERES);
+      expect(shapes.addLines(lines).added).toBe(MAX_LINES);
+      // The read sweeps the set the two calls above filled, so each reading below is of one
+      // switch alone.
       expect(shapes.sphereFlags[0]).toBe(1);
-      readings.push(shapes.lastSweepMs);
-    }
-    const fastest = Math.min(...readings);
-    console.log('the shape sweep', {
-      spheres: shapes.sphereCount,
-      lines: shapes.lineCount,
-      readings,
-    });
 
-    // `map-shapes` holds a sweep after the first one under 1 millisecond, which is what
-    // the five switches below measure. The browser test of the scenario "The sweep holds
-    // its budget" reads the same measurement through `debug.shapeSweepMs()`, in
-    // `e2e/frame-budget.spec.ts`, and it also reads the first sweep, which the spec holds
-    // under 2 milliseconds. This test reads the fastest of the five, because the unit
-    // suite runs its files at the same time and a reading taken while seven other files
-    // run measures the machine. A sweep that got slower would raise every one of the
-    // five, so the fastest still fails on a regression.
-    expect(fastest).toBeLessThanOrEqual(1);
-  });
+      // One switch, five times. Every shape names four of the eight categories, so `C0` off
+      // leaves each one drawn and the sweep reads every name of every shape.
+      const readings: number[] = [];
+      for (let run = 0; run < 5; run += 1) {
+        shapes.setCategoryVisible('C0', run % 2 === 1);
+        expect(shapes.sphereFlags[0]).toBe(1);
+        readings.push(shapes.lastSweepMs);
+      }
+      const fastest = Math.min(...readings);
+      console.log('the shape sweep', {
+        spheres: shapes.sphereCount,
+        lines: shapes.lineCount,
+        readings,
+      });
+
+      // `map-shapes` holds a sweep after the first one under 1 millisecond, which is what
+      // the five switches below measure. The browser test of the scenario "The sweep holds
+      // its budget" reads the same measurement through `debug.shapeSweepMs()`, in
+      // `e2e/frame-budget.spec.ts`, and it also reads the first sweep, which the spec holds
+      // under 2 milliseconds. This test reads the fastest of the five, because the unit
+      // suite runs its files at the same time and a reading taken while seven other files
+      // run measures the machine. A sweep that got slower would raise every one of the
+      // five, so the fastest still fails on a regression.
+      expect(fastest).toBeLessThanOrEqual(1);
+    },
+  );
 });

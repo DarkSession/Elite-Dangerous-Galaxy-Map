@@ -26,7 +26,7 @@ export const VOLUME_DENSITY_MARKER = '// @volume-density';
 
 /**
  * Puts the shared density rule into a shader. The volume pass draws the dust and the
- * nebula pass dims a sprite by the dust in front of it, so both read one rule and neither
+ * nebula pass dims a record by the dust in front of it, so both read one rule and neither
  * holds a copy.
  */
 export function putVolumeDensity(source: string, rule: string): string {

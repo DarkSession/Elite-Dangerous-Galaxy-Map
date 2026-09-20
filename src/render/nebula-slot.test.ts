@@ -3,20 +3,26 @@
 // `renderer.ts` imports this module, and the renderer is in the main entry point's
 // chunk. Whatever `nebula-slot.ts` holds after the build is therefore in the entry chunk
 // of every host, including a host that never asks for the nebulae. A type costs nothing,
-// because the build erases it. A number literal costs its digits. An import costs
-// whatever it reaches, which is the pass, the shaders, the atlas and the record set.
+// because the build erases it. A number literal costs its digits, and an array of them
+// costs little more. An import costs whatever it reaches, which is the pass, the
+// shaders, the volume art and the record set.
 //
 // The test builds the module alone, the way the bundler reads it, and holds the output
-// to the two look defaults and nothing else.
+// to the three look defaults and nothing else.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import {
+  DEFAULT_NEBULA_LIGHT_GAIN,
+  DEFAULT_NEBULA_OCCLUSION,
+  DEFAULT_NEBULA_STEP_RATE,
+} from './nebula-slot';
 
-/** The two look defaults the module holds, with the values the map draws with. */
+/** The three look defaults the module holds, with the values the map draws with. */
 const CONSTANTS = [
-  ['DEFAULT_NEBULA_BRIGHTNESS', DEFAULT_NEBULA_BRIGHTNESS],
+  ['DEFAULT_NEBULA_LIGHT_GAIN', `[${DEFAULT_NEBULA_LIGHT_GAIN.join(', ')}]`],
+  ['DEFAULT_NEBULA_STEP_RATE', DEFAULT_NEBULA_STEP_RATE],
   ['DEFAULT_NEBULA_OCCLUSION', DEFAULT_NEBULA_OCCLUSION],
 ] as const;
 
@@ -39,11 +45,12 @@ const built = ts
   .filter((line) => line.length > 0);
 
 describe('the nebula slot module', () => {
-  test('builds to the two look defaults and no other statement', () => {
+  test('builds to the three look defaults and no other statement', () => {
     console.log('the nebula slot builds to', built);
 
     expect(built).toEqual([
-      'export const DEFAULT_NEBULA_BRIGHTNESS = 8;',
+      'export const DEFAULT_NEBULA_LIGHT_GAIN = [8.66, 8.44, 8.07];',
+      'export const DEFAULT_NEBULA_STEP_RATE = 32;',
       'export const DEFAULT_NEBULA_OCCLUSION = 1;',
     ]);
   });
@@ -55,7 +62,7 @@ describe('the nebula slot module', () => {
     }
   });
 
-  test('gives the two defaults the map draws with', () => {
+  test('gives the three defaults the map draws with', () => {
     // The lines above are matched as text, so this reads the values through the module
     // itself. A rename that kept the text and changed the export would pass the first
     // test and fail this one.

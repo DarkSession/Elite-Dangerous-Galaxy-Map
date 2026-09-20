@@ -1,0 +1,47 @@
+{
+  "canvas": {
+    "width": 1280,
+    "height": 720
+  },
+  "stepRate": 32,
+  "lightGain": [
+    8.66,
+    8.44,
+    8.07
+  ],
+  "records_sha256": "97b264c0f43557136a2f514c2f033b60a8f598467e3ab9ccfe2510927781ea5d",
+  "views": {
+    "barnards-loop": {
+      "asset": "barnards-loop",
+      "record": 0,
+      "crop": 150,
+      "view": {
+        "cursor": [
+          624.4000244140625,
+          -425.8999938964844,
+          -1229.5
+        ],
+        "distance": 831,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "drawn": 105
+    },
+    "cats-eye": {
+      "asset": "cats-eye",
+      "record": 4,
+      "crop": 50,
+      "view": {
+        "cursor": [
+          -2809.699951171875,
+          1626.0999755859375,
+          -320.1000061035156
+        ],
+        "distance": 10,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "drawn": 109
+    }
+  }
+}

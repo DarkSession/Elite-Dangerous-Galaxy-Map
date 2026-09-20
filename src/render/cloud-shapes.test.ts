@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { generateCloudShapes, SHAPE_COLUMNS, shapeAtlasSide } from './cloud-shapes';
 import type { CloudShapes } from './cloud-shapes';
+import { TIMED_TEST } from '../../tests/timed';
 
 const shapes = generateCloudShapes();
 
@@ -118,7 +119,7 @@ describe('the cloud shapes', () => {
     expect(Buffer.from(first.data.buffer)).toEqual(Buffer.from(second.data.buffer));
   });
 
-  test('builds in under 50 ms', () => {
+  test('builds in under 50 ms', TIMED_TEST, () => {
     const start = performance.now();
     generateCloudShapes();
     const elapsed = performance.now() - start;

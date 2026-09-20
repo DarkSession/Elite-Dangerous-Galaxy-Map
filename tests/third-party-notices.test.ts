@@ -37,8 +37,13 @@ describe('the third-party notices', () => {
     }
   });
 
-  test('names the nebula records and the sprite atlas', () => {
-    for (const source of ['nebulae.json', 'nebula-art.webp']) {
+  test('names the nebula records and the volume art', () => {
+    for (const source of [
+      'nebulae.json',
+      'src/render/nebula-art/',
+      'nebula-volumes.json',
+      'transfer.bin',
+    ]) {
       expect(notices, `the notices name ${source}`).toContain(source);
     }
   });

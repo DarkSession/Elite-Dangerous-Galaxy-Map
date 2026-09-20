@@ -1,27 +1,40 @@
-// The slot the nebula sprites draw into: what one draw needs per frame, what the
-// renderer calls, and what a host hands the map to fill the slot.
+// The slot the nebulae draw into: what one draw needs per frame, what the renderer
+// calls, and what a host hands the map to fill the slot.
 //
-// This module imports nothing, and it holds two number literals and no other statement.
+// This module imports nothing, and it holds two number literals, one array literal and
+// no other statement.
 // The renderer imports it, so the entry chunk carries what it holds: a type is erased by
 // the build, and a number literal pulls in no pass, no shader text, no atlas and no
 // record file. A third import here would put the nebulae back in the chunk this change
 // takes them out of, so a unit test reads the built output and holds the module to it.
 //
-// The two constants are look defaults the renderer keeps whether or not a host asks for
-// the nebulae, because `look.nebulaBrightness` and `look.nebulaOcclusion` are members of
-// the look settings on every map. Every other look default sits beside its pass; these
-// two sit here, because the renderer must not import the nebula pass.
+// The three constants are look defaults the renderer keeps whether or not a host asks
+// for the nebulae, because the light gain, the step rate and `look.nebulaOcclusion` are
+// members of the look settings on every map. Every other look default sits beside its
+// pass; these three sit here, because the renderer must not import the nebula pass.
 
 /**
- * How bright one nebula sprite draws. It scales the colour channels alone. The value is
- * set by eye: at 2 a bright nebula reads as almost nothing, and at 16 the edge of the
- * sprite quad shows against the background. A browser test pins it.
+ * The light gain the march scales its emission by, one value per colour channel. Every
+ * record shares it, and it changes neither the alpha nor the shape.
+ *
+ * The three values are fitted against the pass they replace, so a frame of the marched
+ * volumes reads at the brightness that pass read at.
  */
-export const DEFAULT_NEBULA_BRIGHTNESS = 8;
+export const DEFAULT_NEBULA_LIGHT_GAIN = [8.66, 8.44, 8.07] as const;
 
 /**
- * How much of the volume's own extinction a sprite takes. 0 is the look before the
- * march, and 1 is the extinction the volume pass would have carried to the record's
+ * How many march steps one object-space unit takes. The box spans two of them, so the
+ * default is 64 steps across a box and a ray takes at most 256.
+ *
+ * The largest asset is 64 texels a side, so 32 steps over one unit is one step per
+ * texel across the box. A browser test reads the error against a finer rate and holds it
+ * under 5 percent.
+ */
+export const DEFAULT_NEBULA_STEP_RATE = 32;
+
+/**
+ * How much of the galaxy volume's own extinction a nebula takes. 0 is the look before
+ * the march, and 1 is the extinction the volume pass would have carried to the record's
  * centre. The default is 1: the frame already dims its own light by the dust it marches
  * through, so a nebula that did not would contradict it.
  */
@@ -45,15 +58,20 @@ export interface NebulaFrame {
   /** The height of the canvas in CSS pixels. The size rules are stated in those. */
   readonly canvasHeightCss: number;
   /**
+   * The width of the canvas in CSS pixels. One screen area is the product of the two,
+   * which is what the covered-area budget accumulates against.
+   */
+  readonly canvasWidthCss: number;
+  /**
    * The vertical field of view in degrees. The draw turns it and the canvas height into
    * the focal length the selection reads. The renderer sends the angle rather than the
    * focal length, so one rule states it and the draw holds no copy of the camera.
    */
   readonly fieldOfViewDegrees: number;
-  /** Target pixels per light year of sprite radius at one light year of range. */
-  readonly spriteScale: number;
-  /** The brightness of one sprite. It scales the colour channels alone. */
-  readonly brightness: number;
+  /** The light gain the march scales its emission by, one value per colour channel. */
+  readonly lightGain: readonly [number, number, number];
+  /** How many march steps one object-space unit takes. The box spans two of them. */
+  readonly stepRate: number;
   /**
    * The density volume the march reads, or null before it arrives and where the volume
    * pass does not draw. The frame carries it per draw, because the nebulae may attach
@@ -78,7 +96,7 @@ export interface NebulaFrame {
   readonly absorption: number;
   /** The scale one stored detail step stands for. It is 0 without a grid. */
   readonly detailScale: number;
-  /** How much of the volume's extinction a sprite takes, 0 to 1. */
+  /** How much of the galaxy volume's extinction a nebula takes, 0 to 1. */
   readonly occlusion: number;
 }
 
@@ -87,8 +105,16 @@ export interface NebulaDraw {
   draw(frame: NebulaFrame): void;
   /** How many instances the last draw issued. */
   readonly drawnCount: number;
-  /** How many draw calls the last draw issued: one, or none where nothing drew. */
+  /** How many draw calls the last draw issued: one per record drawn. */
   readonly drawCalls: number;
+  /**
+   * How many records passed the size floor in the last draw, before the budget. The
+   * difference against `drawnCount` is what the budget dropped, which a browser test
+   * reads to hold that the committed record file does not reach the budget.
+   */
+  readonly aboveFloorCount: number;
+  /** How much of the screen the last draw's records cover, in screen areas. */
+  readonly coveredArea: number;
   dispose(): void;
 }
 
@@ -100,14 +126,14 @@ export interface NebulaDraw {
  * imported and writes no source of its own. The map reads the value at run time and
  * turns the nebulae off on a value it cannot read.
  *
- * The record set and the decoded atlas are type parameters and not named types, because
- * this module imports nothing: it is the one nebula module the renderer reaches, and an
- * import here would put the rest of the nebulae back in the entry chunk. The map holds
- * the two as `unknown` and hands back what it was given, so neither type reaches the
- * supported surface.
+ * The record set and the decoded volumes are type parameters and not named types,
+ * because this module imports nothing: it is the one nebula module the renderer reaches,
+ * and an import here would put the rest of the nebulae back in the entry chunk. The map
+ * holds the two as `unknown` and hands back what it was given, so neither type reaches
+ * the supported surface.
  */
-export interface NebulaSource<Set = unknown, Atlas = unknown> {
+export interface NebulaSource<Set = unknown, Volumes = unknown> {
   loadSet(): Promise<Set>;
-  loadAtlas(): Promise<Atlas>;
-  createDraw(gl: WebGL2RenderingContext, set: Set, atlas: Atlas): NebulaDraw;
+  loadVolumes(): Promise<Volumes>;
+  createDraw(gl: WebGL2RenderingContext, set: Set, volumes: Volumes): NebulaDraw;
 }

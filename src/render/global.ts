@@ -45,12 +45,16 @@ export interface GalaxyMapGlobal {
   systemMarkerCount?: () => number;
   /** How many nebula instances the last frame drew. */
   nebulaDrawnCount?: () => number;
-  /** How many draw calls the last frame's nebula pass issued: one, or none. */
+  /** How many draw calls the last frame's nebula pass issued: one per record drawn. */
   nebulaDrawCalls?: () => number;
-  /** Whether the nebula records and the atlas reached the renderer. */
+  /** How many records passed the size floor in the last frame, before the budget. */
+  nebulaAboveFloorCount?: () => number;
+  /** How much of the screen the last frame's nebulae cover, in screen areas. */
+  nebulaCoveredArea?: () => number;
+  /** Whether the nebula records and the volumes reached the renderer. */
   nebulaeAttached?: () => boolean;
   /**
-   * Sets how much of the volume's extinction a nebula sprite takes, 0 to 1. At 0 the
+   * Sets how much of the volume's extinction a nebula takes, 0 to 1. At 0 the
    * pass draws what it drew before the march, so a test reads one frame at each value
    * and compares the two.
    */

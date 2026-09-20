@@ -1,22 +1,16 @@
-// Draws the selected nebulae as screen-aligned sprites over the half-resolution
-// target, with premultiplied source-over blending.
+// Draws the selected nebulae as marched boxes over the half-resolution target, with
+// premultiplied source-over blending.
 //
 // The draw chooses the records itself, from the frame the renderer hands it. The
 // renderer therefore holds no selection call and no record type, which is what keeps the
 // record set out of the main entry point's chunk.
 //
-// The two look defaults the sprites draw with sit in `nebula-slot.ts`, because the
+// The two look defaults the nebulae draw with sit in `nebula-slot.ts`, because the
 // renderer keeps them whether or not a host asks for the nebulae and must not import
 // this module.
-import {
-  NEBULA_CAP_FRACTION,
-  NEBULA_MAX_DRAWN,
-  nebulaFocalPixels,
-  selectNebulae,
-} from '../scene-data/nebulae';
-import type { NebulaInstance, NebulaSet } from '../scene-data/nebulae';
-import { NEBULA_ATLAS_COLUMNS } from './nebula-atlas';
-import type { NebulaAtlasTexture } from './nebula-atlas';
+import { nebulaFocalPixels, selectNebulae } from '../scene-data/nebulae';
+import type { NebulaSet } from '../scene-data/nebulae';
+import type { NebulaVolumeTextures } from './nebula-volumes';
 import type { NebulaDraw, NebulaFrame } from './nebula-slot';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -25,66 +19,124 @@ import vertexSource from './shaders/nebulae.vert?raw';
 import fragmentSource from './shaders/nebulae.frag?raw';
 
 /**
- * The texture units the three samplers read. Each one takes a unit of its own and every
- * draw sets all three, whether or not a texture is bound: an unset `sampler3D` reads unit
- * 0, where the atlas sits, and two samplers of different types on one unit make the draw
- * fail with `INVALID_OPERATION`.
+ * The texture units the five samplers read. Each one takes a unit of its own and every
+ * draw sets all five, whether or not a texture is bound: an unset sampler reads unit 0,
+ * and two samplers of different types on one unit make the draw fail with
+ * `INVALID_OPERATION`.
  */
-const ATLAS_UNIT = 0;
-const VOLUME_UNIT = 1;
-const DETAIL_UNIT = 2;
-
-/** How many floats one instance carries: the position, the radius, the tile, the fade. */
-export const NEBULA_INSTANCE_FLOATS = 6;
-
-/** The four corners of the nebula sprite quad, as a triangle strip. */
-const NEBULA_CORNERS = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+const DENSITY_UNIT = 0;
+const COLOUR_UNIT = 1;
+const TRANSFER_UNIT = 2;
+const VOLUME_UNIT = 3;
+const DETAIL_UNIT = 4;
 
 /**
- * Writes the selected records into the instance array, in the order the selection
- * gives them. The position is copied into the renderer's world frame, which negates
- * `z`; scene data keeps game coordinates.
+ * How the renderer's world frame reaches the game frame the art was authored in. The
+ * game's z runs the other way, so the matrix the pass sends is the record's own rotation
+ * composed with this flip.
+ *
+ * The convention is `Rx(a) * Ry(b) * Rz(c)` composed with the flip, read off by matching
+ * Barnard's Loop and the Horsehead against in-game references. Whether the matrix or its
+ * transpose applies is not settled, so the reading sits behind this one name and a
+ * correction is one edit that touches no data.
  */
-export function writeNebulaInstances(
-  set: NebulaSet,
-  instances: readonly NebulaInstance[],
-  out: Float32Array,
-): number {
-  const count = Math.min(instances.length, NEBULA_MAX_DRAWN);
-  for (let slot = 0; slot < count; slot += 1) {
-    const instance = instances[slot] as NebulaInstance;
-    const index = instance.index;
-    const base = slot * NEBULA_INSTANCE_FLOATS;
-    out[base] = set.positions[index * 3] as number;
-    out[base + 1] = set.positions[index * 3 + 1] as number;
-    out[base + 2] = -(set.positions[index * 3 + 2] as number);
-    out[base + 3] = set.radii[index] as number;
-    out[base + 4] = set.tiles[index] as number;
-    out[base + 5] = instance.fade;
+export const NEBULA_WORLD_FLIP = [1, 1, -1] as const;
+
+/** How many vertices one box draws: 12 triangles of three. */
+export const NEBULA_BOX_VERTICES = 36;
+
+function buildBoxCorners(): Float32Array {
+  const out = new Float32Array(NEBULA_BOX_VERTICES * 3);
+  const cross = (a: readonly number[], b: readonly number[]): number[] => [
+    (a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+    (a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+    (a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+  ];
+  let at = 0;
+  // One face per axis per side. The two tangents are chosen so that `u` crossed with
+  // `v` is the outward normal, which is what makes the winding counter-clockwise seen
+  // from outside.
+  for (let axis = 0; axis < 3; axis += 1) {
+    for (const side of [1, -1]) {
+      const normal = [0, 0, 0];
+      normal[axis] = side;
+      const u = [0, 0, 0];
+      u[(axis + 1) % 3] = 1;
+      const v = cross(normal, u);
+      const corner = (su: number, sv: number): number[] =>
+        normal.map(
+          (value, index) =>
+            value + su * (u[index] as number) + sv * (v[index] as number),
+        );
+      const quad = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+      for (const slot of [0, 1, 2, 0, 2, 3]) {
+        out.set(quad[slot] as number[], at);
+        at += 3;
+      }
+    }
   }
-  return count;
+  return out;
+}
+
+/**
+ * The 36 corners of the marched box, as 12 triangles. The cube is `[-1, +1]` in object
+ * space, and every face is wound counter-clockwise seen from outside, so the pass can
+ * cull one side of it.
+ */
+export const NEBULA_BOX_CORNERS = buildBoxCorners();
+
+/**
+ * The object-to-volume matrix of one record, in column-major order for
+ * `uniformMatrix3fv`.
+ *
+ * It is `Rx(a) * Ry(b) * Rz(c)` composed with the world flip. A record of three zeros
+ * therefore gives the identity with its z column negated.
+ */
+export function nebulaRotationMatrix(
+  rotation: readonly [number, number, number],
+  out = new Float32Array(9),
+): Float32Array {
+  const [a, b, c] = rotation;
+  const sa = Math.sin(a);
+  const ca = Math.cos(a);
+  const sb = Math.sin(b);
+  const cb = Math.cos(b);
+  const sc = Math.sin(c);
+  const cc = Math.cos(c);
+
+  // The rows of Rx(a) * Ry(b) * Rz(c).
+  const rows = [
+    [cb * cc, -cb * sc, sb],
+    [sa * sb * cc + ca * sc, -sa * sb * sc + ca * cc, -sa * cb],
+    [-ca * sb * cc + sa * sc, ca * sb * sc + sa * cc, ca * cb],
+  ];
+  for (let column = 0; column < 3; column += 1) {
+    const flip = NEBULA_WORLD_FLIP[column] as number;
+    for (let row = 0; row < 3; row += 1) {
+      out[column * 3 + row] = ((rows[row] as number[])[column] as number) * flip;
+    }
+  }
+  return out;
 }
 
 /**
  * Compiles the nebula program. The source compiles it when the records and the art have
  * arrived, and the draw frees it.
- *
- * The vertex shader carries the marker line of the shared density rule, so the pass puts
- * the rule in place of it here. The volume shader reads the same file.
  */
 export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
   return createProgram(gl, 'nebulae', withVolumeDensity(vertexSource), fragmentSource, [
     'uViewProjection',
     'uChunkOffset',
-    'uTargetSize',
-    'uSpriteScale',
-    'uMaxRadius',
+    'uPosition',
+    'uRadius',
     'uWeight',
-    'uTileSide',
-    'uAtlasColumns',
-    'uAtlasSide',
-    'uBrightness',
-    'uAtlas',
+    'uFade',
+    'uSteps',
+    'uLightGain',
+    'uRotation',
+    'uDensity',
+    'uColour',
+    'uNebulaTransfer',
     'uVolume',
     'uDetail',
     'uBoxMin',
@@ -102,57 +154,42 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
 /**
  * Gives back the draw that puts the selected nebulae on the screen.
  *
- * The draw owns the program, the atlas texture and its own two buffers, and frees all
- * four on `dispose`. The renderer holds the draw and knows none of the four, which is
- * what keeps the nebulae out of the main entry point's chunk.
+ * The draw owns the program, the volume textures and its own buffers, and frees them all
+ * on `dispose`. The renderer holds the draw and knows none of them, which is what keeps
+ * the nebulae out of the main entry point's chunk.
  *
- * The instance buffer is written each frame, because the selection changes with the
- * camera. It holds at most 256 instances of six floats, which is 6,144 bytes, so the
- * upload costs nothing beside the fill.
+ * One record is one draw call, because each carries its own three textures and its own
+ * rotation. The order is furthest first, because the pass composites with source-over.
  */
 export function createNebulaPass(
   gl: WebGL2RenderingContext,
   program: Program,
   set: NebulaSet,
-  atlas: NebulaAtlasTexture,
+  volumes: NebulaVolumeTextures,
 ): NebulaDraw {
   const vertexArray = gl.createVertexArray();
-  const instanceBuffer = gl.createBuffer();
   const cornerBuffer = gl.createBuffer();
-  if (vertexArray === null || instanceBuffer === null || cornerBuffer === null) {
+  if (vertexArray === null || cornerBuffer === null) {
+    // One of the two can arrive while the other does not, and the caller gets no handle
+    // to the one that did, so free it here.
+    if (vertexArray !== null) gl.deleteVertexArray(vertexArray);
+    if (cornerBuffer !== null) gl.deleteBuffer(cornerBuffer);
     throw new Error('The context gave no buffer for the nebula set.');
   }
 
-  const instanceData = new Float32Array(NEBULA_MAX_DRAWN * NEBULA_INSTANCE_FLOATS);
-  const stride = NEBULA_INSTANCE_FLOATS * 4;
-
   gl.bindVertexArray(vertexArray);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, instanceData.byteLength, gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
-  gl.vertexAttribDivisor(0, 1);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, stride, 12);
-  gl.vertexAttribDivisor(1, 1);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 16);
-  gl.vertexAttribDivisor(2, 1);
-  gl.enableVertexAttribArray(3);
-  gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 20);
-  gl.vertexAttribDivisor(3, 1);
-
   gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, NEBULA_CORNERS, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(4);
-  gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 0, 0);
-
+  gl.bufferData(gl.ARRAY_BUFFER, NEBULA_BOX_CORNERS, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
+  const rotation = new Float32Array(9);
   let drawnCount = 0;
   let drawCalls = 0;
+  let aboveFloorCount = 0;
+  let coveredArea = 0;
 
   return {
     get drawnCount(): number {
@@ -161,33 +198,33 @@ export function createNebulaPass(
     get drawCalls(): number {
       return drawCalls;
     },
+    get aboveFloorCount(): number {
+      return aboveFloorCount;
+    },
+    get coveredArea(): number {
+      return coveredArea;
+    },
     draw(frame: NebulaFrame): void {
       drawnCount = 0;
       drawCalls = 0;
-      // The size floor and the cap are stated in CSS pixels, so the selection reads the
-      // canvas height and not the half-resolution target the sprites draw into.
+      aboveFloorCount = 0;
+      coveredArea = 0;
+      // The size floor and the budget are stated in CSS pixels, so the selection reads
+      // the canvas and not the half-resolution target the boxes draw into.
       const selection = selectNebulae(set, {
         camera: frame.camera,
         distance: frame.distance,
         focalPixels: nebulaFocalPixels(frame.canvasHeightCss, frame.fieldOfViewDegrees),
         canvasHeightCss: frame.canvasHeightCss,
+        canvasWidthCss: frame.canvasWidthCss,
       });
+      // The two readings are taken whether or not the pass draws, so a view above the
+      // band still reports what passed the floor.
+      aboveFloorCount = selection.aboveFloor;
+      coveredArea = selection.coveredArea;
       // At a weight of 0 the pass draws nothing and issues no draw call, so the
       // default view and the close view cost nothing.
       if (selection.weight <= 0 || selection.instances.length < 1) return;
-
-      const count = writeNebulaInstances(set, selection.instances, instanceData);
-      if (count < 1) return;
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-      gl.bufferSubData(
-        gl.ARRAY_BUFFER,
-        0,
-        instanceData,
-        0,
-        count * NEBULA_INSTANCE_FLOATS,
-      );
-      gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
       gl.useProgram(program.program);
       gl.uniformMatrix4fv(
@@ -201,25 +238,14 @@ export function createNebulaPass(
         frame.chunkOffset[1],
         frame.chunkOffset[2],
       );
-      gl.uniform2f(
-        program.uniforms['uTargetSize'] ?? null,
-        frame.targetSize[0],
-        frame.targetSize[1],
-      );
-      gl.uniform1f(program.uniforms['uSpriteScale'] ?? null, frame.spriteScale);
-      // The cap is a share of the target height, so the drawn radius is the same
-      // share of the frame whatever the resolution of the target the pass draws into.
-      gl.uniform1f(
-        program.uniforms['uMaxRadius'] ?? null,
-        NEBULA_CAP_FRACTION * frame.targetSize[1],
-      );
       gl.uniform1f(program.uniforms['uWeight'] ?? null, selection.weight);
-      // The atlas states its own texel sizes, so a pack at a different tile size needs
-      // no change here.
-      gl.uniform1f(program.uniforms['uTileSide'] ?? null, atlas.tileSide);
-      gl.uniform1f(program.uniforms['uAtlasColumns'] ?? null, NEBULA_ATLAS_COLUMNS);
-      gl.uniform1f(program.uniforms['uAtlasSide'] ?? null, atlas.side);
-      gl.uniform1f(program.uniforms['uBrightness'] ?? null, frame.brightness);
+      gl.uniform1f(program.uniforms['uSteps'] ?? null, frame.stepRate);
+      gl.uniform3f(
+        program.uniforms['uLightGain'] ?? null,
+        frame.lightGain[0],
+        frame.lightGain[1],
+        frame.lightGain[2],
+      );
 
       // The march reads the volume the volume pass draws, over the segment from the
       // camera to the record's centre. Without a texture the pass sends an occlusion of
@@ -252,43 +278,88 @@ export function createNebulaPass(
         frame.volume === null ? 0 : frame.occlusion,
       );
 
-      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
-      gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
-      gl.uniform1i(program.uniforms['uAtlas'] ?? null, ATLAS_UNIT);
-
       gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
       gl.bindTexture(gl.TEXTURE_3D, frame.volume);
       gl.uniform1i(program.uniforms['uVolume'] ?? null, VOLUME_UNIT);
-
       gl.activeTexture(gl.TEXTURE0 + DETAIL_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, frame.detail);
       gl.uniform1i(program.uniforms['uDetail'] ?? null, DETAIL_UNIT);
-      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
+      gl.uniform1i(program.uniforms['uDensity'] ?? null, DENSITY_UNIT);
+      gl.uniform1i(program.uniforms['uColour'] ?? null, COLOUR_UNIT);
+      gl.uniform1i(program.uniforms['uNebulaTransfer'] ?? null, TRANSFER_UNIT);
 
       gl.enable(gl.BLEND);
-      // Premultiplied source-over. One blend serves a bright nebula and a dark one:
-      // a dark tile holds low colour and high alpha, so this attenuates what is
-      // already in the target without a second blend state and without a kind branch.
+      // Premultiplied source-over. One blend serves a bright nebula and a dark one: the
+      // march writes the emission and one minus the transmittance, so a dark volume
+      // attenuates what is already in the target without a second blend state.
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      // The back faces draw, not the front ones, so a camera inside a box still gets a
+      // fragment for every ray. The march clamps its near end at 0 for the same reason.
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.FRONT);
       gl.bindVertexArray(vertexArray);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
-      gl.bindVertexArray(null);
-      gl.disable(gl.BLEND);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
-      gl.bindTexture(gl.TEXTURE_3D, null);
-      gl.activeTexture(gl.TEXTURE0 + DETAIL_UNIT);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0 + ATLAS_UNIT);
 
-      drawnCount = count;
-      drawCalls = 1;
+      // Furthest first, as the selection gives them, because the blend depends on the
+      // order. One record is one draw call: each carries its own three textures.
+      for (const instance of selection.instances) {
+        const asset = volumes.assets[set.assets[instance.index] as number];
+        if (asset === undefined) continue;
+        gl.uniform3f(
+          program.uniforms['uPosition'] ?? null,
+          set.positions[instance.index * 3] as number,
+          set.positions[instance.index * 3 + 1] as number,
+          // The record is in game coordinates and the pass draws in the world frame,
+          // whose z runs the other way.
+          -(set.positions[instance.index * 3 + 2] as number),
+        );
+        gl.uniform1f(
+          program.uniforms['uRadius'] ?? null,
+          set.radii[instance.index] as number,
+        );
+        gl.uniform1f(program.uniforms['uFade'] ?? null, instance.fade);
+        gl.uniformMatrix3fv(
+          program.uniforms['uRotation'] ?? null,
+          false,
+          nebulaRotationMatrix(
+            [
+              set.rotations[instance.index * 3] as number,
+              set.rotations[instance.index * 3 + 1] as number,
+              set.rotations[instance.index * 3 + 2] as number,
+            ],
+            rotation,
+          ),
+        );
+
+        gl.activeTexture(gl.TEXTURE0 + DENSITY_UNIT);
+        gl.bindTexture(gl.TEXTURE_3D, asset.density);
+        gl.activeTexture(gl.TEXTURE0 + COLOUR_UNIT);
+        gl.bindTexture(gl.TEXTURE_3D, asset.colour);
+        gl.activeTexture(gl.TEXTURE0 + TRANSFER_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D, asset.transfer);
+
+        gl.drawArrays(gl.TRIANGLES, 0, NEBULA_BOX_VERTICES);
+        drawCalls += 1;
+      }
+
+      gl.bindVertexArray(null);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+      for (const unit of [DENSITY_UNIT, COLOUR_UNIT, VOLUME_UNIT]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_3D, null);
+      }
+      for (const unit of [TRANSFER_UNIT, DETAIL_UNIT]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      }
+      gl.activeTexture(gl.TEXTURE0 + DENSITY_UNIT);
+
+      drawnCount = drawCalls;
     },
     dispose(): void {
-      gl.deleteBuffer(instanceBuffer);
       gl.deleteBuffer(cornerBuffer);
       gl.deleteVertexArray(vertexArray);
-      atlas.dispose();
+      volumes.dispose();
       gl.deleteProgram(program.program);
     },
   };

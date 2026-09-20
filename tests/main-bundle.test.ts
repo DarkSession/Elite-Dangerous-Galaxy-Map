@@ -104,8 +104,15 @@ const root = fileURLToPath(new URL('..', import.meta.url));
  * **259,599**. The 18 bytes are the `systemNames` option and the default it takes, which
  * is the whole of that change that reaches the entry chunk: the Markdown parser, the
  * details reader, the panel work and the footer buttons of the `details` answer are all
- * HUD code, and `HudAction` is a type the build erases. The bound stays at 260,000,
- * which leaves 5,924 bytes of room.
+ * HUD code, and `HudAction` is a type the build erases.
+ *
+ * The marched volumes take the reading to **254,496 bytes**, and the pair to
+ * **260,019**. The 420 bytes are the light gain array and the step rate on
+ * `nebula-slot.ts`, and the two selection readings the browser tests need, less the
+ * drawn-radius cap and the two fades this change deletes. Every map carries all of them.
+ * The volume art, the volume module and the pass are all behind the `./nebulae` subpath
+ * and reach no chunk here. The bound stays at 260,000, which leaves 5,504 bytes of room.
+ * The bound reads `index.js` alone, as it always has; the pair is logged and not asserted.
  */
 const ENTRY_CHUNK_LIMIT = 260_000;
 
@@ -155,11 +162,11 @@ const SMOOTHED_PACKER = 'packRegionLines';
 const REGION_MESSAGE_FIELDS = ['lines', 'grid', 'flow'];
 
 /**
- * Text the nebula shaders alone hold. `vTileUv` is the varying the vertex shader writes
- * and the fragment shader reads, and no other file of `src/` names it, so a chunk that
- * holds this word carries the nebula shader pair as text.
+ * Text the nebula shaders alone hold. `vMarchObject` is the varying the vertex shader
+ * writes and the fragment shader reads, and no other file of `src/` names it, so a chunk
+ * that holds this word carries the nebula shader pair as text.
  */
-const NEBULA_SHADER_TERM = 'vTileUv';
+const NEBULA_SHADER_TERM = 'vMarchObject';
 
 /** The package name a host imports. The host builds resolve it to the fresh build. */
 const PACKAGE_NAME = 'elite-dangerous-galaxy-map';
@@ -392,11 +399,14 @@ function buildHost(name: string, entry: string): HostBuild {
 
 /**
  * What a host build carries where it carries the nebulae. Each one is a pattern and not
- * a name, because a host bundler hashes the two files again under names of its own.
+ * a name, because a host bundler hashes the files again under names of its own.
  */
 const NEBULA_NEEDLES: readonly { readonly what: string; readonly pattern: RegExp }[] = [
   { what: 'the record file', pattern: /nebulae-[\w-]+\.json/ },
-  { what: 'the sprite atlas', pattern: /nebula-art-[\w-]+\.webp/ },
+  { what: 'the volume index', pattern: /nebula-volumes-[\w-]+\.json/ },
+  { what: 'the transfer file', pattern: /transfer-[\w-]+\.bin/ },
+  { what: 'a density volume', pattern: /-density-[\w-]+\.dds/ },
+  { what: 'a colour volume', pattern: /-colour-[\w-]+\.dds/ },
   { what: 'the nebula shaders', pattern: new RegExp(NEBULA_SHADER_TERM) },
 ];
 
@@ -435,10 +445,21 @@ function recordFileName(): string {
     .find((name) => name.startsWith('nebulae') && name.endsWith('.json')) as string;
 }
 
-/** The name the library build gave the sprite atlas, with its hash. */
-function atlasFileName(): string {
-  return files.map(nameOf).find((name) => name.endsWith('.webp')) as string;
+/** The name the library build gave the volume index, with its hash. */
+function volumeIndexName(): string {
+  return files
+    .map(nameOf)
+    .find(
+      (name) => name.startsWith('nebula-volumes') && name.endsWith('.json'),
+    ) as string;
 }
+
+/**
+ * How many files the volume art is: 33 density volumes, 33 colour volumes, the index and
+ * the transfer function. `src/render/nebula-volumes.ts` globs the directory, so a file
+ * added to it or dropped from it moves this figure.
+ */
+const NEBULA_ASSET_FILES = 68;
 
 let outDir = '';
 let files: string[] = [];
@@ -529,22 +550,44 @@ describe('the library build', () => {
     }
   });
 
-  // The record set and the sprite atlas load as fetched assets. `?url&no-inline` is
+  // The record set and the volume art load as fetched assets. `?url&no-inline` is
   // what keeps them files: a plain `?url` lets the library build inline an asset as a
-  // data URI, which would put 14,626 bytes of records and 811,762 bytes of art in the
+  // data URI, which would put 18,411 bytes of records and 2.77 MiB of art in the
   // entry chunk.
-  test('emits the nebula records and the atlas as files, not as chunk text', () => {
+  test('emits the nebula records and the volumes as files, not as chunk text', () => {
     const names = files.map(nameOf);
-    expect(names.filter((name) => name.endsWith('.webp'))).toHaveLength(1);
+    const volumes = names.filter((name) => name.endsWith('.dds'));
+    const index = names.filter(
+      (name) => name.startsWith('nebula-volumes') && name.endsWith('.json'),
+    );
+    const transfer = names.filter((name) => /^transfer-[\w-]+\.bin$/.test(name));
+    expect(volumes).toHaveLength(66);
+    expect(index).toHaveLength(1);
+    expect(transfer).toHaveLength(1);
+    expect(volumes.length + index.length + transfer.length).toBe(NEBULA_ASSET_FILES);
     expect(
       names.filter((name) => name.startsWith('nebulae') && name.endsWith('.json')),
     ).toHaveLength(1);
 
     const file = readFileSync(join(root, 'src', 'scene-data', 'nebulae.json'), 'utf8');
     const records = JSON.parse(file) as {
-      records: [number, number, number, number, number, string?][];
+      records: [
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        string?,
+      ][];
     };
-    const recordName = records.records[0]?.[5] as string;
+    // The name is the ninth field: three positions, a radius, an asset index and three
+    // rotation angles come before it.
+    const recordName = records.records
+      .map((row) => row[8])
+      .find((name) => name !== undefined) as string;
     // The text of the first record row, which nothing but the data file holds.
     const firstRow = file.slice(
       file.indexOf('"records":[[') + 11,
@@ -562,8 +605,8 @@ describe('the library build', () => {
         false,
       );
       expect(
-        text.includes('data:image/webp'),
-        `${nameOf(path)} holds the atlas as a data URI`,
+        text.includes('data:application/octet-stream'),
+        `${nameOf(path)} holds a volume as a data URI`,
       ).toBe(false);
     }
   });
@@ -577,7 +620,7 @@ describe('the library build', () => {
         `the host carries ${needle.what}`,
       ).toBe(false);
     }
-    expect(plainHost.text.includes('data:image/webp')).toBe(false);
+    expect(plainHost.text.includes('data:application/octet-stream')).toBe(false);
   });
 
   // The positive control of the test above. Without it a needle that appears nowhere —
@@ -609,16 +652,16 @@ describe('the library build', () => {
   });
 
   // The library's own entry chunk, and not a host's. The nebula code left it, so the
-  // shader pair, the record file name and the atlas file name must be gone from it and
+  // shader pair, the record file name and the volume index name must be gone from it and
   // from every chunk it loads with. The nebula entry chunk is the positive control: the
   // same needle is there.
   test('the chunks that load with the entry chunk carry no nebula code', () => {
     const entry = scripts.find((path) => nameOf(path) === 'index.js') as string;
     const second = scripts.find((path) => nameOf(path) === 'nebulae.js') as string;
     const recordFile = recordFileName();
-    const atlasFile = atlasFileName();
+    const indexFile = volumeIndexName();
     expect(recordFile.length).toBeGreaterThan(0);
-    expect(atlasFile.length).toBeGreaterThan(0);
+    expect(indexFile.length).toBeGreaterThan(0);
 
     const atLoad = chunksAtLoad(entry);
     console.log('the chunks the entry chunk loads with', atLoad.map(nameOf));
@@ -631,13 +674,15 @@ describe('the library build', () => {
         `${name} holds the nebula shaders`,
       ).toBe(false);
       expect(text.includes(recordFile), `${name} names the record file`).toBe(false);
-      expect(text.includes(atlasFile), `${name} names the atlas`).toBe(false);
+      expect(text.includes(indexFile), `${name} names the volume index`).toBe(false);
+      expect(/-density-[\w-]+\.dds/.test(text), `${name} names a volume`).toBe(false);
     }
 
     const secondText = readFileSync(second, 'utf8');
     expect(secondText.includes(NEBULA_SHADER_TERM)).toBe(true);
     expect(secondText.includes(recordFile)).toBe(true);
-    expect(secondText.includes(atlasFile)).toBe(true);
+    expect(secondText.includes(indexFile)).toBe(true);
+    expect(/-density-[\w-]+\.dds/.test(secondText)).toBe(true);
   });
 
   // What `"sideEffects": false` in `package.json` claims: no module of the library does
@@ -912,12 +957,12 @@ describe('the library build', () => {
   }, 60_000);
 
   // The nebula source is a value a host passes in the options, and the three members
-  // drive the sprites. The test reads them through `GalaxyMap` and through the options,
+  // drive the nebulae. The test reads them through `GalaxyMap` and through the options,
   // so it fails if the option ever stops naming `NebulaSource`.
   //
   // It imports the **built** source from the second declaration rather than declaring one,
   // which is what the scenario asks. The second entry point declares
-  // `NebulaSource<NebulaSet, NebulaAtlasImage>` and the option takes
+  // `NebulaSource<NebulaSet, NebulaVolumeSet>` and the option takes
   // `NebulaSource<unknown, unknown>`, so a declared value would pass while the real one
   // failed. A later change to the source's type parameters is the fault this catches.
   test('the nebula option and the three members are declared', () => {

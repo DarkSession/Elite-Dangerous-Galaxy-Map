@@ -39,7 +39,7 @@ export default defineConfig({
       // Two entry points. The main one is the map; the second one is the nebula source,
       // which a host imports at `<package>/nebulae` to turn the nebulae on. A host that
       // imports the main one alone reaches no nebula module, so its build carries no
-      // nebula code, no record file and no sprite art.
+      // nebula code, no record file and no volume art.
       //
       // The keys name the emitted files, and `fileName` is left out on purpose: Vite's
       // `resolveLibFilename` answers `${fileName}.js` for a string whatever the entry

@@ -1,29 +1,23 @@
 #version 300 es
-// Draws one screen-aligned quad per selected nebula. The quad is an instance over
-// four corners, because a point sprite is discarded whole when its centre leaves the
-// clip volume, and a sprite this large would then pop at the edge of the frame.
+// Draws the box one nebula volume is marched inside. The box is the cube [-1, +1] in
+// object space and its half-extent in world units is the record's radius, so the art
+// draws one diameter across, as the pass it replaces did.
 //
-// The shader also marches the density volume from the camera to the record's centre and
-// gives the fragment shader the transmittance of that segment, so a nebula the camera
-// sees through the bulge reads darker and warmer than one with nothing in front of it.
+// The shader also marches the galaxy's density volume from the camera to the record's
+// centre and gives the fragment shader the transmittance of that segment, so a nebula
+// the camera sees through the bulge reads darker and warmer than one with nothing in
+// front of it.
 precision highp float;
 precision highp sampler3D;
 
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in float aRadius;
-layout(location = 2) in float aTile;
-layout(location = 3) in float aFade;
-layout(location = 4) in vec2 aCorner;
+layout(location = 0) in vec3 aCorner;
 
 uniform mat4 uViewProjection;
 uniform vec3 uChunkOffset;
-uniform vec2 uTargetSize;
-uniform float uSpriteScale;
-uniform float uMaxRadius;
+uniform vec3 uPosition;
+uniform float uRadius;
 uniform float uWeight;
-uniform float uTileSide;
-uniform float uAtlasColumns;
-uniform float uAtlasSide;
+uniform float uFade;
 
 // The volume the march reads. It is the texture the volume pass draws, which the
 // renderer owns and gives to both passes. The absorption is the volume pass's own, so
@@ -43,7 +37,10 @@ uniform float uDetailScale;
 // texture and where the volume pass does not draw.
 uniform float uOcclusion;
 
-out vec2 vTileUv;
+// The sample point, in the record's object space, where the cube spans [-1, +1].
+out vec3 vMarchObject;
+// The camera, in the same frame. The march runs from it toward the sample point.
+out vec3 vMarchEye;
 out float vWeight;
 out vec3 vTransmittance;
 
@@ -101,47 +98,31 @@ vec3 marchTransmittance(vec3 target) {
 }
 
 void main() {
-  vec3 relative = uChunkOffset + aPosition;
-  float range = max(length(relative), 1.0);
-  // The world width of the sprite is twice the record's radius, so the apparent
-  // radius follows the world radius over the range. The cap stops one instance close
-  // to the camera laying fragments over the whole frame.
-  float wanted = min((uSpriteScale * aRadius) / range, uMaxRadius);
+  vec3 centre = uChunkOffset + uPosition;
 
-  // The zoom band and the camera-inside fade scale the colour and the alpha together,
+  // The zoom band and the record's own fades scale the colour and the alpha together,
   // so a fading nebula both dims and stops attenuating what is behind it.
-  float weight = uWeight * aFade;
+  float weight = uWeight * uFade;
+  vWeight = weight;
 
-  vec4 clip = uViewProjection * vec4(relative, 1.0);
-  // Behind the camera, or faded out. A sprite at weight 0 adds nothing, and its quad
-  // reaches the cap, so the collapse saves a capped sprite of blended fragments.
-  if (clip.w <= 0.0 || weight <= 0.0) {
+  // The camera sits at the origin of the camera-relative frame, so its object-space
+  // position is the negated centre over the half-extent.
+  vMarchEye = -centre / uRadius;
+  vMarchObject = aCorner;
+
+  if (weight <= 0.0) {
+    // A record at weight 0 adds nothing. The box collapses behind the near plane, so
+    // the fragment stage runs on none of it and the march below is never paid for.
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    vTileUv = vec2(0.0);
-    vWeight = 0.0;
     vTransmittance = vec3(1.0);
     return;
   }
 
-  clip.xy += aCorner * (2.0 * wanted * clip.w) / uTargetSize;
-  gl_Position = clip;
+  gl_Position = uViewProjection * vec4(centre + aCorner * uRadius, 1.0);
 
-  // The lookup takes the record's own tile of the atlas. The half-texel inset keeps
-  // the linear filter inside the tile, and each tile is alpha 0 at its border, so no
-  // tile's colour can reach its neighbour.
-  // The atlas uploads with no flip, so texture row 0 holds the top row of the file.
-  // The top of the quad is aCorner.y = 1, so the lookup negates y and the art draws
-  // the same way up as the file.
-  float column = mod(aTile, uAtlasColumns);
-  float row = floor(aTile / uAtlasColumns);
-  vec2 inCell = vec2(aCorner.x, -aCorner.y) * 0.5 + 0.5;
-  vec2 texel = vec2(column, row) * uTileSide + inCell * (uTileSide - 1.0) + 0.5;
-  vTileUv = texel / uAtlasSide;
-
-  vWeight = weight;
-  // The march runs after the early-out, so a collapsed sprite pays no texture fetch.
-  // The four corners of one quad march the same segment and reach the same answer.
-  // WebGL2 has no per-instance stage, and a pass that removed the three redundant
-  // marches would cost more than the 49,000 fetches it saved.
-  vTransmittance = marchTransmittance(relative);
+  // The march runs after the early-out, so a collapsed box pays no texture fetch. The
+  // 36 vertices of one box march the same segment and reach the same answer. WebGL2 has
+  // no per-instance stage, and the cost of the eight extra marches is measured rather
+  // than assumed.
+  vTransmittance = marchTransmittance(centre);
 }

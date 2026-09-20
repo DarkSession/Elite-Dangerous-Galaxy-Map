@@ -2,8 +2,8 @@
 //
 // This module names no nebula module and no nebula asset, and a unit test holds it to
 // that. The main entry point reaches this module at load, so an asset import here would
-// put the sprite atlas in the build of every host, whether or not the host asks for the
-// nebulae. The atlas sits in `nebula-atlas.ts` for that reason.
+// put the 66 nebula volumes in the build of every host, whether or not the host asks for
+// the nebulae. The volumes sit in `nebula-volumes.ts` for that reason.
 import type {
   CloudSet,
   DensityVolume,

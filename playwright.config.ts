@@ -26,7 +26,12 @@ const launchArguments = [
  * the reading the budget states. `pnpm test:e2e` gives them a pass of their own, on
  * one worker, after the parallel pass ends.
  */
-const timedSpecs = ['frame-budget.spec.ts', 'stars.spec.ts', 'labels.spec.ts'];
+const timedSpecs = [
+  'frame-budget.spec.ts',
+  'nebula-cost.spec.ts',
+  'stars.spec.ts',
+  'labels.spec.ts',
+];
 
 /**
  * What the Firefox project runs. Chromium and Firefox do not share a paint path:

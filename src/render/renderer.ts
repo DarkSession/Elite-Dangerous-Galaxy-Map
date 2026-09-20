@@ -43,7 +43,11 @@ import {
 } from './cloud-pass';
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
-import { DEFAULT_NEBULA_BRIGHTNESS, DEFAULT_NEBULA_OCCLUSION } from './nebula-slot';
+import {
+  DEFAULT_NEBULA_LIGHT_GAIN,
+  DEFAULT_NEBULA_OCCLUSION,
+  DEFAULT_NEBULA_STEP_RATE,
+} from './nebula-slot';
 import type { NebulaDraw } from './nebula-slot';
 import {
   createGridPass,
@@ -160,9 +164,9 @@ export function createFrameAccumulator(): FrameAccumulator {
 }
 
 /**
- * How much of the volume's extinction the frame sends for one nebula sprite. A value
- * outside 0 to 1, and a value that is not a number, take the default. The look settings
- * are a mutable handle, so the rule runs each frame, where the uniform is set.
+ * How much of the volume's extinction the frame sends for one nebula. A value outside 0
+ * to 1, and a value that is not a number, take the default. The look settings are a
+ * mutable handle, so the rule runs each frame, where the uniform is set.
  */
 export function nebulaOcclusionOf(value: number): number {
   return Number.isFinite(value) && value >= 0 && value <= 1
@@ -189,11 +193,20 @@ export interface LookSettings {
   emission: number;
   absorption: number;
   cloudBrightness: number;
-  nebulaBrightness: number;
   /**
-   * How much of the volume's own extinction a nebula sprite takes, 0 to 1. At 0 the
-   * pass draws what it drew before the march. A value outside the range, and a value
-   * that is not a number, take the default.
+   * The light gain the nebula march scales its emission by, one value per colour
+   * channel. It changes neither the alpha nor the shape.
+   */
+  nebulaLightGain: [number, number, number];
+  /**
+   * How many march steps one object-space unit of a nebula takes. The box spans two of
+   * them, and a ray takes at most 256 steps whatever this holds.
+   */
+  nebulaStepRate: number;
+  /**
+   * How much of the volume's own extinction a nebula takes, 0 to 1. At 0 the pass draws
+   * what it drew before the march. A value outside the range, and a value that is not a
+   * number, take the default.
    */
   nebulaOcclusion: number;
   pointBrightness: number;
@@ -215,17 +228,21 @@ export interface Renderer {
   setCloudSet(set: CloudSet): void;
   /**
    * Takes the draw a nebula source built. Call it in its own animation frame. Before it
-   * is called the slot is empty and no sprite draws.
+   * is called the slot is empty and no nebula draws.
    *
    * The renderer holds the slot and the source fills it. The renderer therefore imports
-   * no nebula pass, no record set and no sprite atlas, and a host that asks for no
+   * no nebula pass, no record set and no volume art, and a host that asks for no
    * nebulae carries none of the three.
    */
   setNebulae(draw: NebulaDraw): void;
   /** How many nebula instances the last frame drew. */
   nebulaDrawnCount(): number;
-  /** How many draw calls the last frame's nebula pass issued: one, or none. */
+  /** How many draw calls the last frame's nebula pass issued: one per record drawn. */
   nebulaDrawCalls(): number;
+  /** How many records passed the size floor in the last frame, before the budget. */
+  nebulaAboveFloorCount(): number;
+  /** How much of the screen the last frame's nebulae cover, in screen areas. */
+  nebulaCoveredArea(): number;
   /** Uploads the surface detail grid. Call it in its own animation frame. */
   setDetail(detail: SurfaceDetail): void;
   /**
@@ -343,7 +360,7 @@ export interface Renderer {
   /** Chooses which passes draw. */
   setPasses(passes: Partial<PassSwitches>): void;
   /**
-   * Sets how much of the volume's extinction a nebula sprite takes. It writes the same
+   * Sets how much of the volume's extinction a nebula takes. It writes the same
    * field as `look.nebulaOcclusion`, and the frame holds the range, so the two routes
    * give the same picture.
    */
@@ -443,6 +460,8 @@ export function createRenderer(
   let nebulaDraw: NebulaDraw | null = null;
   let nebulaDrawn = 0;
   let nebulaCalls = 0;
+  let nebulaAboveFloor = 0;
+  let nebulaCovered = 0;
   let volumePass: VolumePass | null = null;
   let volumeTexture: VolumeTexture | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -464,7 +483,8 @@ export function createRenderer(
     emission: DEFAULT_EMISSION,
     absorption: DEFAULT_ABSORPTION,
     cloudBrightness: DEFAULT_CLOUD_BRIGHTNESS,
-    nebulaBrightness: DEFAULT_NEBULA_BRIGHTNESS,
+    nebulaLightGain: [...DEFAULT_NEBULA_LIGHT_GAIN],
+    nebulaStepRate: DEFAULT_NEBULA_STEP_RATE,
     nebulaOcclusion: DEFAULT_NEBULA_OCCLUSION,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
@@ -591,19 +611,19 @@ export function createRenderer(
     // dark nebula attenuates what the two passes before it drew.
     nebulaDrawn = 0;
     nebulaCalls = 0;
+    nebulaAboveFloor = 0;
+    nebulaCovered = 0;
     if (passes.nebulae && nebulaDraw !== null) {
       const area = viewport();
-      const halfFocal =
-        halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
       // The march reads the volume the volume pass draws. Where the volume pass does
-      // not draw, the sprite takes no extinction: a nebula must not be dimmed by
+      // not draw, the record takes no extinction: a nebula must not be dimmed by
       // material the frame does not show.
       const marched = passes.volume && volumeTexture !== null && volumeBox !== null;
       const detail = detailTexture;
       const box = volumeBox;
-      // The draw chooses the records from this frame. The size floor and the cap are
+      // The draw chooses the records from this frame. The size floor and the budget are
       // stated in CSS pixels, so the frame carries the canvas height and the field of
-      // view beside the size of the target the sprites draw into.
+      // view beside the size of the target the boxes draw into.
       nebulaDraw.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
@@ -611,9 +631,14 @@ export function createRenderer(
         distance: view.distance,
         targetSize: [halfTarget.width, halfTarget.height],
         canvasHeightCss: area.height,
+        canvasWidthCss: area.width,
         fieldOfViewDegrees: FIELD_OF_VIEW_DEGREES,
-        spriteScale: halfFocal,
-        brightness: look.nebulaBrightness,
+        lightGain: [
+          look.nebulaLightGain[0],
+          look.nebulaLightGain[1],
+          look.nebulaLightGain[2],
+        ],
+        stepRate: look.nebulaStepRate,
         volume: marched && volumeTexture !== null ? volumeTexture.texture : null,
         detail: detail === null ? null : detail.texture,
         boxMin:
@@ -626,7 +651,8 @@ export function createRenderer(
               ],
         // A box of zero size would divide by zero in the shader. The march never runs
         // without a volume, and the value is a placeholder for the frame that has none.
-        boxSize: box === null ? [1, 1, 1] : [box.extent[0], box.extent[1], box.extent[2]],
+        boxSize:
+          box === null ? [1, 1, 1] : [box.extent[0], box.extent[1], box.extent[2]],
         centre:
           box === null
             ? [0, 0, 0]
@@ -647,6 +673,8 @@ export function createRenderer(
       });
       nebulaDrawn = nebulaDraw.drawnCount;
       nebulaCalls = nebulaDraw.drawCalls;
+      nebulaAboveFloor = nebulaDraw.aboveFloorCount;
+      nebulaCovered = nebulaDraw.coveredArea;
     }
 
     // The scene target holds the sum of the scene passes.
@@ -888,7 +916,7 @@ export function createRenderer(
       );
     },
     setNebulae(draw: NebulaDraw): void {
-      // The source builds the draw and throws on an atlas the tile grid cannot hold or
+      // The source builds the draw and throws on volumes the textures cannot hold or
       // on a context that gives no buffer. The old draw is disposed after the new one
       // arrives, so a call that throws leaves the frame drawing the draw it had.
       nebulaDraw?.dispose();
@@ -899,6 +927,12 @@ export function createRenderer(
     },
     nebulaDrawCalls(): number {
       return nebulaCalls;
+    },
+    nebulaAboveFloorCount(): number {
+      return nebulaAboveFloor;
+    },
+    nebulaCoveredArea(): number {
+      return nebulaCovered;
     },
     setDetail(detail: SurfaceDetail): void {
       detailTexture?.dispose();
