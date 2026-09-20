@@ -305,10 +305,12 @@ test.describe('the labels at 1280 by 720', () => {
     // One rung must read an anchor strictly inside that band, and the test fails when
     // none does, so the run measures the slope rather than assuming it.
     //
-    // The anchor range is about 2.3 times the zoom at this pitch, because the anchor is
-    // the part of the region the frame shows and that part sits up the frame. The 2,500
-    // rung therefore reads 6,504.6 light years, the middle of the fade, and the 1,000
-    // rung is the first at which the label leaves the page.
+    // The anchor range runs far past the zoom at this pitch, because the anchor is the
+    // part of the region the frame shows and that part sits up the frame. The two are
+    // not one ratio: it runs from 1.17 at 20,000 light years to 2.60 at 2,500. Over the
+    // close end `range = 4,400 + 0.84 * zoom` fits the readings. The 2,500 rung reads
+    // 6,504.6 light years, the middle of the fade, and the 1,000 rung is the first at
+    // which the label leaves the page.
     const measured: { distance: number; rangeLy: number }[] = [];
     for (const distance of [20000, 15000, 10000, 2500, 1000]) {
       await openView(page, `#c=0,0,0&d=${distance}&p=35&y=0`);
@@ -342,9 +344,10 @@ test.describe('the labels at 1280 by 720', () => {
       (reading) => reading.rangeLy > 5000 && reading.rangeLy < 8000,
     );
     console.log('the readings strictly inside the fade band', onTheSlope);
-    expect(onTheSlope.length, 'a reading strictly inside the fade band').toBeGreaterThan(
-      0,
-    );
+    expect(
+      onTheSlope.length,
+      'a reading strictly inside the fade band',
+    ).toBeGreaterThan(0);
   });
 
   test('the sweep does not run when the frame can carry no label', async ({ page }) => {

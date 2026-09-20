@@ -654,12 +654,32 @@ flat 0.25, because the viewport and the range are
   10 and 35 per cent. The fade opens nearer again, so both rows move down the frame and both
   bands move with them.
 
-  **Why 35 per cent held against the old floor.** The corner column under-reads there as
+  **This scenario no longer reads the two fade figures.** The old bands of 10 and 35 per cent
+  did. Against the bands of 20 and 60 per cent the old fade of 8,000 to 12,000 would also
+  pass: the top band reads 10,583 to 14,743 light years, which draws, and the lower band
+  reads 4,792 and under, which does not. The claim this scenario holds is therefore the
+  narrow one, that a far line draws while a near line is gone, and not where the two figures
+  sit. The scenario "The boundary fades out across the close end" and the two unit tests of
+  `src/render/region-pass.test.ts` hold the figures themselves.
+
+  **Why 35 per cent held against the old floor.** The corner column under-read there as
   well: at 35 per cent the corner ray met the plane at **8,249** light years, just past the
-  old floor of 8,000, where the fade reads **0.0056**. The band's contribution at that
-  strength is under the **0.001** of luminance the test counts a pixel at, so the row held by
-  a margin the reading could not see. The floor moved nearer and the same corner now carries
-  a fade of 0.42, which the reading does see
+  old floor of 8,000, where the fade reads **0.01107**. The band's alpha at that strength is
+  `0.62 * 0.01107`, which is 0.0069, and over dark space that moves red by 1.3 of 255 and
+  green by 1.0. That is 0.0036 of luminance, **above** the 0.001 the test counts a pixel at,
+  so the threshold alone does not explain why the row held.
+
+  **What the run reads is the true floor.** At the columns the band draws in, 1,085 to
+  1,102, the fade at row 341 works out at 0.0137 and at row 342 at 0.0126. The reading sees
+  0.0137 and does not see 0.0126, so its true floor sits near **0.013** of fade and not at
+  0.001. The old corner fade of 0.01107 sat just under that, by about one part in ten and
+  not by a factor. The row also held because no boundary chain runs at the frame corner in
+  this view, which is a property of the data and not of the rule.
+
+  **That is the reason for 60 per cent and not 50.** A bound of 50 per cent would pass this
+  run, because the drawn pixels stop at 47.36 per cent, but it would pass on where the
+  chains fall. Below 60 per cent every column, the corner included, reads 4,792 light years
+  or less, where the fade is exactly 0. The lower band then holds 0 by geometry
 
 #### Scenario: A boundary is visible at medium zoom
 
@@ -1334,12 +1354,18 @@ user sees at those zooms.
   clause above makes the reading of the slope a condition of the test rather than a hope
   about one zoom.
 
-  **The anchor range is about 2.3 times the zoom, and not the zoom itself.** The anchor at a
-  close zoom is not the region's centroid: the centroid does not project inside the frame
+  **The anchor range runs far past the zoom, and the two are not one ratio.** The anchor at
+  a close zoom is not the region's centroid: the centroid does not project inside the frame
   there, so the anchor is the part of the region the frame shows. At a pitch of 35 degrees
-  that part sits well **up** the frame and not at the cursor, so its range runs far past the
-  zoom. An earlier reading of this rule said the range was near the zoom itself, which the
-  measurement below disproves.
+  that part sits well **up** the frame and not at the cursor. An earlier reading of this rule
+  said the range was near the zoom itself, which the measurement below disproves.
+
+  The ratio runs from **1.17** at 20,000 light years to **2.60** at 2,500, so no single
+  factor states it. Over the close end the relation is **affine**: `range = 4,400 +
+  0.84 * zoom` fits the 1,500, 2,000, 2,500 and 3,000 rungs to a few light years. It drifts
+  above 4,000, where 10,000 reads 13,520 against the 12,800 the line gives. Read the table
+  below and not a factor. No test holds the affine rule, so a later change SHALL measure the
+  ladder again rather than take the rule from here.
 
   **The measured ladder**, at 1280x720 and a pitch of 35 degrees:
 

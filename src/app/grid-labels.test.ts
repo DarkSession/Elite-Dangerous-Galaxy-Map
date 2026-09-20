@@ -322,8 +322,10 @@ describe('the crossing labels', () => {
     for (const placement of placed) {
       expect(onTheFrame(placement.placed.box, frame.viewport)).toBe(true);
     }
-    // The crossing at x = 1,000 sits 1,500 light years right of the cursor, which the
-    // narrow frame does not reach, so neither it nor its label is placed.
+    // The crossing at x = 1,000 sits 1,500 light years right of the cursor. The reach
+    // gate does not drop it: `gridLabelReach(1500, 1000)` reads 0.25. The quad gate of
+    // `planePlacement` drops it, because the whole label lies past the right edge of
+    // this narrow frame. That is the gate this test reads.
     expect(placed.some((placement) => placement.text === '1,000 : 0 : 0')).toBe(false);
   });
 

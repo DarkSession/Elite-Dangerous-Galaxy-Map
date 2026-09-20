@@ -124,9 +124,10 @@ they run again and the constants they give are written back. The counts they rep
   and **1,000**, and the delta makes a reading strictly inside the band a condition of the
   test, so the implementation must measure the anchor range rather than assume it.
 
-  The two close rungs are the measured ones. The anchor range is about **2.3 times the
-  zoom** at a pitch of 35 degrees, because the anchor is the part of the region the frame
-  shows and that part sits up the frame. 2,500 light years reads an anchor at 6,504.6, which
+  The two close rungs are the measured ones. The anchor range runs far past the zoom at a
+  pitch of 35 degrees, because the anchor is the part of the region the frame shows and that
+  part sits up the frame. The ratio is not one figure: it runs from 1.17 at 20,000 light
+  years to 2.60 at 2,500, and over the close end `range = 4,400 + 0.84 * zoom` fits it. 2,500 light years reads an anchor at 6,504.6, which
   is strictly inside the band, and 1,000 is the first rung at which the label leaves the
   page. A first reading of this bullet named 6,500 and 3,000, which read 10,160.61 and
   6,940.58: the first is the top of the fade and the second still carries a label.
