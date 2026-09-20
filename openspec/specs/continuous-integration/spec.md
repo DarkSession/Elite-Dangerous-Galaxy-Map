@@ -78,7 +78,7 @@ After the checks pass on a push to `main`, the workflow SHALL publish the demo s
 to the repository's GitHub Pages site. It SHALL publish nothing from a pull request.
 
 The publish SHALL take the output of the demo site build, which is **`apps/demo/dist/`**
-and whose base path is `/Elite-Dangerous-Galaxy-Map/`, and SHALL upload that directory as
+and whose base path is `/Galaxy-Map/`, and SHALL upload that directory as
 the Pages artifact. It SHALL NOT upload `packages/galaxy-map/dist/`, which is the library.
 
 The workflow SHALL hold the least permissions the publish needs: read on the contents,

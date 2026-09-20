@@ -125,7 +125,7 @@ jobs:
         run: pnpm build:demo-site
 
       # `apps/demo/dist/` is the demo site. `apps/demo/vite.config.ts` gives it the base
-      # path `/Elite-Dangerous-Galaxy-Map/`, which is the path the Pages address serves
+      # path `/Galaxy-Map/`, which is the path the Pages address serves
       # it from. `packages/galaxy-map/dist/` is the library, and the publish does not
       # upload it.
       - name: Upload the demo site

@@ -1,4 +1,4 @@
-Required Notice: Copyright 2026 Dark Session (https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map)
+Required Notice: Copyright 2026 Dark Session (https://github.com/Elite-Dangerous-Almanac/Galaxy-Map)
 
 # PolyForm Noncommercial License 1.0.0
 

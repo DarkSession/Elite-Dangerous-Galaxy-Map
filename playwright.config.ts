@@ -71,7 +71,7 @@ export default defineConfig({
     // The demo site is served under the base path its GitHub Pages address carries, so
     // every navigation in `e2e/` is relative to it. A path that starts with `/`
     // resolves against the origin and misses the base path.
-    baseURL: 'http://localhost:4173/Elite-Dangerous-Galaxy-Map/',
+    baseURL: 'http://localhost:4173/Galaxy-Map/',
   },
   projects: [
     {
@@ -165,7 +165,7 @@ export default defineConfig({
     command: process.env['GALAXY_MAP_E2E_BUILT']
       ? 'pnpm preview'
       : 'pnpm build:demo-site && pnpm preview',
-    url: 'http://localhost:4173/Elite-Dangerous-Galaxy-Map/',
+    url: 'http://localhost:4173/Galaxy-Map/',
     reuseExistingServer: false,
     timeout: 300_000,
   },

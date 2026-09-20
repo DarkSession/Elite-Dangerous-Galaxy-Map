@@ -1532,7 +1532,7 @@ reader to find it.
 - **WHEN** a browser test opens the built demo site with every request to another host
   blocked and recorded, reads the `src` the image element resolved to before `ready`
   settles, and a unit test reads the built `apps/demo/dist/` for the file
-- **THEN** the resolved `src` starts with `/Elite-Dangerous-Galaxy-Map/`, the file is in the
+- **THEN** the resolved `src` starts with `/Galaxy-Map/`, the file is in the
   demo site build, and no request was blocked.
 
   The reading is of the resolved `src` and not of the page source, because the page builds

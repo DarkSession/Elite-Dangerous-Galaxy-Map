@@ -6,12 +6,12 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map.git",
+    "url": "git+https://github.com/Elite-Dangerous-Almanac/Galaxy-Map.git",
     "directory": "packages/galaxy-map"
   },
-  "homepage": "https://darksession.github.io/Elite-Dangerous-Galaxy-Map/",
+  "homepage": "https://elite-dangerous-almanac.github.io/Galaxy-Map/",
   "bugs": {
-    "url": "https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map/issues"
+    "url": "https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/issues"
   },
   "keywords": [
     "elite-dangerous",

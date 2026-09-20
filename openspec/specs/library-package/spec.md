@@ -370,14 +370,14 @@ cell table alone is 199 KiB, which no room under 70,000 absorbs.
 
 `pnpm build:demo-site` SHALL build the demo page as a web application: the HTML file, the
 page module, the HUD, the demo data sets and the assets. It SHALL write to
-**`apps/demo/dist/`**. It SHALL set the base path to `/Elite-Dangerous-Galaxy-Map/`, which is where the
+**`apps/demo/dist/`**. It SHALL set the base path to `/Galaxy-Map/`, which is where the
 repository's GitHub Pages site serves from, so every asset URL in the built HTML starts
 with that path.
 
 The demo site SHALL be the build the browser suite serves. `pnpm preview` SHALL serve the
 demo site build on port 4173, under that base path, and the Playwright configuration SHALL
 build the demo site before it starts. The suite's base URL SHALL therefore be
-`http://localhost:4173/Elite-Dangerous-Galaxy-Map/`, and every navigation in `e2e/` SHALL
+`http://localhost:4173/Galaxy-Map/`, and every navigation in `e2e/` SHALL
 be **relative** to it. A path that starts with `/` resolves against the origin and misses
 the base path.
 
@@ -436,7 +436,7 @@ bundle tests of the requirement above do exercise it: they build a host entry ag
 #### Scenario: The demo site carries the base path
 
 - **WHEN** a test runs the demo site build and reads the emitted `index.html`
-- **THEN** every `src` and `href` of a built asset starts with `/Elite-Dangerous-Galaxy-Map/`
+- **THEN** every `src` and `href` of a built asset starts with `/Galaxy-Map/`
 
 #### Scenario: The browser suite serves the demo site
 

@@ -702,7 +702,7 @@ several workers, then the timed specs and Firefox on one worker.
 
 After the checks pass on a push to `main`, the workflow builds the demo site again and
 publishes `apps/demo/dist/` to the repository's GitHub Pages address,
-<https://darksession.github.io/Elite-Dangerous-Galaxy-Map/>. It publishes nothing from a
+<https://elite-dangerous-almanac.github.io/Galaxy-Map/>. It publishes nothing from a
 pull request, and it publishes no part of `packages/galaxy-map/dist/`, which is the
 library.
 
