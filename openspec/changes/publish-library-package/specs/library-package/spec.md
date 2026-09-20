@@ -510,9 +510,11 @@ and SHALL NOT expect it in the package directory of a fresh checkout. `pnpm test
 before anything is packed or built. The repository holds `e2e/`, `tests/`, `scripts/` and the demo app
 beside the package, and a root with no licence states no terms for any of them.
 
-`package.json` SHALL name those terms in `license`. Where the terms are a published
-licence with an SPDX identifier, `license` SHALL be that identifier; otherwise it SHALL be
-`SEE LICENSE IN LICENSE.md`, which npm accepts for terms that are not on the SPDX list.
+`package.json` SHALL point `license` at the file, as `SEE LICENSE IN LICENSE.md`, and
+SHALL NOT name the SPDX identifier of the published text. The identifier would say the
+terms are that text alone, and the file also states what those terms do not cover. npm
+accepts this form and prints no warning. The file it names SHALL be one the tarball
+carries, or the reference points at nothing.
 
 The tarball SHALL carry `LICENSE.md`, `THIRD_PARTY_NOTICES.md` and the package's own
 `README.md` beside the built output. A user who installs the package SHALL be able to read

@@ -385,11 +385,14 @@ candidate and carries an SPDX identifier.
 names `THIRD_PARTY_NOTICES.md` and Frontier Developments. The published text is about the
 licensor's own software, and the tarball carries other holders' data and art beside it. A
 reader who opens `LICENSE.md` alone would otherwise take it for the terms of everything in
-the package. The section is informational and adds no condition, so the SPDX identifier
-still describes the terms.
+the package. The section is informational and adds no condition.
 
-`license` in `package.json` takes the SPDX identifier where npm accepts it, and
-`SEE LICENSE IN LICENSE.md` otherwise. The task list checks which, rather than assuming.
+**`license` in `package.json` refers to the file**, as `SEE LICENSE IN LICENSE.md`. npm
+accepts the SPDX identifier too and warns about neither form, so this is a choice and not
+a constraint. The identifier says the terms are the published text alone, and a reader who
+follows it to the PolyForm site reads that text without the section above. The file
+reference sends every reader to the one file that carries both. `files` already lists
+`LICENSE.md`, so the reference points at a file the tarball carries.
 
 **The maintainer approves the final text before the first publish.** This is their call,
 not the implementation's, and it is the one step of this change that a person signs off.

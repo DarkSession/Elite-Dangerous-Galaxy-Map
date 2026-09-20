@@ -571,9 +571,15 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       `SEE LICENSE IN LICENSE.md` otherwise. Check which, rather than assuming, by running
       the packed-tarball check and reading npm's warning output
 
-      **npm accepts the SPDX identifier.** `license` is `PolyForm-Noncommercial-1.0.0`, and
-      `npm pack --dry-run` prints no licence warning, so `SEE LICENSE IN LICENSE.md` is not
-      needed. Checked by running the pack and reading the whole output.
+      **`license` is `SEE LICENSE IN LICENSE.md`.** npm accepts the SPDX identifier
+      `PolyForm-Noncommercial-1.0.0` and prints no warning for it either, which the pack
+      output showed. The maintainer chose the file reference on 2026-09-20: the identifier
+      says the terms are the published PolyForm text alone, and `LICENSE.md` also states
+      what those terms do not cover, which is the data and the art of other holders. A
+      reader who follows the identifier to the PolyForm site reads the text without that
+      section. Checked by running the pack with each form and reading the whole output;
+      neither prints a licence warning. `tests/packed-tarball.test.ts` reads the value and
+      checks the tarball carries the file it names.
 
 - [x] 6.4 Write `packages/galaxy-map/README.md`: what the package is, how it is installed,
       what it needs beside itself, a smallest working example, the `nebulae` option and

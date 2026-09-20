@@ -153,7 +153,11 @@ describe('the packed tarball', () => {
     const terms = readFileSync(join(root, 'LICENSE.md'), 'utf8');
     expect(terms).toContain('PolyForm Noncommercial License 1.0.0');
     expect(terms).toContain('Any noncommercial purpose is a permitted purpose.');
-    expect(manifest.license).toBe('PolyForm-Noncommercial-1.0.0');
+    // `license` refers to the file rather than naming the SPDX identifier. The identifier
+    // would say the terms are the published PolyForm text alone, and the file also states
+    // what those terms do not cover. npm accepts this form and prints no warning.
+    expect(manifest.license).toBe('SEE LICENSE IN LICENSE.md');
+    expect(packed).toContain(manifest.license.replace('SEE LICENSE IN ', ''));
     // The terms are this project's own work. The map also carries data and art of other
     // holders, which this project cannot license, so the file names the notices and the
     // holder of the game data. A reader of the licence alone must not read it as terms
