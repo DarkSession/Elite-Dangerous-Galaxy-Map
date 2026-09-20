@@ -213,9 +213,9 @@ from the active list before task 1.1.
       block path and the decoding path into `createNebulaVolumeTextures`, because the
       choice needs a context and the loader has none. That call is synchronous, so all
       33 decodes now run inside it.
-      **What it costs.** Four readings on the development card give a sum of 15.0, 16.5,
-      17.5, 17.6 and 17.2 ms in one task, with a worst single asset of 1.8 to 2.9 ms. The one
-      task therefore straddles the 16.7 ms frame budget. It is paid once, at load, after
+      **What it costs.** Nineteen readings on the development card give a sum of 14.5 to
+      19.2 ms in one task, with a worst single asset of 1.8 to 2.9 ms. The one task
+      therefore straddles the 16.7 ms frame budget. It is paid once, at load, after
       the first frame, and nothing waits on the set, so it shows as one long frame and
       in no other way. It is the normal path on a GPU that carries ETC or ASTC rather
       than S3TC and RGTC, where a slower CPU makes it worse.
@@ -231,9 +231,16 @@ from the active list before task 1.1.
       taken — every other test in that file runs on the block path, where the decode
       count is 0 and any decode assertion passes vacuously. It asserts on the **sum**,
       which is what one task costs, and not on the per-asset worst, which no longer
-      describes a task. Its bound is 22 ms, the worst of the four readings plus a
-      quarter, against a spread of 16 percent. It is a ratchet against the decode
-      growing and not a promise that the frame budget holds.
+      describes a task. Its bound is 24 ms, the worst of the nineteen readings plus a
+      quarter. It is a ratchet against the decode growing and not a promise that the
+      frame budget holds.
+      **The bound was set from an understated tail and is corrected.** The first four
+      readings ran 15.0 to 17.6 ms and put the bound at 22. The gate then sampled 15.0,
+      15.3, 15.9, 16.4 and 19.2, and nine further runs gave 14.5 to 16.9, so the real
+      worst of nineteen is 19.2 and a bound of 22 sat 14 percent above it rather than
+      the quarter it claimed. A ratchet that close to the tail trips on a busy machine
+      and not on a change to the code. The rule did not move; the worst it is taken from
+      is corrected, and the bound follows it to 24.
       Two comments that claimed one asset a task are corrected:
       `src/render/nebula-volumes.ts` now states what runs in the one call and why it
       cannot sit in the loader, and the decode paragraph of `e2e/nebula-cost.spec.ts`
@@ -334,25 +341,40 @@ from the active list before task 1.1.
       68 files and 66 volumes, so both read true again and neither is edited.
       `THIRD_PARTY_NOTICES.md` — "both in `.dds` block form".
 - [x] 5.4b **One cost test measures with an instrument that cannot hold its bound, and
-      this change gave it a better one.** `the box costs the same from inside as from
-      outside` in `e2e/nebula-cost.spec.ts` compares two frame means of one run of 120
-      frames each, and asserts the difference is under 20 percent. Across the runs of
-      this change it read 3.2, 12.9, 0.8 and 26.6 percent, and the last one failed the
-      whole suite. Five repeats of the test, unchanged, in one process, read 45.1, 3.5,
-      3.6, 17.1 and 20.7 percent. The reading is therefore noise, not the swap: the
-      share moves by 41 points while nothing in the tree moves at all, and the 0.8
-      percent reading came after the swap had landed.
-      The test now takes the median of five runs of 120 frames at each camera, which is
-      the instrument `the worst camera holds the fetch bound` takes in the same file.
-      Five repeats of the new instrument read 15.03, 15.13, 15.15, 15.19 and 15.34
-      percent, a spread of 0.3 points. The whole-suite run reads 3.8 percent, from 0.468
-      ms outside and 0.487 inside. The share depends on what ran before, because the
-      card holds a different clock, so it is repeatable inside one context and not
-      across two. Both contexts hold the bound with room.
-      **The bound stays at 20 percent.** No bound moved, and none was softened. The test
-      predates this change; it came in with `Replace the nebula sprites with marched
-      volumes`, so the weak instrument is not this change's work. This change met it,
-      and a flaky guard is worth no more than no guard.
+      this change gave it one that can.** `the box costs the same from inside as from
+      outside` in `e2e/nebula-cost.spec.ts` read a frame mean at one camera and then the
+      other, and asserts the difference is under 20 percent.
+      **What moves is a ramp at the start of the test, not the swap.** The card runs
+      fast for the first frames of the file, so whichever camera is read first is read
+      high. Nine fresh runs of the file gave the first camera 0.483 to 0.546 eight times
+      and 0.7225 once, 48 percent above the rest, and that run failed on a share of
+      0.285. Across this change's whole-suite runs the test read 3.2, 12.9, 0.8 and 26.6
+      percent, and the 0.8 came after the swap had landed, so the swap is not what moves
+      it. The test came in with `Replace the nebula sprites with marched volumes`, so
+      the weak instrument is not this change's work either. This change met it.
+      **A median of five did not fix it.** It was tried first. Five repeats inside one
+      process read 15.03 to 15.34 percent and looked tight, but repeats inside one page
+      share the ramp, so they measure nothing about it. Across fresh processes the two
+      medians still spread 28 points, because both medians sit on the same slope at
+      different points on it. A median at one camera shrinks the ramp; it does not
+      cancel it.
+      **What the test does now.** The two cameras alternate inside one `page.evaluate`,
+      nine times over 60 frames each, and the test pools the two sums over 540 frames
+      each. A ramp that falls through the call leaves both sums, so it cancels out of
+      their difference. This is the pattern `the vertex march is a small share of the
+      pass` takes in the same file, for the same problem. One warm-up read of 60 frames
+      is thrown away before the rounds start.
+      **The residual, measured across fresh processes and not inside one.** Nine fresh
+      runs give a pooled share of 0.068, 0.077, 0.077, 0.079, 0.082, 0.084, 0.095, 0.101
+      and 0.111: a spread of **4.4 points**, against 28 points for the two medians over
+      the same nine runs. The worst of the nine is a little over half the bound. In the
+      worst run the nine per-round shares still spread 0.378, and the pooled share reads
+      0.111, which is the pooling doing its work.
+      A whole-suite run reads 0.110, inside that band. The two medians did not manage
+      that: they read 15 percent with the file run alone and 3.8 percent in a whole
+      suite, because each median sat on a different part of the ramp. The pooled share
+      does not depend on what ran before it.
+      **The bound stays at 20 percent.** No bound moved and none was softened.
 
 - [x] 5.5 Verify the whole gate: `pnpm lint`, `pnpm exec vitest run`, `pnpm build`,
       `pnpm test:e2e` and `openspec validate store-nebula-volumes-as-slice-arrays`, and that

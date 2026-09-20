@@ -113,12 +113,15 @@ test('the volume decode holds the frame budget', async ({ page }) => {
 // regression for the owner.
 //
 // The assertion is therefore on the **sum** and not on the per-asset worst, because the
-// sum is what one task costs. Four readings on this card give 15.0, 16.5, 17.5 and 17.6
-// ms for the sum and 1.8 to 2.9 ms for the worst single asset, so the one task straddles
-// the 16.7 ms frame budget and the 33 decodes inside it do not. The spread is 16 percent
-// of the reading, so the bound is the worst of the four plus a quarter, at 22 ms. It is
-// a ratchet against the decode growing, not a promise that the frame budget holds.
-const FALLBACK_DECODE_MS = 22;
+// sum is what one task costs. Nineteen readings on this card run **14.5 to 19.2 ms**
+// for the sum, with 1.8 to 2.9 ms for the worst single asset, so the one task straddles
+// the 16.7 ms frame budget and the 33 decodes inside it do not. The tail is 32 percent
+// above the floor, and a first reading of four samples missed it by 1.6 ms and set the
+// bound at 22, which is 14 percent above the true worst. A ratchet set from an
+// understated tail trips on a busy machine and not on a change to the code, so the
+// bound is now the worst of the nineteen plus a quarter. The rule is the one the bound
+// always stated; the worst it is taken from is corrected.
+const FALLBACK_DECODE_MS = 24;
 
 test('the fallback decode is one task', async ({ page }) => {
   await page.addInitScript(
@@ -276,55 +279,70 @@ test('the worst camera holds the fetch bound', async ({ page }) => {
 // fragments and a camera outside it gets one layer and not two. The failure this guards
 // is the back faces drawing as well as the front, which doubles the fragments.
 //
-// The test read a mean of one run at each camera, and that instrument cannot resolve a
-// difference of 20 percent. Five repeats of it, unchanged, gave shares of 0.45, 0.035,
-// 0.036, 0.17 and 0.21, so it passed or failed at random. It now takes the median of
-// five runs at each camera, which is the instrument `the worst camera holds the fetch
-// bound` takes above. The bound stays at 20 percent.
+// The test read a mean of one run at each camera, one camera after the other, and that
+// instrument cannot resolve a difference of 20 percent. The card ramps at the start of
+// the test, so whichever camera is read first is read high. Nine fresh runs of this
+// file gave the first camera 0.483 to 0.546 eight times and 0.7225 once, which is 48
+// percent above the rest, and that one run failed on a share of 0.285. A median of five
+// at one camera and then five at the other does not absorb the ramp; it only shrinks
+// it, because both medians sit on the same slope at different points on it.
 //
-// Five repeats of the median instrument give shares of 0.1503, 0.1513, 0.1515, 0.1519
-// and 0.1534, a spread of 0.3 points against 41 points before. The medians in those
-// runs are 1.35 ms outside and 1.59 ms inside. A whole-suite run reads 0.468 and
-// 0.487, a share of 3.8 percent. Both the absolute cost and the share depend on what
-// ran before, because the card holds a different clock, so the share is repeatable
-// inside one context and not across two. Both contexts hold the bound with room. The
-// means of one run read 0.495 and 0.568 after this change, and 0.614 and 0.655 before
-// it.
+// The two cameras therefore alternate inside one page call, nine times over 60 frames
+// each, and the test pools the two sums over 540 frames each. A ramp that falls through
+// the call leaves both sums, so it cancels out of their difference. This is the pattern
+// `the vertex march is a small share of the pass` takes below, for the same problem.
+// The nine per-round shares print beside the pooled one, so a run where the ramp is
+// worse than usual is visible.
+//
+// Nine fresh runs of this file, each its own process, give a pooled share of 0.068,
+// 0.077, 0.077, 0.079, 0.082, 0.084, 0.095, 0.101 and 0.111, a spread of 4.4 points
+// against the 28 points the two medians gave across the same nine. The worst of the
+// nine sits at a little over half the bound. The per-round spread inside a run reaches
+// 0.378 in the worst of them and the pooled share still reads 0.111, which is the
+// pooling doing its work. A whole-suite run reads 0.110, inside that band, so the
+// reading does not depend on what ran before it.
 test('the box costs the same from inside as from outside', async ({ page }) => {
   await openMap(page, '');
   await nebulaeAlone(page);
 
   // Barnard's Loop is 200 light years across the radius. At 260 light years the box
   // covers the whole frame from outside it, and at 120 the camera is inside it.
-  const read = async (distance: number): Promise<number> =>
-    page.evaluate(
-      (where) => {
-        window.__galaxyMap?.setView?.({
-          cursor: where.cursor,
-          distance: where.distance,
-          pitch: 0,
-          yaw: 0,
-        });
+  const read = async (): Promise<{
+    shares: number[];
+    outsideTotal: number;
+    insideTotal: number;
+  }> =>
+    page.evaluate((cursor) => {
+      const measure = (distance: number): number => {
+        window.__galaxyMap?.setView?.({ cursor, distance, pitch: 0, yaw: 0 });
         window.__galaxyMap?.drawNow?.();
-        const runs: number[] = [];
-        for (let run = 0; run < 5; run += 1) {
-          runs.push(
-            window.__galaxyMap?.measureFrames?.(120) ?? Number.POSITIVE_INFINITY,
-          );
-        }
-        runs.sort((a, b) => a - b);
-        return runs[2] as number;
-      },
-      { cursor: BARNARDS_LOOP, distance },
-    );
+        return window.__galaxyMap?.measureFrames?.(60) ?? 0;
+      };
 
-  const outside = await read(260);
-  const inside = await read(120);
-  const share = Math.abs(inside - outside) / Math.max(inside, outside);
-  console.log('the box cost', { outside, inside, share });
+      // The steepest part of the ramp, thrown away before the rounds start.
+      measure(260);
 
-  expect(outside).toBeGreaterThan(0);
-  expect(inside).toBeGreaterThan(0);
+      const shares: number[] = [];
+      let outsideTotal = 0;
+      let insideTotal = 0;
+      for (let round = 0; round < 9; round += 1) {
+        const outside = measure(260);
+        const inside = measure(120);
+        outsideTotal += outside;
+        insideTotal += inside;
+        shares.push(Math.abs(inside - outside) / Math.max(inside, outside));
+      }
+      return { shares, outsideTotal, insideTotal };
+    }, BARNARDS_LOOP);
+
+  const { shares, outsideTotal, insideTotal } = await read();
+  const share =
+    Math.abs(insideTotal - outsideTotal) / Math.max(insideTotal, outsideTotal);
+  const spread = Math.max(...shares) - Math.min(...shares);
+  console.log('the box cost', { outsideTotal, insideTotal, share, shares, spread });
+
+  expect(outsideTotal).toBeGreaterThan(0);
+  expect(insideTotal).toBeGreaterThan(0);
   expect(share).toBeLessThan(0.2);
 });
 
