@@ -617,9 +617,16 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       implementation's, and both are acted on. Nothing read the "and the art" half of the
       new requirement: `Frontier` is in the section heading, so deleting the whole
       statement about the art passed every test. `tests/third-party-notices.test.ts` now
-      reads `volume art` and `KTX2` in the package file, and reads that the file names no
-      nebula at all. The package file's one source path lost the repository-root-relative
-      form task 3.6a set; it is back.
+      reads the body of the Frontier section and requires the word `art` and the holder's
+      name in it, and requires that the file names no nebula. The package file's one
+      source path lost the repository-root-relative form task 3.6a set; it is back.
+
+      **The maintainer then cut the format from that section.** It read that the art ships
+      as KTX2 arrays of BC4 and BC1 blocks beside a transfer function and an index. A
+      notice states who owns the work and on what terms; the container it ships in is no
+      part of that. The section now says the data and the art are Frontier's property, and
+      the test also requires that `KTX2` is absent. Checked by deleting `and the art it
+      draws` from the section and watching the reading fail.
 
       **The third note is the maintainer's.** The nebula section ended with "This notice
       records what the files are; it does not settle whether they may ship", and the

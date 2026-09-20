@@ -14,6 +14,15 @@ const read = (path: string): string =>
 const packageNotices = read('../packages/galaxy-map/THIRD_PARTY_NOTICES.md');
 const rootNotices = read('../THIRD_PARTY_NOTICES.md');
 
+/** The body of one `## ` section, up to the next heading or the end. */
+function section(notices: string, heading: string): string {
+  const start = notices.indexOf(`## ${heading}\n`);
+  expect(start, `the notices hold a ${heading} section`).toBeGreaterThan(-1);
+  const rest = notices.slice(start + heading.length + 4);
+  const end = rest.indexOf('\n## ');
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
 /** The `## ` headings of one file. */
 function headings(notices: string): string[] {
   return [...notices.matchAll(/^## (.+)$/gm)].map((match) => match[1] as string);
@@ -36,16 +45,20 @@ describe('the package notices', () => {
     expect(packageNotices).toContain('media-usage rules');
   });
 
-  test('name the art the tarball carries, and not the files it is in', () => {
+  test('state the terms of the art, not only of the data', () => {
     // The requirement says the package file names Frontier's terms for the game data
     // **and the art**. `Frontier` alone is in the heading, so a test that reads the name
     // passes with the whole statement about the art deleted.
-    for (const source of ['volume art', 'KTX2']) {
-      expect(packageNotices, `the notices name the ${source}`).toContain(source);
-    }
+    const frontier = section(
+      packageNotices,
+      'Elite Dangerous game data and visuals (Frontier Developments)',
+    );
+    expect(frontier).toMatch(/\bart\b/);
+    expect(frontier).toContain('Frontier Developments plc');
+
     // The art is game content under one set of terms, so no section is about one kind of
-    // it, and no file of it is named.
-    for (const absent of ['nebula', 'Nebula']) {
+    // it, and the notice names no file and no format.
+    for (const absent of ['nebula', 'Nebula', 'KTX2']) {
       expect(packageNotices, `the notices name ${absent}`).not.toContain(absent);
     }
   });

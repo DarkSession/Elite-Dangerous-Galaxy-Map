@@ -55,11 +55,8 @@ SOFTWARE.
 
 ## Elite Dangerous game data and visuals (Frontier Developments)
 
-The galaxy this map draws is the game's galaxy. The data it reads and the art it draws
-are of that galaxy, and both are the property of **Frontier Developments plc**. This
-covers the region geometry the tables above describe, the object records the package
-carries and the volume art those records draw, which the package ships as KTX2 arrays of
-BC4 and BC1 blocks beside a transfer function and an index.
+The galaxy this map draws is the game's galaxy. The data the package reads and the art
+it draws are the property of **Frontier Developments plc**.
 
 The map uses them under Frontier's
 [media-usage rules](https://forums.frontier.co.uk/threads/elite-dangerous-media-usage-rules.510879/),
