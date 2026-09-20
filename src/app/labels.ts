@@ -249,9 +249,14 @@ export function farthestPlaneRange(view: View, viewport: Viewport): number {
  *   some part of the frame could carry a label at an opacity above 0.
  *
  * The second half reads the pitch and the camera's height, which a zoom floor cannot. At
- * a pitch of 89 degrees and a zoom of 4,000 light years the whole frame lies inside the
- * range floor and the sweep is skipped; at a pitch of 20 degrees and the same zoom the
- * frame holds the horizon and the sweep runs.
+ * a pitch of 89 degrees and a zoom of 2,500 light years the corner rays meet the plane at
+ * about 3,900 light years, which is under the floor, so the whole frame lies inside it and
+ * the sweep is skipped; at a pitch of 20 degrees and the same zoom the frame holds the
+ * horizon and the sweep runs.
+ *
+ * The example was a zoom of 4,000 light years against a floor of 8,000. The corner rays of
+ * that view reach 6,243 light years, which clears the floor of 5,000, so it no longer reads
+ * the gate it is there for.
  */
 export function labelSweepRuns(view: View, viewport: Viewport): boolean {
   return (

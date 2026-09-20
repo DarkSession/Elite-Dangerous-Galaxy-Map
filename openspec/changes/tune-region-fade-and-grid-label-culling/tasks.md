@@ -19,17 +19,20 @@
 
 ## 2. The region labels
 
-- [ ] 2.1 Update the existing `labelRangeFade` test in `src/app/labels.test.ts` to the
+- [x] 2.1 Update the existing `labelRangeFade` test in `src/app/labels.test.ts` to the
       scenario "The range fade reads its two figures": 0 at 4,000 and 5,000, 0.5 at 6,500,
       1 at 8,000 and 20,000. This is the CPU reading of the fade, and `labelRangeFade` and
       `labelSweepRuns` need no change themselves. Verify the file passes.
-- [ ] 2.2 Fix the doc comment on `labelSweepRuns` in `src/app/labels.ts`, which states
+- [x] 2.2 Fix the doc comment on `labelSweepRuns` in `src/app/labels.ts`, which states
       that the whole frame lies inside the range floor at a pitch of 89 degrees and a zoom
       of 4,000 light years. Against the floor of 5,000 the corner rays of that view reach
       6,243 light years. Write the new example, a zoom of 2,500 light years, where the
       corners reach about 3,900. Verify by reading the comment against the test in 2.3.
-- [ ] 2.3 Update the unit scenario for the sweep gate to a zoom of 2,500 light years, and
+      Measured: the corners reach 6,242.66 light years at 4,000 and 3,901.66 at 2,500, at
+      1920x1080.
+- [x] 2.3 Update the unit scenario for the sweep gate to a zoom of 2,500 light years, and
       verify the sweep does not run at a pitch of 89 degrees there and does run at 20.
+      Measured: 3,901.66 light years at a pitch of 89, and the horizon at a pitch of 20.
 
 ## 3. The recorded views
 
