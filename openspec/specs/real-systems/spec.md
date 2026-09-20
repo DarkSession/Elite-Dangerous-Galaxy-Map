@@ -99,10 +99,16 @@ The library SHALL own the render context, the scene data, the view state, the co
 the label overlay, the selection state, the HUD when the option asks for it, and the
 frame loop. The library SHALL NOT read or write
 `window.location`, and an ESLint rule SHALL fail the lint on `window.location` in every
-source file outside `src/app/main.ts`. A lint rule is what holds the boundary, because
-the production build puts the page and the library in one bundle, where a search of the
-served source cannot tell them apart. The project already holds its scene-data import
-rule this way.
+source file of the library package, **with no exception**.
+
+The rule held one exception, `src/app/main.ts`, because the demo page and the library sat
+in one `src/` tree and one bundle, where a search of the served source could not tell them
+apart. The demo page is now a module of a different package, `apps/demo/`, so the rule
+over the library package needs no hole in it. The demo page still owns the URL and still
+reads `window.location`; the rule simply does not reach it.
+
+The lint rule stays, rather than being dropped as unnecessary, because a library module
+that read the location would still compile and still bundle. The rule is what fails it.
 
 The page owns the URL fragment: it parses the fragment, gives the view to `setView`, and
 writes the fragment back from `onViewChange`. The requirement "View state in the URL
@@ -216,8 +222,15 @@ gone and the two rows above replace them.
 #### Scenario: The lint holds the library away from the location
 
 - **WHEN** `pnpm lint` runs over the tree, and again over a tree where
-  `src/app/create-map.ts` reads `window.location.hash`
+  `packages/galaxy-map/src/app/create-map.ts` reads `window.location.hash`
 - **THEN** the first run is clean and the second fails on that line
+
+#### Scenario: The rule holds no exception inside the library package
+
+- **WHEN** a unit test reads the ESLint configuration and lists the files the
+  `window.location` rule ignores
+- **THEN** the list is empty, and the rule's file pattern covers every source file of
+  `packages/galaxy-map/src/`
 
 #### Scenario: The library makes its own label host
 
@@ -1518,7 +1531,7 @@ reader to find it.
 
 - **WHEN** a browser test opens the built demo site with every request to another host
   blocked and recorded, reads the `src` the image element resolved to before `ready`
-  settles, and a unit test reads the built `dist-demo/` for the file
+  settles, and a unit test reads the built `apps/demo/dist/` for the file
 - **THEN** the resolved `src` starts with `/Elite-Dangerous-Galaxy-Map/`, the file is in the
   demo site build, and no request was blocked.
 
@@ -1530,3 +1543,4 @@ reader to find it.
 - **WHEN** a browser test builds a map with no `loadingImage` and reads the canvas's
   parent before `ready` settles
 - **THEN** the parent holds no image element
+

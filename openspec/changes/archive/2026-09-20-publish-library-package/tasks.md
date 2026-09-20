@@ -560,12 +560,13 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       from the pack of a temporary package directory, never from
       `packages/galaxy-map/LICENSE.md`.
 
-- [ ] 6.2 **The maintainer approves the licence text before the first publish.** Record
+- [x] 6.2 **The maintainer approves the licence text before the first publish.** Record
       the approval here with the date. This is not the implementation's call
 
-      **Open, and the maintainer's to close.** The text is in place at `LICENSE.md` and the
-      identifier is in `package.json`. The implementation does not tick this box. Read the
-      file and write the approval and the date here before the first publish.
+      **Approved by the maintainer on 2026-09-20.** The text is `LICENSE.md`, the PolyForm
+      Noncommercial License 1.0.0 with the section that says what those terms cover. The
+      maintainer approved both notices files on the same day: the package's and the
+      repository's.
 
 - [x] 6.3 Set `license` in `package.json`: the SPDX identifier where npm accepts it, and
       `SEE LICENSE IN LICENSE.md` otherwise. Check which, rather than assuming, by running
@@ -933,6 +934,34 @@ Neither `e2e/` nor `tests/` moves. Both hold paths that do, and so does the page
       `README.md` records all three in its new **The release** section, and the publish
       workflow's header comment names them again. The first dispatch fails at its last step
       without them.
+
+      **A fourth thing comes before them, which this change missed.** npm Trusted
+      Publishing is set on a package, and the registry must already hold that package. On
+      2026-09-20 `npm view @elite-dangerous-almanac/galaxy-map versions` answered 404, so
+      there is nothing to attach a publisher to. **Version 0.6.0 is published by hand**,
+      from a maintainer's machine with an npm token, and the Trusted Publisher is created
+      after that. The workflow then takes over from 0.6.1, which is what
+      `scripts/next-version.mjs` computes against a registry holding 0.6.0 alone. A local
+      publish carries **no provenance**, because provenance needs the OIDC token a runner
+      gets and a laptop does not. The `continuous-integration` spec says three things live
+      outside the repository; it now needs the fourth.
+
+      **0.6.0 is published, 2026-09-20.** The maintainer published it by hand. The
+      registry answers `versions ['0.6.0']` and `latest 0.6.0`, with 165 files and
+      4,330,417 bytes unpacked, `license SEE LICENSE IN LICENSE.md` and no attestation,
+      which is the expected reading for a publish with no provenance. The published
+      tarball is **byte-identical** to the one this dev container built and the browser
+      suite gated: both are sha1 `a9e6648191a21903132e727edd04040d480872c1`.
+
+      A fresh `npm install @elite-dangerous-almanac/galaxy-map` in an empty directory adds
+      3 packages, reports 0 vulnerabilities, and carries `dist/index.js`,
+      `dist/nebulae.js`, `dist/testing.js`, `dist/types/index.d.ts`, `LICENSE.md`,
+      `THIRD_PARTY_NOTICES.md` and `README.md`. The main entry imports in Node and exports
+      5 names, of which `createGalaxyMap` is a function. The three `exports` keys are the
+      three the spec names.
+
+      `node scripts/next-version.mjs 0.6.0 '["0.6.0"]'` prints `0.6.1`, so the first
+      dispatch releases that.
 
 
 ## 12. Before review
