@@ -384,6 +384,11 @@ from the active list before task 1.1.
 
 ## 6. The review gate
 
-- [ ] 6.1 Run the `openspec-implementation-reviewer` subagent over the finished change and
+- [x] 6.1 Run the `openspec-implementation-reviewer` subagent over the finished change and
       act on its findings. On BLOCK, fix and re-run it. Report the verdict and every finding,
-      including the ones not acted on and why.
+      including the ones not acted on and why. Done: the gate ran three times. It blocked
+      twice, on the fallback decode tasking and on a flaky box-cost instrument, and returned
+      APPROVE WITH NOTES on the third pass. Its three notes were the instrument's narrower
+      margin, which was left, a decode floor of 14.2 ms against a recorded 14.5, which was
+      corrected in `3851af3`, and the standing note that the fallback regression needs the
+      owner's conscious acceptance, which the owner has now given.

@@ -23,6 +23,19 @@ function projectText(name: string): string {
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
 
+/** The spec files the Firefox project's `testMatch` holds, in their written order. */
+function firefoxSpecs(): string[] {
+  const list = /const firefoxSpecs = \[([^\]]*)\]/.exec(config);
+  expect(list, 'the configuration holds no firefoxSpecs list').not.toBeNull();
+  const inside = (list as RegExpExecArray)[1] as string;
+  return [...inside.matchAll(/'([^']+)'/g)].map((found) => found[1] as string);
+}
+
+/** Whether one spec of `e2e/` compares against a committed baseline image. */
+function holdsBaseline(spec: string): boolean {
+  return readFileSync(join(root, 'e2e', spec), 'utf8').includes('toHaveScreenshot');
+}
+
 describe('the Firefox project', () => {
   const firefox = projectText('firefox');
 
@@ -34,11 +47,31 @@ describe('the Firefox project', () => {
     expect(firefox).toContain("dependencies: ['renderer-check']");
   });
 
-  test('runs the renderer spec and the paint budget spec and nothing else', () => {
-    expect(config).toMatch(
-      /const firefoxSpecs = \['00-renderer\.spec\.ts', 'paint-cost\.spec\.ts'\];/,
-    );
+  // The project reads the card, one paint time and one drawn frame. It reads a drawn
+  // frame because the two browsers do not share a WebGL driver: Firefox refuses
+  // `COMPRESSED_RED_RGTC1` on a `TEXTURE_2D_ARRAY` where Chromium accepts it, and that
+  // fault drew nothing at all in Firefox while every Chromium test passed.
+  test('runs the renderer, paint budget and nebula specs and nothing else', () => {
+    expect(firefoxSpecs()).toEqual([
+      '00-renderer.spec.ts',
+      'paint-cost.spec.ts',
+      'nebulae-firefox.spec.ts',
+    ]);
     expect(firefox).toContain('testMatch: firefoxSpecs');
+  });
+
+  // The spec's scenario **No spec the Firefox project runs holds a baseline image**.
+  // A drawn-frame reading here compares two frames the test takes itself, in the one
+  // browser, so it needs no snapshot. `e2e/look.spec.ts` holds the one committed
+  // baseline image, taken in Chromium, which a second browser cannot match pixel for
+  // pixel.
+  test('runs no spec that holds a baseline image', () => {
+    for (const spec of firefoxSpecs()) {
+      expect(holdsBaseline(spec), `${spec} holds a baseline image`).toBe(false);
+    }
+    // The positive control: the one spec that does hold a baseline image reads true, so
+    // a project that took it on would fail the loop above.
+    expect(holdsBaseline('look.spec.ts')).toBe(true);
   });
 
   test('takes none of the Chromium GPU flags', () => {

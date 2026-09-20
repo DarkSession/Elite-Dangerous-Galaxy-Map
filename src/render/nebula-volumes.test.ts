@@ -10,6 +10,7 @@ import {
   decodeBC4,
   nebulaAssetUrl,
   nebulaAssetUrlCount,
+  nebulaBlockFormats,
   NEBULA_KTX2_BC1,
   NEBULA_KTX2_BC4,
   NEBULA_KTX2_HEADER_BYTES,
@@ -48,45 +49,109 @@ interface Call {
   readonly args: readonly unknown[];
 }
 
-/** A context that records its calls and gives every constant its own number. */
+/** The `COMPRESSED_RED_RGTC1_EXT` the stub reports, which carries the density. */
+const STUB_BC4 = 0x8dbb;
+
+/** The `COMPRESSED_RGB_S3TC_DXT1_EXT` the stub reports, which carries the colour. */
+const STUB_BC1 = 0x83f0;
+
+/** What a test asks the stub context to do beyond answering every call. */
+interface FakeOptions {
+  /**
+   * The block formats whose `texStorage3D` on a `TEXTURE_2D_ARRAY` raises
+   * `INVALID_OPERATION`, which is what Firefox does with `COMPRESSED_RED_RGTC1`. A test
+   * names one format and leaves the other accepted, so the probe of each format is
+   * read on its own.
+   *
+   * The probe reads any error as a refusal, so the code the stub raises does not change
+   * what it does. The name is here because it is the fact this change records.
+   */
+  readonly refuse?: readonly number[];
+  /**
+   * Puts one error in the queue before the map runs. `getError` reports one error and
+   * clears it, so a probe that does not drain the queue reads this error as its own.
+   */
+  readonly errorBefore?: boolean;
+}
+
 /**
- * A context that answers every call. `textureLimit` makes `createTexture` give `null`
- * from that call on, which is what a context out of memory does.
+ * A context that answers every call and gives every constant its own number.
+ *
+ * `textureLimit` makes `createTexture` give `null` from that call on, which is what a
+ * context out of memory does. `blockFormats` makes it report the two compressed-texture
+ * extensions. `options` refuses a format or raises an error before the probe.
+ *
+ * The context answers `getError` and `getParameter`, because the block-format probe
+ * reads both. Every `SCREAMING_CASE` key reads an auto-numbered constant, so `NO_ERROR`
+ * is not 0 and the probe compares against `gl.NO_ERROR` and not against a literal.
  */
 function fakeContext(
   textureLimit = Number.POSITIVE_INFINITY,
   blockFormats = false,
+  options: FakeOptions = {},
 ): {
   gl: WebGL2RenderingContext;
   of(name: string): Call[];
+  /** The textures the context made and the code did not delete. */
+  live(): unknown[];
 } {
   const calls: Call[] = [];
   let textures = 0;
   const constants = new Map<string, number>();
   const state: Record<string, unknown> = {};
+  const constantOf = (key: string): number => {
+    const held = constants.get(key);
+    if (held !== undefined) return held;
+    const next = constants.size + 1;
+    constants.set(key, next);
+    return next;
+  };
+  const alive = new Set<unknown>();
+  const refused = new Set<number>(options.refuse ?? []);
+  const errors: number[] =
+    options.errorBefore === true ? [constantOf('INVALID_OPERATION')] : [];
+  let boundArray: unknown = null;
   const handler: ProxyHandler<Record<string, unknown>> = {
     get(_state, key): unknown {
       if (typeof key !== 'string') return undefined;
-      if (/^[A-Z][A-Z0-9_]*$/.test(key)) {
-        const held = constants.get(key);
-        if (held !== undefined) return held;
-        const next = constants.size + 1;
-        constants.set(key, next);
-        return next;
-      }
+      if (/^[A-Z][A-Z0-9_]*$/.test(key)) return constantOf(key);
       return (...args: unknown[]): unknown => {
         calls.push({ name: key, args });
         if (key === 'createTexture') {
           textures += 1;
-          return textures > textureLimit ? null : { name: key, at: textures };
+          if (textures > textureLimit) return null;
+          const texture = { name: key, at: textures };
+          alive.add(texture);
+          return texture;
+        }
+        if (key === 'deleteTexture') {
+          alive.delete(args[0]);
+          return null;
+        }
+        if (key === 'bindTexture') {
+          if (args[0] === constantOf('TEXTURE_2D_ARRAY')) boundArray = args[1] ?? null;
+          return null;
+        }
+        if (key === 'texStorage3D') {
+          if (
+            args[0] === constantOf('TEXTURE_2D_ARRAY') &&
+            refused.has(args[2] as number)
+          ) {
+            errors.push(constantOf('INVALID_OPERATION'));
+          }
+          return null;
+        }
+        if (key === 'getError') return errors.shift() ?? constantOf('NO_ERROR');
+        if (key === 'getParameter') {
+          return args[0] === constantOf('TEXTURE_BINDING_2D_ARRAY') ? boundArray : null;
         }
         if (key === 'getExtension') {
           if (!blockFormats) return null;
           if (args[0] === 'EXT_texture_compression_rgtc') {
-            return { COMPRESSED_RED_RGTC1_EXT: 0x8dbb };
+            return { COMPRESSED_RED_RGTC1_EXT: STUB_BC4 };
           }
           if (args[0] === 'WEBGL_compressed_texture_s3tc') {
-            return { COMPRESSED_RGB_S3TC_DXT1_EXT: 0x83f0 };
+            return { COMPRESSED_RGB_S3TC_DXT1_EXT: STUB_BC1 };
           }
           return null;
         }
@@ -97,6 +162,7 @@ function fakeContext(
   return {
     gl: new Proxy(state, handler) as unknown as WebGL2RenderingContext,
     of: (name) => calls.filter((call) => call.name === name),
+    live: () => [...alive],
   };
 }
 
@@ -293,7 +359,16 @@ describe('the upload', () => {
       const context = fakeContext(Number.POSITIVE_INFINITY, blocks);
       const gl = context.gl;
       createNebulaVolumeTextures(gl, oneAsset(8, 4));
-      const targets = context.of('texStorage3D').map((call) => call.args[0]);
+      // The block-format probe allocates on the same target before the upload does, so
+      // the two the upload made are the last two.
+      //
+      // The **count** is read as well as the targets. The probe allocates twice where
+      // both extensions are there, so a fast path that allocated nothing would still
+      // leave two calls and the last two would read the array target. That is the shape
+      // of the fault this change answers: a path whose textures are never specified.
+      const allocations = context.of('texStorage3D');
+      expect(allocations, `blocks ${String(blocks)}`).toHaveLength(blocks ? 4 : 2);
+      const targets = allocations.slice(-2).map((call) => call.args[0]);
       expect(targets, `blocks ${String(blocks)}`).toEqual([
         gl.TEXTURE_2D_ARRAY,
         gl.TEXTURE_2D_ARRAY,
@@ -326,6 +401,61 @@ describe('the upload', () => {
     expect(plain[1]?.args[8]).toBe(gl.RGBA);
     const storage = context.of('texStorage3D').map((call) => call.args[2]);
     expect(storage).toEqual([gl.R8, gl.RGBA8]);
+  });
+
+  // The spec's scenario **A refused format takes both volumes to the decode path**.
+  //
+  // A present extension is not proof. Firefox carries `EXT_texture_compression_rgtc`
+  // and refuses `COMPRESSED_RED_RGTC1` on a `TEXTURE_2D_ARRAY`, so `texStorage3D`
+  // fails and every volume stays unspecified. The refusal is read twice, once for each
+  // format, because a renderer that probed the first and trusted the second would keep
+  // the fault.
+  for (const refused of [
+    { what: 'the density format', format: STUB_BC4 },
+    { what: 'the colour format', format: STUB_BC1 },
+  ]) {
+    test(`decodes both volumes where the context refuses ${refused.what}`, () => {
+      const context = fakeContext(Number.POSITIVE_INFINITY, true, {
+        refuse: [refused.format],
+      });
+      const gl = context.gl;
+
+      expect(nebulaBlockFormats(gl)).toBeNull();
+      // The probe leaves no texture bound and none allocated.
+      expect(context.live()).toEqual([]);
+      expect(gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY)).toBeNull();
+
+      createNebulaVolumeTextures(gl, oneAsset(8, 4));
+      expect(context.of('compressedTexSubImage3D')).toHaveLength(0);
+      const plain = context.of('texSubImage3D');
+      expect(plain).toHaveLength(2);
+      expect(plain[0]?.args[8]).toBe(gl.RED);
+      expect(plain[1]?.args[8]).toBe(gl.RGBA);
+    });
+  }
+
+  // A function that reports a capability does not change the context it reports on.
+  test('leaves the context as the probe found it', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true);
+    const gl = context.gl;
+
+    expect(nebulaBlockFormats(gl)).toEqual({ density: STUB_BC4, colour: STUB_BC1 });
+    // One texture a format, and both deleted.
+    expect(context.of('createTexture')).toHaveLength(2);
+    expect(context.of('deleteTexture')).toHaveLength(2);
+    expect(context.live()).toEqual([]);
+    expect(gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY)).toBeNull();
+    expect(gl.getError()).toBe(gl.NO_ERROR);
+  });
+
+  // `getError` reports one error and clears it, so a probe that does not drain the
+  // queue first reads an error raised elsewhere as its own refusal.
+  test('does not read an error raised before it as a refusal', () => {
+    const context = fakeContext(Number.POSITIVE_INFINITY, true, { errorBefore: true });
+    expect(nebulaBlockFormats(context.gl)).toEqual({
+      density: STUB_BC4,
+      colour: STUB_BC1,
+    });
   });
 
   // A side that is not a multiple of 4 cannot be a block texture at all.

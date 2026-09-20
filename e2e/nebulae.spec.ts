@@ -12,6 +12,7 @@ import {
   startState,
   waitForReady,
 } from './helpers';
+import { BRIGHT_VIEW, CLOSE_VIEW, DARK_VIEW } from './nebula-views';
 import { putVolumeDensity } from '../src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
@@ -35,26 +36,6 @@ function nebulaVertex(): string {
 }
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-
-/**
- * Barnard's Loop, the largest record in the set at 200 light years. The view puts it at
- * the middle of the frame at a zoom distance inside the band, where it draws about 21
- * CSS pixels across the radius and the next record is under half that.
- */
-const BRIGHT_VIEW = '#c=624.4,-425.9,-1229.5&d=6000&p=35&y=0';
-
-/**
- * A dark nebula of 88.93 light years. It is the largest record in the middle of this
- * frame, so the block the test samples reads its volume.
- */
-const DARK_VIEW = '#c=-10642.7,629.4,17776.7&d=6000&p=35&y=0';
-
-/**
- * Barnard's Loop again, with the camera 1,000 light years from it and the zoom well
- * inside the close range. The near end of the band is open, so the record draws here
- * about six times as wide as it does at 6,000 light years.
- */
-const CLOSE_VIEW = '#c=624.4,-425.9,-1229.5&d=1000&p=35&y=0';
 
 /** The middle of the frame. */
 const MIDDLE = { x: 640, y: 360 };
@@ -602,6 +583,88 @@ test.describe('a card with no compressed-texture extension', () => {
     expect(report.drawn).toBeGreaterThan(0);
     expect(light).toBeGreaterThan(0);
   });
+});
+
+/** The `COMPRESSED_RED_RGTC1` the density volumes upload in, on the fast path. */
+const COMPRESSED_RED_RGTC1 = 0x8dbb;
+
+/**
+ * Makes every later navigation of this page refuse `COMPRESSED_RED_RGTC1` on a
+ * `TEXTURE_2D_ARRAY`, which is what Firefox does. The call allocates nothing and the
+ * next `getError` on that context reads `INVALID_OPERATION`, which is the error Firefox
+ * raises for this pair. Every other call passes through.
+ */
+async function refuseBlockFormatOnArray(page: Page): Promise<void> {
+  await page.addInitScript((format: number) => {
+    const TEXTURE_2D_ARRAY = 0x8c1a;
+    // The error Firefox raises for this pair on this card, read on 2026-09-20.
+    const INVALID_OPERATION = 0x0502;
+    const refused = new WeakSet<WebGL2RenderingContext>();
+    const storage = WebGL2RenderingContext.prototype.texStorage3D;
+    const error = WebGL2RenderingContext.prototype.getError;
+    WebGL2RenderingContext.prototype.texStorage3D = function patched(
+      this: WebGL2RenderingContext,
+      target: number,
+      levels: number,
+      internalformat: number,
+      width: number,
+      height: number,
+      depth: number,
+    ): void {
+      if (target === TEXTURE_2D_ARRAY && internalformat === format) {
+        refused.add(this);
+        return;
+      }
+      storage.call(this, target, levels, internalformat, width, height, depth);
+    };
+    WebGL2RenderingContext.prototype.getError = function patched(
+      this: WebGL2RenderingContext,
+    ): number {
+      if (refused.has(this)) {
+        refused.delete(this);
+        return INVALID_OPERATION;
+      }
+      return error.call(this);
+    };
+  }, COMPRESSED_RED_RGTC1);
+}
+
+/**
+ * How far the two frames must differ, as a mean luminance over the whole frame.
+ *
+ * At `CLOSE_VIEW` the nebulae add 0.00234 over the whole frame, twice over on this card,
+ * so the bound sits at a little under half the reading. In the fault the frames are the
+ * same frame: the textures hold nothing, the march reads 0 and the pass adds no light.
+ */
+const REFUSED_FORMAT_DIFFERENCE = 0.001;
+
+// The spec's scenario **The nebulae draw where the target refuses a block format**.
+//
+// A present extension is not proof. Firefox carries `EXT_texture_compression_rgtc` and
+// refuses `COMPRESSED_RED_RGTC1` on a `TEXTURE_2D_ARRAY`, so `texStorage3D` fails, the
+// texture gets no storage and every volume stays unspecified. The test refuses the
+// format itself, in the project that runs the whole suite, so the guard holds on every
+// run and a browser that fixes its driver does not make it vacuous.
+//
+// The reading is **pixels** and not a count. In the fault the records passed the
+// selection and the draw calls ran, so every count read correctly while the frame
+// carried no nebula.
+test('the nebulae draw where the target refuses a block format', async ({ page }) => {
+  await refuseBlockFormatOnArray(page);
+  await openMap(page, CLOSE_VIEW);
+
+  const on = await withNebulae(page, true, () => meanLuminanceFrame(page));
+  const off = await withNebulae(page, false, () => meanLuminanceFrame(page));
+  const decodes = await page.evaluate(
+    () => performance.getEntriesByName('nebula-decode').length,
+  );
+  console.log('the refused block format', { on, off, added: on - off, decodes });
+
+  // The positive control: the refusal reached the page and the load decoded every
+  // asset, which is the path a refused format takes.
+  expect(decodes).toBe(33);
+  expect(off).toBeGreaterThan(0);
+  expect(on - off).toBeGreaterThan(REFUSED_FORMAT_DIFFERENCE);
 });
 
 /** The three extensions the two block formats and BC7 belong to. */

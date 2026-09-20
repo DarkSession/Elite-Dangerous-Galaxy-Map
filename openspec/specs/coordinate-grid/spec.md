@@ -870,6 +870,13 @@ The background reading the label follows SHALL still be read at the centre of th
 **own box**, which now sits off the crossing, because that is the picture the text draws
 over.
 
+**The point the background is read at SHALL be held inside the frame.** A label at the edge
+of the frame can have the centre of its own box outside the viewport while part of the text
+is inside it. The reading has no pixel there, and a label that fell back to no reading would
+step in colour and in opacity as its centre crossed the edge. The placement SHALL therefore
+move the reading point to the nearest point inside the frame, which is the picture under the
+part of the label the user sees.
+
 **A crossing SHALL carry a label only near the cursor, and its opacity SHALL fall with the
 distance.** Let `d` be the distance on the plane from the cursor to the crossing and `s` the
 level's spacing. Then:
@@ -901,8 +908,21 @@ The placement SHALL hold to these bounds:
   axis, which is 25 crossings, so the sweep projects at most 25 points. The work of one frame
   is therefore fixed: it follows the label level and not the size of the host's data set,
   which may hold 10,000 systems.
-- A candidate that projects outside the viewport, or that lies behind the near plane, or
-  whose plane quad the projection turns away from the camera, SHALL be dropped.
+- A candidate SHALL be dropped for the viewport **only when no part of its own label is on
+  the screen**, which is when the screen bounding box of its plane quad lies wholly outside
+  the viewport. A candidate SHALL also be dropped when it lies behind the near plane, or when
+  the projection turns its plane quad away from the camera. The capability `plane-overlay`
+  states all three, and the placement reads them there.
+
+  **The gate SHALL NOT read the crossing's own projected point.** A label lies in the cell
+  above and left of its crossing, so the crossing is the label's bottom right corner and not
+  a point of the text. A gate on the crossing takes the whole label away as the crossing
+  passes the right or the bottom edge of the frame, while every digit of it is still in front
+  of the user, and it does so at every edge the user pans over. A label therefore SHALL stay
+  while any part of its box is on the screen, and the browser clips the rest.
+
+  The reported anchor of a label stays the crossing, so the page MAY report an anchor outside
+  the viewport for a label the user can see.
 - At most **8** crossing labels SHALL be in the overlay in any frame. The nearest to the
   cursor SHALL be kept.
 - A candidate whose screen bounding box overlaps a box already placed SHALL be skipped, by
@@ -951,7 +971,8 @@ factor as well as of the line: 0.09 over 0.45 is 0.2, so no label draws below a 
 own opacity, and no label is drawn that the factor would take below that.
 
 **A label SHALL follow the background under it, by the same rule the lines follow.** The
-label SHALL read the background reading at the centre of its own box and take:
+label SHALL read the background reading at the centre of its own box, **held inside the
+frame**, and take:
 
 - an **opacity** of `0.80 * (alpha / 0.45) * reach * (1 - (1 - 0.75) * merge)`, where `merge`
   is the same `smoothstep(0.08, 0.55, L)` the lines use and `reach` is the distance fade
@@ -1208,8 +1229,17 @@ them from the picture alone.
 
 - **WHEN** the browser test turns the grid on at a zoom of 3,000 light years at a pitch of
   5 degrees, which reaches furthest toward the horizon, reads each crossing label's anchor
-  position and reads the drawn pixel there
-- **THEN** every label's anchor sits on a pixel the grid lit
+  position, and reads the drawn pixel there for every label whose anchor is **inside the
+  viewport**
+- **THEN** every such label's anchor sits on a pixel the grid lit, and at least one label
+  is read.
+
+  **The reading SHALL skip a label whose anchor is outside the viewport, and SHALL NOT
+  clamp the anchor into the frame.** The anchor is the crossing, which is the label's
+  bottom right corner, and a label stays while any part of its box is on the screen, so a
+  label the user can see can carry an anchor the frame does not hold. There is no pixel to
+  read there. A reading that moved the point to the frame edge instead would read a pixel
+  of another part of the grid and pass or fail by accident
 
 #### Scenario: A label does not draw stronger than its line
 
@@ -1217,7 +1247,13 @@ them from the picture alone.
   **5 degrees**, over the dark space between the arms, and reads for every crossing label
   its own opacity, its reach opacity and the drawn alpha of the level at its crossing
 - **THEN** every label's opacity is `0.80 * alpha / 0.45` times its reach opacity times its
-  background weight, within 0.01, and no label's opacity is above 0.80
+  background weight, within 0.01, and no label's opacity is above 0.80.
+
+  **The weight the reading works out SHALL come from the same point the placement reads**,
+  which is the centre of the label's own box held inside the frame. A reading that took the
+  unheld centre would read no pixel for a label at the edge of the frame and fall back to a
+  weight of 1, which is the step the held point is there to remove, and the two figures
+  would disagree by the whole of the background term
 
 #### Scenario: The factor is 1 at the cursor
 
@@ -1238,6 +1274,31 @@ them from the picture alone.
   browser may drop the keywords the order implies: Chromium serialises the computed value
   as `stroke` and the style the element carries is `stroke fill`. The scenario reads the
   computed property, so it takes either
+
+#### Scenario: A label whose crossing is off the frame stays
+
+- **WHEN** a unit test places the labels of a frame whose cursor sits so that a crossing
+  inside the reach projects past the right edge of the viewport, while the label's own quad
+  still overlaps the viewport
+- **THEN** that crossing carries a label, and the label's screen bounding box overlaps the
+  viewport.
+
+  The gate on the crossing dropped this label although every digit of it was on the screen,
+  because the crossing is the label's bottom right corner
+
+#### Scenario: A label goes when no part of it is on the frame
+
+- **WHEN** a unit test places the labels of a frame in which a candidate's whole quad
+  projects outside the viewport
+- **THEN** that candidate carries no label, and every label the frame places has a screen
+  bounding box that overlaps the viewport
+
+#### Scenario: A label at the edge reads the background inside the frame
+
+- **WHEN** a unit test places a label whose own box has its centre outside the viewport and
+  part of itself inside it, over a background reading that is bright inside the frame
+- **THEN** the label takes the opacity and the colour of the bright background, and not the
+  reading a point outside the frame gives
 
 ### Requirement: The grid and its labels draw from under the plane
 
