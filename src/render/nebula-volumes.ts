@@ -31,11 +31,8 @@ export const NEBULA_TRANSFER_BYTES = NEBULA_TRANSFER_ENTRIES * 4 * 4;
 /** One entry of the volume index, which holds what the map reads and nothing else. */
 export interface NebulaVolumeEntry {
   readonly name: string;
-  readonly density: { readonly size: number };
-  readonly colour: { readonly size: number };
-  readonly error: {
-    readonly per_axis: { readonly x: number; readonly y: number; readonly z: number };
-  };
+  readonly density: number;
+  readonly colour: number;
 }
 
 /** One asset as the files carry it, ready to upload. */
@@ -408,17 +405,17 @@ export async function loadNebulaVolumes(): Promise<NebulaVolumeSet> {
       const at = slot * NEBULA_TRANSFER_BYTES;
       return {
         name: entry.name,
-        densitySide: entry.density.size,
-        colourSide: entry.colour.size,
+        densitySide: entry.density,
+        colourSide: entry.colour,
         density: volumeBlocksOf(
           densityFile,
-          entry.density.size,
+          entry.density,
           NEBULA_KTX2_BC4,
           `density ${entry.name}`,
         ),
         colour: volumeBlocksOf(
           colourFile,
-          entry.colour.size,
+          entry.colour,
           NEBULA_KTX2_BC1,
           `colour ${entry.name}`,
         ),

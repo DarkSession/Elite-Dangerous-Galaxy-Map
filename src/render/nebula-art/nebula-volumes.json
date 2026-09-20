@@ -2,531 +2,168 @@
   "assets": [
     {
       "name": "barnards-loop",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01854,
-          "y": 0.02632,
-          "z": 0.02222
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "bow-tie",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.0235,
-          "y": 0.02155,
-          "z": 0.01426
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "bright-01",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 32
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02618,
-          "y": 0.02758,
-          "z": 0.02022
-        }
-      }
+      "density": 48,
+      "colour": 32
     },
     {
       "name": "bright-02",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02351,
-          "y": 0.02265,
-          "z": 0.02309
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "bright-03",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02932,
-          "y": 0.02867,
-          "z": 0.02666
-        }
-      }
+      "density": 48,
+      "colour": 16
     },
     {
       "name": "bright-04",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01867,
-          "y": 0.02744,
-          "z": 0.02983
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "bubble",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.00469,
-          "y": 0.00433,
-          "z": 0.0046
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "butterfly",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02455,
-          "y": 0.01928,
-          "z": 0.02219
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "cats-eye",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.0113,
-          "y": 0.00803,
-          "z": 0.00893
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "crab",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01721,
-          "y": 0.01669,
-          "z": 0.02197
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "dark-01",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02014,
-          "y": 0.01946,
-          "z": 0.02247
-        }
-      }
+      "density": 48,
+      "colour": 8
     },
     {
       "name": "dark-02",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.0244,
-          "y": 0.02298,
-          "z": 0.02374
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "dark-03",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 32
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01567,
-          "y": 0.02608,
-          "z": 0.02838
-        }
-      }
+      "density": 48,
+      "colour": 32
     },
     {
       "name": "dark-04",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02421,
-          "y": 0.02058,
-          "z": 0.02676
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "dark-05",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 32
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.0268,
-          "y": 0.02778,
-          "z": 0.02602
-        }
-      }
+      "density": 48,
+      "colour": 32
     },
     {
       "name": "dr-kays-soul",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02992,
-          "y": 0.03,
-          "z": 0.02969
-        }
-      }
+      "density": 48,
+      "colour": 16
     },
     {
       "name": "fine-ring",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 32
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02956,
-          "y": 0.01905,
-          "z": 0.02958
-        }
-      }
+      "density": 48,
+      "colour": 32
     },
     {
       "name": "flame",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02684,
-          "y": 0.02195,
-          "z": 0.02302
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "hind",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02288,
-          "y": 0.01719,
-          "z": 0.01958
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "horsehead",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.0217,
-          "y": 0.01704,
-          "z": 0.01394
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "lbn-623",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01779,
-          "y": 0.02386,
-          "z": 0.01227
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "lemon-slice",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02393,
-          "y": 0.02277,
-          "z": 0.02631
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "messier-78",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.017,
-          "y": 0.02418,
-          "z": 0.02121
-        }
-      }
+      "density": 64,
+      "colour": 16
     },
     {
       "name": "ngc-6337",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02483,
-          "y": 0.02522,
-          "z": 0.02104
-        }
-      }
+      "density": 48,
+      "colour": 16
     },
     {
       "name": "orion",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02727,
-          "y": 0.0222,
-          "z": 0.02854
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "planetary-01",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.00644,
-          "y": 0.00602,
-          "z": 0.00568
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "planetary-02",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01124,
-          "y": 0.00993,
-          "z": 0.01004
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "planetary-03",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01697,
-          "y": 0.01899,
-          "z": 0.01699
-        }
-      }
+      "density": 32,
+      "colour": 8
     },
     {
       "name": "planetary-04",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 32
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01759,
-          "y": 0.02931,
-          "z": 0.01508
-        }
-      }
+      "density": 48,
+      "colour": 32
     },
     {
       "name": "pleiades",
-      "density": {
-        "size": 64
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.01356,
-          "y": 0.01776,
-          "z": 0.0174
-        }
-      }
+      "density": 64,
+      "colour": 8
     },
     {
       "name": "red-spider",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02133,
-          "y": 0.02346,
-          "z": 0.02173
-        }
-      }
+      "density": 32,
+      "colour": 16
     },
     {
       "name": "ring",
-      "density": {
-        "size": 48
-      },
-      "colour": {
-        "size": 16
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02971,
-          "y": 0.02488,
-          "z": 0.02975
-        }
-      }
+      "density": 48,
+      "colour": 16
     },
     {
       "name": "veil-west",
-      "density": {
-        "size": 32
-      },
-      "colour": {
-        "size": 8
-      },
-      "error": {
-        "per_axis": {
-          "x": 0.02938,
-          "y": 0.02438,
-          "z": 0.01737
-        }
-      }
+      "density": 32,
+      "colour": 8
     }
   ]
 }

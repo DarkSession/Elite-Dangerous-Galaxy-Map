@@ -36,14 +36,15 @@ interface NebulaFixture {
   volume_index_sha256: string;
   transfer_sha256: string;
   volume_files_sha256: Record<string, string>;
+  volume_blocks_sha256: Record<string, string>;
+  volume_error_per_axis: Record<string, { x: number; y: number; z: number }>;
 }
 
 /** One entry of the volume index, which holds only what the map reads. */
 interface VolumeEntry {
   name: string;
-  density: { size: number };
-  colour: { size: number };
-  error: { per_axis: { x: number; y: number; z: number } };
+  density: number;
+  colour: number;
 }
 
 interface VolumeIndex {
@@ -188,11 +189,9 @@ describe('the committed nebula volumes', () => {
   test('the index carries no field the map does not read', () => {
     expect(Object.keys(volumeIndex)).toEqual(['assets']);
     for (const asset of volumeIndex.assets) {
-      expect(Object.keys(asset).sort()).toEqual(['colour', 'density', 'error', 'name']);
-      expect(Object.keys(asset.density)).toEqual(['size']);
-      expect(Object.keys(asset.colour)).toEqual(['size']);
-      expect(Object.keys(asset.error)).toEqual(['per_axis']);
-      expect(Object.keys(asset.error.per_axis).sort()).toEqual(['x', 'y', 'z']);
+      expect(Object.keys(asset).sort()).toEqual(['colour', 'density', 'name']);
+      expect(typeof asset.density).toBe('number');
+      expect(typeof asset.colour).toBe('number');
     }
   });
 
@@ -229,9 +228,13 @@ describe('the committed nebula volumes', () => {
   // Each asset is packed to a budget of 0.03 emission RMSE over peak on the worst of
   // three axes. This reads every axis of every asset, not the worst alone.
   test('the compaction error holds on every axis', () => {
+    const errors = fixture.volume_error_per_axis;
+    expect(Object.keys(errors).sort()).toEqual(
+      volumeIndex.assets.map((asset) => asset.name).sort(),
+    );
     for (const asset of volumeIndex.assets) {
       for (const axis of ['x', 'y', 'z'] as const) {
-        expect(asset.error.per_axis[axis]).toBeLessThanOrEqual(0.03);
+        expect(errors[asset.name][axis]).toBeLessThanOrEqual(0.03);
       }
     }
   });

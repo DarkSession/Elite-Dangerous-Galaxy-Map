@@ -521,7 +521,7 @@ describe('the committed set', () => {
     // The decoding path uploads the density as `R8` and the colour as `RGBA8`.
     let decoded = tables;
     for (const asset of index.assets) {
-      decoded += asset.density.size ** 3 + asset.colour.size ** 3 * 4;
+      decoded += asset.density ** 3 + asset.colour ** 3 * 4;
     }
     console.log('the volume set', {
       wire: wire / MIB,
@@ -542,13 +542,13 @@ describe('the committed set', () => {
     let disk = 0;
     for (const file of files) disk += readFileSync(`${artDir}${file}`).byteLength;
     expect(files).toHaveLength(68);
-    expect(disk).toBe(2_918_185);
+    expect(disk).toBe(2_912_225);
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(
         fileURLToPath(new URL(`../../${doc}`, import.meta.url)),
         'utf8',
       );
-      expect(text, `${doc} states another total`).toContain('2,918,185');
+      expect(text, `${doc} states another total`).toContain('2,912,225');
     }
   });
 
@@ -558,7 +558,7 @@ describe('the committed set', () => {
   test('holds a KTX2 array of the shape the spec fixes', () => {
     for (const asset of index.assets) {
       for (const { kind, format } of KINDS) {
-        const side = asset[kind].size;
+        const side = asset[kind];
         const file = `${asset.name}-${kind}.ktx2`;
         const bytes = readFileSync(`${artDir}${file}`);
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -660,8 +660,8 @@ describe('a failed load', () => {
         if (call === 1) {
           return Promise.resolve(
             new Response(
-              `{"assets":[{"name":"barnards-loop","density":{"size":${density}},` +
-                `"colour":{"size":${colour}}}]}`,
+              `{"assets":[{"name":"barnards-loop","density":${density},` +
+                `"colour":${colour}}]}`,
             ),
           );
         }
