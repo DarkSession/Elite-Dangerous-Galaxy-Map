@@ -233,7 +233,7 @@ export const ONE_CHAIN_POINT: OneChainChoice = {
  */
 export const NO_LINE_VIEW: NoLineChoice = {
   view: {
-    cursor: [1840.85884, -14507.645227067129, 16507.94703],
+    cursor: [1840.85884, -15473.645227067129, 16507.94703],
     distance: 20016.72348,
     yaw: 24.66002,
     pitch: 58.57998,
@@ -242,7 +242,7 @@ export const NO_LINE_VIEW: NoLineChoice = {
     width: 1280,
     height: 720,
   },
-  cameraHeightLy: 2574,
-  farthestPlaneRangeLy: 7199.004663580092,
-  rangeFloorLy: 8000,
+  cameraHeightLy: 1608,
+  farthestPlaneRangeLy: 4497.280302656094,
+  rangeFloorLy: 5000,
 };

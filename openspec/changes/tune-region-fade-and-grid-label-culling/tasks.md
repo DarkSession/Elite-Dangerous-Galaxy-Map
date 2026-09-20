@@ -36,16 +36,22 @@
 
 ## 3. The recorded views
 
-- [ ] 3.1 Run the `NO_LINE_VIEW` search again against the floor of 5,000 light years and
+- [x] 3.1 Run the `NO_LINE_VIEW` search again against the floor of 5,000 light years and
       write what it finds into `e2e/region-views.ts`, including `rangeFloorLy`. Verify
       `pnpm vitest run tests/region-views.test.ts` passes with the assertion changed to
-      `REGION_RANGE_NONE` and 5,000.
-- [ ] 3.2 Run the `ONE_CHAIN_POINT` search again over the six zooms 4,000, 6,500, 8,000,
+      `REGION_RANGE_NONE` and 5,000. Measured: the camera height falls from 2,574 to
+      1,608 light years, the farthest plane point from 7,199.005 to 4,497.280, and
+      `rangeFloorLy` from 8,000 to 5,000.
+- [x] 3.2 Run the `ONE_CHAIN_POINT` search again over the six zooms 4,000, 6,500, 8,000,
       20,000, 25,000 and 31,000 light years, write the point and its `heldCount` into
-      `e2e/region-views.ts`, and verify `tests/region-views.test.ts` passes.
-- [ ] 3.3 Confirm the three governed searches (width, join, traced corner) report the
+      `e2e/region-views.ts`, and verify `tests/region-views.test.ts` passes. Measured: the
+      search gives the same point and the same `heldCount` of 4,688. The widest window is
+      the one at 31,000 light years, 619.433, which no close zoom reaches.
+- [x] 3.3 Confirm the three governed searches (width, join, traced corner) report the
       same counts as before, because premise one holds with more room and no view moves.
-      Verify with the same test file, and record any count that did move.
+      Verify with the same test file, and record any count that did move. Measured: the
+      width search holds 6, the join search 3 and the traced corner search 1,457. No count
+      moved.
 
 ## 4. The grid label gate
 
