@@ -60,8 +60,10 @@ it draws are the property of **Frontier Developments plc**.
 
 The map uses them under Frontier's
 [media-usage rules](https://forums.frontier.co.uk/threads/elite-dangerous-media-usage-rules.510879/),
-which permit non-commercial use only. `LICENSE.md` states the same terms for the package,
-so a commercial use of the package needs new permission from Frontier.
+which permit non-commercial use only. The package's own code is under the MIT licence,
+which `LICENSE.md` states, and those terms do not reach the game data and the art: this
+project cannot license what it does not own. A commercial use of them needs new
+permission from Frontier.
 
 > This map was created using assets and imagery from Elite Dangerous, with the
 > permission of Frontier Developments plc, for non-commercial purposes. It is not

@@ -492,10 +492,16 @@ bundle tests of the requirement above do exercise it: they build a host entry ag
 
 ### Requirement: The package states its terms and ships them
 
-**`LICENSE.md` at the repository root** SHALL state **non-commercial** terms, which is the
-maintainer's choice and follows from the map's data: `THIRD_PARTY_NOTICES.md` records that
-several of the map's sources are non-commercial, and the code and that data ship in one
-tarball.
+**`LICENSE.md` at the repository root** SHALL state the terms of this project's own code,
+which the maintainer chose to be the **MIT** licence.
+
+**The licence file SHALL say what those terms do not cover.** The code and the map's data
+and art ship in one tarball, and the project cannot license what it does not own.
+`THIRD_PARTY_NOTICES.md` records that several of the sources keep their own terms and
+that the game data and visuals permit non-commercial use only. The licence file SHALL
+name the notices and SHALL say that some of what ships is non-commercial, so a reader who
+opens the licence alone does not read MIT as a grant over the art. A test SHALL read both
+statements.
 
 The **tarball SHALL also carry `LICENSE.md`**, copied from the root by the packaging step
 rather than committed a second time, so that npm and GitHub each read a file where each
@@ -530,6 +536,12 @@ push.
 
 - **WHEN** a test reads the file list `npm pack --dry-run` reports for the library package
 - **THEN** it holds `LICENSE.md`, `THIRD_PARTY_NOTICES.md` and `README.md`
+
+#### Scenario: The licence names what it does not cover
+
+- **WHEN** a test reads `LICENSE.md`
+- **THEN** it holds the MIT text, names `THIRD_PARTY_NOTICES.md` and says that part of
+  what ships permits non-commercial use only, and `license` in the manifest is `MIT`
 
 #### Scenario: The tarball carries no source and no artifact
 
