@@ -9,7 +9,7 @@ a commercial use of the package needs new permission from each holder.
 **This file covers what the package ships.** The repository holds a demo site, a test
 suite and a design mockup beside the package, and their sources have terms of their own.
 `THIRD_PARTY_NOTICES.md` at the root of the
-[repository](https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map) names those.
+[repository](https://github.com/Elite-Dangerous-Almanac/Galaxy-Map) names those.
 Each source is in one file alone. The Frontier terms are the one statement in both,
 because the package ships game art and the demo site draws game data.
 

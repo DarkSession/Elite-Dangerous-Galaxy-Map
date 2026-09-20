@@ -7,7 +7,7 @@ spheres and lines, and an optional set of nebulae. It gives you a handle: you ad
 systems, you move the camera, and you read what the user selects.
 
 This README is the package's own. The repository holds the demo site, the browser suite
-and the development setup: <https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map>.
+and the development setup: <https://github.com/Elite-Dangerous-Almanac/Galaxy-Map>.
 
 ## Install
 

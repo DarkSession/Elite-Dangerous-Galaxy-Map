@@ -29,7 +29,7 @@
         // blank canvas.
         "--enable-logging=stderr",
         "--v=1",
-        "http://localhost:5173/Elite-Dangerous-Galaxy-Map/"
+        "http://localhost:5173/Galaxy-Map/"
       ],
       "isBackground": true,
       "problemMatcher": [],

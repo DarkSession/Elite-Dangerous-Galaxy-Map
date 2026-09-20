@@ -46,7 +46,7 @@ describe('the library package', () => {
     expect(library.author?.length).toBeGreaterThan(0);
     expect(library.license?.length).toBeGreaterThan(0);
     expect(library.homepage?.length).toBeGreaterThan(0);
-    expect(library.repository?.url).toContain('Elite-Dangerous-Galaxy-Map');
+    expect(library.repository?.url).toContain('Galaxy-Map');
     expect(library.bugs?.url?.length).toBeGreaterThan(0);
     expect(library.keywords?.length).toBeGreaterThan(0);
   });

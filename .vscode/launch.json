@@ -3,7 +3,7 @@
   "configurations": [
     {
       // Runs the dev server in a terminal. It opens no browser: open
-      // http://localhost:5173/Elite-Dangerous-Galaxy-Map/ yourself, either in the
+      // http://localhost:5173/Galaxy-Map/ yourself, either in the
       // container's desktop at http://localhost:6080 or on the forwarded port.
       // Breakpoints in this session stop in Vite's own Node process. For breakpoints in
       // the page, start Chrome with the "chrome: open with the GPU flags" task and use
@@ -17,7 +17,7 @@
     {
       // Same, against the built bundle rather than the dev server -- the one that catches
       // "works in dev, breaks in prod" minification and shader-inlining bugs. The page is
-      // at http://localhost:4173/Elite-Dangerous-Galaxy-Map/.
+      // at http://localhost:4173/Galaxy-Map/.
       "name": "Vite: production preview",
       "type": "node-terminal",
       "request": "launch",

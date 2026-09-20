@@ -66,10 +66,10 @@ test("the loader is on the site's own origin", async ({ page, baseURL }) => {
   // The page builds the URL from the base path the build wrote, so the reading is of
   // the resolved address and not of the page source.
   expect(new URL(source.resolved).pathname).toBe(
-    '/Elite-Dangerous-Galaxy-Map/EDLoader1.svg',
+    '/Galaxy-Map/EDLoader1.svg',
   );
   expect(source.resolved.startsWith(origin)).toBe(true);
-  expect(source.attribute.startsWith('/Elite-Dangerous-Galaxy-Map/')).toBe(true);
+  expect(source.attribute.startsWith('/Galaxy-Map/')).toBe(true);
   expect(blocked).toEqual([]);
 
   // The picture goes when the map has started.

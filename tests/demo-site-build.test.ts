@@ -16,7 +16,7 @@ const libraryDist = join(root, 'packages', 'galaxy-map', 'dist');
 const demoDist = join(root, 'apps', 'demo', 'dist');
 
 /** Where the repository's GitHub Pages site serves from. */
-const BASE_PATH = '/Elite-Dangerous-Galaxy-Map/';
+const BASE_PATH = '/Galaxy-Map/';
 
 /** The name of the first record of the demo set. */
 function firstDemoName(): string {

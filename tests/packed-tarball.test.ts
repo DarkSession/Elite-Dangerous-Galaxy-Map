@@ -173,7 +173,7 @@ describe('the packed tarball', () => {
     expect(readme).toContain(PACKAGE_NAME);
     expect(readme).toContain(`from '${PACKAGE_NAME}'`);
     expect(readme).toContain(
-      'https://github.com/DarkSession/Elite-Dangerous-Galaxy-Map',
+      'https://github.com/Elite-Dangerous-Almanac/Galaxy-Map',
     );
     // It is the package's README and not the repository's. The repository's opens with
     // the repository name and describes the demo site, the dev container and the suites.

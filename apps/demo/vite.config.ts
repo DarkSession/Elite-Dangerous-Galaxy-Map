@@ -38,7 +38,7 @@ export default defineConfig({
   },
   // Where the repository's GitHub Pages site serves from. `vite preview` serves the
   // build under the same path, so the browser suite's base URL carries it.
-  base: '/Elite-Dangerous-Galaxy-Map/',
+  base: '/Galaxy-Map/',
   server: {
     host: true,
     port: 5173,
