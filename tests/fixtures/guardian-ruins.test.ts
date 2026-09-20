@@ -65,8 +65,7 @@ describe('the conversion of the dump', () => {
 
     const system = convertRuins(sites).systems[0];
 
-    expect(system?.primaryCategory).toBe('Ruins Gamma');
-    expect(system?.secondaryCategories).toEqual(['Ruins Alpha', 'Ruins Beta']);
+    expect(system?.categories).toEqual(['Ruins Gamma', 'Ruins Alpha', 'Ruins Beta']);
     expect(system?.images?.map((image) => image.caption)).toEqual([
       'Gamma site',
       'Alpha site',

@@ -101,8 +101,9 @@
         "y": -163.59375,
         "z": -85.96875
       },
-      "primaryCategory": "Structure Lacrosse",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Lacrosse"
+      ],
       "description": "The system holds 2 Guardian structures. The body is 7 A."
     },
     {
@@ -112,8 +113,9 @@
         "y": -51.21875,
         "z": -154.65625
       },
-      "primaryCategory": "Structure Fistbump",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Fistbump"
+      ],
       "description": "The system holds 2 Guardian structures. The body is 9 B."
     },
     {
@@ -123,8 +125,9 @@
         "y": -203.625,
         "z": -146.5625
       },
-      "primaryCategory": "Structure Lacrosse",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Lacrosse"
+      ],
       "description": "The system holds 2 Guardian structures. The body is 3 A."
     },
     {
@@ -134,8 +137,8 @@
         "y": 400.5625,
         "z": -993.375
       },
-      "primaryCategory": "Structure Stickyhand",
-      "secondaryCategories": [
+      "categories": [
+        "Structure Stickyhand",
         "Structure Bear"
       ],
       "description": "The system holds 2 Guardian structures. The body is 1 C."
@@ -147,8 +150,9 @@
         "y": -191.71875,
         "z": -193.8125
       },
-      "primaryCategory": "Structure Hammerbot",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Hammerbot"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 7."
     },
     {
@@ -158,8 +162,9 @@
         "y": -207.40625,
         "z": -131.59375
       },
-      "primaryCategory": "Structure Turtle",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Turtle"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 3 A."
     },
     {
@@ -169,8 +174,9 @@
         "y": -188.1875,
         "z": -173.53125
       },
-      "primaryCategory": "Structure Crossroads",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Crossroads"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 2."
     },
     {
@@ -180,8 +186,9 @@
         "y": -142.1875,
         "z": -82.25
       },
-      "primaryCategory": "Structure Bowl",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Bowl"
+      ],
       "description": "The system holds 1 Guardian structure. The body is A 3."
     },
     {
@@ -191,8 +198,9 @@
         "y": -158.28125,
         "z": -117.4375
       },
-      "primaryCategory": "Structure Squid",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Squid"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 1."
     },
     {
@@ -202,8 +210,9 @@
         "y": -115,
         "z": -91.34375
       },
-      "primaryCategory": "Structure Robolobster",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Robolobster"
+      ],
       "description": "The system holds 1 Guardian structure. The body is 6 B."
     },
     {
@@ -213,8 +222,9 @@
         "y": -222.78125,
         "z": -151.15625
       },
-      "primaryCategory": "Structure Fistbump",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Fistbump"
+      ],
       "description": "The system holds 1 Guardian structure. The body is C 2."
     },
     {
@@ -224,8 +234,9 @@
         "y": -144.03125,
         "z": -101.71875
       },
-      "primaryCategory": "Structure Lacrosse",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Lacrosse"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 1."
     },
     {
@@ -235,8 +246,9 @@
         "y": -134.90625,
         "z": -182.09375
       },
-      "primaryCategory": "Structure Bowl",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Bowl"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 1."
     },
     {
@@ -246,8 +258,9 @@
         "y": -156.90625,
         "z": -260.96875
       },
-      "primaryCategory": "Structure Hammerbot",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Hammerbot"
+      ],
       "description": "The system holds 1 Guardian structure. The body is AB 1 A."
     },
     {
@@ -257,8 +270,9 @@
         "y": -172.125,
         "z": -205.34375
       },
-      "primaryCategory": "Structure Lacrosse",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Lacrosse"
+      ],
       "description": "The system holds 1 Guardian structure. The body is A 3."
     },
     {
@@ -268,8 +282,9 @@
         "y": -166.0625,
         "z": -106.40625
       },
-      "primaryCategory": "Structure Stickyhand",
-      "secondaryCategories": [],
+      "categories": [
+        "Structure Stickyhand"
+      ],
       "description": "The system holds 1 Guardian structure. The body is B 1."
     }
   ]

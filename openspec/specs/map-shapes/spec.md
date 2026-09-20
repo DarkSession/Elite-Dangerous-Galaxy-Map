@@ -33,40 +33,48 @@ and is in no row of the category browser, which is the map every host has today.
 
 **A sphere** SHALL carry:
 
-| Field                 | Type                                       | Required | Default |
-| --------------------- | ------------------------------------------ | -------- | ------- |
-| `position`            | three finite numbers, game coordinates     | yes      |         |
-| `radius`              | finite number above 0, in light years      | yes      |         |
-| `color`               | three finite numbers from 0 to 255, as RGB | see below |        |
-| `opacity`             | finite number above 0 and at most 1        | no       | `0.18`  |
-| `name`                | string of at least one character           | no       |         |
-| `primaryCategory`     | name of a category the table holds         | no       |         |
-| `secondaryCategories` | array of names of categories the table holds | no     |         |
+| Field        | Type                                       | Required | Default |
+| ------------ | ------------------------------------------ | -------- | ------- |
+| `position`   | three finite numbers, game coordinates     | yes      |         |
+| `radius`     | finite number above 0, in light years      | yes      |         |
+| `color`      | three finite numbers from 0 to 255, as RGB | see below |        |
+| `opacity`    | finite number above 0 and at most 1        | no       | `0.18`  |
+| `name`       | string of at least one character           | no       |         |
+| `categories` | array of names of categories the table holds | no     |         |
 
 **A line** SHALL carry:
 
-| Field                 | Type                                       | Required | Default |
-| --------------------- | ------------------------------------------ | -------- | ------- |
-| `points`              | array of at least 2 points, see below      | yes      |         |
-| `color`               | three finite numbers from 0 to 255, as RGB | see below |        |
-| `width`               | finite number above 0 and at most 16, in CSS pixels | no | `2` |
-| `closed`              | boolean; true joins the last point to the first | no  | `false` |
-| `name`                | string of at least one character           | no       |         |
-| `primaryCategory`     | name of a category the table holds         | no       |         |
-| `secondaryCategories` | array of names of categories the table holds | no     |         |
+| Field        | Type                                       | Required | Default |
+| ------------ | ------------------------------------------ | -------- | ------- |
+| `points`     | array of at least 2 points, see below      | yes      |         |
+| `color`      | three finite numbers from 0 to 255, as RGB | see below |        |
+| `width`      | finite number above 0 and at most 16, in CSS pixels | no | `2` |
+| `closed`     | boolean; true joins the last point to the first | no  | `false` |
+| `name`       | string of at least one character           | no       |         |
+| `categories` | array of names of categories the table holds | no     |         |
+
+**The shape reader keeps its own reason set.** A `categories` entry that is not a string
+rejects a shape as `bad-category`, where the same entry rejects a **record** as
+`unknown-category`, which `real-systems` states. The two readers carry the reason sets they
+already had, and neither grows one to match the other: a host reads the report of the call
+it made, and a reason that named a fault of the other reader would be the surprise. The
+merge does not change either set.
+
+**A shape carries one category list and not two.** `primaryCategory` and
+`secondaryCategories` are gone, and the reader SHALL drop either name with every other
+field it does not know, so a shape written to the old shape reads as a shape that names no
+category.
 
 **`color` is required for a shape that names no category.** A shape that names a category
 MAY leave it out, and SHALL then draw in the colour of the first category it names that is
 on **for shapes**, by the order and the rule the requirement "A shape draws when a category
-it names is on" states. A shape that carries a `color` SHALL draw in that colour whatever its
-categories hold, because the colour of a shape is a look decision of the host's data and
+it names is on" states. A shape that carries a `color` SHALL draw in that colour whatever
+its categories hold, because the colour of a shape is a look decision of the host's data and
 the colour of a category is a look decision of the host's table.
 
-`secondaryCategories` SHALL follow the rule a record follows: the reader SHALL drop a name
-that repeats and a name equal to the primary category, and SHALL keep the rest in the
-order the shape gave them. A `secondaryCategories` that is present and is not an array
-SHALL be dropped. A shape that carries `secondaryCategories` and no `primaryCategory`
-SHALL be rejected with `no-category`.
+`categories` SHALL follow the rule a record follows: the reader SHALL drop a name that
+repeats and SHALL keep the rest in the order the shape gave them. A `categories` that is
+present and is not an array SHALL be read as an empty list.
 
 The reader SHALL drop every other field, as the record reader of `real-systems` does. A
 `name` that is present and is not a string of at least one character SHALL be dropped, and
@@ -85,27 +93,28 @@ The point cap stays at 65,536 and is the one that binds.
 `addSpheres` and `addLines` SHALL each return a report of `added` and `rejected`, the way
 `addCategories` does. Each rejected entry SHALL carry the index of the shape in the call
 and one reason from this set: `bad-position`, `bad-radius`, `bad-color`, `bad-opacity`,
-`bad-width`, `bad-points`, `bad-point`, `bad-category`, `no-category`, `unknown-system`,
+`bad-width`, `bad-points`, `bad-point`, `bad-category`, `unknown-system`,
 `unknown-category`, `over-capacity`, `over-point-capacity`. A reject SHALL NOT stop the
 call: the reader reads every entry and reports the ones it dropped.
 
-A `primaryCategory` that is present and is not a string of at least one character SHALL
-reject the shape with `bad-category`. A `primaryCategory`, or an entry of
-`secondaryCategories`, that names a category the table does not hold SHALL reject the
-shape with `unknown-category`, which covers an entry that is not a string. The host
-therefore adds its categories before its shapes, as it does before its systems.
+**`no-category` leaves the set of shape reasons.** It reported a shape that carried
+`secondaryCategories` and no `primaryCategory`, and one list cannot hold that fault.
+
+An entry of `categories` that is not a string of at least one character SHALL reject the
+shape with `bad-category`. An entry that names a category the table does not hold SHALL
+reject the shape with `unknown-category`. The host therefore adds its categories before its
+shapes, as it does before its systems.
 
 `getShapeInfo(kind, index)` SHALL take `'sphere'` or `'line'` as the kind, and SHALL give
 back an object of these fields, or null outside that list:
 
-| Field                 | What it holds                                                |
-| --------------------- | ------------------------------------------------------------ |
-| `name`                | the shape's `name`, absent where it carries none              |
-| `primaryCategory`     | the name, absent where the shape names none                   |
-| `secondaryCategories` | the names the reader kept, in order                           |
-| `centre`              | the sphere's centre, or the middle of the line's bounding box |
-| `reach`               | the sphere's radius, or half the diagonal of that box         |
-| `drawn`               | whether the shape draws in the next frame                     |
+| Field        | What it holds                                                 |
+| ------------ | ------------------------------------------------------------- |
+| `name`       | the shape's `name`, absent where it carries none              |
+| `categories` | the names the reader kept, in order, and empty where it names none |
+| `centre`     | the sphere's centre, or the middle of the line's bounding box |
+| `reach`      | the sphere's radius, or half the diagonal of that box         |
+| `drawn`      | whether the shape draws in the next frame                     |
 
 The member reads no point of a line, so a caller that lists the set costs no copy of
 65,536 points. `getLine` still gives the points, for a caller that wants them.
@@ -137,17 +146,18 @@ A shape SHALL reach the next frame with no rebuild of the scene data.
 
 #### Scenario: Each category fault gets its own reason
 
-- **WHEN** a unit test adds the category `A`, then five spheres: one naming `A`, one
-  naming `B` which the table does not hold, one whose `primaryCategory` is the number 7,
-  one whose `secondaryCategories` hold `B`, and one whose `secondaryCategories` hold `A`
-  and carry no `primaryCategory`
-- **THEN** `added` is 1, and `rejected` holds `unknown-category` at index 1,
-  `bad-category` at index 2, `unknown-category` at index 3 and `no-category` at index 4
+- **WHEN** a unit test adds the category `A`, then four spheres: one whose `categories`
+  are `['A']`, one whose `categories` are `['B']` which the table does not hold, one whose
+  `categories` are `['A', 7]`, and one whose `categories` is the string `A` and carries a
+  `color`
+- **THEN** `added` is 2, and `rejected` holds `unknown-category` at index 1 and
+  `bad-category` at index 2, and the fourth is added as a shape that names no category
 
 #### Scenario: A shape with no colour and no category is rejected
 
-- **WHEN** a unit test adds the category `A`, then one sphere naming `A` and carrying no
-  `color`, and one sphere naming no category and carrying no `color`
+- **WHEN** a unit test adds the category `A`, then one sphere whose `categories` are
+  `['A']` and that carries no `color`, and one sphere naming no category and carrying no
+  `color`
 - **THEN** `added` is 1 and the report holds `bad-color` at index 1
 
 #### Scenario: The capacity bounds reject the excess
@@ -160,11 +170,11 @@ A shape SHALL reach the next frame with no rebuild of the scene data.
 #### Scenario: A shape reads without its points
 
 - **WHEN** a unit test adds the category `A`, one sphere of radius 50 at (100, 0, 200)
-  naming `A`, and one line through (0, 0, 0) and (100, 0, 0), then reads
-  `getShapeInfo('sphere', 0)`, `getShapeInfo('line', 0)` and `getShapeInfo('line', 7)`
-- **THEN** the first holds the centre (100, 0, 200), a reach of 50 and the primary
-  category `A`, the second holds the centre (50, 0, 0) and a reach of 50, neither holds a
-  point list, and the third is null
+  whose `categories` are `['A']`, and one line through (0, 0, 0) and (100, 0, 0), then
+  reads `getShapeInfo('sphere', 0)`, `getShapeInfo('line', 0)` and `getShapeInfo('line', 7)`
+- **THEN** the first holds the centre (100, 0, 200), a reach of 50 and the categories
+  `['A']`, the second holds the centre (50, 0, 0), a reach of 50 and an empty category
+  list, neither holds a point list, and the third is null
 
 #### Scenario: A shape is not a category
 
@@ -571,8 +581,8 @@ no range shader, because no frame of that context can draw one.
 ### Requirement: A shape draws when a category it names is on
 
 A shape SHALL draw when **any** category it names is on **for shapes**, and SHALL NOT draw
-when every one of them is off for shapes. The rule reads the primary category and every
-secondary category together.
+when every one of them is off for shapes. The rule reads the whole of the shape's
+`categories` list.
 
 **A category holds two visibility flags.** One flag holds the markers of its systems and
 one holds its shapes. Both SHALL be on when the table takes the category. The shape rule
@@ -588,7 +598,9 @@ names a category the table does not hold SHALL change nothing and SHALL NOT thro
 pair already follows.
 
 The two kinds have one table, one set of names and one colour for each name. Only the flag
-splits. `addCategories` SHALL NOT change, so a host fills one table as it does today.
+splits. `addCategories` SHALL NOT change, but for the rejection the requirement "A set
+holds categories or holds none" of `real-systems` adds, so a host fills one table as it
+does today.
 
 **The shape flags clear with the shapes.** `clearShapes` SHALL turn every shape flag back
 on, as it already clears the shape name filter, and `clearSystems` and
@@ -598,12 +610,12 @@ held over a clear would hide the shapes of a name the next set also holds, while
 dot reads on, and `real-systems` already holds the same rule for the system flag.
 
 A shape that names **no** category SHALL always draw. Such a shape is in no row of the
-category browser and no switch reaches it.
+category browser and no switch reaches it. The **SHAPES** tab of the HUD still reaches it
+through the flat list `map-hud` states, where the tab holds no row at all.
 
 **A shape that carries no `color` SHALL take the colour of the first category it names that
-is on for shapes.** The order SHALL be the primary category first, then the secondary
-categories in the order the shape gave them, without a repeat. A shape that carries a
-`color` SHALL keep that colour whatever its categories hold.
+is on for shapes.** The order SHALL be the order of the shape's `categories` list. A shape
+that carries a `color` SHALL keep that colour whatever its categories hold.
 
 The map SHALL work out which shapes draw when the shape set, the category table, the
 **shape** category visibility or the shape name filter changes, and SHALL NOT work it out
@@ -663,11 +675,11 @@ follows.
 - **THEN** the first is `false`, the second is `true`, the sphere is drawn, and no call
   threw
 
-#### Scenario: A secondary category keeps a shape on the screen
+#### Scenario: A later category keeps a shape on the screen
 
-- **WHEN** a unit test adds the categories `A` and `B`, one line whose primary category is
-  `A` and whose secondary categories hold `B`, turns `A` off for shapes and reads
-  `getShapeInfo('line', 0)`, then turns `B` off for shapes as well and reads it again
+- **WHEN** a unit test adds the categories `A` and `B`, one line whose `categories` are `A`
+  then `B`, turns `A` off for shapes and reads `getShapeInfo('line', 0)`, then turns `B`
+  off for shapes as well and reads it again
 - **THEN** the first reading is drawn and the second is not
 
 #### Scenario: A shape with no category is not reached by a switch
@@ -679,9 +691,8 @@ follows.
 #### Scenario: A shape with no colour follows the first category that is on
 
 - **WHEN** the browser test adds the categories `A` in (255, 0, 0) and `B` in (0, 255, 0),
-  one line carrying no `color` whose primary category is `A` and whose secondary categories
-  hold `B`, draws a frame and reads a pixel on the line, turns `A` off for shapes, draws
-  and reads again
+  one line carrying no `color` whose `categories` are `A` then `B`, draws a frame and reads
+  a pixel on the line, turns `A` off for shapes, draws and reads again
 - **THEN** the first reading is red and the second is green, each within 8 of each channel
 
 #### Scenario: A shape with a colour keeps it

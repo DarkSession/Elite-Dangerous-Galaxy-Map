@@ -3,6 +3,7 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import { createGalaxyModel } from '../galaxy-model/model';
 import {
   createSystemSet,
+  DEFAULT_MARKER_COLOR,
   DEFAULT_MARKER_STYLE,
   DEFAULT_MAX_DRAW_RANGE_LY,
   MAX_CATEGORIES,
@@ -44,7 +45,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
   };
 }
 
@@ -227,14 +228,14 @@ describe('the record reader', () => {
         id64: 10477373803,
         name: 'Sol',
         coords: { x: 0, y: 0, z: 0 },
-        primaryCategory: 'A',
+        categories: ['A'],
         date: '2015-05-12 15:29:33',
       },
       {
         id64: 2871051900826,
         name: 'Deciat',
         coords: { x: 122.625, y: -0.8125, z: -47.28125 },
-        primaryCategory: 'B',
+        categories: ['B'],
         allegiance: 'Independent',
         government: 'Democracy',
         primaryEconomy: 'Refinery',
@@ -251,15 +252,13 @@ describe('the record reader', () => {
     expect(set.system(0)).toEqual({
       name: 'Sol',
       position: [0, 0, 0],
-      primaryCategory: 'A',
-      secondaryCategories: [],
+      categories: ['A'],
       id64: '10477373803',
     });
     expect(set.system(1)).toEqual({
       name: 'Deciat',
       position: [122.625, -0.8125, -47.28125],
-      primaryCategory: 'B',
-      secondaryCategories: [],
+      categories: ['B'],
       id64: '2871051900826',
       allegiance: 'Independent',
       government: 'Democracy',
@@ -274,25 +273,49 @@ describe('the record reader', () => {
     const set = setWith('A');
     const report = set.addSystems(
       asRecords([
-        { ...record('First', 'A'), secondaryCategories: ['B'] },
-        { ...record('Second', 'A'), secondaryCategories: 'A' },
+        { ...record('First', 'A'), categories: ['A', 'B'] },
+        { ...record('Second', 'A'), categories: 'A' },
+        { ...record('Third', 'A'), categories: ['A', 7] },
       ]),
     );
 
-    expect(report.rejected).toEqual([{ index: 0, reason: 'unknown-category' }]);
-    expect(report.added).toBe(1);
-    expect(set.system(0)?.name).toBe('Second');
-    expect(set.system(0)?.secondaryCategories).toEqual([]);
+    // A `categories` of the wrong type reads as an empty list, and the table holds a
+    // category, so the second record names none rather than naming `A`.
+    expect(report.rejected).toEqual([
+      { index: 0, reason: 'unknown-category' },
+      { index: 1, reason: 'no-category' },
+      { index: 2, reason: 'unknown-category' },
+    ]);
+    expect(report.added).toBe(0);
   });
 
   test('keeps the secondary categories in order, without a repeat', () => {
     const set = setWith('A', 'B', 'C');
     const report = set.addSystems([
-      { ...record('First', 'A'), secondaryCategories: ['C', 'B', 'C', 'A'] },
+      { ...record('First', 'A'), categories: ['C', 'B', 'C', 'A'] },
     ]);
 
     expect(report.added).toBe(1);
-    expect(set.system(0)?.secondaryCategories).toEqual(['C', 'B']);
+    expect(set.system(0)?.categories).toEqual(['C', 'B', 'A']);
+    // The marker takes the colour of the first category the record names.
+    expect(set.categoryIndices[0]).toBe(set.categoryIndex('C'));
+  });
+
+  test('drops the old field names', () => {
+    const set = setWith('A');
+    const report = set.addSystems(
+      asRecords([
+        {
+          name: 'First',
+          coords: { x: 0, y: 0, z: 0 },
+          primaryCategory: 'A',
+          secondaryCategories: [],
+        },
+      ]),
+    );
+
+    expect(report.rejected).toEqual([{ index: 0, reason: 'no-category' }]);
+    expect(report.added).toBe(0);
   });
 
   test('keeps every digit of a large id64', () => {
@@ -312,8 +335,8 @@ describe('the record reader', () => {
       asRecords([
         record('Good', 'A'),
         record('', 'A'),
-        { name: 'No coords', primaryCategory: 'A' },
-        { name: 'Nan', coords: { x: Number.NaN, y: 0, z: 0 }, primaryCategory: 'A' },
+        { name: 'No coords', categories: ['A'] },
+        { name: 'Nan', coords: { x: Number.NaN, y: 0, z: 0 }, categories: ['A'] },
         record('Far', 'A', [0, 0, 900000]),
         { name: 'No category', coords: { x: 0, y: 0, z: 0 } },
         record('Unknown', 'Z'),
@@ -414,6 +437,76 @@ describe('the paired clear', () => {
     set.addCategories([{ name: 'A', color: [1, 2, 3] }]);
     const again = set.addSystems([record('First', 'A')]);
     expect(again.added).toBe(1);
+  });
+});
+
+describe('an uncategorised set', () => {
+  /** One record that names no category. */
+  const plain = (name: string): SystemRecordInput => ({
+    name,
+    coords: { x: 0, y: 0, z: 0 },
+  });
+
+  test('loads while the table is empty', () => {
+    const set = createSystemSet();
+    const report = set.addSystems([plain('One'), plain('Two'), plain('Three')]);
+
+    expect(report.added).toBe(3);
+    expect(report.rejected).toEqual([]);
+    expect(set.count).toBe(3);
+    expect(set.categoryCount).toBe(0);
+  });
+
+  test('rejects a record with no category while the table holds one', () => {
+    const set = setWith('A');
+    const report = set.addSystems([record('First', 'A'), plain('Second')]);
+
+    expect(report.added).toBe(1);
+    expect(report.rejected).toEqual([{ index: 1, reason: 'no-category' }]);
+  });
+
+  test('rejects every category while the set holds an uncategorised system', () => {
+    const set = createSystemSet();
+    set.addSystems([plain('One'), plain('Two')]);
+    const report = set.addCategories([
+      { name: 'A', color: [1, 2, 3] },
+      { name: 'B', color: [4, 5, 6] },
+    ]);
+
+    expect(report.added).toBe(0);
+    expect(report.rejected).toEqual([
+      { index: 0, reason: 'set-is-uncategorised' },
+      { index: 1, reason: 'set-is-uncategorised' },
+    ]);
+    expect(set.categoryCount).toBe(0);
+  });
+
+  test('lets the categories in after each clear', () => {
+    const categories: readonly CategoryInput[] = [
+      { name: 'A', color: [1, 2, 3] },
+      { name: 'B', color: [4, 5, 6] },
+    ];
+    for (const clear of ['clearSystems', 'clearSystemsAndCategories'] as const) {
+      const set = createSystemSet();
+      set.addSystems([plain('One'), plain('Two')]);
+      set[clear]();
+      const report = set.addCategories(categories);
+
+      expect(report.added).toBe(2);
+      expect(report.rejected).toEqual([]);
+      expect(set.categoryCount).toBe(2);
+    }
+  });
+
+  test('points every system at the internal row', () => {
+    const set = createSystemSet();
+    set.addSystems([plain('One')]);
+
+    expect(set.categoryIndices[0]).toBe(0);
+    expect(set.category(0)?.color).toEqual(DEFAULT_MARKER_COLOR);
+    expect(set.category(0)?.markerStyle).toBe('glow');
+    expect(set.category(0)?.maxDrawRange).toBe(120_000);
+    expect(set.drawsMarker(0)).toBe(true);
   });
 });
 
@@ -770,7 +863,7 @@ describe('the category switch', () => {
 
   test('keeps the marker while any category of the system is on', () => {
     const set = setWith('A', 'B');
-    set.addSystems([{ ...record('one', 'A'), secondaryCategories: ['B'] }]);
+    set.addSystems([{ ...record('one', 'A'), categories: ['A', 'B'] }]);
     set.setCategoryVisible('A', false);
 
     expect(set.drawsMarker(0)).toBe(true);
@@ -791,7 +884,7 @@ describe('the category switch', () => {
 
   test('keeps the primary category index while the primary category is on', () => {
     const set = setWith('A', 'B');
-    set.addSystems([{ ...record('one', 'B'), secondaryCategories: ['A'] }]);
+    set.addSystems([{ ...record('one', 'B'), categories: ['B', 'A'] }]);
 
     expect(set.drawsMarker(0)).toBe(true);
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
@@ -801,7 +894,7 @@ describe('the category switch', () => {
     const set = setWith('A', 'B', 'C');
     // The record names `A`, then `C`, then `B`. The order the index follows is the
     // record's own order and not the table's.
-    set.addSystems([{ ...record('one', 'A'), secondaryCategories: ['C', 'B'] }]);
+    set.addSystems([{ ...record('one', 'A'), categories: ['A', 'C', 'B'] }]);
 
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('A'));
 
@@ -825,7 +918,7 @@ describe('the category switch', () => {
 
   test('gives the index back when the category comes back on', () => {
     const set = setWith('A', 'B');
-    set.addSystems([{ ...record('one', 'B'), secondaryCategories: ['A'] }]);
+    set.addSystems([{ ...record('one', 'B'), categories: ['B', 'A'] }]);
     set.setCategoryVisible('B', false);
 
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('A'));
@@ -842,7 +935,8 @@ describe('the category switch', () => {
       { length: MAX_SYSTEMS },
       (_ignored, index): SystemRecordInput => ({
         ...record(`s${index}`, names[index % 8] as string, [index * 0.001, 0, 0]),
-        secondaryCategories: [
+        categories: [
+          names[index % 8] as string,
           names[(index + 1) % 8] as string,
           names[(index + 2) % 8] as string,
           names[(index + 3) % 8] as string,

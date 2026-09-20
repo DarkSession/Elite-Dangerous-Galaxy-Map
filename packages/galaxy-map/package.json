@@ -1,6 +1,6 @@
 {
   "name": "@elite-dangerous-almanac/galaxy-map",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "An interactive 3D map of the Elite Dangerous galaxy, drawn in the browser with WebGL2.",
   "author": "Dark Session",
   "license": "SEE LICENSE IN LICENSE.md",

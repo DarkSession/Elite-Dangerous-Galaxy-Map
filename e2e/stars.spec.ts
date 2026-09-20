@@ -590,7 +590,7 @@ async function addSystemsAround(
             y: (where.centre[1] as number) + (unit() * 2 - 1) * where.radius,
             z: (where.centre[2] as number) + (unit() * 2 - 1) * where.radius,
           },
-          primaryCategory: 'Empire',
+          categories: ['Empire'],
         });
       }
       map.addSystems(records);
@@ -686,7 +686,7 @@ test('a real system stays when the invented field goes', async ({ page }) => {
       if (map === undefined) return;
       map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
       map.addSystems([
-        { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+        { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
       ]);
       map.debug.drawNow();
     });

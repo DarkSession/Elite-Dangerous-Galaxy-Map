@@ -74,6 +74,18 @@ interface EntryBuild {
   readonly delay?: number;
   /** True makes the `load()` reject. */
   readonly fail?: boolean;
+  /** The `bounds` the entry names, which the load writes on the map. */
+  readonly bounds?: unknown;
+  /** The `view` the entry names, which the load opens the camera at. */
+  readonly view?: unknown;
+  /**
+   * The two opposite corners of the box the entry's systems span. The entry then holds
+   * two records, one at each corner, and `systems` is not read.
+   */
+  readonly corners?: readonly [
+    readonly [number, number, number],
+    readonly [number, number, number],
+  ];
 }
 
 /** What the test asks the second map to be. */
@@ -85,6 +97,10 @@ interface MapBuild {
   readonly catalog?: boolean;
   /** False builds the map with no HUD. */
   readonly hud?: boolean;
+  /** The `bounds` option the map takes. */
+  readonly bounds?: unknown;
+  /** The `startView` option the map takes. */
+  readonly startView?: unknown;
 }
 
 /**
@@ -122,12 +138,24 @@ async function openDatasets(page: Page, build: MapBuild): Promise<void> {
         } as never);
       }
       const systems: unknown[] = [];
+      if (entry.corners !== undefined) {
+        const [low, high] = entry.corners;
+        for (const [at, corner] of [low, high].entries()) {
+          systems.push({
+            name: `${entry.id}-corner-${at}`,
+            coords: { x: corner[0], y: corner[1], z: corner[2] },
+            categories: [(categories[0] as { name: string }).name],
+          });
+        }
+        return { categories: categories as unknown[], systems };
+      }
       for (let index = 0; index < (entry.systems ?? 0); index += 1) {
         systems.push({
           name: `${entry.id}-${index}`,
           coords: { x: index, y: 0, z: index * 2 },
-          primaryCategory: (categories[index % categories.length] as { name: string })
-            .name,
+          categories: [
+            (categories[index % categories.length] as { name: string }).name,
+          ],
         });
       }
       return { categories: categories as unknown[], systems };
@@ -142,6 +170,8 @@ async function openDatasets(page: Page, build: MapBuild): Promise<void> {
         ...(entry.region === undefined ? {} : { region: entry.region }),
         ...(entry.description === undefined ? {} : { description: entry.description }),
         ...(entry.systemCount === undefined ? {} : { systemCount: entry.systemCount }),
+        ...(entry.bounds === undefined ? {} : { bounds: entry.bounds }),
+        ...(entry.view === undefined ? {} : { view: entry.view }),
         load: (): unknown => {
           window.__datasetLoads?.push(entry.id);
           if (entry.fail === true) {
@@ -159,6 +189,8 @@ async function openDatasets(page: Page, build: MapBuild): Promise<void> {
       hud: options.hud !== false,
       ...(options.catalog === false ? {} : { datasets }),
       ...(options.dataset === undefined ? {} : { dataset: options.dataset }),
+      ...(options.bounds === undefined ? {} : { bounds: options.bounds }),
+      ...(options.startView === undefined ? {} : { startView: options.startView }),
     } as never);
     window.__datasetMap = map;
     await map.ready;
@@ -213,6 +245,39 @@ async function loadDataset(
       return { ok: false, message: error instanceof Error ? error.message : '' };
     }
   }, id);
+}
+
+/** The browsable bounds the map holds. */
+async function readBounds(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(
+    () => (window.__datasetMap?.getBounds() ?? {}) as Record<string, unknown>,
+  );
+}
+
+/** The view the map holds, rounded to whole light years and whole degrees. */
+async function readView(page: Page): Promise<{
+  cursor: [number, number, number];
+  distance: number;
+  yaw: number;
+  pitch: number;
+}> {
+  return page.evaluate(() => {
+    const view = window.__datasetMap?.getView();
+    if (view === undefined) {
+      return {
+        cursor: [0, 0, 0] as [number, number, number],
+        distance: -1,
+        yaw: -1,
+        pitch: -1,
+      };
+    }
+    return {
+      cursor: [...view.cursor] as [number, number, number],
+      distance: view.distance,
+      yaw: view.yaw,
+      pitch: view.pitch,
+    };
+  });
 }
 
 /** Draws frames and gives back the mean milliseconds a frame took. */
@@ -272,20 +337,25 @@ test('a load replaces the set and clears the selection and the filter', async ({
 test('a failed load leaves the map as it was', async ({ page }) => {
   await openDatasets(page, {
     entries: [
-      { id: 'good', systems: 4, categories: 2 },
-      { id: 'bad', fail: true },
+      { id: 'good', systems: 4, categories: 2, bounds: { mode: 'auto' } },
+      { id: 'bad', fail: true, bounds: { mode: 'unrestricted' } },
     ],
     dataset: 'good',
   });
+  const view = await readView(page);
 
   const result = await loadDataset(page, 'bad');
   const after = await reading(page);
+  const bounds = await readBounds(page);
   const frame = await drawFrames(page, 10);
-  console.log('the failed load', result, 'the map after it', after);
+  console.log('the failed load', result, 'the map after it', { after, bounds });
 
   expect(result.ok).toBe(false);
   expect(result.message).toContain('The load of bad failed.');
   expect(after).toMatchObject({ systems: 4, categories: 2, loaded: 'good' });
+  // The bounds and the view are the ones the entry that loaded named.
+  expect(bounds).toEqual({ mode: 'auto' });
+  expect(await readView(page)).toEqual(view);
   expect(frame).toBeGreaterThan(0);
 });
 
@@ -310,7 +380,13 @@ test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
   await openDatasets(page, {
     entries: [
       { id: 'full-a', systems: 10000, categories: 256 },
-      { id: 'full-b', systems: 10000, categories: 256 },
+      {
+        id: 'full-b',
+        systems: 10000,
+        categories: 256,
+        bounds: { mode: 'auto' },
+        view: { fit: 'systems' },
+      },
     ],
     dataset: 'full-a',
   });
@@ -329,6 +405,8 @@ test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
   console.log('the switch took', measure, 'ms, and the map holds', after);
 
   expect(after).toMatchObject({ systems: 10000, categories: 256, loaded: 'full-b' });
+  // The two new steps of the load are inside the measurement.
+  expect(await readBounds(page)).toEqual({ mode: 'auto' });
   expect(measure).toBeLessThan(40);
   expect(frame).toBeGreaterThan(0);
 });
@@ -339,10 +417,11 @@ test('the later load wins and the earlier one rejects as cancelled', async ({
   await openDatasets(page, {
     entries: [
       { id: 'start', systems: 2, categories: 1 },
-      { id: 'slow', systems: 7, categories: 1, delay: 300 },
+      { id: 'slow', systems: 7, categories: 1, delay: 300, bounds: { mode: 'auto' } },
       { id: 'fast', systems: 3, categories: 1 },
     ],
     dataset: 'start',
+    bounds: { mode: 'unrestricted' },
   });
 
   const results = await page.evaluate(async () => {
@@ -367,6 +446,8 @@ test('the later load wins and the earlier one rejects as cancelled', async ({
   expect(results[0]).toBe('resolved');
   expect(results[1]).toContain('cancelled');
   expect(after).toMatchObject({ systems: 3, loaded: 'fast' });
+  // The cancelled load wrote no bounds, so the reading is the option the map took.
+  expect(await readBounds(page)).toEqual({ mode: 'unrestricted' });
 });
 
 test('the start load reads the named entry', async ({ page }) => {
@@ -713,6 +794,39 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
   expect(loads).toEqual(['one']);
 });
 
+test('the Thargoid war set restricts the bounds and frames itself', async ({
+  page,
+}) => {
+  await openMap(page, '', { demoData: true });
+  const atStart = await page.evaluate(
+    () => (window.galaxyMap?.getBounds() ?? {}) as Record<string, unknown>,
+  );
+
+  const war = await page.evaluate(async () => {
+    await window.galaxyMap?.loadDataset('thargoid-war');
+    const view = window.galaxyMap?.getView();
+    return {
+      bounds: (window.galaxyMap?.getBounds() ?? {}) as Record<string, unknown>,
+      distance: view?.distance ?? -1,
+      systems: window.galaxyMap?.systemCount() ?? -1,
+    };
+  });
+
+  const away = await page.evaluate(async () => {
+    await window.galaxyMap?.loadDataset('guardian-ruins');
+    return (window.galaxyMap?.getBounds() ?? {}) as Record<string, unknown>;
+  });
+  console.log('the bounds of the demo sets', { atStart, war, away });
+
+  expect(atStart).toEqual({ mode: 'unrestricted' });
+  expect(war.bounds).toEqual({ mode: 'auto' });
+  expect(war.systems).toBeGreaterThan(0);
+  // `fit` frames the set, so the camera stands off less than the far limit of the model.
+  expect(war.distance).toBeGreaterThan(0);
+  expect(war.distance).toBeLessThan(120000);
+  expect(away).toEqual({ mode: 'unrestricted' });
+});
+
 test('the demo page carries the seven sets', async ({ page }) => {
   await openMap(page, '', { demoData: true });
 
@@ -785,9 +899,10 @@ test('every shape of the two shape sets names a category', async ({ page }) => {
     for (let index = 0; index < map.sphereCount(); index += 1) {
       const info = map.getShapeInfo('sphere', index);
       if (info === null) continue;
-      if (info.name === 'Gamma Velorum') gammaVelorum = info.primaryCategory ?? null;
-      if (info.primaryCategory === undefined) unnamed.push(info.name ?? '');
-      else named.push(info.primaryCategory);
+      const first = info.categories[0];
+      if (info.name === 'Gamma Velorum') gammaVelorum = first ?? null;
+      if (first === undefined) unnamed.push(info.name ?? '');
+      else named.push(first);
     }
     let lines = 0;
     let linesWithoutCategory = 0;
@@ -797,7 +912,7 @@ test('every shape of the two shape sets names a category', async ({ page }) => {
       const info = map.getShapeInfo('line', index);
       if (info === null) continue;
       lines += 1;
-      if (info.primaryCategory === undefined) linesWithoutCategory += 1;
+      if (info.categories.length === 0) linesWithoutCategory += 1;
       if (map.getLine(index)?.color !== undefined) linesWithColour += 1;
       if (lineNames.length < 3) lineNames.push(info.name ?? '');
     }
@@ -991,13 +1106,7 @@ test('the multifaction set loads from a fixture', async ({ page }) => {
       spheres: map.sphereCount(),
       lines: map.lineCount(),
       loaded: map.getLoadedDataset()?.id ?? null,
-      shared:
-        shared === null
-          ? null
-          : {
-              primary: shared.primaryCategory,
-              secondary: [...shared.secondaryCategories],
-            },
+      shared: shared === null ? null : { categories: [...shared.categories] },
       sphere: map.getShapeInfo('sphere', 0),
     };
   });
@@ -1010,11 +1119,13 @@ test('the multifaction set loads from a fixture', async ({ page }) => {
   expect(reading.spheres).toBe(48);
   expect(reading.lines).toBe(0);
   expect(reading.loaded).toBe('multifaction');
-  // The first faction of the entry's order gives the shared system its primary category.
-  expect(reading.shared?.primary).toBe('Canonn Controlled');
-  expect(reading.shared?.secondary).toEqual(['Canonn Deep Space Research Present']);
+  // The first faction of the entry's order gives the shared system its first category.
+  expect(reading.shared?.categories).toEqual([
+    'Canonn Controlled',
+    'Canonn Deep Space Research Present',
+  ]);
   // A sphere names its permit category and carries no colour of its own.
-  expect(reading.sphere?.primaryCategory).toBe('Permit Locked Sector');
+  expect(reading.sphere?.categories).toEqual(['Permit Locked Sector']);
 });
 
 test('a failed fetch leaves the map as it was', async ({ page }) => {
@@ -1168,4 +1279,287 @@ test('the Gamma Velorum category holds a shape and no system', async ({ page }) 
   console.log('the Gamma Velorum row of the shapes tab reads', count);
 
   expect(count).toBe('1');
+});
+
+// The bounds and the view a catalog entry names. `farZoomLimit` is `radius / sin(30)`,
+// which is twice the radius, because the field of view is 60 degrees.
+test.describe('an entry frames its set', () => {
+  /** The box the `fit` scenarios use, and the distance `fit` works out from it. */
+  const BOX: [[number, number, number], [number, number, number]] = [
+    [-100, -50, -100],
+    [100, 50, 100],
+  ];
+  const FIT_DISTANCE = Math.hypot(200, 100, 200);
+
+  test("an entry's bounds take effect on its load", async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        { id: 'near', systems: 4, bounds: { mode: 'auto' } },
+        { id: 'far', systems: 4 },
+      ],
+      dataset: 'near',
+      bounds: { mode: 'unrestricted' },
+    });
+
+    const first = await readBounds(page);
+    expect((await loadDataset(page, 'far')).ok).toBe(true);
+    const second = await readBounds(page);
+    console.log("the entry's bounds", { first, second });
+
+    expect(first).toEqual({ mode: 'auto' });
+    expect(second).toEqual({ mode: 'unrestricted' });
+  });
+
+  test('a dataset load writes the bounds and getBounds reads it', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [{ id: 'plain', systems: 4 }],
+      dataset: 'plain',
+      bounds: { mode: 'unrestricted' },
+    });
+
+    await page.evaluate(() => {
+      window.__datasetMap?.setBounds({
+        mode: 'sphere',
+        centre: [0, 0, 0],
+        radiusLy: 500,
+      });
+    });
+    const host = await readBounds(page);
+    expect((await loadDataset(page, 'plain')).ok).toBe(true);
+    const after = await readBounds(page);
+    console.log("the host's own bounds", { host, after });
+
+    expect(host).toMatchObject({ mode: 'sphere' });
+    // The next load restores the option, and not the sphere the host set.
+    expect(after).toEqual({ mode: 'unrestricted' });
+  });
+
+  test('the bounds reach a listener', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        { id: 'plain', systems: 4 },
+        { id: 'held', systems: 4, bounds: { mode: 'auto' } },
+      ],
+      dataset: 'plain',
+      bounds: { mode: 'unrestricted' },
+    });
+
+    const heard = await page.evaluate(async () => {
+      const map = window.__datasetMap;
+      const seen: unknown[] = [];
+      const stop = map?.onDatasetChange(() => {
+        seen.push(map.getBounds());
+      });
+      await map?.loadDataset('held');
+      stop?.();
+      return seen;
+    });
+    console.log('the bounds a listener read', heard);
+
+    expect(heard).toContainEqual({ mode: 'auto' });
+  });
+
+  test('a restricted set holds the camera', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        {
+          id: 'small',
+          bounds: { mode: 'auto' },
+          corners: [
+            [-200, -200, -200],
+            [200, 200, 200],
+          ],
+        },
+      ],
+      dataset: 'small',
+      bounds: { mode: 'unrestricted' },
+    });
+
+    await page.evaluate(() => {
+      window.__datasetMap?.setView({
+        cursor: [30000, 0, 0],
+        distance: 100000,
+        yaw: 0,
+        pitch: 35,
+      });
+      window.__datasetMap?.debug.drawNow();
+    });
+    const view = await readView(page);
+    console.log('the clamped view', view);
+
+    // The box is 200 light years on each side of the centre, grown by the 1,000 light
+    // year margin an `auto` bound takes.
+    for (const axis of [0, 1, 2]) {
+      expect(Math.abs(view.cursor[axis] as number)).toBeLessThanOrEqual(1200);
+    }
+    // The far zoom limit of that box, which is twice half its diagonal. The margin of
+    // one part in a million holds the last bit of the double the clamp writes.
+    expect(view.distance).toBeLessThanOrEqual(Math.hypot(2400, 2400, 2400) + 1e-6);
+  });
+
+  test('`fit` frames the set', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [{ id: 'framed', corners: BOX, view: { fit: 'systems' } }],
+      dataset: 'framed',
+    });
+
+    const view = await readView(page);
+    console.log('the fitted view', view);
+
+    for (const axis of [0, 1, 2]) {
+      expect(Math.abs(view.cursor[axis] as number)).toBeLessThan(1e-6);
+    }
+    expect(Math.abs(view.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('`fit` ends a running flight', async ({ page }) => {
+    // A flight writes the view every frame. The entry takes the camera, so the flight
+    // ends at the load. Without that, the flight takes the view back on the next frame
+    // and the camera goes to the old target instead of the box. The test below reads the
+    // wheel glide, which is the second writer.
+    await openDatasets(page, {
+      entries: [
+        { id: 'first', systems: 4 },
+        { id: 'framed', corners: BOX, view: { fit: 'systems' } },
+      ],
+      dataset: 'first',
+    });
+
+    const outcome = await page.evaluate(async () => {
+      const map = window.__datasetMap;
+      if (map === undefined) return 'none';
+      const flight = map.flyTo({ cursor: [20000, 0, 0], distance: 60000 });
+      await map.loadDataset('framed');
+      return flight;
+    });
+    // The load settles in a task of its own, so the frames after it run here.
+    await page.waitForTimeout(400);
+    const view = await readView(page);
+    console.log('the view after a load over a flight', { outcome, view });
+
+    expect(outcome).toBe('interrupted');
+    for (const axis of [0, 1, 2]) {
+      expect(Math.abs(view.cursor[axis] as number)).toBeLessThan(1e-6);
+    }
+    expect(Math.abs(view.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('`system` opens on that record, after the pending start would have gone', async ({
+    page,
+  }) => {
+    // The `system` field of an entry is resolved at the load, because the load wrote
+    // the set a step before. The start view holds its own name over the frames a host
+    // may take to add the record, and it drops it after 600 of them. An entry that
+    // rode that hold would move nowhere on a page that has drawn longer.
+    await openDatasets(page, {
+      entries: [
+        { id: 'first', systems: 4 },
+        { id: 'named', corners: BOX, view: { system: 'named-corner-0' } },
+      ],
+      dataset: 'first',
+    });
+
+    // 700 drawn frames, which is past the 600 the pending start holds for.
+    await page.evaluate(() => {
+      for (let count = 0; count < 700; count += 1) {
+        window.__datasetMap?.debug.drawNow();
+      }
+    });
+
+    expect((await loadDataset(page, 'named')).ok).toBe(true);
+    const view = await readView(page);
+    console.log('the view of an entry naming a system', view);
+
+    expect(view.cursor).toEqual([-100, -50, -100]);
+  });
+
+  test('`fit` ends the wheel glide', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        { id: 'first', systems: 4 },
+        { id: 'framed', corners: BOX, view: { fit: 'systems' } },
+      ],
+      dataset: 'first',
+    });
+
+    const before = await page.evaluate(() => {
+      document
+        .querySelector('#dataset-wrap canvas')
+        ?.dispatchEvent(
+          new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }),
+        );
+      return window.__datasetMap?.debug.zoomTargetLy() ?? null;
+    });
+    expect(before).not.toBeNull();
+
+    expect((await loadDataset(page, 'framed')).ok).toBe(true);
+    const after = await page.evaluate(
+      () => window.__datasetMap?.debug.zoomTargetLy() ?? null,
+    );
+    // The glide steps the distance every frame, so a target left over would drag the
+    // camera off the box the entry asked to be framed.
+    await page.waitForTimeout(400);
+    const view = await readView(page);
+    console.log('the view after a load over a glide', { before, after, view });
+
+    expect(after).toBeNull();
+    expect(Math.abs(view.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('a named field wins over `fit`', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [{ id: 'framed', corners: BOX, view: { fit: 'systems', pitch: 60 } }],
+      dataset: 'framed',
+    });
+
+    const view = await readView(page);
+    console.log('the fitted view with a pitch', view);
+
+    expect(Math.abs(view.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+    expect(view.pitch).toBe(60);
+  });
+
+  test('a deep link beats the entry at start', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [{ id: 'framed', corners: BOX, view: { fit: 'systems' } }],
+      dataset: 'framed',
+      startView: { cursor: [500, 0, 500], distance: 1000, yaw: 0, pitch: 35 },
+    });
+
+    const atStart = await readView(page);
+    expect((await loadDataset(page, 'framed')).ok).toBe(true);
+    const afterLoad = await readView(page);
+    console.log('the deep link', { atStart, afterLoad });
+
+    expect(atStart.cursor[0]).toBeCloseTo(500, 3);
+    expect(atStart.cursor[2]).toBeCloseTo(500, 3);
+    for (const axis of [0, 1, 2]) {
+      expect(Math.abs(afterLoad.cursor[axis] as number)).toBeLessThan(1e-6);
+    }
+  });
+
+  test('an entry with no view leaves the camera', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        { id: 'first', systems: 4 },
+        { id: 'second', systems: 4 },
+      ],
+      dataset: 'first',
+    });
+
+    await page.evaluate(() => {
+      window.__datasetMap?.setView({
+        cursor: [120, 30, 60],
+        distance: 4000,
+        yaw: 25,
+        pitch: 40,
+      });
+    });
+    const before = await readView(page);
+    expect((await loadDataset(page, 'second')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load with no view', { before, after });
+
+    expect(after).toEqual(before);
+  });
 });

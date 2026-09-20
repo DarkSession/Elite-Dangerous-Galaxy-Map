@@ -50,7 +50,7 @@ describe('the conversion of the multifaction spheres', () => {
       { name: 'Permit Locked Sector', color: [51, 179, 255] },
       { name: 'Permit Unlocked Sector', color: [255, 191, 26] },
     ]);
-    expect(set.spheres.map((sphere) => sphere.primaryCategory)).toEqual([
+    expect(set.spheres.map((sphere) => sphere.categories?.[0])).toEqual([
       'Permit Locked Sector',
       'Permit Locked Sector',
       'Permit Locked Sector',
@@ -69,7 +69,7 @@ describe('the conversion of the multifaction spheres', () => {
       position: [508.68359, -372.59375, -1090.87891],
       radius: 514,
       name: 'Col 70 Sector',
-      primaryCategory: 'Permit Locked Sector',
+      categories: ['Permit Locked Sector'],
     });
   });
 

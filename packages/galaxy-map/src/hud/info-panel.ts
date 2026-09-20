@@ -564,21 +564,24 @@ export function createInfoPanel(
       );
     }
 
-    const colors = colorsByName();
-    const categoryNames = [system.primaryCategory, ...system.secondaryCategories];
-    const chips = make(doc, 'div', 'gm-hud__chips');
-    for (const categoryName of categoryNames) {
-      const color = colors.get(categoryName);
-      const chip = make(doc, 'span', 'gm-hud__chip');
-      chip.dataset['name'] = categoryName;
-      chip.textContent = categoryName;
-      if (color !== undefined) {
-        chip.style.color = cssColor(color);
-        chip.style.background = cssColorAlpha(color, 0.12);
+    // A system that names no category carries no chip and no empty row in place of one,
+    // which an uncategorised set holds for every one of its systems.
+    if (system.categories.length > 0) {
+      const colors = colorsByName();
+      const chips = make(doc, 'div', 'gm-hud__chips');
+      for (const categoryName of system.categories) {
+        const color = colors.get(categoryName);
+        const chip = make(doc, 'span', 'gm-hud__chip');
+        chip.dataset['name'] = categoryName;
+        chip.textContent = categoryName;
+        if (color !== undefined) {
+          chip.style.color = cssColor(color);
+          chip.style.background = cssColorAlpha(color, 0.12);
+        }
+        chips.appendChild(chip);
       }
-      chips.appendChild(chip);
+      parts.push(sectionTitle('CATEGORIES'), chips);
     }
-    parts.push(sectionTitle('CATEGORIES'), chips);
 
     // The loaded description replaces the record's own. The record is what the panel
     // draws when the host gives no loader, when the loader gives none, and when a load

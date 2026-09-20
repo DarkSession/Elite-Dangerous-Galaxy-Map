@@ -371,14 +371,14 @@ describe('a shape that names a category', () => {
     ]);
     const set = createShapeSet(() => null, table);
     for (const name of ['A', 'B']) {
-      set.addSpheres([{ position: [0, 0, 0], radius: 100, primaryCategory: name }]);
+      set.addSpheres([{ position: [0, 0, 0], radius: 100, categories: [name] }]);
       set.addLines([
         {
           points: [
             [0, 0, 0],
             [100, 0, 0],
           ],
-          primaryCategory: name,
+          categories: [name],
         },
       ]);
     }

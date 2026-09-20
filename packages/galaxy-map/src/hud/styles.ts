@@ -462,6 +462,19 @@ const styleText = `
   color: rgba(244, 230, 216, 0.45);
 }
 
+/*
+ * The flat list of a tab that holds no category row. It is always open, so it takes no
+ * movement, and it is the whole list area, so it takes no inset background of its own.
+ * Its rows are the rows of an open category list, which carry their own ellipsis, so the
+ * panel scrolls down and never across.
+ */
+.gm-hud__flat-list {
+  transition: none;
+}
+.gm-hud__flat-list .gm-hud__system-rows {
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gm-hud__system-list {
     transition-duration: 0s;

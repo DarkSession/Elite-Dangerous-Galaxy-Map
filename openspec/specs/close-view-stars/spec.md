@@ -499,8 +499,9 @@ light years and below, 1 at 2,560 and above, and a smoothstep between. The inven
 stands in for systems the map holds no record of, so it gives way as the camera comes
 close enough to read one system from the next. A real system does not fade: the
 requirement "A marker draws for every system at every zoom distance" of `real-systems`
-draws a marker at every zoom distance from 10 to 120,000 light years, for every system its
-category's draw range keeps. Inside the covered sphere the close view then shows the
+draws a marker at every zoom distance from 10 to 120,000 light years, for every system the
+draw range of its drawn category keeps. A system that names no category takes the library's
+default range. Inside the covered sphere the close view then shows the
 host's systems and nothing the map invented. Outside it the point cloud, the volume and
 the cloud sprites draw the galaxy as they did before, so the frame is not empty.
 

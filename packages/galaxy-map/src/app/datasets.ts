@@ -7,6 +7,8 @@
 // The state machine lives here and not in the HUD, so a host that builds its own chrome
 // drives the same calls the HUD does: `getDatasets`, `getLoadedDataset`, `loadDataset`
 // and `onDatasetChange`.
+import { readBounds } from '../camera/view';
+import type { BrowseBounds } from '../camera/view';
 import type {
   AddReport,
   CategoryInput,
@@ -23,6 +25,64 @@ export interface DatasetContent {
   readonly systems: readonly SystemRecordInput[];
 }
 
+/**
+ * Where the camera opens on a load. It carries the fields of `StartView` and one more,
+ * `fit`, which frames the set the load wrote. A field the entry names beside `fit` wins
+ * over what `fit` worked out.
+ *
+ * The `StartView` fields are repeated here rather than imported, because `create-map.ts`
+ * imports this module and not the other way round.
+ */
+export interface DatasetView {
+  /** Centres on the box of the set and frames the whole of it. */
+  readonly fit?: 'systems';
+  readonly cursor?: readonly [number, number, number];
+  readonly system?: string;
+  readonly distance?: number;
+  readonly yaw?: number;
+  readonly pitch?: number;
+}
+
+/**
+ * Reads an entry's `view`, or null where the map cannot read it. An unreadable field
+ * makes the whole setting unreadable, as `readStartView` does, so a load never opens at
+ * half of what the entry asked for.
+ */
+export function readDatasetView(value: unknown): DatasetView | null {
+  if (value === null || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  const view: {
+    fit?: 'systems';
+    cursor?: [number, number, number];
+    system?: string;
+    distance?: number;
+    yaw?: number;
+    pitch?: number;
+  } = {};
+  if (source['fit'] !== undefined) {
+    if (source['fit'] !== 'systems') return null;
+    view.fit = 'systems';
+  }
+  if (source['cursor'] !== undefined) {
+    const cursor = source['cursor'];
+    if (!Array.isArray(cursor) || cursor.length !== 3) return null;
+    if (!(cursor as unknown[]).every((part) => Number.isFinite(part))) return null;
+    const point = cursor as number[];
+    view.cursor = [point[0] as number, point[1] as number, point[2] as number];
+  }
+  if (source['system'] !== undefined) {
+    if (typeof source['system'] !== 'string' || source['system'] === '') return null;
+    view.system = source['system'];
+  }
+  for (const field of ['distance', 'yaw', 'pitch'] as const) {
+    const held = source[field];
+    if (held === undefined) continue;
+    if (typeof held !== 'number' || !Number.isFinite(held)) return null;
+    view[field] = held;
+  }
+  return view;
+}
+
 /** One entry of the catalog, as the host writes it. */
 export interface DatasetEntry {
   /** The identity of the entry. `loadDataset` takes it. */
@@ -37,6 +97,10 @@ export interface DatasetEntry {
   readonly description?: string;
   /** How many systems the set holds. */
   readonly systemCount?: number;
+  /** Where the set lives. An entry that names none restores the map's own option. */
+  readonly bounds?: BrowseBounds;
+  /** Where the camera opens on a load of this entry. */
+  readonly view?: DatasetView;
   /** Reads the set. The library calls it and adds what comes back. */
   load(): DatasetContent | Promise<DatasetContent>;
 }
@@ -49,6 +113,8 @@ export interface DatasetInfo {
   readonly region?: string;
   readonly description?: string;
   readonly systemCount?: number;
+  readonly bounds?: BrowseBounds;
+  readonly view?: DatasetView;
 }
 
 /** Why the reader dropped an entry. */
@@ -129,6 +195,10 @@ export function readDatasets(datasets: unknown): CatalogReport {
     const region = textOf(raw.region);
     const description = textOf(raw.description);
     const systemCount = countOf(raw.systemCount);
+    // An unreadable `bounds` or `view` does not drop the entry: the set still loads, and
+    // the entry then acts as one that named neither field.
+    const bounds = raw.bounds === undefined ? null : readBounds(raw.bounds);
+    const view = raw.view === undefined ? null : readDatasetView(raw.view);
     entries.push({
       id,
       label,
@@ -136,6 +206,8 @@ export function readDatasets(datasets: unknown): CatalogReport {
       ...(region === undefined ? {} : { region }),
       ...(description === undefined ? {} : { description }),
       ...(systemCount === undefined ? {} : { systemCount }),
+      ...(bounds === null ? {} : { bounds }),
+      ...(view === null ? {} : { view }),
       load: raw.load.bind(raw),
     });
   }
@@ -168,6 +240,16 @@ export interface DatasetWriter {
    * load leaves the map with the set it already had.
    */
   write(content: DatasetContent): DatasetLoadResult;
+  /**
+   * Writes the browsable bounds of the entry that loaded. `null` restores the bounds the
+   * map's own option named, so one restricted set does not restrict the next.
+   */
+  setBounds(bounds: BrowseBounds | null): void;
+  /**
+   * Opens the camera where the entry asks. The state machine calls it only for an entry
+   * that names a `view`, so an entry that names none leaves the camera where it is.
+   */
+  applyView(view: DatasetView): void;
 }
 
 /** What the options give the state machine. */
@@ -176,6 +258,11 @@ export interface DatasetStateOptions extends DatasetWriter {
   readonly datasets?: unknown;
   /** The `dataset` option: the id of the entry to load at start. */
   readonly dataset?: unknown;
+  /**
+   * Whether the options named a `startView`. On the start load an entry's `view` applies
+   * only where they did not, so a deep link the host passed as `startView` wins.
+   */
+  readonly hasStartView?: boolean;
 }
 
 /** The dataset state of one map. */
@@ -213,7 +300,7 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     for (const listener of listeners) listener(entry);
   };
 
-  const loadDataset = async (id: string): Promise<DatasetLoadResult> => {
+  const runLoad = async (id: string, atStart: boolean): Promise<DatasetLoadResult> => {
     const entry = catalog.entries.find((candidate) => candidate.id === id);
     if (entry === undefined) {
       throw new Error(`The catalog holds no dataset with the id "${id}".`);
@@ -223,10 +310,20 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     const content = await entry.load();
     if (ticket !== counter) throw new Error(CANCELLED_MESSAGE);
     const report = options.write(content);
+    // The bounds and the view are written before the announce, so a listener that adds
+    // the shapes of the entry reads the bounds the entry asked for.
+    options.setBounds(entry.bounds ?? null);
+    // A deep link wins at start: the start load holds the entry's view where the options
+    // named a `startView`, because the load settles after the page has already drawn.
+    if (entry.view !== undefined && !(atStart && options.hasStartView === true)) {
+      options.applyView(entry.view);
+    }
     loaded = entry;
     announce();
     return report;
   };
+
+  const loadDataset = (id: string): Promise<DatasetLoadResult> => runLoad(id, false);
 
   /** The entry the start load reads: the one `dataset` names, or the first one. */
   const startEntry = (): DatasetEntry | null => {
@@ -256,7 +353,7 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
       if (entry === null) return null;
       // `ready` waits for this promise, and it settles whether or not the load
       // succeeded, so a failed dataset still leaves a drawing map.
-      return loadDataset(entry.id).then(
+      return runLoad(entry.id, true).then(
         () => undefined,
         () => undefined,
       );

@@ -59,8 +59,7 @@ export type DemoIcon =
 export interface DemoSystem {
   readonly name: string;
   readonly coords: { readonly x: number; readonly y: number; readonly z: number };
-  readonly primaryCategory: string;
-  readonly secondaryCategories: readonly string[];
+  readonly categories: readonly string[];
   readonly description?: string;
   readonly images?: readonly DemoImage[];
   readonly icons?: readonly DemoIcon[];
@@ -106,8 +105,8 @@ export interface DemoSphere {
   /** The sphere's own colour, absent where it takes the colour of a category. */
   readonly color?: readonly [number, number, number];
   readonly name?: string;
-  /** The marker category of the list the sphere comes from, where the list names one. */
-  readonly primaryCategory?: string;
+  /** The marker categories of the list the sphere comes from, in its own order. */
+  readonly categories?: readonly string[];
 }
 
 /**
@@ -125,10 +124,8 @@ export interface DemoLine {
   readonly closed?: boolean;
   /** The name of the line itself, which is not the name of its category. */
   readonly name?: string;
-  /** The first category the line's route names, where the source table holds one. */
-  readonly primaryCategory?: string;
-  /** The other categories the route names, without a repeat. */
-  readonly secondaryCategories?: readonly string[];
+  /** The categories the line's route names, in the route's order, without a repeat. */
+  readonly categories?: readonly string[];
 }
 
 /**

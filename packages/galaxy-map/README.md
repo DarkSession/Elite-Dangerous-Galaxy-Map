@@ -39,7 +39,7 @@ map.addSystems([
   {
     name: 'Sol',
     coords: { x: 0, y: 0, z: 0 },
-    primaryCategory: 'Visited',
+    categories: ['Visited'],
     id64: 10477373803,
   },
 ]);
@@ -67,7 +67,7 @@ map.addSystems([
   {
     name: 'HIP 36823',
     coords: { x: 570.4, y: 17.5, z: -68.6 },
-    primaryCategory: 'Beacon',
+    categories: ['Beacon'],
     icons: ['titan', 'mission', { url: '/icons/ruins.svg', color: [255, 154, 60] }],
   },
 ]);

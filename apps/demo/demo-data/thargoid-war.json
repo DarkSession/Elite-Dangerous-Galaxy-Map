@@ -31,8 +31,7 @@
         "y": -72.65625,
         "z": -127.34375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 1,839,465.",
       "icons": ["front-line"]
     },
@@ -43,8 +42,7 @@
         "y": -88.4375,
         "z": -129.9375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 56,945."
     },
     {
@@ -54,8 +52,7 @@
         "y": -60.1875,
         "z": -157.78125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -65,8 +62,7 @@
         "y": -74.375,
         "z": -149.15625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 61,504.",
       "icons": ["front-line"]
     },
@@ -77,8 +73,7 @@
         "y": -92.28125,
         "z": -117.4375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 56,457.",
       "icons": ["front-line"]
     },
@@ -89,8 +84,7 @@
         "y": -63.3125,
         "z": -154.0625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -100,8 +94,7 @@
         "y": -72.25,
         "z": -103.0625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 238,543.",
       "icons": ["front-line"]
     },
@@ -112,8 +105,7 @@
         "y": -61.96875,
         "z": -150.8125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 42,748.",
       "icons": ["front-line"]
     },
@@ -124,8 +116,7 @@
         "y": -144.53125,
         "z": -96.9375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Leigong invades the system. The population is 2,867,270.",
       "icons": ["front-line"]
     },
@@ -136,8 +127,7 @@
         "y": -78.59375,
         "z": -152.90625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 8,069,278.",
       "icons": ["front-line"]
     },
@@ -148,8 +138,7 @@
         "y": -78.3125,
         "z": -130.9375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 19,395,512.",
       "icons": ["front-line"]
     },
@@ -160,8 +149,7 @@
         "y": -73.71875,
         "z": -109.75
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 1,973,975.",
       "icons": ["front-line"]
     },
@@ -172,8 +160,7 @@
         "y": -76.09375,
         "z": -114.625
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -184,8 +171,7 @@
         "y": -70.625,
         "z": -107.65625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 222,237.",
       "icons": ["front-line"]
     },
@@ -196,8 +182,7 @@
         "y": -78.78125,
         "z": -113.25
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -207,8 +192,7 @@
         "y": -81.34375,
         "z": -136.25
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 30,414.",
       "icons": ["front-line"]
     },
@@ -219,8 +203,7 @@
         "y": -73.3125,
         "z": -114.25
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -230,8 +213,7 @@
         "y": -57.59375,
         "z": -160.125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 5,174,311.",
       "icons": ["front-line"]
     },
@@ -242,8 +224,7 @@
         "y": -77.46875,
         "z": -126.375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -253,8 +234,7 @@
         "y": -63.8125,
         "z": -162.4375
       },
-      "primaryCategory": "Titan",
-      "secondaryCategories": [],
+      "categories": ["Titan"],
       "description": "The system holds the maelstrom of the Titan Indra.",
       "icons": ["titan"]
     },
@@ -265,8 +245,7 @@
         "y": -86.71875,
         "z": -108.09375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -277,8 +256,7 @@
         "y": -57.03125,
         "z": -147.3125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 4,289,351.",
       "icons": ["front-line"]
     },
@@ -289,8 +267,7 @@
         "y": -140.125,
         "z": -89.25
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Leigong invades the system. The population is 96,277.",
       "icons": ["front-line"]
     },
@@ -301,8 +278,7 @@
         "y": -82.4375,
         "z": -108.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -312,8 +288,7 @@
         "y": -69.34375,
         "z": -104.0625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 7,574."
     },
     {
@@ -323,8 +298,7 @@
         "y": -73.96875,
         "z": -115.75
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -334,8 +308,7 @@
         "y": -55.15625,
         "z": -146.84375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 77,896.",
       "icons": ["front-line"]
     },
@@ -346,8 +319,7 @@
         "y": -140.65625,
         "z": -101.25
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Leigong invades the system. The population is 33,731.",
       "icons": ["front-line"]
     },
@@ -358,8 +330,7 @@
         "y": -73.0625,
         "z": -153.375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 462,953.",
       "icons": ["front-line"]
     },
@@ -370,8 +341,7 @@
         "y": -71.625,
         "z": -152.4375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -382,8 +352,7 @@
         "y": -53,
         "z": -154.78125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 13,834.",
       "icons": ["front-line"]
     },
@@ -394,8 +363,7 @@
         "y": -60.40625,
         "z": -128.21875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -406,8 +374,7 @@
         "y": -133.40625,
         "z": -97.09375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -417,8 +384,7 @@
         "y": -79.46875,
         "z": -107.78125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -428,8 +394,7 @@
         "y": -75.625,
         "z": -122.6875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -439,8 +404,7 @@
         "y": -84.9375,
         "z": -133.84375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 14,186,953.",
       "icons": ["front-line"]
     },
@@ -451,8 +415,7 @@
         "y": -60,
         "z": -148.46875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -463,8 +426,7 @@
         "y": -75.40625,
         "z": -115.3125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -474,8 +436,7 @@
         "y": -88.78125,
         "z": -106.25
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -486,8 +447,7 @@
         "y": -82.75,
         "z": -112.59375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 6,589,426."
     },
     {
@@ -497,8 +457,7 @@
         "y": -143.84375,
         "z": -92.25
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Leigong invades the system. The population is 138,011.",
       "icons": ["front-line"]
     },
@@ -509,8 +468,7 @@
         "y": -85.28125,
         "z": -117.875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -520,8 +478,7 @@
         "y": -50.125,
         "z": -145.71875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system. The population is 58,363.",
       "icons": ["conflict-zone"]
     },
@@ -532,8 +489,7 @@
         "y": -74.90625,
         "z": -126.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 84,026."
     },
     {
@@ -543,8 +499,7 @@
         "y": -85.90625,
         "z": -128.21875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -555,8 +510,7 @@
         "y": -70.78125,
         "z": -117.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 6,908,468."
     },
     {
@@ -566,8 +520,7 @@
         "y": -144.40625,
         "z": -106.28125
       },
-      "primaryCategory": "Titan",
-      "secondaryCategories": [],
+      "categories": ["Titan"],
       "description": "The system holds the maelstrom of the Titan Leigong.",
       "icons": ["titan"]
     },
@@ -578,8 +531,7 @@
         "y": -144.65625,
         "z": -96
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -589,8 +541,7 @@
         "y": -58.6875,
         "z": -131.71875
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 28,773.",
       "icons": ["front-line"]
     },
@@ -601,8 +552,7 @@
         "y": -60.03125,
         "z": -125.6875
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Taranis invades the system. The population is 321,112.",
       "icons": ["front-line"]
     },
@@ -613,8 +563,7 @@
         "y": -81.34375,
         "z": -119.8125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -624,8 +573,7 @@
         "y": -81.46875,
         "z": -111.40625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -635,8 +583,7 @@
         "y": 14.375,
         "z": -99.90625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -646,8 +593,7 @@
         "y": 16.40625,
         "z": -99.625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -657,8 +603,7 @@
         "y": -81.125,
         "z": -128.75
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 4,760."
     },
     {
@@ -668,8 +613,7 @@
         "y": 17.21875,
         "z": -92.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system. The population is 54,706."
     },
     {
@@ -679,8 +623,7 @@
         "y": -70,
         "z": -169.5625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 23,787.",
       "icons": ["front-line"]
     },
@@ -691,8 +634,7 @@
         "y": -147.46875,
         "z": -114.03125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -702,8 +644,7 @@
         "y": -57.5625,
         "z": -145.78125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 61,909.",
       "icons": ["front-line"]
     },
@@ -714,8 +655,7 @@
         "y": -130.96875,
         "z": -106.5
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -726,8 +666,7 @@
         "y": -132.96875,
         "z": -96.59375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Leigong invades the system. The population is 145,168.",
       "icons": ["front-line"]
     },
@@ -738,8 +677,7 @@
         "y": -66.875,
         "z": -131.0625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 2,166,242."
     },
     {
@@ -749,8 +687,7 @@
         "y": -60.59375,
         "z": -158.21875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -761,8 +698,7 @@
         "y": -71.375,
         "z": -131.90625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -772,8 +708,7 @@
         "y": -77.625,
         "z": -116.03125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 32,393."
     },
     {
@@ -783,8 +718,7 @@
         "y": -71.875,
         "z": -138.96875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -794,8 +728,7 @@
         "y": -74.90625,
         "z": -122
       },
-      "primaryCategory": "Titan",
-      "secondaryCategories": [],
+      "categories": ["Titan"],
       "description": "The system holds the maelstrom of the Titan Taranis.",
       "icons": ["titan"]
     },
@@ -806,8 +739,7 @@
         "y": -63.6875,
         "z": -148.46875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -817,8 +749,7 @@
         "y": -56.71875,
         "z": -146.84375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Indra invades the system. The population is 22,586.",
       "icons": ["front-line"]
     },
@@ -829,8 +760,7 @@
         "y": -56.8125,
         "z": -144.84375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -841,8 +771,7 @@
         "y": -85.9375,
         "z": -120.4375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -853,8 +782,7 @@
         "y": -145.65625,
         "z": -94.84375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -865,8 +793,7 @@
         "y": -56.59375,
         "z": -154.65625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 130,277."
     },
     {
@@ -876,8 +803,7 @@
         "y": -84.5625,
         "z": -115.5
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -887,8 +813,7 @@
         "y": -61.875,
         "z": -127.40625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system. The population is 18,545,522."
     },
     {
@@ -898,8 +823,7 @@
         "y": -61.75,
         "z": -122.53125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -909,8 +833,7 @@
         "y": -74.625,
         "z": -152.53125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -921,8 +844,7 @@
         "y": -142.28125,
         "z": -89.90625
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -933,8 +855,7 @@
         "y": -67.34375,
         "z": -174.15625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -944,8 +865,7 @@
         "y": -56.59375,
         "z": -160.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -955,8 +875,7 @@
         "y": -54.375,
         "z": -164.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -966,8 +885,7 @@
         "y": -86.15625,
         "z": -126.96875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -977,8 +895,7 @@
         "y": -58.53125,
         "z": -151.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 86,430."
     },
     {
@@ -988,8 +905,7 @@
         "y": -64.21875,
         "z": -158.0625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 14,284,829."
     },
     {
@@ -999,8 +915,7 @@
         "y": -138.9375,
         "z": -96.375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1011,8 +926,7 @@
         "y": -61.25,
         "z": -159.1875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 55,083."
     },
     {
@@ -1022,8 +936,7 @@
         "y": -60.5,
         "z": -151.09375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 2,673,290."
     },
     {
@@ -1033,8 +946,7 @@
         "y": -70.46875,
         "z": -128.5
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -1044,8 +956,7 @@
         "y": -66.84375,
         "z": -162.4375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1056,8 +967,7 @@
         "y": -77.15625,
         "z": -118.46875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Taranis controls the system."
     },
     {
@@ -1067,8 +977,7 @@
         "y": -72.5,
         "z": -153.59375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1078,8 +987,7 @@
         "y": -49.78125,
         "z": -154.59375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1090,8 +998,7 @@
         "y": -134.875,
         "z": -105.625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1101,8 +1008,7 @@
         "y": -143.03125,
         "z": -117.65625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1112,8 +1018,7 @@
         "y": -145.375,
         "z": -119.4375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1123,8 +1028,7 @@
         "y": -150.9375,
         "z": -108.25
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1134,8 +1038,7 @@
         "y": -69.65625,
         "z": -150.25
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1145,8 +1048,7 @@
         "y": -58.625,
         "z": -141.8125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system. The population is 54,893,950.",
       "icons": ["conflict-zone"]
     },
@@ -1157,8 +1059,7 @@
         "y": 31.65625,
         "z": -71.25
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 2,162,455.",
       "icons": ["front-line"]
     },
@@ -1169,8 +1070,7 @@
         "y": 33.21875,
         "z": -68.65625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 82,998.",
       "icons": ["front-line"]
     },
@@ -1181,8 +1081,7 @@
         "y": -65.65625,
         "z": -158.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 142,562."
     },
     {
@@ -1192,8 +1091,7 @@
         "y": -145.40625,
         "z": -98.875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1203,8 +1101,7 @@
         "y": -133.53125,
         "z": -99.8125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1215,8 +1112,7 @@
         "y": -145.3125,
         "z": -93.9375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1226,8 +1122,7 @@
         "y": -87.8125,
         "z": -136.15625
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Taranis threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1238,8 +1133,7 @@
         "y": -71.09375,
         "z": -179.28125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1250,8 +1144,7 @@
         "y": -68.5625,
         "z": -156.5
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1261,8 +1154,7 @@
         "y": -147.125,
         "z": -123.1875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1273,8 +1165,7 @@
         "y": -64.28125,
         "z": -159.15625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1284,8 +1175,7 @@
         "y": -144.25,
         "z": -120.46875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1295,8 +1185,7 @@
         "y": -155.53125,
         "z": -89.96875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1307,8 +1196,7 @@
         "y": -59.5625,
         "z": -158.125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1318,8 +1206,7 @@
         "y": 53.71875,
         "z": -71.5625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 5,616,293.",
       "icons": ["front-line"]
     },
@@ -1330,8 +1217,7 @@
         "y": 37.125,
         "z": -78.96875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 75,450."
     },
     {
@@ -1341,8 +1227,7 @@
         "y": 50.1875,
         "z": -89.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 316,538."
     },
     {
@@ -1352,8 +1237,7 @@
         "y": 59.8125,
         "z": -82.625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 60,426.",
       "icons": ["front-line"]
     },
@@ -1364,8 +1248,7 @@
         "y": 45.46875,
         "z": -73.84375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 72,864.",
       "icons": ["front-line"]
     },
@@ -1376,8 +1259,7 @@
         "y": 44.65625,
         "z": -86.125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 30,294."
     },
     {
@@ -1387,8 +1269,7 @@
         "y": 30.875,
         "z": -79.34375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 11,784,963.",
       "icons": ["front-line"]
     },
@@ -1399,8 +1280,7 @@
         "y": 36.125,
         "z": -83.90625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 38,948."
     },
     {
@@ -1410,8 +1290,7 @@
         "y": 47.625,
         "z": -90.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 4,373,254."
     },
     {
@@ -1421,8 +1300,7 @@
         "y": -55.25,
         "z": -166.40625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 133,882."
     },
     {
@@ -1432,8 +1310,7 @@
         "y": 45.90625,
         "z": -96.28125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 200,668.",
       "icons": ["front-line"]
     },
@@ -1444,8 +1321,7 @@
         "y": 29.59375,
         "z": -85.3125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 26,228,433.",
       "icons": ["front-line"]
     },
@@ -1456,8 +1332,7 @@
         "y": 39.71875,
         "z": -86.15625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 3,451,362,445."
     },
     {
@@ -1467,8 +1342,7 @@
         "y": 41.375,
         "z": -71.71875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 18,046."
     },
     {
@@ -1478,8 +1352,7 @@
         "y": 39.46875,
         "z": -80.125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 93,669.",
       "icons": ["front-line"]
     },
@@ -1490,8 +1363,7 @@
         "y": 34.875,
         "z": -83.125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 3,991,683,088."
     },
     {
@@ -1501,8 +1373,7 @@
         "y": 54.28125,
         "z": -73.4375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 7,419,252.",
       "icons": ["front-line"]
     },
@@ -1513,8 +1384,7 @@
         "y": 18.40625,
         "z": -90.78125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Cocijo invades the system. The population is 3,257,459.",
       "icons": ["front-line"]
     },
@@ -1525,8 +1395,7 @@
         "y": 36.9375,
         "z": -80.53125
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 3,036,258.",
       "icons": ["front-line"]
     },
@@ -1537,8 +1406,7 @@
         "y": 33.4375,
         "z": -89.3125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 59,736."
     },
     {
@@ -1548,8 +1416,7 @@
         "y": 10.03125,
         "z": -99.53125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system. The population is 18,225."
     },
     {
@@ -1559,8 +1426,7 @@
         "y": 12.625,
         "z": -99.75
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system. The population is 151,846."
     },
     {
@@ -1570,8 +1436,7 @@
         "y": 43.90625,
         "z": -72.75
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 22,063."
     },
     {
@@ -1581,8 +1446,7 @@
         "y": 22.4375,
         "z": -114
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1592,8 +1456,7 @@
         "y": 42.53125,
         "z": -83.625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Oya invades the system. The population is 9,097,226.",
       "icons": ["front-line"]
     },
@@ -1604,8 +1467,7 @@
         "y": 2.375,
         "z": -106.9375
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Cocijo invades the system. The population is 116,757.",
       "icons": ["front-line"]
     },
@@ -1616,8 +1478,7 @@
         "y": 32.0625,
         "z": -86.1875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system. The population is 3,836,358."
     },
     {
@@ -1627,8 +1488,7 @@
         "y": -59.09375,
         "z": -165.34375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 324,764."
     },
     {
@@ -1638,8 +1498,7 @@
         "y": 9.78125,
         "z": -103.90625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system. The population is 16,087."
     },
     {
@@ -1649,8 +1508,7 @@
         "y": -58.53125,
         "z": -150.375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system. The population is 2,771,230."
     },
     {
@@ -1660,8 +1518,7 @@
         "y": 17.59375,
         "z": -89.65625
       },
-      "primaryCategory": "Invasion",
-      "secondaryCategories": [],
+      "categories": ["Invasion"],
       "description": "The Titan Cocijo invades the system. The population is 293,105.",
       "icons": ["front-line"]
     },
@@ -1672,8 +1529,7 @@
         "y": 20.375,
         "z": -103.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system. The population is 45,046."
     },
     {
@@ -1683,8 +1539,7 @@
         "y": -50.53125,
         "z": -152.6875
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1695,8 +1550,7 @@
         "y": -70.375,
         "z": -163.65625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1706,8 +1560,7 @@
         "y": -60.53125,
         "z": -164.8125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1717,8 +1570,7 @@
         "y": -67.96875,
         "z": -158.625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1728,8 +1580,7 @@
         "y": -139.6875,
         "z": -124.9375
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1740,8 +1591,7 @@
         "y": 37.375,
         "z": -82.78125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1751,8 +1601,7 @@
         "y": -148.875,
         "z": -95.5
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Leigong controls the system."
     },
     {
@@ -1762,8 +1611,7 @@
         "y": -72.25,
         "z": -159.84375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     },
     {
@@ -1773,8 +1621,7 @@
         "y": 10.125,
         "z": -103.75
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1784,8 +1631,7 @@
         "y": 42.9375,
         "z": -87.875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1795,8 +1641,7 @@
         "y": -147.3125,
         "z": -115.3125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1807,8 +1652,7 @@
         "y": -141.4375,
         "z": -119.53125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1819,8 +1663,7 @@
         "y": 44.3125,
         "z": -83.84375
       },
-      "primaryCategory": "Titan",
-      "secondaryCategories": [],
+      "categories": ["Titan"],
       "description": "The system holds the maelstrom of the Titan Oya.",
       "icons": ["titan"]
     },
@@ -1831,8 +1674,7 @@
         "y": 48.21875,
         "z": -85.03125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1842,8 +1684,7 @@
         "y": 46.71875,
         "z": -90.25
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1853,8 +1694,7 @@
         "y": 46.03125,
         "z": -86.59375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1864,8 +1704,7 @@
         "y": 48.4375,
         "z": -79.84375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1875,8 +1714,7 @@
         "y": 50.96875,
         "z": -89.9375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1886,8 +1724,7 @@
         "y": 38.90625,
         "z": -79.5625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1897,8 +1734,7 @@
         "y": 49.28125,
         "z": -86.71875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1908,8 +1744,7 @@
         "y": 58.71875,
         "z": -80.09375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Oya controls the system."
     },
     {
@@ -1919,8 +1754,7 @@
         "y": 14.96875,
         "z": -103.875
       },
-      "primaryCategory": "Titan",
-      "secondaryCategories": [],
+      "categories": ["Titan"],
       "description": "The system holds the maelstrom of the Titan Cocijo.",
       "icons": ["titan"]
     },
@@ -1931,8 +1765,7 @@
         "y": 11.40625,
         "z": -103.78125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1942,8 +1775,7 @@
         "y": -48.0625,
         "z": -163.53125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -1954,8 +1786,7 @@
         "y": 10.25,
         "z": -100.875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1965,8 +1796,7 @@
         "y": 18.71875,
         "z": -101.3125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1976,8 +1806,7 @@
         "y": 0.5625,
         "z": -100.84375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1987,8 +1816,7 @@
         "y": 4.625,
         "z": -107.6875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -1998,8 +1826,7 @@
         "y": 4.65625,
         "z": -114.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2009,8 +1836,7 @@
         "y": 12.59375,
         "z": -110.28125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2020,8 +1846,7 @@
         "y": 15.25,
         "z": -115.28125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2031,8 +1856,7 @@
         "y": 17.8125,
         "z": -114.21875
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2042,8 +1866,7 @@
         "y": 20.15625,
         "z": -111
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2053,8 +1876,7 @@
         "y": 26.875,
         "z": -108.53125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2064,8 +1886,7 @@
         "y": 18,
         "z": -108.90625
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2075,8 +1896,7 @@
         "y": 15.75,
         "z": -105.125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2086,8 +1906,7 @@
         "y": 22.71875,
         "z": -93.28125
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2097,8 +1916,7 @@
         "y": 26.8125,
         "z": -100.59375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2108,8 +1926,7 @@
         "y": 24.21875,
         "z": -102.09375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2119,8 +1936,7 @@
         "y": 20.625,
         "z": -102.375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2130,8 +1946,7 @@
         "y": 7.6875,
         "z": -102
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2141,8 +1956,7 @@
         "y": 5.9375,
         "z": -103.4375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Cocijo controls the system."
     },
     {
@@ -2152,8 +1966,7 @@
         "y": -52.53125,
         "z": -163
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Indra threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -2164,8 +1977,7 @@
         "y": -139.09375,
         "z": -122.53125
       },
-      "primaryCategory": "Alert",
-      "secondaryCategories": [],
+      "categories": ["Alert"],
       "description": "The Titan Leigong threatens the system.",
       "icons": ["conflict-zone"]
     },
@@ -2176,8 +1988,7 @@
         "y": -55.5625,
         "z": -156.9375
       },
-      "primaryCategory": "Controlled",
-      "secondaryCategories": [],
+      "categories": ["Controlled"],
       "description": "The Titan Indra controls the system."
     }
   ]

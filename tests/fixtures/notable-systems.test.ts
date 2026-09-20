@@ -75,7 +75,7 @@ describe('the conversion of the notable systems dump', () => {
 
     const system = convertNotable(records).systems[0];
 
-    expect(system?.primaryCategory).toBe('Other');
+    expect(system?.categories).toEqual(['Other']);
   });
 
   test('escapes the marks of a description', () => {

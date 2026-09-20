@@ -83,7 +83,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
   };
 }
 
@@ -719,7 +719,7 @@ test('the handle works before the first frame', async ({ page }) => {
     map.clearSystemsAndCategories();
     map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
     map.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
     ]);
     return { ready: window.__galaxyMap?.ready === true, count: map.systemCount() };
   });
@@ -1589,7 +1589,7 @@ test.describe('the category switch and the name filter', () => {
       { name: 'Beta', color: CORE, maxDrawRange: 120000 },
     ]);
     await addSystems(page, [
-      { ...record('Both', where, 'Alpha'), secondaryCategories: ['Beta'] },
+      { ...record('Both', where, 'Alpha'), categories: ['Alpha', 'Beta'] },
     ]);
     await setView(page, cursor, 1000);
 
@@ -1689,7 +1689,7 @@ test.describe('the category switch and the name filter', () => {
         { name: 'Alpha', color: RED, maxDrawRange: 120000 },
         { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
       ],
-      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), categories: ['Beta', 'Alpha'] }],
     );
 
     await expectColour(page, BLUE, 'the colour with both categories on');
@@ -1707,7 +1707,7 @@ test.describe('the category switch and the name filter', () => {
         { name: 'Alpha', color: RED, maxDrawRange: 120000 },
         { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
       ],
-      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), categories: ['Beta', 'Alpha'] }],
     );
 
     await switchCategory(page, 'Beta', false);
@@ -1730,7 +1730,7 @@ test.describe('the category switch and the name filter', () => {
       [
         {
           ...record('Three', DARK_SPACE, 'Alpha'),
-          secondaryCategories: ['Gamma', 'Beta'],
+          categories: ['Alpha', 'Gamma', 'Beta'],
         },
       ],
     );
@@ -1762,7 +1762,7 @@ test.describe('the category switch and the name filter', () => {
       { name: 'Beta', color: BLUE, markerStyle: 'disc', maxDrawRange: 20000 },
     ]);
     await addSystems(page, [
-      { ...record('Both', where, 'Alpha'), secondaryCategories: ['Beta'] },
+      { ...record('Both', where, 'Alpha'), categories: ['Alpha', 'Beta'] },
     ]);
     await setView(page, DARK_SPACE, 2000);
 
@@ -1819,7 +1819,7 @@ test.describe('the category switch and the name filter', () => {
         { name: 'Alpha', color: RED, maxDrawRange: 120000 },
         { name: 'Beta', color: BLUE, maxDrawRange: 120000 },
       ],
-      [{ ...record('Both', DARK_SPACE, 'Beta'), secondaryCategories: ['Alpha'] }],
+      [{ ...record('Both', DARK_SPACE, 'Beta'), categories: ['Beta', 'Alpha'] }],
     );
     await drawFrame(page);
 
@@ -1840,8 +1840,8 @@ test.describe('the category switch and the name filter', () => {
         records.push({
           name: `S${index}`,
           coords: { x: index * 0.001, y: 0, z: 0 },
-          primaryCategory: value[index % 8] as string,
-          secondaryCategories: [
+          categories: [
+            value[index % 8] as string,
             value[(index + 1) % 8] as string,
             value[(index + 2) % 8] as string,
             value[(index + 3) % 8] as string,
@@ -1934,5 +1934,108 @@ test.describe('the category switch and the name filter', () => {
 
     expect(drawn).not.toEqual(passOff);
     expect(hidden).toEqual(passOff);
+  });
+});
+
+test.describe('a set with no category', () => {
+  /** A record that names no category. */
+  const plain = (
+    name: string,
+    position: readonly [number, number, number],
+  ): SystemRecordInput => ({
+    name,
+    coords: { x: position[0], y: position[1], z: position[2] },
+  });
+
+  test('the default marker draws and is picked', async ({ page }) => {
+    await openMap(page, '#c=40015,20000,25895&d=10&p=35&y=0');
+    // The marker pass alone, so the centre pixel reads the marker colour and not the
+    // light the other passes put over that point.
+    await setPasses(page, {
+      volume: false,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      regions: false,
+      systems: true,
+    });
+    await addSystems(page, [plain('Sol', DARK_SPACE)]);
+    await setView(page, DARK_SPACE, 10);
+
+    const centre = await centrePixel(page, DARK_SPACE);
+    const middle = await pixelOf(page, centre.x, centre.y);
+    const reading = await page.evaluate((where) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return { count: -1, name: null as string | null };
+      return {
+        count: map.debug.systemMarkerCount(),
+        name: map.systemAt(where.x, where.y)?.name ?? null,
+      };
+    }, centre);
+    console.log('the default marker', { middle, reading });
+
+    expect(reading.count).toBe(1);
+    expect(reading.name).toBe('Sol');
+    // The default colour is (150, 170, 200) in the `glow` style, which holds the colour
+    // at the centre of the sprite.
+    const DEFAULT_COLOR = [150, 170, 200];
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(
+        Math.abs((middle[channel] as number) - (DEFAULT_COLOR[channel] as number)),
+      ).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('an uncategorised set holds no table row', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addSystems(page, [
+      plain('Sol', atRange(cursor, 1000, 2000, -400)),
+      plain('Solati', atRange(cursor, 1000, 2000, 0)),
+      plain('Achenar', atRange(cursor, 1000, 2000, 400)),
+    ]);
+    await setView(page, cursor, 1000);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return { count: -1, first: 'no map', markers: -1 };
+      return {
+        count: map.categoryCount(),
+        first: JSON.stringify(map.getCategory(0)),
+        markers: map.debug.systemMarkerCount(),
+      };
+    });
+    console.log('the table of an uncategorised set', reading);
+
+    expect(reading.count).toBe(0);
+    expect(reading.first).toBe('null');
+    expect(reading.markers).toBe(3);
+  });
+
+  test('the filter reaches an uncategorised marker', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
+    await addSystems(page, [
+      plain('Sol', atRange(cursor, 1000, 2000, -400)),
+      plain('Solati', atRange(cursor, 1000, 2000, 0)),
+      plain('Achenar', atRange(cursor, 1000, 2000, 400)),
+    ]);
+    await setView(page, cursor, 1000);
+
+    const all = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+    await page.evaluate(() => {
+      window.galaxyMap?.setNameFilter('sol');
+    });
+    await drawFrame(page);
+    const some = await page.evaluate(
+      () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
+    );
+    console.log('the filter on an uncategorised set', { all, some });
+
+    expect(all).toBe(3);
+    expect(some).toBe(2);
   });
 });

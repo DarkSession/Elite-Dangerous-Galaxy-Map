@@ -25,7 +25,7 @@ function setOf(positions: readonly [number, number, number][]): RealSystemSet {
     positions.map((position, slot) => ({
       name: `s${slot}`,
       coords: { x: position[0], y: position[1], z: position[2] },
-      primaryCategory: 'A',
+      categories: ['A'],
       id64: slot + 1,
     })),
   );

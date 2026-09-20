@@ -42,7 +42,7 @@ async function addSystem(
       const record = {
         name: value.name,
         coords: { x: value.place[0], y: value.place[1], z: value.place[2] },
-        primaryCategory: 'Empire',
+        categories: ['Empire'],
       } as unknown as SystemRecordInput;
       return window.galaxyMap?.addSystems([record]).added ?? -1;
     },

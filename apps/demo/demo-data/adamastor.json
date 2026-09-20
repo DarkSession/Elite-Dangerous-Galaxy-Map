@@ -91,8 +91,9 @@
         "y": -84.0625,
         "z": -139.34375
       },
-      "primaryCategory": "Aegis' Alexandria Disappeared",
-      "secondaryCategories": [],
+      "categories": [
+        "Aegis' Alexandria Disappeared"
+      ],
       "description": "Galnet: Aegis Megaship Vanishes In Hyperspace"
     },
     {
@@ -102,8 +103,9 @@
         "y": -58.96875,
         "z": -354.78125
       },
-      "primaryCategory": "Project Seraph Settlements",
-      "secondaryCategories": [],
+      "categories": [
+        "Project Seraph Settlements"
+      ],
       "description": "Project Seraph - Fort Asch, the Overlook and two Thargoid Imprint Sites"
     },
     {
@@ -113,8 +115,8 @@
         "y": -323.53125,
         "z": -1431.84375
       },
-      "primaryCategory": "Project Seraph Settlements",
-      "secondaryCategories": [
+      "categories": [
+        "Project Seraph Settlements",
         "Hyford's Cache & D-2's LPs"
       ],
       "description": "Project Seraph - Oaken Point and D-2´s LP #1"
@@ -126,8 +128,9 @@
         "y": -237.59375,
         "z": -1208.71875
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": [],
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ],
       "description": "D-2´s LP #2"
     },
     {
@@ -137,8 +140,9 @@
         "y": 7.5625,
         "z": -951.1875
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": [],
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ],
       "description": "D-2´s LP #3"
     },
     {
@@ -148,8 +152,9 @@
         "y": -72.21875,
         "z": -656.0625
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": [],
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ],
       "description": "D-2´s Permit LP #4"
     },
     {
@@ -159,8 +164,9 @@
         "y": -910.28125,
         "z": 19808.125
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": [],
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ],
       "description": "Hyford´s Cache"
     },
     {
@@ -170,8 +176,9 @@
         "y": -53.5625,
         "z": -15.90625
       },
-      "primaryCategory": "Battles of Cornsar",
-      "secondaryCategories": [],
+      "categories": [
+        "Battles of Cornsar"
+      ],
       "description": "Galnet: Thargoid Strike Follows Salvation´s Prediction"
     }
   ],
@@ -197,7 +204,9 @@
       ],
       "width": 2,
       "name": "Adamastor Initial Route",
-      "primaryCategory": "Adamastor Initial Route"
+      "categories": [
+        "Adamastor Initial Route"
+      ]
     },
     {
       "points": [
@@ -214,7 +223,9 @@
       ],
       "width": 2,
       "name": "Line Through Waypoints",
-      "primaryCategory": "Line Through Waypoints"
+      "categories": [
+        "Line Through Waypoints"
+      ]
     },
     {
       "points": [
@@ -241,7 +252,9 @@
       ],
       "width": 2,
       "name": "Adamastor Diversion Route",
-      "primaryCategory": "Adamastor Diversion Route"
+      "categories": [
+        "Adamastor Diversion Route"
+      ]
     },
     {
       "points": [
@@ -258,7 +271,9 @@
       ],
       "width": 2,
       "name": "Adamastor's Return Journey",
-      "primaryCategory": "Adamastor's Return Journey"
+      "categories": [
+        "Adamastor's Return Journey"
+      ]
     },
     {
       "points": [
@@ -295,7 +310,9 @@
       ],
       "width": 2,
       "name": "Intersection of Routes",
-      "primaryCategory": "Intersection of Routes"
+      "categories": [
+        "Intersection of Routes"
+      ]
     },
     {
       "points": [
@@ -392,7 +409,9 @@
       ],
       "width": 2,
       "name": "Hesperus 17 Beacon Route",
-      "primaryCategory": "Hesperus 17 Beacon Route"
+      "categories": [
+        "Hesperus 17 Beacon Route"
+      ]
     },
     {
       "points": [
@@ -414,7 +433,9 @@
       ],
       "width": 2,
       "name": "Hyford's Cache & D-2's LPs",
-      "primaryCategory": "Hyford's Cache & D-2's LPs"
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ]
     }
   ]
 }

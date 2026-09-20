@@ -267,7 +267,7 @@ test.describe('the cursor marker', () => {
         {
           name: 'MARKER TEST',
           coords: { x: view.cursor[0], y: view.cursor[1], z: view.cursor[2] },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         },
       ]);
       // The identity of a record with no `id64` is its name.

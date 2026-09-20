@@ -15,8 +15,7 @@ function system(extra: Partial<RealSystem> = {}): RealSystem {
   return {
     name: 'Sol',
     position: [0, 0, 0],
-    primaryCategory: 'A',
-    secondaryCategories: [],
+    categories: ['A'],
     ...extra,
   } as RealSystem;
 }

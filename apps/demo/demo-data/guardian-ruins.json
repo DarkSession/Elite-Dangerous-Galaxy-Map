@@ -38,8 +38,9 @@
         "y": -49.34375,
         "z": -74.75
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 1 B.",
       "images": [
         {
@@ -55,8 +56,9 @@
         "y": -51.03125,
         "z": -38.53125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is B 1.",
       "images": [
         {
@@ -72,8 +74,9 @@
         "y": -86.375,
         "z": -37.9375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is C 3.",
       "images": [
         {
@@ -89,8 +92,9 @@
         "y": -56.46875,
         "z": -97.8125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is C 1.",
       "images": [
         {
@@ -106,8 +110,9 @@
         "y": -51.21875,
         "z": -154.65625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 9 B.",
       "images": [
         {
@@ -123,8 +128,8 @@
         "y": -100.75,
         "z": -246.0625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha",
         "Ruins Gamma"
       ],
@@ -151,8 +156,9 @@
         "y": -119.125,
         "z": -109.03125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 14 F.",
       "images": [
         {
@@ -168,8 +174,8 @@
         "y": -197.84375,
         "z": -111.84375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -196,8 +202,8 @@
         "y": -124.59375,
         "z": -61.0625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 3.",
@@ -219,8 +225,8 @@
         "y": -222.78125,
         "z": -151.15625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 2.",
@@ -242,8 +248,8 @@
         "y": -71.03125,
         "z": -202.15625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 2.",
@@ -265,8 +271,8 @@
         "y": -87.21875,
         "z": -216.875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -293,8 +299,9 @@
         "y": -127.5625,
         "z": -238.40625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 2 and B 4.",
       "images": [
         {
@@ -310,8 +317,8 @@
         "y": -86.5625,
         "z": -249.46875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -338,8 +345,9 @@
         "y": -59.9375,
         "z": -175.78125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 4 and A 5.",
       "images": [
         {
@@ -355,8 +363,8 @@
         "y": -124.03125,
         "z": -216.8125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is D 2.",
@@ -378,8 +386,8 @@
         "y": -78,
         "z": -105.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 1.",
@@ -401,8 +409,8 @@
         "y": -60.4375,
         "z": -144.71875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is D 2.",
@@ -424,8 +432,9 @@
         "y": -78.40625,
         "z": -51.6875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is A 2.",
       "images": [
         {
@@ -441,8 +450,8 @@
         "y": -168.1875,
         "z": -85.125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are C 3 and C 4.",
@@ -464,8 +473,8 @@
         "y": -163.59375,
         "z": -85.96875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 7 C and 7 A.",
@@ -487,8 +496,8 @@
         "y": -166.21875,
         "z": -64.15625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -515,8 +524,8 @@
         "y": -154.03125,
         "z": -237.90625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma",
         "Ruins Alpha"
       ],
@@ -543,8 +552,8 @@
         "y": -67.59375,
         "z": -173.96875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha",
         "Ruins Beta"
       ],
@@ -571,8 +580,8 @@
         "y": -504.15625,
         "z": 10436.25
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is AB 7 A.",
@@ -594,8 +603,8 @@
         "y": -166.1875,
         "z": -80.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -617,8 +626,8 @@
         "y": -80.25,
         "z": -163.4375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 5 and A 7.",
@@ -640,8 +649,8 @@
         "y": -247.375,
         "z": -76.90625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is D 1.",
@@ -663,8 +672,8 @@
         "y": -252.8125,
         "z": -156.65625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 1 C.",
@@ -686,8 +695,9 @@
         "y": -217.40625,
         "z": -81.09375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is D 2.",
       "images": [
         {
@@ -703,8 +713,8 @@
         "y": -100.65625,
         "z": -92.75
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are E 2 and E 3.",
@@ -726,8 +736,8 @@
         "y": -51.125,
         "z": -124.84375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is E 3.",
@@ -749,8 +759,8 @@
         "y": -152.28125,
         "z": -160.25
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 3.",
@@ -772,8 +782,8 @@
         "y": -303.34375,
         "z": -14.09375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 1 C.",
@@ -795,8 +805,8 @@
         "y": -307.21875,
         "z": -10.96875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 14 C.",
@@ -818,8 +828,8 @@
         "y": -271.125,
         "z": -76.625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is A 7 A.",
@@ -841,8 +851,8 @@
         "y": 2.59375,
         "z": 12.9375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 1.",
@@ -864,8 +874,8 @@
         "y": -131.78125,
         "z": -210.4375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are C 6 and C 5.",
@@ -887,8 +897,8 @@
         "y": -191.71875,
         "z": -193.8125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 7 and C 5.",
@@ -910,8 +920,8 @@
         "y": 25.6875,
         "z": 46.3125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 2.",
@@ -933,8 +943,8 @@
         "y": -283.125,
         "z": -20.09375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 1.",
@@ -956,8 +966,8 @@
         "y": -190.59375,
         "z": -82.625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 4.",
@@ -979,8 +989,8 @@
         "y": -225.84375,
         "z": -161.5
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are 4 D and 4 F.",
@@ -1002,8 +1012,8 @@
         "y": -20.03125,
         "z": 21.21875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 1.",
@@ -1025,8 +1035,8 @@
         "y": -259.96875,
         "z": -113.46875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 4 and BC 3.",
@@ -1048,8 +1058,8 @@
         "y": -180.9375,
         "z": -63.8125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is A 1.",
@@ -1071,8 +1081,8 @@
         "y": -39.96875,
         "z": -188.75
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -1099,8 +1109,8 @@
         "y": -144.03125,
         "z": -101.71875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha",
         "Ruins Gamma"
       ],
@@ -1127,8 +1137,9 @@
         "y": -144.5,
         "z": -107.84375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 2 A.",
       "images": [
         {
@@ -1144,8 +1155,9 @@
         "y": -98.09375,
         "z": -34.96875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is B 1.",
       "images": [
         {
@@ -1161,8 +1173,8 @@
         "y": -91.8125,
         "z": -40.4375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -1189,8 +1201,8 @@
         "y": -219.8125,
         "z": 2641.9375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 3.",
@@ -1212,8 +1224,8 @@
         "y": -158.4375,
         "z": -62.5625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 1 and B 2.",
@@ -1235,8 +1247,8 @@
         "y": -156.1875,
         "z": 2686.71875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is ABC 4 A.",
@@ -1258,8 +1270,8 @@
         "y": -98.8125,
         "z": 2713.0625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 2.",
@@ -1281,8 +1293,8 @@
         "y": -116.6875,
         "z": 2733.03125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 1 B.",
@@ -1304,8 +1316,8 @@
         "y": -209.15625,
         "z": -184.65625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 6 D and 6 C.",
@@ -1327,8 +1339,8 @@
         "y": -213.40625,
         "z": -165.5625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha",
         "Ruins Gamma"
       ],
@@ -1355,8 +1367,8 @@
         "y": -172.03125,
         "z": 2656.125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 1.",
@@ -1378,8 +1390,8 @@
         "y": -188.1875,
         "z": -173.53125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma",
         "Ruins Alpha"
       ],
@@ -1406,8 +1418,8 @@
         "y": -548.03125,
         "z": 10516.9375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are C 6 and D 1.",
@@ -1429,8 +1441,8 @@
         "y": -181.5625,
         "z": -62.1875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 4.",
@@ -1452,8 +1464,8 @@
         "y": -559.09375,
         "z": 10547.71875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma",
         "Ruins Beta"
       ],
@@ -1480,8 +1492,8 @@
         "y": -566,
         "z": 10544.46875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are 4 D and 4 F.",
@@ -1503,8 +1515,8 @@
         "y": -169.125,
         "z": -52.125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 3.",
@@ -1526,8 +1538,8 @@
         "y": -518.8125,
         "z": 10526.65625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -1554,8 +1566,8 @@
         "y": -238.5,
         "z": 2655.625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 1 A.",
@@ -1577,8 +1589,8 @@
         "y": -328.71875,
         "z": -77.96875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is C 1.",
@@ -1600,8 +1612,8 @@
         "y": -185.65625,
         "z": 2687.09375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -1628,8 +1640,9 @@
         "y": -221.34375,
         "z": 167.28125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is A 3.",
       "images": [
         {
@@ -1645,8 +1658,8 @@
         "y": -179.21875,
         "z": -71.71875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 3.",
@@ -1668,8 +1681,9 @@
         "y": -406.1875,
         "z": 7927.40625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is B 4.",
       "images": [
         {
@@ -1685,8 +1699,8 @@
         "y": 165.0625,
         "z": 20654.53125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma",
         "Ruins Beta"
       ],
@@ -1713,8 +1727,8 @@
         "y": -175.625,
         "z": -48.3125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 4 A.",
@@ -1736,8 +1750,8 @@
         "y": 166.8125,
         "z": 20641.59375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -1764,8 +1778,9 @@
         "y": -379.9375,
         "z": 7952.03125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 2 A.",
       "images": [
         {
@@ -1781,8 +1796,9 @@
         "y": -172.84375,
         "z": -39.375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -1798,8 +1814,8 @@
         "y": -752.71875,
         "z": 12330.53125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 5.",
@@ -1821,8 +1837,8 @@
         "y": -731.65625,
         "z": 12309.34375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 4 C.",
@@ -1844,8 +1860,8 @@
         "y": -220.375,
         "z": 3560.375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 4 and B 3.",
@@ -1867,8 +1883,8 @@
         "y": -178.09375,
         "z": -25.40625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 4.",
@@ -1890,8 +1906,8 @@
         "y": -275.40625,
         "z": 3560.90625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is A 5.",
@@ -1913,8 +1929,8 @@
         "y": -113.9375,
         "z": 2702
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 3.",
@@ -1936,8 +1952,8 @@
         "y": -302.53125,
         "z": 3509.9375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 1 A.",
@@ -1959,8 +1975,9 @@
         "y": -225.84375,
         "z": 3490.34375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -1976,8 +1993,8 @@
         "y": -663.0625,
         "z": 12299.96875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is A 3.",
@@ -1999,8 +2016,8 @@
         "y": -155.5,
         "z": -27.65625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 2.",
@@ -2022,8 +2039,8 @@
         "y": -752.1875,
         "z": 12307
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 4.",
@@ -2045,8 +2062,8 @@
         "y": -205.5625,
         "z": -156.59375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 5 B.",
@@ -2068,8 +2085,8 @@
         "y": -459.46875,
         "z": 7978.78125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 10 A.",
@@ -2091,8 +2108,9 @@
         "y": -425.46875,
         "z": 7995.59375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 5 C.",
       "images": [
         {
@@ -2108,8 +2126,8 @@
         "y": 155.8125,
         "z": 20635.6875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are C 3 and B 3.",
@@ -2131,8 +2149,8 @@
         "y": -177.53125,
         "z": -45.40625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 4 and D 2.",
@@ -2154,8 +2172,8 @@
         "y": -245.8125,
         "z": -90.03125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 2 and B 2.",
@@ -2177,8 +2195,8 @@
         "y": -156.03125,
         "z": -92.84375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
@@ -2200,8 +2218,9 @@
         "y": -145.78125,
         "z": -57.90625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is A 2 B.",
       "images": [
         {
@@ -2217,8 +2236,8 @@
         "y": -392.25,
         "z": -378.3125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -2245,8 +2264,8 @@
         "y": -138.3125,
         "z": -258.3125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 1.",
@@ -2268,8 +2287,8 @@
         "y": -193.65625,
         "z": -18.375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are D 1 and D 3.",
@@ -2291,8 +2310,8 @@
         "y": -223.625,
         "z": -242.6875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -2319,8 +2338,8 @@
         "y": -153.625,
         "z": -213.71875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 1.",
@@ -2342,8 +2361,9 @@
         "y": -63.90625,
         "z": -80.78125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is C 1.",
       "images": [
         {
@@ -2359,8 +2379,8 @@
         "y": -43.9375,
         "z": -113.21875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 3 and A 2.",
@@ -2382,8 +2402,9 @@
         "y": -408.5,
         "z": 7899.71875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is C 1.",
       "images": [
         {
@@ -2399,8 +2420,8 @@
         "y": -65.1875,
         "z": 2680.59375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -2422,8 +2443,8 @@
         "y": -177.4375,
         "z": 7.40625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 8 A.",
@@ -2445,8 +2466,8 @@
         "y": -182.3125,
         "z": 8
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 4 A.",
@@ -2468,8 +2489,8 @@
         "y": -263.875,
         "z": 75.125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 5 A.",
@@ -2491,8 +2512,9 @@
         "y": -244.625,
         "z": 39.34375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 2.",
       "images": [
         {
@@ -2508,8 +2530,8 @@
         "y": -339.03125,
         "z": 7954.53125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 1.",
@@ -2531,8 +2553,8 @@
         "y": -271.90625,
         "z": -123.4375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 3.",
@@ -2554,8 +2576,8 @@
         "y": -623.34375,
         "z": 13440.4375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 6 Guardian ruins. The bodies are C 3, C 4 and D 2.",
@@ -2577,8 +2599,8 @@
         "y": -379.75,
         "z": -418.3125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha",
         "Ruins Gamma"
       ],
@@ -2605,8 +2627,8 @@
         "y": -641.09375,
         "z": 13431.65625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma",
         "Ruins Beta"
       ],
@@ -2633,8 +2655,8 @@
         "y": -589.90625,
         "z": 13438.40625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 6 A and 4 A.",
@@ -2656,8 +2678,8 @@
         "y": -264.6875,
         "z": 3570.78125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 4.",
@@ -2679,8 +2701,8 @@
         "y": -237.625,
         "z": 3489.375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -2707,8 +2729,8 @@
         "y": -425,
         "z": -341.84375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are B 3 and B 2.",
@@ -2730,8 +2752,8 @@
         "y": -383.25,
         "z": -444.8125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma",
         "Ruins Alpha"
       ],
@@ -2758,8 +2780,9 @@
         "y": 163.9375,
         "z": 20635.09375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The bodies are 9 A and 9 B.",
       "images": [
         {
@@ -2775,8 +2798,8 @@
         "y": -397.9375,
         "z": -135.90625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 3 A.",
@@ -2798,8 +2821,9 @@
         "y": -401.4375,
         "z": -26.96875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 4.",
       "images": [
         {
@@ -2815,8 +2839,8 @@
         "y": -160.15625,
         "z": 3619.3125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is C 7.",
@@ -2838,8 +2862,9 @@
         "y": -322.46875,
         "z": -13.78125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 1.",
       "images": [
         {
@@ -2855,8 +2880,9 @@
         "y": -339.46875,
         "z": -1167.65625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 1 A.",
       "images": [
         {
@@ -2872,8 +2898,8 @@
         "y": -297.9375,
         "z": -67.6875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 6 and A 5.",
@@ -2895,8 +2921,8 @@
         "y": -214,
         "z": -11.3125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is C 3.",
@@ -2918,8 +2944,8 @@
         "y": -205.84375,
         "z": -9.59375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 1 A.",
@@ -2941,8 +2967,9 @@
         "y": -577.125,
         "z": 13234.15625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 3 A.",
       "images": [
         {
@@ -2958,8 +2985,8 @@
         "y": -562.09375,
         "z": 13237
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma",
         "Ruins Alpha"
       ],
@@ -2986,8 +3013,8 @@
         "y": -665.78125,
         "z": 13530.65625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 7 C.",
@@ -3009,8 +3036,8 @@
         "y": -121.03125,
         "z": -50.09375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are C 1 and C 2.",
@@ -3032,8 +3059,9 @@
         "y": -373.21875,
         "z": -108.0625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is AB 9 A.",
       "images": [
         {
@@ -3049,8 +3077,9 @@
         "y": -690.9375,
         "z": 13541.0625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is 7 A.",
       "images": [
         {
@@ -3066,8 +3095,8 @@
         "y": -324.46875,
         "z": 13368.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 7 A and A 10 B.",
@@ -3089,8 +3118,8 @@
         "y": -169.53125,
         "z": -33.46875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -3112,8 +3141,8 @@
         "y": -235.78125,
         "z": -138.15625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -3135,8 +3164,8 @@
         "y": -213.65625,
         "z": -209.15625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma",
         "Ruins Alpha"
       ],
@@ -3163,8 +3192,8 @@
         "y": -66.71875,
         "z": -237.25
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -3191,8 +3220,8 @@
         "y": -29.9375,
         "z": -3.625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 4.",
@@ -3214,8 +3243,9 @@
         "y": 13.25,
         "z": 20.0625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
       "images": [
         {
@@ -3231,8 +3261,8 @@
         "y": -158.53125,
         "z": 186.90625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 9.",
@@ -3254,8 +3284,8 @@
         "y": -142.78125,
         "z": -70.90625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -3277,8 +3307,8 @@
         "y": -182.125,
         "z": -103.0625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 5 and B 4.",
@@ -3300,8 +3330,9 @@
         "y": -643.09375,
         "z": 13529.90625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 5 A.",
       "images": [
         {
@@ -3317,8 +3348,8 @@
         "y": -400.4375,
         "z": 7917.0625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
@@ -3340,8 +3371,8 @@
         "y": -575.4375,
         "z": 13282.71875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 4 and B 5.",
@@ -3363,8 +3394,9 @@
         "y": -539.5625,
         "z": 13287.875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 3.",
       "images": [
         {
@@ -3380,8 +3412,8 @@
         "y": -518.0315,
         "z": 13258.4375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
@@ -3403,8 +3435,9 @@
         "y": -310.1875,
         "z": 13335.65625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 9 A.",
       "images": [
         {
@@ -3420,8 +3453,8 @@
         "y": -338.53125,
         "z": 13347.84375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 7 A and 8 B.",
@@ -3443,8 +3476,8 @@
         "y": -312.5625,
         "z": 13345.84375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 6 B and A 8 A.",
@@ -3466,8 +3499,8 @@
         "y": -621,
         "z": 13530.84375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 8 A.",
@@ -3489,8 +3522,9 @@
         "y": -698.71875,
         "z": 13551.34375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 3 Guardian ruins. The bodies are 10 A and 10 B.",
       "images": [
         {
@@ -3506,8 +3540,9 @@
         "y": -537.53125,
         "z": 13286.3125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -3523,8 +3558,9 @@
         "y": -666.375,
         "z": 12299.59375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 1 Guardian ruin. The body is B 4.",
       "images": [
         {
@@ -3540,8 +3576,8 @@
         "y": -711.375,
         "z": 12365.28125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 1.",
@@ -3563,8 +3599,8 @@
         "y": -697.15625,
         "z": 12345.375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is 4 A.",
@@ -3586,8 +3622,8 @@
         "y": -102.28125,
         "z": -36.125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -3614,8 +3650,8 @@
         "y": -117.75,
         "z": -27.1875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 1 and B 2.",
@@ -3637,8 +3673,8 @@
         "y": -181.625,
         "z": 86.3125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 14 B and 14 C.",
@@ -3660,8 +3696,8 @@
         "y": -564.5,
         "z": 13149.6875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 3 and B 4.",
@@ -3683,8 +3719,8 @@
         "y": -432.25,
         "z": 13396.59375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 9 C and A 9 A.",
@@ -3706,8 +3742,8 @@
         "y": -374.78125,
         "z": 13416.03125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 5 and C 4.",
@@ -3729,8 +3765,8 @@
         "y": -247.875,
         "z": 176.90625
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
@@ -3752,8 +3788,8 @@
         "y": -405.53125,
         "z": 13376.25
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 1 and C 1.",
@@ -3775,8 +3811,8 @@
         "y": -217.125,
         "z": 282.9375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -3798,8 +3834,8 @@
         "y": -216.125,
         "z": 222.96875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is C 1.",
@@ -3821,8 +3857,8 @@
         "y": -642.5625,
         "z": 12398.03125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 5.",
@@ -3844,8 +3880,8 @@
         "y": -613.78125,
         "z": 13527.46875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is 9 A.",
@@ -3867,8 +3903,8 @@
         "y": -376.03125,
         "z": 13364.21875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha",
         "Ruins Gamma"
       ],
@@ -3895,8 +3931,8 @@
         "y": -355.15625,
         "z": -339.15625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is E 1.",
@@ -3918,8 +3954,8 @@
         "y": -198.34375,
         "z": 170.84375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -3946,8 +3982,8 @@
         "y": -423.4375,
         "z": 7817.34375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 2.",
@@ -3969,8 +4005,8 @@
         "y": -222.3125,
         "z": 3635.96875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are C 1 and C 2.",
@@ -3992,8 +4028,8 @@
         "y": -252.28125,
         "z": 3646.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is C 2.",
@@ -4015,8 +4051,9 @@
         "y": 139.15625,
         "z": 20636.40625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 1 A.",
       "images": [
         {
@@ -4032,8 +4069,8 @@
         "y": -524.3125,
         "z": 13231.71875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are C 1 and C 5.",
@@ -4055,8 +4092,8 @@
         "y": -562.53125,
         "z": 13175.03125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are C 2 and C 1.",
@@ -4078,8 +4115,9 @@
         "y": -606.375,
         "z": 13195.03125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is 5 B.",
       "images": [
         {
@@ -4095,8 +4133,8 @@
         "y": -555.6875,
         "z": 13175.25
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 2 and B 3.",
@@ -4118,8 +4156,8 @@
         "y": -492.65625,
         "z": 13612.6875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha",
         "Ruins Beta"
       ],
@@ -4146,8 +4184,8 @@
         "y": -483.125,
         "z": 13623.40625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
@@ -4169,8 +4207,9 @@
         "y": -339.625,
         "z": 13390.5
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -4186,8 +4225,8 @@
         "y": -300.15625,
         "z": 13392.1875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are C 3 and D 1.",
@@ -4209,8 +4248,8 @@
         "y": -351.0625,
         "z": -9.71875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 5 a and 5 b.",
@@ -4232,8 +4271,9 @@
         "y": -335.8125,
         "z": -109.21875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 1.",
       "images": [
         {
@@ -4249,8 +4289,8 @@
         "y": -381.15625,
         "z": -109.59375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 1.",
@@ -4272,8 +4312,8 @@
         "y": -354,
         "z": -24.78125
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -4300,8 +4340,8 @@
         "y": -56.3125,
         "z": -74.0625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -4328,8 +4368,9 @@
         "y": -282.03125,
         "z": -127.9375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 2.",
       "images": [
         {
@@ -4345,8 +4386,8 @@
         "y": -324.25,
         "z": -403.84375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 5 Guardian ruins. The bodies are B 3 and C 2.",
@@ -4368,8 +4409,8 @@
         "y": -293.125,
         "z": -125.4375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 11 c and 11 d.",
@@ -4391,8 +4432,9 @@
         "y": -321.25,
         "z": -143
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Gamma"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -4408,8 +4450,8 @@
         "y": -283.34375,
         "z": -19.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 2 Guardian ruins. The body is A 3.",
@@ -4431,8 +4473,9 @@
         "y": -318.65625,
         "z": 66.40625
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is A 5 c.",
       "images": [
         {
@@ -4448,8 +4491,8 @@
         "y": 82.75,
         "z": 63.1875
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 4.",
@@ -4471,8 +4514,8 @@
         "y": 50.71875,
         "z": -10.65625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha",
         "Ruins Beta"
       ],
@@ -4499,8 +4542,8 @@
         "y": 30.21875,
         "z": -59.28125
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 2.",
@@ -4522,8 +4565,8 @@
         "y": 90.28125,
         "z": -34.1875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The body is C 5.",
@@ -4545,8 +4588,9 @@
         "y": -638.375,
         "z": 12276.75
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 3 Guardian ruins. The body is D 2.",
       "images": [
         {
@@ -4562,8 +4606,8 @@
         "y": -318.78125,
         "z": 13364
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are 10 a and 10 b.",
@@ -4585,8 +4629,8 @@
         "y": -490.6875,
         "z": 7901.25
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Beta",
         "Ruins Gamma"
       ],
@@ -4613,8 +4657,8 @@
         "y": -400.3125,
         "z": 7996.125
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Gamma"
       ],
       "description": "The system holds 3 Guardian ruins. The body is B 1.",
@@ -4636,8 +4680,9 @@
         "y": -450.4375,
         "z": 13626.34375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Beta"
+      ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 6 and B 1.",
       "images": [
         {
@@ -4653,8 +4698,8 @@
         "y": -483.46875,
         "z": 13564.0625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are B 2 and B 3.",
@@ -4676,8 +4721,8 @@
         "y": -520.875,
         "z": 13608.84375
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 3 Guardian ruins. The bodies are A 1 and B 1.",
@@ -4699,8 +4744,8 @@
         "y": -628.96875,
         "z": 13467.90625
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Alpha",
         "Ruins Beta"
       ],
@@ -4727,8 +4772,8 @@
         "y": -610.8125,
         "z": 10425.34375
       },
-      "primaryCategory": "Ruins Gamma",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Gamma",
         "Ruins Beta",
         "Ruins Alpha"
       ],
@@ -4755,8 +4800,8 @@
         "y": -23.75,
         "z": 13031.875
       },
-      "primaryCategory": "Ruins Beta",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Beta",
         "Ruins Alpha"
       ],
       "description": "The system holds 4 Guardian ruins. The bodies are B 2 and B 3.",
@@ -4778,8 +4823,9 @@
         "y": -369.125,
         "z": 13354.09375
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [],
+      "categories": [
+        "Ruins Alpha"
+      ],
       "description": "The system holds 2 Guardian ruins. The body is B 1.",
       "images": [
         {
@@ -4795,8 +4841,8 @@
         "y": -691.46875,
         "z": 13603.21875
       },
-      "primaryCategory": "Ruins Alpha",
-      "secondaryCategories": [
+      "categories": [
+        "Ruins Alpha",
         "Ruins Gamma"
       ],
       "description": "The system holds 2 Guardian ruins. The body is D 1.",

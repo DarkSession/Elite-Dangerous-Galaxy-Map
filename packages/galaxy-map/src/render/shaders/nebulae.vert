@@ -36,6 +36,9 @@ uniform float uDetailScale;
 // it draws the volume's own extinction. The renderer sends 0 where there is no volume
 // texture and where the volume pass does not draw.
 uniform float uOcclusion;
+// The mean transmittance a record draws no fragment below. The box collapses behind the
+// near plane under it, so the fragment stage runs on none of that record.
+uniform float uCullFloor;
 
 // The sample point, in the record's object space, where the cube spans [-1, +1].
 out vec3 vMarchObject;
@@ -125,4 +128,11 @@ void main() {
   // no per-instance stage, and the cost of the eight extra marches is measured rather
   // than assumed.
   vTransmittance = marchTransmittance(centre);
+
+  // Every vertex of the record reads the same transmittance, so the cull takes the whole
+  // box or none of it. The record adds under 2 percent of its light below the floor.
+  float mean = (vTransmittance.r + vTransmittance.g + vTransmittance.b) / 3.0;
+  if (mean < uCullFloor) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+  }
 }

@@ -285,7 +285,7 @@ test('a marker at the cursor draws at the closest zoom', async ({ page }) => {
     window.galaxyMap?.debug.setPasses({ regions: false });
     window.galaxyMap?.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
     window.galaxyMap?.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
     ]);
     window.galaxyMap?.debug.drawNow();
   });
@@ -529,7 +529,7 @@ test.describe('the browsable bounds', () => {
     return {
       name,
       coords: { x: position[0], y: position[1], z: position[2] },
-      primaryCategory: 'Empire',
+      categories: ['Empire'],
     };
   }
 
@@ -825,7 +825,7 @@ test.describe('the interaction switches', () => {
         { name: 'Empire', color: [153, 230, 255], maxDrawRange: 200000 },
       ]);
       const report = window.galaxyMap?.addSystems([
-        { name: 'Target', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Empire' },
+        { name: 'Target', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] },
       ]);
       window.galaxyMap?.debug.drawNow();
       return report?.added ?? -1;

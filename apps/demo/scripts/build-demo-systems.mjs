@@ -265,8 +265,7 @@ export function convertRuins(dump) {
     systems.push({
       name: held.name,
       coords: held.coords,
-      primaryCategory: categories[0],
-      secondaryCategories: categories.slice(1),
+      categories,
       description: describeSystem(held.records),
       images: held.keys.map((type) => ({
         url: `${THUMBNAIL_BASE}${type.toLowerCase()}-thumbnail.png`,
@@ -297,8 +296,7 @@ export function convertStructures(dump) {
     systems.push({
       name: held.name,
       coords: held.coords,
-      primaryCategory: categories[0],
-      secondaryCategories: categories.slice(1),
+      categories,
       description: describeStructureSystem(held.records),
     });
   }
@@ -373,7 +371,7 @@ export function plainTextFromHtml(html) {
 /**
  * Turns the parsed Notable Systems dump into the record set the page adds to the map.
  * One record is one system. A system that holds several subjects carries the first as
- * its primary category and the rest as secondary ones, by the same rule as the ruins.
+ * the first of its categories and the rest after it, by the same rule as the ruins.
  * The description is the `html` field of the first record, as plain text.
  */
 export function convertNotable(dump) {
@@ -395,8 +393,7 @@ export function convertNotable(dump) {
     systems.push({
       name: held.name,
       coords: held.coords,
-      primaryCategory: categories[0],
-      secondaryCategories: categories.slice(1),
+      categories,
       ...(description.length > 0 ? { description } : {}),
     });
   }
@@ -514,8 +511,7 @@ export function convertOverwatch(dump) {
     systems.push({
       name,
       coords: { x, y, z },
-      primaryCategory: category.name,
-      secondaryCategories: [],
+      categories: [category.name],
       ...(sentences.length > 0 ? { description: sentences.join(' ') } : {}),
       ...(icons === undefined ? {} : { icons }),
     });
@@ -708,8 +704,8 @@ export function ed3dCategories(data) {
 
 /**
  * The records of an ED3D source. One entry of the `systems` list is
- * one record. It carries the first category its `cat` names as its primary category and
- * the rest as secondary ones, which is the rule the Guardian Ruins converter holds. The
+ * one record. It carries the categories its `cat` names in that order, the first of them
+ * first, which is the rule the Guardian Ruins converter holds. The
  * `infos` field is HTML, so it becomes the plain-text description.
  *
  * One name reaches the list more than once: a waypoint of the UIA map is also an end of a
@@ -743,10 +739,7 @@ export function ed3dRecords(data, table) {
     const first = held.get(name.toLowerCase());
     if (first !== undefined) {
       for (const category of names) {
-        if (first.primaryCategory === category) continue;
-        if (!first.secondaryCategories.includes(category)) {
-          first.secondaryCategories.push(category);
-        }
+        if (!first.categories.includes(category)) first.categories.push(category);
       }
       if (first.description === undefined && description.length > 0) {
         first.description = description;
@@ -756,8 +749,7 @@ export function ed3dRecords(data, table) {
     const record = {
       name,
       coords: { x, y, z },
-      primaryCategory: names[0],
-      secondaryCategories: names.slice(1),
+      categories: names,
       ...(description.length > 0 ? { description } : {}),
     };
     held.set(name.toLowerCase(), record);
@@ -769,8 +761,8 @@ export function ed3dRecords(data, table) {
 
 /**
  * The categories a set carries: every category of the source table that a record or a
- * shape names, in the table's order. Each reader gives its entries, and an entry names a
- * category in `primaryCategory` and in `secondaryCategories`.
+ * shape names, in the table's order. Each reader gives its entries, and an entry names
+ * its categories in `categories`.
  *
  * `map-shapes` rejects a shape that names a category the set does not hold, so a list of
  * the record categories alone would lose every line that names a route category. A
@@ -781,8 +773,7 @@ export function ed3dSetCategories(table, ...readers) {
   const named = new Set();
   for (const entries of readers) {
     for (const entry of entries) {
-      if (entry.primaryCategory !== undefined) named.add(entry.primaryCategory);
-      for (const name of entry.secondaryCategories ?? []) named.add(name);
+      for (const name of entry.categories ?? []) named.add(name);
     }
   }
   const categories = [];
@@ -852,7 +843,7 @@ export const LINE_COLOUR_FALLBACK = [160, 160, 160];
 export function ed3dSpheres(data, lists, table = new Map()) {
   const spheres = [];
   for (const { key, color, category } of lists) {
-    const primaryCategory = category === null ? undefined : table.get(category)?.name;
+    const categoryName = category === null ? undefined : table.get(category)?.name;
     for (const entry of data?.[key] ?? []) {
       const radius = numberOf(entry?.['radius']);
       const coords = Array.isArray(entry?.['coords']) ? entry['coords'] : [];
@@ -865,7 +856,7 @@ export function ed3dSpheres(data, lists, table = new Map()) {
         radius,
         color,
         ...(name.length > 0 ? { name } : {}),
-        ...(primaryCategory === undefined ? {} : { primaryCategory }),
+        ...(categoryName === undefined ? {} : { categories: [categoryName] }),
       });
     }
   }
@@ -955,13 +946,13 @@ export function convertUia(data, extras = {}) {
  * data.
  *
  * A line takes the categories of its route: the first category the table holds is its
- * primary one and the rest are its secondary ones. It then carries no colour of its own,
+ * first one and the rest follow it. It then carries no colour of its own,
  * because `map-shapes` gives it the colour of the first category it names that is on. A
  * route naming no category the table holds keeps the grey fallback.
  *
  * The `name` of a line names the line and not its category. A route that carries a name
  * of its own gives it, which the UIA waypoint lines and the hyperdiction lines do, and
- * every other line takes the name of its primary category, which is the name the
+ * every other line takes the name of its first category, which is the name the
  * Adamastor source gives its routes.
  */
 export function ed3dLines(data, table, records, findPosition) {
@@ -1016,8 +1007,7 @@ export function ed3dLines(data, table, records, findPosition) {
       ...(names.length === 0 ? { color: LINE_COLOUR_FALLBACK } : {}),
       width: 2,
       ...(name === undefined ? {} : { name }),
-      ...(names.length === 0 ? {} : { primaryCategory: names[0] }),
-      ...(names.length > 1 ? { secondaryCategories: names.slice(1) } : {}),
+      ...(names.length === 0 ? {} : { categories: names }),
     });
   }
   return { lines, drops };
@@ -1102,7 +1092,7 @@ export function convertMultifactionSpheres(data) {
         position,
         radius,
         ...(name.length > 0 ? { name } : {}),
-        primaryCategory: category,
+        categories: [category],
       });
       if (!used.includes(category)) used.push(category);
     }

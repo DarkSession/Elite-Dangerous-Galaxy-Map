@@ -8,7 +8,7 @@
 // shaders, the volume art and the record set.
 //
 // The test builds the module alone, the way the bundler reads it, and holds the output
-// to the three look defaults and nothing else.
+// to the four look defaults and nothing else.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -17,13 +17,15 @@ import {
   DEFAULT_NEBULA_LIGHT_GAIN,
   DEFAULT_NEBULA_OCCLUSION,
   DEFAULT_NEBULA_STEP_RATE,
+  NEBULA_CULL_FLOOR,
 } from './nebula-slot';
 
-/** The three look defaults the module holds, with the values the map draws with. */
+/** The four look defaults the module holds, with the values the map draws with. */
 const CONSTANTS = [
   ['DEFAULT_NEBULA_LIGHT_GAIN', `[${DEFAULT_NEBULA_LIGHT_GAIN.join(', ')}]`],
   ['DEFAULT_NEBULA_STEP_RATE', DEFAULT_NEBULA_STEP_RATE],
   ['DEFAULT_NEBULA_OCCLUSION', DEFAULT_NEBULA_OCCLUSION],
+  ['NEBULA_CULL_FLOOR', NEBULA_CULL_FLOOR],
 ] as const;
 
 const source = readFileSync(
@@ -45,13 +47,14 @@ const built = ts
   .filter((line) => line.length > 0);
 
 describe('the nebula slot module', () => {
-  test('builds to the three look defaults and no other statement', () => {
+  test('builds to the four look defaults and no other statement', () => {
     console.log('the nebula slot builds to', built);
 
     expect(built).toEqual([
       'export const DEFAULT_NEBULA_LIGHT_GAIN = [8.66, 8.44, 8.07];',
       'export const DEFAULT_NEBULA_STEP_RATE = 32;',
-      'export const DEFAULT_NEBULA_OCCLUSION = 1;',
+      'export const DEFAULT_NEBULA_OCCLUSION = 2;',
+      'export const NEBULA_CULL_FLOOR = 0.02;',
     ]);
   });
 
@@ -62,7 +65,7 @@ describe('the nebula slot module', () => {
     }
   });
 
-  test('gives the three defaults the map draws with', () => {
+  test('gives the four defaults the map draws with', () => {
     // The lines above are matched as text, so this reads the values through the module
     // itself. A rename that kept the text and changed the export would pass the first
     // test and fail this one.

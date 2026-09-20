@@ -63,7 +63,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
     ...(icons === undefined ? {} : { icons }),
   };
 }
@@ -151,6 +151,8 @@ interface Mark {
   readonly plate: string;
   /** The stacking level, which puts a near stack over a far one. */
   readonly level: string;
+  /** True where the occlusion rule hid the element. */
+  readonly hidden: boolean;
 }
 
 /**
@@ -172,6 +174,7 @@ async function marksOf(page: Page, selector: string): Promise<Mark[]> {
         fill: getComputedStyle(element).borderTopColor,
         plate: getComputedStyle(element).backgroundColor,
         level: getComputedStyle(element).zIndex,
+        hidden: getComputedStyle(element).visibility === 'hidden',
       };
     });
   }, selector);
@@ -654,7 +657,7 @@ test.describe('the system icons option', () => {
         records.push({
           name: `S${index}`,
           coords: { x: (index - 2) * 100, y: 0, z: 0 },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
           icons: ['titan', 'mission'],
         });
       }
@@ -742,7 +745,7 @@ test.describe('the bounds of the placement', () => {
             y: -30 + unit() * 60,
             z: -200 + unit() * 400,
           },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
           icons: ['titan', 'mission', 'waypoint', 'bookmark'],
         } as SystemRecordInput);
       }
@@ -815,5 +818,250 @@ test.describe('the bounds of the placement', () => {
     expect(inView.x).toBeLessThan(1280);
     expect(spot.x < 0 || spot.x > 1280 || spot.y < 0 || spot.y > 720).toBe(true);
     expect(held).toEqual({ icons: 0, arrows: 0 });
+  });
+});
+
+// The requirement "A nearer marker hides an icon". Every test below puts a system with a
+// stack far from the camera, then a system with no icon nearer to it, at the pixel the
+// element sits on.
+test.describe('a nearer marker hides an icon', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  /** The distance every view of this group takes. */
+  const VIEW = 1000;
+
+  /** How far the system that carries the stack stands from the camera. */
+  const FAR = 4000;
+
+  /**
+   * A point at a range from the camera, offset across the screen and up it. The camera
+   * looks along `(0, -sin p, cos p)` at a yaw of 0, the screen's right is the world `x`
+   * axis and the screen's up is `(0, cos p, sin p)`.
+   */
+  function atScreen(
+    distance: number,
+    range: number,
+    right: number,
+    up: number,
+  ): [number, number, number] {
+    const pitch = (PITCH * Math.PI) / 180;
+    const camera = cameraAt(distance);
+    return [
+      camera[0] + right,
+      camera[1] - Math.sin(pitch) * range + Math.cos(pitch) * up,
+      camera[2] + Math.cos(pitch) * range + Math.sin(pitch) * up,
+    ];
+  }
+
+  /**
+   * The focal length of the view in CSS pixels, read from the frame itself rather than
+   * from the projection's own numbers. A point `u` light years up from the view axis at
+   * a range `r` draws `focal * u / r` pixels over the centre.
+   */
+  async function focalPixels(
+    page: Page,
+  ): Promise<{ focal: number; cx: number; cy: number }> {
+    const centre = await projectOf(page, atScreen(VIEW, FAR, 0, 0));
+    const up = await projectOf(page, atScreen(VIEW, FAR, 0, 100));
+    return { focal: ((centre.y - up.y) * FAR) / 100, cx: centre.x, cy: centre.y };
+  }
+
+  /** A point at a range from the camera that draws at a pixel of the frame. */
+  function atPixel(
+    view: { focal: number; cx: number; cy: number },
+    range: number,
+    x: number,
+    y: number,
+  ): [number, number, number] {
+    return atScreen(
+      VIEW,
+      range,
+      ((x - view.cx) * range) / view.focal,
+      ((view.cy - y) * range) / view.focal,
+    );
+  }
+
+  /** The centre of an element's box, in CSS pixels. */
+  function centreOf(mark: Mark): { x: number; y: number } {
+    return { x: (mark.left + mark.right) / 2, y: (mark.top + mark.bottom) / 2 };
+  }
+
+  /** Opens the map with one system that carries a stack, on the view axis. */
+  async function openStack(page: Page, symbols: readonly string[]): Promise<void> {
+    await openMap(page, `#c=0,0,0&d=${VIEW}&p=${PITCH}&y=0`);
+    await addCategory(page);
+    expect(
+      await addSystems(page, [
+        record('Far', atScreen(VIEW, FAR, 0, 0), 'Alpha', symbols),
+      ]),
+    ).toBe(1);
+    await setView(page, [0, 0, 0], VIEW);
+  }
+
+  /** Adds one system with no icon at a pixel of the frame, and draws a frame. */
+  async function addPlainAt(
+    page: Page,
+    range: number,
+    spot: { x: number; y: number },
+  ): Promise<[number, number, number]> {
+    const view = await focalPixels(page);
+    const place = atPixel(view, range, spot.x, spot.y);
+    expect(await addSystems(page, [record('Near', place, 'Alpha')])).toBe(1);
+    await drawFrame(page);
+    return place;
+  }
+
+  /** What the browser finds at a pixel of the page. */
+  async function elementAt(page: Page, x: number, y: number): Promise<string> {
+    return page.evaluate(
+      (spot) => document.elementFromPoint(spot.x, spot.y)?.className ?? 'nothing',
+      { x, y },
+    );
+  }
+
+  test('a nearer marker hides the icon over it', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const target = centreOf((await icons(page))[0] as Mark);
+    await addPlainAt(page, 400, target);
+
+    const stack = await icons(page);
+    const found = await elementAt(page, target.x, target.y);
+    console.log('the covered icon', { target, hidden: stack[0]?.hidden, found });
+
+    expect(stack).toHaveLength(1);
+    expect(stack[0]?.hidden).toBe(true);
+    // A hidden element takes no pointer event, so the pixel over the nearer marker is
+    // the canvas and not the icon.
+    expect(found).not.toContain('gm-system-icon');
+  });
+
+  test('a further marker hides nothing', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const target = centreOf((await icons(page))[0] as Mark);
+    await addPlainAt(page, 8000, target);
+
+    const stack = await icons(page);
+    console.log('the further marker', { target, hidden: stack[0]?.hidden });
+
+    expect(stack).toHaveLength(1);
+    expect(stack[0]?.hidden).toBe(false);
+  });
+
+  test('only the covered icon of a stack hides', async ({ page }) => {
+    await openStack(page, ['titan', 'mission', 'waypoint', 'bookmark']);
+    // The reading runs top of the screen down, so the record's third icon is the second
+    // of four.
+    const before = await icons(page);
+    expect(before).toHaveLength(4);
+    const target = centreOf(before[1] as Mark);
+    await addPlainAt(page, 400, target);
+
+    const stack = await icons(page);
+    const arrow = (await arrows(page))[0] as Mark;
+    console.log('the covered icon of a stack', {
+      hidden: stack.map((mark) => mark.hidden),
+      arrow: arrow.hidden,
+    });
+
+    expect(stack.map((mark) => mark.hidden)).toEqual([false, true, false, false]);
+    expect(arrow.hidden).toBe(false);
+  });
+
+  test('the arrow follows the same rule', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const target = centreOf((await arrows(page))[0] as Mark);
+    await addPlainAt(page, 400, target);
+
+    const stack = await icons(page);
+    const arrow = (await arrows(page))[0] as Mark;
+    console.log('the covered arrow', { target, arrow: arrow.hidden });
+
+    expect(arrow.hidden).toBe(true);
+    expect(stack.every((mark) => !mark.hidden)).toBe(true);
+  });
+
+  test('a system does not hide its own stack', async ({ page }) => {
+    await openStack(page, ['titan', 'mission', 'waypoint', 'bookmark']);
+
+    const stack = await icons(page);
+    const arrow = (await arrows(page))[0] as Mark;
+    console.log('the stack of a lone system', {
+      hidden: stack.map((mark) => mark.hidden),
+      arrow: arrow.hidden,
+    });
+
+    expect(stack).toHaveLength(4);
+    expect(stack.every((mark) => !mark.hidden)).toBe(true);
+    expect(arrow.hidden).toBe(false);
+  });
+
+  test('the element comes back when the marker moves away', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const target = centreOf((await icons(page))[0] as Mark);
+    const near = await addPlainAt(page, 400, target);
+    expect((await icons(page))[0]?.hidden).toBe(true);
+    const held = await counts(page);
+
+    // An orbit moves the near marker much further across the screen than the far one,
+    // because the screen offset of a point is its offset from the axis over its range.
+    await setView(page, [0, 0, 0], VIEW, 3);
+    const stack = await icons(page);
+    const marker = await projectOf(page, near);
+    const box = stack[0] as Mark;
+    const after = await counts(page);
+    console.log('the marker moved away', { marker, box, held, after });
+
+    expect(marker.x < box.left || marker.x > box.right).toBe(true);
+    expect(box.hidden).toBe(false);
+    // The element stayed in the pool, so the frame that shows it again allocates none.
+    expect(after).toEqual(held);
+  });
+
+  test('the keeper holds the hovered and the selected marker', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const target = centreOf((await icons(page))[0] as Mark);
+    const near = await addPlainAt(page, 400, target);
+    const namesOn = await page.evaluate(
+      () => window.galaxyMap?.areSystemNamesVisible() ?? true,
+    );
+
+    const marker = await projectOf(page, near);
+    await page.mouse.move(marker.x, marker.y);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    const hovered = (await icons(page))[0]?.hidden;
+    const hoverName = await page.evaluate(
+      () => window.galaxyMap?.getHover()?.name ?? null,
+    );
+
+    await page.mouse.move(1, 1);
+    await page.evaluate((name) => {
+      window.galaxyMap?.setSelection(name);
+    }, 'Near');
+    await setView(page, [0, 0, 0], VIEW);
+    const selected = (await icons(page))[0]?.hidden;
+    const labels = await page.evaluate(() =>
+      [...document.querySelectorAll('.gm-system-label')].map(
+        (element) => element.textContent ?? '',
+      ),
+    );
+    console.log('the keeper under a hover and a selection', {
+      namesOn,
+      hoverName,
+      hovered,
+      selected,
+      labels,
+    });
+
+    expect(namesOn).toBe(false);
+    expect(hoverName).toBe('Near');
+    expect(hovered).toBe(true);
+    expect(selected).toBe(true);
+    // No system carries two name labels.
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });

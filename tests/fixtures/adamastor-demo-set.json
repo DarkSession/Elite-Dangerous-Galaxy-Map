@@ -43,8 +43,9 @@
         "y": -58.96875,
         "z": -354.78125
       },
-      "primaryCategory": "Project Seraph Settlements",
-      "secondaryCategories": [],
+      "categories": [
+        "Project Seraph Settlements"
+      ],
       "description": "Fort Asch"
     },
     {
@@ -54,8 +55,8 @@
         "y": -323.53125,
         "z": -1431.84375
       },
-      "primaryCategory": "Project Seraph Settlements",
-      "secondaryCategories": [
+      "categories": [
+        "Project Seraph Settlements",
         "Hyford's Cache & D-2's LPs"
       ]
     },
@@ -66,8 +67,9 @@
         "y": 7.5625,
         "z": -951.1875
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": []
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ]
     },
     {
       "name": "Colonia",
@@ -76,8 +78,9 @@
         "y": -910.28125,
         "z": 19808.125
       },
-      "primaryCategory": "Hyford's Cache & D-2's LPs",
-      "secondaryCategories": []
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ]
     }
   ],
   "spheres": [],
@@ -102,7 +105,9 @@
       ],
       "width": 2,
       "name": "Adamastor Initial Route",
-      "primaryCategory": "Adamastor Initial Route"
+      "categories": [
+        "Adamastor Initial Route"
+      ]
     },
     {
       "points": [
@@ -119,7 +124,9 @@
       ],
       "width": 2,
       "name": "Line Through Waypoints",
-      "primaryCategory": "Line Through Waypoints"
+      "categories": [
+        "Line Through Waypoints"
+      ]
     },
     {
       "points": [
@@ -155,7 +162,9 @@
       ],
       "width": 2,
       "name": "Hyford's Cache & D-2's LPs",
-      "primaryCategory": "Hyford's Cache & D-2's LPs"
+      "categories": [
+        "Hyford's Cache & D-2's LPs"
+      ]
     }
   ]
 }

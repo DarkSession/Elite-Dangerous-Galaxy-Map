@@ -169,7 +169,7 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: 'Alpha',
+    categories: ['Alpha'],
     ...extra,
   };
 }
@@ -206,6 +206,38 @@ async function openOn(
   await select(page, name);
   await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
 }
+
+test.describe('a system with no category', () => {
+  test('shows no chip row', async ({ page }) => {
+    await openPanel(page);
+    // The map holds no category, so each record names none.
+    await addSystems(page, [
+      { name: 'Sol', coords: { x: 0, y: 0, z: 100 }, description: 'The home system.' },
+      { name: 'Achenar', coords: { x: 10, y: 0, z: 100 } },
+      { name: 'Solati', coords: { x: 20, y: 0, z: 100 } },
+    ]);
+    await select(page, 'Sol');
+    await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
+
+    const titles = await sectionTitles(page);
+    const labels = await fieldLabels(page);
+    const chips = await hud(page).locator('.gm-hud__chip').count();
+    const rows = await hud(page).locator('.gm-hud__chips').count();
+    console.log('the panel of an uncategorised system', {
+      titles,
+      labels,
+      chips,
+      rows,
+    });
+
+    await expect(hud(page).locator('.gm-hud__info-name')).toHaveText('Sol');
+    expect(labels.length).toBeGreaterThan(0);
+    expect(titles).toContain('DESCRIPTION');
+    expect(titles).not.toContain('CATEGORIES');
+    expect(chips).toBe(0);
+    expect(rows).toBe(0);
+  });
+});
 
 test.describe('the description draws as Markdown', () => {
   // The scenario "The description draws as Markdown".

@@ -59,7 +59,7 @@ async function addTarget(page: Page): Promise<void> {
       {
         name: 'Target',
         coords: { x: where[0], y: where[1], z: where[2] },
-        primaryCategory: 'Empire',
+        categories: ['Empire'],
       },
     ]);
   }, TARGET);

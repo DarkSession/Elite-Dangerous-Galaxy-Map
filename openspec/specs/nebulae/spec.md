@@ -747,16 +747,50 @@ what is behind it in the same measure.
 so occluded light turns warm. The colour channels SHALL take the three values and the
 alpha SHALL take their mean, which is what the volume pass writes into its own alpha.
 
-**The default is on.** A look constant SHALL scale the optical depth. At `0` the pass
-draws what it drew before this change; at `1` it draws the volume's own extinction. The
-default SHALL be `1`.
+**The look constant is no longer capped at 1.** A look constant SHALL scale the optical
+depth, and it SHALL take any finite value of **0 or above**. At `0` the pass draws what it
+drew before the march; at `1` it draws the volume's own extinction; above `1` it draws more
+extinction than the volume carries over the same segment. A value the reader cannot read,
+which is a value that is not finite or is below 0, SHALL take the default.
+
+The cap of 1 is what this change removes. The frame this map draws is tone mapped, and a
+nebula seen through a very bright mass still reads as a source at the volume's own
+extinction. The constant is the one knob that answers that, and the cap held it at the
+value that is already too weak.
+
+**The default SHALL be exactly 2.0.** `DEFAULT_NEBULA_OCCLUSION` SHALL read `2`, so the
+pass draws twice the optical depth the volume carries over the same segment.
+
+The figure is a decision and not a measurement this change defers. 2.0 is the first value
+above the old cap that is a whole multiple of the volume's own extinction, and it is what
+the scenarios below and the reworked tolerance are computed from. A later change that
+wants another look changes one number and the two figures that follow from it: the
+tolerance of "A nebula with little in front of it barely changes" and the range at which
+the cull floor takes a record. The constant is already the debug handle's, so a reader can
+try another value in the page without a build.
+
+**A record under the cull floor SHALL march no fragment.** Where the mean of a record's
+three transmittance channels falls below a **cull floor**, the pass SHALL draw no fragment
+of that record. The floor SHALL be **0.02**.
+
+The floor is what reduces a nebula's drawn range through bright mass: the more illuminated
+the material between the camera and a record, the nearer the camera must come before that
+record draws at all. Below the floor the record contributes under 2 per cent of its own
+light and under 2 per cent of its own alpha, which the tone map cannot show against the
+mass in front of it, so the cull removes the fragment cost and not a visible record.
+
+The cull SHALL NOT change `drawnCount`, `drawCalls`, `aboveFloorCount` or `coveredArea`.
+Those four are readings of the **selection**, which knows no transmittance, and the
+requirement "The frame holds a covered-area budget" states them. The cull happens after the
+selection, in the draw.
 
 **The volume alone occludes.** The march reads the density volume texture and nothing
 else. The cloud sprites do not attenuate a nebula, and a nebula does not attenuate
 another nebula.
 
 **No volume, no attenuation.** Where the density volume has not arrived, or the volume
-switch is off, the transmittance SHALL be `1` for every nebula.
+switch is off, the transmittance SHALL be `1` for every nebula and the cull SHALL drop
+none.
 
 #### Scenario: A nebula behind the core dims
 
@@ -775,38 +809,71 @@ switch is off, the transmittance SHALL be `1` for every nebula.
   falls. A block reading would therefore **rise**. The contribution states the attenuation
   for a source and a hole alike, and it falls to 0 as the transmittance does.
 
+#### Scenario: A higher constant dims it further
+
+- **WHEN** the browser test reads the same block at the occlusion constant 1 and at the
+  new default
+- **THEN** the nebula's contribution at the default is smaller in magnitude than at 1
+
 #### Scenario: A nebula with little in front of it barely changes
 
 - **WHEN** the browser test opens `BRIGHT_VIEW`, the camera
   `#c=624.4,-425.9,-1229.5&d=6000&p=35&y=0` that `e2e/nebulae.spec.ts` already names, and
-  reads the nebula with the occlusion constant at 1 and at 0
-- **THEN** the two readings differ by **under 2 percent of the block mean**, which is the
-  band the change measures and writes into the test beside the view.
+  reads the nebula with the occlusion constant at the default and at 0
+- **THEN** the two readings differ by under **4 per cent**, and the test names that figure
+  and the 2.2 per cent estimate it comes from beside the view.
 
-  The view and the tolerance are one decision, and this requirement settles it. The
-  tolerance is a measured figure and not "the dither", because there is no view inside
-  this galaxy with **nothing** in front of a nebula. `BRIGHT_VIEW` is the view the design
-  costed: its segment to Barnard's Loop is 5,912 light years and its estimated
-  transmittance is 0.997, 0.994 and 0.989 by channel, so the worst channel changes by
-  1.1 percent, and 2 percent is that estimate plus a margin. A nearer camera carries a
-  smaller signal and would need a tighter band; taking the costed view keeps the
-  assertion and the estimate on one segment. A band several times the signal is the
-  failure the paragraph below names: it would pass a frame that dimmed several times more
-  than the model allows. A tolerance the implementer picks after reading the frame is a tolerance
-  that always passes.
+  The view and the tolerance are one decision. The tolerance is a measured figure and not
+  "the dither", because there is no view inside this galaxy with **nothing** in front of a
+  nebula. `BRIGHT_VIEW` is the view the design costed: its segment to Barnard's Loop is
+  5,912 light years and its estimated transmittance at the constant 1 is 0.997, 0.994 and
+  0.989 by channel. The transmittance at a constant `k` is that value raised to `k`, so at
+  the default of 2.0 the worst channel changes by `1 - 0.989^2`, which is 2.2 per cent, and
+  the tolerance is **4 per cent**: that estimate plus the same margin the 2 per cent
+  tolerance carried at 1. A band several times the signal would pass a frame that dimmed
+  several times more than the model allows. A tolerance the implementer picks after reading
+  the frame is a tolerance that always passes, which is why both numbers are stated here
+  and not left to the run.
 
 #### Scenario: Occluded light turns warm
 
 - **WHEN** the browser test reads a nebula through the bulge with the occlusion constant
-  at 1 and at 0, and takes the ratio of the blue channel to the red channel for each
-- **THEN** the ratio at 1 is below the ratio at 0
+  at the default and at 0, and takes the ratio of the blue channel to the red channel for
+  each
+- **THEN** the ratio at the default is below the ratio at 0
 
 #### Scenario: A dark nebula behind the core stops cutting a hole
 
 - **WHEN** the browser test reads the pixels of a dark nebula that sits behind the core,
-  with the occlusion constant at 1 and at 0
-- **THEN** the reading at 1 is above the reading at 0, because the nebula's alpha is
-  scaled by the same transmittance
+  with the occlusion constant at the default and at 0
+- **THEN** the reading at the default is above the reading at 0, because the nebula's alpha
+  is scaled by the same transmittance
+
+#### Scenario: The default is 2
+
+- **WHEN** a unit test reads `DEFAULT_NEBULA_OCCLUSION`, and a browser test reads the
+  occlusion the renderer sends with the host naming no value
+- **THEN** both read `2`
+
+#### Scenario: The constant takes a value above 1
+
+- **WHEN** a unit test reads the occlusion the renderer sends at the values 0, 1, 2.5, -1
+  and `NaN`
+- **THEN** the first three read 0, 1 and 2.5, and the last two read the default
+
+#### Scenario: A culled record contributes nothing
+
+- **WHEN** the browser test opens a view whose segment to a named nebula runs through the
+  core, raises the occlusion constant until that record's estimated mean transmittance
+  falls below 0.02, and reads the block with the nebula pass on and with it off
+- **THEN** the two blocks are identical, and the frame drew the record's draw call all the
+  same, because the cull sits after the selection
+
+#### Scenario: The cull leaves the selection readings alone
+
+- **WHEN** the browser test reads `drawnCount`, `drawCalls`, `aboveFloorCount` and
+  `coveredArea` at the occlusion constant 0 and at a constant high enough to cull a record
+- **THEN** the four readings are equal at both
 
 #### Scenario: The extinction rule is written once
 
@@ -819,7 +886,7 @@ switch is off, the transmittance SHALL be `1` for every nebula.
 
 - **WHEN** a unit test marches the extinction rule at all 36 vertices of one record's box
 - **THEN** all 36 results are equal, so the value is one per record however many vertices
-  compute it
+  compute it, and the cull takes every vertex of a record or none
 
 #### Scenario: No volume gives no attenuation
 
@@ -837,9 +904,9 @@ switch is off, the transmittance SHALL be `1` for every nebula.
 #### Scenario: The march holds the frame budget
 
 - **WHEN** `e2e/frame-budget.spec.ts` runs inside the zoom band, with the nebula pass on,
-  the occlusion constant at 1, and a drawn count at or above the floor **this change
-  measures and writes into the test**. The near end of the zoom band is open, so a near
-  view draws a record that fills the frame, and the floor is set there
+  the occlusion constant at the default, and a drawn count at or above the floor the change
+  that added the march measured. The near end of the zoom band is open, so a near view
+  draws a record that fills the frame, and the floor is set there
 - **THEN** the frame interval holds the budget `far-view-rendering` states
 
 #### Scenario: The vertex stage carries the volume sampler

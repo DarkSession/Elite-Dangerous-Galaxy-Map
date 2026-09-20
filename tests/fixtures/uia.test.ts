@@ -176,7 +176,7 @@ describe('the conversion of the UIA source', () => {
       radius: 514,
       color: [51, 179, 255],
       name: 'Col 70 Sector',
-      primaryCategory: 'Permit Locked Centers',
+      categories: ['Permit Locked Centers'],
     });
   });
 
@@ -188,7 +188,7 @@ describe('the conversion of the UIA source', () => {
     const set = convertUia(extract(), extras());
     const byCategory = new Map<string, number>();
     for (const sphere of set.spheres) {
-      const key = sphere.primaryCategory ?? 'none';
+      const key = sphere.categories?.[0] ?? 'none';
       byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
     }
     expect([...byCategory]).toEqual([
@@ -202,7 +202,7 @@ describe('the conversion of the UIA source', () => {
     // marker at its centre from the category table. A reader who makes the sphere take
     // its category's colour makes every permit-locked shell red.
     const blue = set.spheres.filter(
-      (sphere) => sphere.primaryCategory === 'Permit Locked Centers',
+      (sphere) => sphere.categories?.[0] === 'Permit Locked Centers',
     );
     expect(blue.every((sphere) => sphere.color?.join(',') === '51,179,255')).toBe(true);
     expect(
@@ -236,27 +236,26 @@ describe('the conversion of the UIA source', () => {
   test('names a line for itself and not for its category', () => {
     const set = convertUia(extract(), extras());
     const hyperdiction = set.lines.find(
-      (line) => line.primaryCategory === 'UIA#1 Taranis',
+      (line) => line.categories?.[0] === 'UIA#1 Taranis',
     );
     expect(hyperdiction?.name).toBe('Fixture Waypoint B to Fixture Report Near');
-    expect(hyperdiction?.secondaryCategories).toEqual(['All Hyperdictions']);
+    expect(hyperdiction?.categories).toEqual(['UIA#1 Taranis', 'All Hyperdictions']);
     const waypoint = set.lines.find(
-      (line) => line.primaryCategory === 'Recorded Route',
+      (line) => line.categories?.[0] === 'Recorded Route',
     );
     expect(waypoint?.name).toBe('UIA#1 Recorded Route');
     // A line takes the colour of the category it names, so it carries none of its own.
     for (const line of set.lines) {
-      expect(line.primaryCategory).not.toBeUndefined();
+      expect(line.categories?.[0]).not.toBeUndefined();
       expect(line.color).toBeUndefined();
     }
   });
 
-  test('names the first category of a record as its primary one', () => {
+  test('names the first category of a record first', () => {
     const system = convertUia(extract(), extras()).systems.find(
       (entry) => entry.name === 'HIP 22460',
     );
-    expect(system?.primaryCategory).toBe('Thargoid Systems');
-    expect(system?.secondaryCategories).toEqual(['Populated Systems']);
+    expect(system?.categories).toEqual(['Thargoid Systems', 'Populated Systems']);
   });
 
   // One name is a waypoint and an end of a report, so the set holds one record of it and
@@ -265,8 +264,8 @@ describe('the conversion of the UIA source', () => {
     const set = convertUia(extract(), extras());
     const held = set.systems.filter((entry) => entry.name === 'Fixture Waypoint A');
     expect(held).toHaveLength(1);
-    expect(held[0].primaryCategory).toBe('Recorded Route');
-    expect(held[0].secondaryCategories).toEqual([
+    expect(held[0].categories).toEqual([
+      'Recorded Route',
       'UIA#1 Taranis',
       'All Hyperdictions',
       'Hostile',

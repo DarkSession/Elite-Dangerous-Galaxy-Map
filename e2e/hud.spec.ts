@@ -191,9 +191,26 @@ function record(
   return {
     name,
     coords: { x: position[0], y: position[1], z: position[2] },
-    primaryCategory: category,
+    categories: [category],
     ...extra,
   };
+}
+
+/** A record that names no category, which an uncategorised set holds. */
+function plain(
+  name: string,
+  position: readonly [number, number, number],
+): Record<string, unknown> {
+  return { name, coords: { x: position[0], y: position[1], z: position[2] } };
+}
+
+/** The rows of the flat list, in the order the list holds them. */
+async function flatRowNames(page: Page): Promise<string[]> {
+  return hud(page)
+    .locator('.gm-hud__flat-list .gm-hud__system-row')
+    .evaluateAll((rows) =>
+      rows.map((row) => (row as HTMLElement).dataset['name'] ?? ''),
+    );
 }
 
 /** Adds spheres to the HUD's map and returns how many the reader kept. */
@@ -224,7 +241,7 @@ function line(
       [0, 0, 0],
       [100, 0, 0],
     ],
-    primaryCategory: category,
+    categories: [category],
     ...extra,
   };
 }
@@ -575,7 +592,7 @@ async function addGrid(page: Page, count: number, systems: number): Promise<numb
           records.push({
             name: `Star a ${String(group).padStart(3, '0')} ${String(index).padStart(4, '0')}`,
             coords: { x: group * 7, y: 0, z: index * 3 },
-            primaryCategory: names[group] as string,
+            categories: [names[group] as string],
           });
         }
       }
@@ -753,7 +770,7 @@ test.describe('the category browser', () => {
     await addCategories(page, ['A', 'B']);
     await addSystems(page, [
       record('One', [0, 0, 100], 'A'),
-      record('Two', [0, 0, 200], 'A', { secondaryCategories: ['B'] }),
+      record('Two', [0, 0, 200], 'A', { categories: ['A', 'B'] }),
     ]);
     await expect(categoryRow(page, 'A')).toBeVisible();
 
@@ -769,7 +786,7 @@ test.describe('the category browser', () => {
     await addCategories(page, ['A', 'B']);
     await addSystems(page, [
       record('One', [0, 0, 100], 'A'),
-      record('Two', [0, 0, 200], 'A', { secondaryCategories: ['B'] }),
+      record('Two', [0, 0, 200], 'A', { categories: ['A', 'B'] }),
     ]);
     await expect(categoryRow(page, 'B')).toBeVisible();
 
@@ -809,6 +826,111 @@ test.describe('the category browser', () => {
     // starts, so `Alpha` holds one system of its own before the batches run.
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toHaveAttribute('title', 'About Alpha');
+  });
+
+  test('a search rewrites the counts, and a row with no match keeps its row', async ({
+    page,
+  }) => {
+    await openHud(page);
+    await addCategories(page, ['A', 'B']);
+    await addSystems(page, [
+      record('Sol', [0, 0, 100], 'A'),
+      record('Solati', [0, 0, 200], 'A'),
+      record('Achenar', [0, 0, 300], 'A'),
+      record('Beta', [0, 0, 400], 'B'),
+    ]);
+    await expect(categoryRow(page, 'B')).toBeVisible();
+
+    await hud(page).locator('.gm-hud__search').fill('sol');
+    await page.waitForTimeout(300);
+    const filtered = await categoryCounts(page);
+    console.log('the counts under a filter', filtered);
+
+    expect(filtered).toEqual(['2 of 3', '0 of 1']);
+    // The row of `B` matches nothing and is still in the panel, and its dot still
+    // switches the category.
+    await expect(categoryRow(page, 'B')).toBeVisible();
+    await categoryDot(page, 'B').click();
+    expect(
+      await page.evaluate(() => window.__hudMap?.isCategoryVisible('B') ?? true),
+    ).toBe(false);
+
+    await hud(page).locator('.gm-hud__search').fill('');
+    await page.waitForTimeout(300);
+
+    expect(await categoryCounts(page)).toEqual(['3', '1']);
+  });
+
+  test('an uncategorised set shows a flat list that selects and filters', async ({
+    page,
+  }) => {
+    await openHud(page);
+    await addSystems(page, [
+      plain('Solati', [0, 0, 200]),
+      plain('Sol', [0, 0, 100]),
+      plain('Achenar', [0, 0, 300]),
+    ]);
+    await expect(hud(page).locator('.gm-hud__flat-list')).toBeVisible();
+
+    expect(await categoryNames(page)).toEqual([]);
+    expect(await flatRowNames(page)).toEqual(['Achenar', 'Sol', 'Solati']);
+    // The list draws at the panel's own width, with no sideways scroll.
+    const width = await hud(page)
+      .locator('.gm-hud__flat-list')
+      .evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }));
+    console.log('the flat list width', width);
+    expect(width.scroll).toBeLessThanOrEqual(width.client);
+    await expect(
+      hud(page).locator('.gm-hud__bulk-button[data-name="all"]'),
+    ).toBeDisabled();
+    await expect(
+      hud(page).locator('.gm-hud__bulk-button[data-name="none"]'),
+    ).toBeDisabled();
+
+    await hud(page).locator('.gm-hud__search').fill('sol');
+    await page.waitForTimeout(300);
+
+    expect(await flatRowNames(page)).toEqual(['Sol', 'Solati']);
+
+    await hud(page).locator('.gm-hud__system-row[data-name="Sol"]').click();
+
+    expect(
+      await page.evaluate(() => window.__hudMap?.getSelection()?.name ?? null),
+    ).toBe('Sol');
+  });
+
+  test('the shapes tab shows a flat list for uncategorised shapes', async ({
+    page,
+  }) => {
+    await openHud(page);
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('Sol', [0, 0, 100], 'A')]);
+    await addSpheres(page, [
+      { name: 'Alpha Zone', position: [0, 0, 0], radius: 100, color: [1, 2, 3] },
+      { name: 'Beta Zone', position: [0, 0, 400], radius: 100, color: [1, 2, 3] },
+    ]);
+    await expect(panelTab(page, 'shapes')).toBeEnabled();
+    await panelTab(page, 'shapes').click();
+    await expect(hud(page).locator('.gm-hud__flat-list')).toBeVisible();
+
+    expect(await categoryNames(page)).toEqual([]);
+    expect(await flatRowNames(page)).toEqual(['Alpha Zone', 'Beta Zone']);
+  });
+
+  test('one categorised thing removes the flat list', async ({ page }) => {
+    await openHud(page);
+    await addSystems(page, [plain('Sol', [0, 0, 100])]);
+    await expect(hud(page).locator('.gm-hud__flat-list')).toBeVisible();
+
+    // The set is cleared first, because a set that holds an uncategorised system takes
+    // no category, which `real-systems` states.
+    await page.evaluate(() => window.__hudMap?.clearSystems());
+    await addCategories(page, ['A']);
+    await addSystems(page, [record('Achenar', [0, 0, 200], 'A')]);
+    await expect(categoryRow(page, 'A')).toBeVisible();
+
+    expect(await categoryNames(page)).toEqual(['A']);
+    await expect(hud(page).locator('.gm-hud__flat-list')).toHaveCount(0);
   });
 
   test('ALL and NONE move every row', async ({ page }) => {
@@ -992,7 +1114,7 @@ test.describe('the HUD rebuild', () => {
           records.push({
             name: `S${id}`,
             coords: { x: id, y: 0, z: 0 },
-            primaryCategory: 'Alpha',
+            categories: ['Alpha'],
           });
         }
         total += window.__hudMap?.addSystems(records).added ?? 0;
@@ -1285,7 +1407,7 @@ test.describe('the expanded system list', () => {
         records.push({
           name: `System ${String(index).padStart(4, '0')}`,
           coords: { x: index, y: 0, z: index },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         });
       }
       return window.__hudMap?.addSystems(records).added ?? -1;
@@ -1328,7 +1450,7 @@ test.describe('the expanded system list', () => {
     await openHud(page);
     await addCategories(page, ['A', 'B']);
     await addSystems(page, [
-      record('Both', [0, 0, 100], 'A', { secondaryCategories: ['B'] }),
+      record('Both', [0, 0, 100], 'A', { categories: ['A', 'B'] }),
     ]);
     await expect(categoryRow(page, 'A')).toBeVisible();
 
@@ -1483,7 +1605,7 @@ test.describe('the two tabs of the category panel', () => {
     await addCategories(page, ['A', 'B', 'C']);
     await addSystems(page, [record('One', [0, 0, 100], 'A')]);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'B', name: 'Ball' },
+      { position: [0, 0, 0], radius: 100, categories: ['B'], name: 'Ball' },
     ]);
     await addLines(page, [line('Ribbon', 'A')]);
     await expect(categoryRow(page, 'A')).toBeVisible();
@@ -1517,7 +1639,7 @@ test.describe('the two tabs of the category panel', () => {
     expect(await panelTab(page, 'shapes').isDisabled()).toBe(true);
 
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'] },
     ]);
     // The panel rebuilds on the next poll, which is 100 ms away.
     await expect(panelTab(page, 'shapes')).toBeEnabled();
@@ -1528,7 +1650,7 @@ test.describe('the two tabs of the category panel', () => {
     await addCategories(page, ['Alpha']);
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'] },
     ]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
     await panelTab(page, 'shapes').click();
@@ -1545,9 +1667,7 @@ test.describe('the two tabs of the category panel', () => {
     await openHud(page);
     await addCategories(page, ['A', 'B']);
     await addSystems(page, [record('One', [0, 0, 100], 'A')]);
-    await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'B' },
-    ]);
+    await addSpheres(page, [{ position: [0, 0, 0], radius: 100, categories: ['B'] }]);
     await expect(categoryRow(page, 'A')).toBeVisible();
 
     await hud(page).locator('.gm-hud__bulk-button[data-name="none"]').click();
@@ -1565,9 +1685,7 @@ test.describe('the two tabs of the category panel', () => {
     await openHud(page);
     await addCategories(page, ['A']);
     await addSystems(page, [record('One', [0, 0, 100], 'A')]);
-    await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
-    ]);
+    await addSpheres(page, [{ position: [0, 0, 0], radius: 100, categories: ['A'] }]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
     await panelTab(page, 'shapes').click();
 
@@ -1589,9 +1707,7 @@ test.describe('the two tabs of the category panel', () => {
     await openHud(page);
     await addCategories(page, ['A']);
     await addSystems(page, [record('One', [0, 0, 100], 'A')]);
-    await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'A' },
-    ]);
+    await addSpheres(page, [{ position: [0, 0, 0], radius: 100, categories: ['A'] }]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
 
     // The dot of the systems tab takes the markers off. The row of the same category in
@@ -1621,7 +1737,7 @@ test.describe('the two tabs of the category panel', () => {
     await addCategories(page, ['Alpha']);
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Ball' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'], name: 'Ball' },
     ]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
 
@@ -1643,17 +1759,17 @@ test.describe('the two tabs of the category panel', () => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Sol Zone' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'], name: 'Sol Zone' },
       {
         position: [0, 0, 400],
         radius: 100,
-        primaryCategory: 'Alpha',
+        categories: ['Alpha'],
         name: 'Solati Zone',
       },
       {
         position: [0, 0, 800],
         radius: 100,
-        primaryCategory: 'Alpha',
+        categories: ['Alpha'],
         name: 'Achenar Zone',
       },
     ]);
@@ -1682,7 +1798,7 @@ test.describe('the two tabs of the category panel', () => {
       record('Achenar', [0, 0, 300], 'Alpha'),
     ]);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'] },
     ]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
 
@@ -1708,7 +1824,7 @@ test.describe('the two tabs of the category panel', () => {
       {
         position: [0, 0, 0],
         radius: 100,
-        primaryCategory: 'Alpha',
+        categories: ['Alpha'],
         name: 'Col 70 Sector',
       },
     ]);
@@ -1718,7 +1834,7 @@ test.describe('the two tabs of the category panel', () => {
           [0, 0, 0],
           [100, 0, 0],
         ],
-        primaryCategory: 'Alpha',
+        categories: ['Alpha'],
       },
     ]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
@@ -1738,7 +1854,7 @@ test.describe('the two tabs of the category panel', () => {
       {
         position: [1000, 0, 2000],
         radius: 500,
-        primaryCategory: 'Alpha',
+        categories: ['Alpha'],
         name: 'Ball',
       },
     ]);
@@ -1768,7 +1884,7 @@ test.describe('the two tabs of the category panel', () => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
     await addSpheres(page, [
-      { position: [0, 0, 0], radius: 100, primaryCategory: 'Alpha', name: 'Ball' },
+      { position: [0, 0, 0], radius: 100, categories: ['Alpha'], name: 'Ball' },
     ]);
     await expect(panelTab(page, 'shapes')).toBeEnabled();
     await panelTab(page, 'shapes').click();
@@ -1807,7 +1923,7 @@ test.describe('the two tabs of the category panel', () => {
         spheres.push({
           position: [index * 3, 0, index] as [number, number, number],
           radius: 50,
-          primaryCategory: names[index % 20] as string,
+          categories: [names[index % 20] as string],
         });
       }
       const lines = [];
@@ -1817,7 +1933,7 @@ test.describe('the two tabs of the category panel', () => {
             [index, 0, 0],
             [index, 0, 100],
           ] as [number, number, number][],
-          primaryCategory: names[index % 20] as string,
+          categories: [names[index % 20] as string],
         });
       }
       return [
@@ -3659,7 +3775,7 @@ test.describe('the HUD budget', () => {
             y: -40985 + unit() * 81910,
             z: -24105 + unit() * 100000,
           },
-          primaryCategory: 'Alpha',
+          categories: ['Alpha'],
         });
       }
       return window.__hudMap?.addSystems(records).added ?? -1;

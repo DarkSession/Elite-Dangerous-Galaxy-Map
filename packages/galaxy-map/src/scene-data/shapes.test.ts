@@ -461,32 +461,22 @@ describe('the categories of a shape', () => {
     const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     const report = shapes.addSpheres(
       asSpheres([
-        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 'A' },
-        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 'B' },
-        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], primaryCategory: 7 },
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], categories: ['A'] },
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], categories: ['B'] },
         {
           position: [0, 0, 0],
           radius: 1,
           color: [1, 2, 3],
-          primaryCategory: 'A',
-          secondaryCategories: ['B'],
+          categories: ['A', 7],
         },
-        {
-          position: [0, 0, 0],
-          radius: 1,
-          color: [1, 2, 3],
-          secondaryCategories: ['A'],
-        },
+        { position: [0, 0, 0], radius: 1, color: [1, 2, 3], categories: 'A' },
       ]),
     );
 
-    expect(report.added).toBe(1);
-    expect(reasons(report.rejected)).toEqual([
-      '1:unknown-category',
-      '2:bad-category',
-      '3:unknown-category',
-      '4:no-category',
-    ]);
+    // A `categories` that is not an array is dropped, so the fourth sphere names none
+    // and its own colour draws it.
+    expect(report.added).toBe(2);
+    expect(reasons(report.rejected)).toEqual(['1:unknown-category', '2:bad-category']);
   });
 
   test('gives a line the same reasons', () => {
@@ -497,16 +487,10 @@ describe('the categories of a shape', () => {
     ];
     const report = shapes.addLines(
       asLines([
-        { points, color: [1, 2, 3], primaryCategory: 'A' },
-        { points, color: [1, 2, 3], primaryCategory: 'B' },
-        { points, color: [1, 2, 3], primaryCategory: '' },
-        {
-          points,
-          color: [1, 2, 3],
-          primaryCategory: 'A',
-          secondaryCategories: ['A', 7],
-        },
-        { points, color: [1, 2, 3], secondaryCategories: [] },
+        { points, color: [1, 2, 3], categories: ['A'] },
+        { points, color: [1, 2, 3], categories: ['B'] },
+        { points, color: [1, 2, 3], categories: [''] },
+        { points, color: [1, 2, 3], categories: ['A', 'A', 7] },
       ]),
     );
 
@@ -514,8 +498,7 @@ describe('the categories of a shape', () => {
     expect(reasons(report.rejected)).toEqual([
       '1:unknown-category',
       '2:bad-category',
-      '3:unknown-category',
-      '4:no-category',
+      '3:bad-category',
     ]);
   });
 
@@ -526,11 +509,11 @@ describe('the categories of a shape', () => {
     ]);
 
     expect(report).toEqual({ added: 1, rejected: [] });
-    expect(shapes.getSphere(0)?.primaryCategory).toBeUndefined();
-    expect(shapes.getShapeInfo('sphere', 0)?.secondaryCategories).toEqual([]);
+    expect(shapes.getSphere(0)?.categories).toBeUndefined();
+    expect(shapes.getShapeInfo('sphere', 0)?.categories).toEqual([]);
   });
 
-  test('drops a repeat, the primary itself and a list that is not an array', () => {
+  test('drops a repeat and reads a list that is not an array as empty', () => {
     const { shapes } = setOver([
       { name: 'A', color: [255, 0, 0] },
       { name: 'B', color: [0, 255, 0] },
@@ -541,28 +524,26 @@ describe('the categories of a shape', () => {
           position: [0, 0, 0],
           radius: 1,
           color: [1, 2, 3],
-          primaryCategory: 'A',
-          secondaryCategories: ['B', 'A', 'B'],
+          categories: ['A', 'B', 'A', 'B'],
         },
         {
           position: [0, 0, 0],
           radius: 1,
           color: [1, 2, 3],
-          primaryCategory: 'A',
-          secondaryCategories: 'B',
+          categories: 'B',
         },
       ]),
     );
 
-    expect(shapes.getSphere(0)?.secondaryCategories).toEqual(['B']);
-    expect(shapes.getSphere(1)?.secondaryCategories).toBeUndefined();
+    expect(shapes.getSphere(0)?.categories).toEqual(['A', 'B']);
+    expect(shapes.getSphere(1)?.categories).toBeUndefined();
   });
 
   test('needs a colour of its own where the shape names no category', () => {
     const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     const report = shapes.addSpheres(
       asSpheres([
-        { position: [0, 0, 0], radius: 1, primaryCategory: 'A' },
+        { position: [0, 0, 0], radius: 1, categories: ['A'] },
         { position: [0, 0, 0], radius: 1 },
       ]),
     );
@@ -581,12 +562,11 @@ describe('the shape sweep', () => {
       { name: 'B', color: [0, 255, 0] },
     ]);
     built.shapes.addSpheres([
-      { position: [0, 0, 0], radius: 1, primaryCategory: 'A' },
+      { position: [0, 0, 0], radius: 1, categories: ['A'] },
       {
         position: [0, 0, 0],
         radius: 1,
-        primaryCategory: 'A',
-        secondaryCategories: ['B'],
+        categories: ['A', 'B'],
       },
       { position: [0, 0, 0], radius: 1, color: [0, 0, 255] },
     ]);
@@ -621,7 +601,7 @@ describe('the shape sweep', () => {
   test('keeps the colour a shape carries of its own', () => {
     const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     shapes.addSpheres([
-      { position: [0, 0, 0], radius: 1, color: [0, 0, 255], primaryCategory: 'A' },
+      { position: [0, 0, 0], radius: 1, color: [0, 0, 255], categories: ['A'] },
     ]);
 
     expect(colorAt(shapes, 0)).toEqual([0, 0, 255]);
@@ -634,7 +614,7 @@ describe('the shape sweep', () => {
 
   test('takes the new colour of a category the table replaced', () => {
     const { shapes, table } = setOver([{ name: 'A', color: [255, 0, 0] }]);
-    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, categories: ['A'] }]);
     expect(colorAt(shapes, 0)).toEqual([255, 0, 0]);
 
     table.addCategories([{ name: 'A', color: [0, 0, 255] }]);
@@ -653,8 +633,7 @@ describe('the shape sweep', () => {
           [0, 0, 0],
           [1, 0, 0],
         ],
-        primaryCategory: 'A',
-        secondaryCategories: ['B'],
+        categories: ['A', 'B'],
       },
     ]);
 
@@ -727,9 +706,9 @@ describe('the shape category switch', () => {
   function oneOfEach(): { shapes: ShapeSet; table: RealSystemSet } {
     const built = setOver([{ name: 'A', color: [255, 0, 0] }]);
     built.table.addSystems([
-      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'A' },
+      { name: 'Sol', coords: { x: 0, y: 0, z: 0 }, categories: ['A'] },
     ]);
-    built.shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    built.shapes.addSpheres([{ position: [0, 0, 0], radius: 1, categories: ['A'] }]);
     return built;
   }
 
@@ -787,7 +766,7 @@ describe('the shape category switch', () => {
     shapes.setCategoryVisible('A', false);
 
     shapes.clearShapes();
-    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, categories: ['A'] }]);
 
     expect(shapes.isCategoryVisible('A')).toBe(true);
     expect(drawnFlags(shapes)).toEqual([1]);
@@ -801,7 +780,7 @@ describe('the shape category switch', () => {
     // The set holds nothing, so the clear leaves early. The flags are reset above that
     // return, or the next set would open with this name hidden.
     shapes.clearShapes();
-    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, primaryCategory: 'A' }]);
+    shapes.addSpheres([{ position: [0, 0, 0], radius: 1, categories: ['A'] }]);
 
     expect(shapes.isCategoryVisible('A')).toBe(true);
     expect(drawnFlags(shapes)).toEqual([1]);
@@ -850,8 +829,8 @@ describe('the shape name filter', () => {
   test('cuts a shape a category keeps', () => {
     const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     shapes.addSpheres([
-      { position: [0, 0, 0], radius: 1, primaryCategory: 'A', name: 'Sol Zone' },
-      { position: [0, 0, 0], radius: 1, primaryCategory: 'A', name: 'Achenar Zone' },
+      { position: [0, 0, 0], radius: 1, categories: ['A'], name: 'Sol Zone' },
+      { position: [0, 0, 0], radius: 1, categories: ['A'], name: 'Achenar Zone' },
     ]);
     shapes.setShapeNameFilter('sol');
 
@@ -877,7 +856,7 @@ describe('a shape read without its points', () => {
   test('holds the centre, the reach and the categories', () => {
     const { shapes } = setOver([{ name: 'A', color: [255, 0, 0] }]);
     shapes.addSpheres([
-      { position: [100, 0, 200], radius: 50, primaryCategory: 'A', name: 'Sol Zone' },
+      { position: [100, 0, 200], radius: 50, categories: ['A'], name: 'Sol Zone' },
     ]);
     shapes.addLines([
       {
@@ -894,14 +873,13 @@ describe('a shape read without its points', () => {
 
     expect(sphere).toEqual({
       name: 'Sol Zone',
-      primaryCategory: 'A',
-      secondaryCategories: [],
+      categories: ['A'],
       centre: [100, 0, 200],
       reach: 50,
       drawn: true,
     });
     expect(line).toEqual({
-      secondaryCategories: [],
+      categories: [],
       centre: [50, 0, 0],
       reach: 50,
       drawn: true,
@@ -944,33 +922,30 @@ describe('the sweep budget', () => {
       }));
       const { shapes } = setOver(categories);
       /** The four category names one shape carries, from its place in the set. */
-      const namesOf = (index: number): [string, string[]] => [
+      const namesOf = (index: number): string[] => [
         `C${index % 8}`,
-        [`C${(index + 1) % 8}`, `C${(index + 2) % 8}`, `C${(index + 3) % 8}`],
+        `C${(index + 1) % 8}`,
+        `C${(index + 2) % 8}`,
+        `C${(index + 3) % 8}`,
       ];
-      const spheres: SphereInput[] = Array.from({ length: MAX_SPHERES }, (_, index) => {
-        const [primaryCategory, secondaryCategories] = namesOf(index);
-        return {
+      const spheres: SphereInput[] = Array.from(
+        { length: MAX_SPHERES },
+        (_, index) => ({
           position: [index, 0, index],
           radius: 10 + index,
           name: `Sphere ${index}`,
-          primaryCategory,
-          secondaryCategories,
-        };
-      });
+          categories: namesOf(index),
+        }),
+      );
       const perLine = MAX_LINE_POINTS / MAX_LINES;
-      const lines: LineInput[] = Array.from({ length: MAX_LINES }, (_, index) => {
-        const [primaryCategory, secondaryCategories] = namesOf(index);
-        return {
-          points: Array.from(
-            { length: perLine },
-            (_unused, step) => [index, 0, step] as [number, number, number],
-          ),
-          name: `Line ${index}`,
-          primaryCategory,
-          secondaryCategories,
-        };
-      });
+      const lines: LineInput[] = Array.from({ length: MAX_LINES }, (_, index) => ({
+        points: Array.from(
+          { length: perLine },
+          (_unused, step) => [index, 0, step] as [number, number, number],
+        ),
+        name: `Line ${index}`,
+        categories: namesOf(index),
+      }));
 
       expect(shapes.addSpheres(spheres).added).toBe(MAX_SPHERES);
       expect(shapes.addLines(lines).added).toBe(MAX_LINES);

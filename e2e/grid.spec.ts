@@ -565,7 +565,7 @@ test.describe('the grid look', () => {
         { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 200000 },
       ]);
       window.galaxyMap?.addSystems([
-        { name: 'One', coords: { x: 0, y: 0, z: 0 }, primaryCategory: 'Alpha' },
+        { name: 'One', coords: { x: 0, y: 0, z: 0 }, categories: ['Alpha'] },
       ]);
     });
     await setView(page, [0, 0, 0], 1000, 35);

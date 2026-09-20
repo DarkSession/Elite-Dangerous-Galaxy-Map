@@ -29,6 +29,7 @@ const launchArguments = [
 const timedSpecs = [
   'frame-budget.spec.ts',
   'nebula-cost.spec.ts',
+  'count-cost.spec.ts',
   'stars.spec.ts',
   'labels.spec.ts',
 ];

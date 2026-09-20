@@ -20,6 +20,7 @@
 import { nebulaFocalPixels, selectNebulae } from '../scene-data/nebulae';
 import type { NebulaSet } from '../scene-data/nebulae';
 import type { NebulaVolumeTextures } from './nebula-volumes';
+import { NEBULA_CULL_FLOOR } from './nebula-slot';
 import type { NebulaDraw, NebulaFrame } from './nebula-slot';
 import { createRenderTarget } from './buffers';
 import type { RenderTarget } from './buffers';
@@ -171,6 +172,7 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
     'uAbsorption',
     'uDetailScale',
     'uOcclusion',
+    'uCullFloor',
   ]);
 }
 
@@ -354,6 +356,7 @@ export function createNebulaPass(
         program.uniforms['uOcclusion'] ?? null,
         frame.volume === null ? 0 : frame.occlusion,
       );
+      gl.uniform1f(program.uniforms['uCullFloor'] ?? null, NEBULA_CULL_FLOOR);
 
       gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
       gl.bindTexture(gl.TEXTURE_3D, frame.volume);

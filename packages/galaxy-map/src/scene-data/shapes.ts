@@ -58,10 +58,18 @@ export interface SphereInput {
   readonly opacity?: number;
   /** What the shape stands for. The map draws no label for it. */
   readonly name?: string;
-  /** The name of a category the table holds. */
-  readonly primaryCategory?: string;
-  /** The names of other categories the table holds. */
-  readonly secondaryCategories?: readonly string[];
+  /**
+   * The names of categories the table holds, in the order the sphere reads them. The
+   * first one that is on for shapes gives the colour, where the sphere carries none.
+   */
+  readonly categories?: readonly string[];
+  /**
+   * The two names `categories` replaces. Each one is `never`, so a shape that carries it
+   * fails the compile. The index signature below turns off TypeScript's excess-property
+   * check, so without the pair the old name would compile and the reader would drop it.
+   */
+  readonly primaryCategory?: never;
+  readonly secondaryCategories?: never;
   /** A field the reader drops. */
   readonly [field: string]: unknown;
 }
@@ -74,9 +82,8 @@ export interface Sphere {
   readonly color?: readonly [number, number, number];
   readonly opacity: number;
   readonly name?: string;
-  readonly primaryCategory?: string;
-  /** The other categories the sphere names, without a repeat. */
-  readonly secondaryCategories?: readonly string[];
+  /** The categories the sphere names, in order and without a repeat. */
+  readonly categories?: readonly string[];
 }
 
 /** What a host passes to `addLines`. */
@@ -94,10 +101,18 @@ export interface LineInput {
   readonly closed?: boolean;
   /** What the shape stands for. The map draws no label for it. */
   readonly name?: string;
-  /** The name of a category the table holds. */
-  readonly primaryCategory?: string;
-  /** The names of other categories the table holds. */
-  readonly secondaryCategories?: readonly string[];
+  /**
+   * The names of categories the table holds, in the order the line reads them. The first
+   * one that is on for shapes gives the colour, where the line carries none.
+   */
+  readonly categories?: readonly string[];
+  /**
+   * The two names `categories` replaces. Each one is `never`, so a shape that carries it
+   * fails the compile. The index signature below turns off TypeScript's excess-property
+   * check, so without the pair the old name would compile and the reader would drop it.
+   */
+  readonly primaryCategory?: never;
+  readonly secondaryCategories?: never;
   /** A field the reader drops. */
   readonly [field: string]: unknown;
 }
@@ -110,9 +125,8 @@ export interface Line {
   readonly width: number;
   readonly closed: boolean;
   readonly name?: string;
-  readonly primaryCategory?: string;
-  /** The other categories the line names, without a repeat. */
-  readonly secondaryCategories?: readonly string[];
+  /** The categories the line names, in order and without a repeat. */
+  readonly categories?: readonly string[];
 }
 
 /** The two kinds of shape the set holds. */
@@ -122,10 +136,8 @@ export type ShapeKind = 'sphere' | 'line';
 export interface ShapeInfo {
   /** The shape's name, absent where it carries none. */
   readonly name?: string;
-  /** The primary category, absent where the shape names none. */
-  readonly primaryCategory?: string;
-  /** The secondary categories the reader kept, in order. */
-  readonly secondaryCategories: readonly string[];
+  /** The names the reader kept, in order, and empty where the shape names none. */
+  readonly categories: readonly string[];
   /** The sphere's centre, or the middle of the line's bounding box. */
   readonly centre: readonly [number, number, number];
   /** The sphere's radius, or half the diagonal of that box. */
@@ -144,7 +156,6 @@ export type ShapeRejectReason =
   | 'bad-points'
   | 'bad-point'
   | 'bad-category'
-  | 'no-category'
   | 'unknown-system'
   | 'unknown-category'
   | 'over-capacity'
@@ -325,8 +336,8 @@ function readSystemReference(value: unknown): string | null {
 
 /** What one shape carries for the sweep, beside the fields the host reads back. */
 interface ShapeState {
-  /** The table indices of the categories the shape names, the primary first. */
-  readonly categories: readonly number[];
+  /** The table indices of the categories the shape names, in the shape's own order. */
+  readonly categoryIndices: readonly number[];
   /** The shape's own colour, or null where it takes the colour of a category. */
   readonly color: readonly [number, number, number] | null;
   /** The name folded to lower case, or null where the shape carries none. */
@@ -364,7 +375,7 @@ function createShapeStore(capacity: number): ShapeStore {
   const colors = new Float32Array(capacity * 3);
   // The table indices of every shape, one list after another. `start` and `named` cut it
   // into the list of one shape.
-  let categories = new Int32Array(capacity * CATEGORIES_PER_SHAPE);
+  let categoryIndices = new Int32Array(capacity * CATEGORIES_PER_SHAPE);
   const start = new Int32Array(capacity);
   const named = new Int32Array(capacity);
   // The colour a shape carries of its own, and 1 where it carries one.
@@ -380,18 +391,18 @@ function createShapeStore(capacity: number): ShapeStore {
     colors,
 
     push(state: ShapeState): void {
-      const list = state.categories;
-      if (used + list.length > categories.length) {
+      const list = state.categoryIndices;
+      if (used + list.length > categoryIndices.length) {
         const grown = new Int32Array(
-          Math.max(categories.length * 2, used + list.length),
+          Math.max(categoryIndices.length * 2, used + list.length),
         );
-        grown.set(categories);
-        categories = grown;
+        grown.set(categoryIndices);
+        categoryIndices = grown;
       }
       start[count] = used;
       named[count] = list.length;
       for (let step = 0; step < list.length; step += 1) {
-        categories[used + step] = list[step] as number;
+        categoryIndices[used + step] = list[step] as number;
       }
       used += list.length;
       const own = state.color;
@@ -423,7 +434,7 @@ function createShapeStore(capacity: number): ShapeStore {
         const held = named[index] as number;
         let chosen = -1;
         for (let step = 0; step < held; step += 1) {
-          const category = categories[first + step] as number;
+          const category = categoryIndices[first + step] as number;
           if (visible[category] === 1) {
             chosen = category;
             break;
@@ -444,8 +455,8 @@ function createShapeStore(capacity: number): ShapeStore {
         }
         // A shape with a colour of its own keeps it, whatever its categories hold. A
         // shape with every category off draws nothing, so the colour it holds never
-        // reaches the frame: it keeps the primary category's colour, which is always a
-        // row of the table.
+        // reaches the frame: it keeps the colour of the first category it names, which
+        // is always a row of the table.
         const base = index * 3;
         let red = 0;
         let green = 0;
@@ -455,7 +466,7 @@ function createShapeStore(capacity: number): ShapeStore {
           green = ownColors[base + 1] as number;
           blue = ownColors[base + 2] as number;
         } else if (held > 0) {
-          const source = chosen >= 0 ? chosen : (categories[first] as number);
+          const source = chosen >= 0 ? chosen : (categoryIndices[first] as number);
           red = categoryColors[source * 3] as number;
           green = categoryColors[source * 3 + 1] as number;
           blue = categoryColors[source * 3 + 2] as number;
@@ -476,30 +487,27 @@ function createShapeStore(capacity: number): ShapeStore {
   };
 }
 
-/** The category fields of one shape, read against the table. */
+/**
+ * The category fields of one shape, read against the table. The two lists hold the same
+ * categories in the same order: the names are what the host reads back and the indices
+ * are what the sweep reads, so neither reader converts.
+ */
 interface ShapeCategoryFields {
-  readonly primaryCategory: string | null;
-  readonly secondaryCategories: string[];
-  /** The table indices of the two fields together, the primary first. */
-  readonly categories: number[];
+  /** The names the shape gave, in its own order and without a repeat. */
+  readonly categoryNames: string[];
+  /** The table index of each of those names. */
+  readonly categoryIndices: number[];
 }
 
 /**
- * The category fields the host reads back. A shape that names no category carries
- * neither field, and one that names a primary category alone carries that field alone.
+ * The category field the host reads back. A shape that names no category carries none,
+ * so `getSphere` and `getLine` give back what the shape gave.
  */
 function categoryFields(named: ShapeCategoryFields): {
-  readonly primaryCategory?: string;
-  readonly secondaryCategories?: readonly string[];
+  readonly categories?: readonly string[];
 } {
-  if (named.primaryCategory === null) return {};
-  if (named.secondaryCategories.length === 0) {
-    return { primaryCategory: named.primaryCategory };
-  }
-  return {
-    primaryCategory: named.primaryCategory,
-    secondaryCategories: named.secondaryCategories,
-  };
+  if (named.categoryNames.length === 0) return {};
+  return { categories: named.categoryNames };
 }
 
 /** The state the sweep reads for one shape. */
@@ -509,7 +517,7 @@ function stateOf(
   named: ShapeCategoryFields,
 ): ShapeState {
   return {
-    categories: named.categories,
+    categoryIndices: named.categoryIndices,
     color,
     // The fold is taken once, so a sweep under a filter costs no case fold per shape.
     nameFold: name === null ? null : name.toLowerCase(),
@@ -575,37 +583,26 @@ export function createShapeSet(
   const readCategories = (
     input: SphereInput | LineInput,
   ): ShapeCategoryFields | ShapeRejectReason => {
-    const categories: number[] = [];
-    let primaryCategory: string | null = null;
-    if (input.primaryCategory !== undefined) {
-      const name = readName(input.primaryCategory);
-      // A `primaryCategory` that is not a string of at least one character is a fault in
-      // the call, and one the table does not hold is a fault in the data. Each one has
-      // its own reason, so the host reads which of the two it made.
-      if (name === null) return 'bad-category';
-      const found = table.categoryIndex(name);
-      if (found < 0) return 'unknown-category';
-      primaryCategory = name;
-      categories.push(found);
-    }
-    const secondaryCategories: string[] = [];
-    const given = input.secondaryCategories;
-    // A `secondaryCategories` that is not an array is dropped, as every optional field of
-    // the wrong type is dropped. A shape that names secondary categories and no primary
-    // one has no colour to take and no first category, so it is rejected.
+    const categoryNames: string[] = [];
+    const categoryIndices: number[] = [];
+    const given = input.categories;
+    // A `categories` that is not an array is dropped, as every optional field of the
+    // wrong type is dropped, and the shape then names none.
     if (Array.isArray(given)) {
-      if (primaryCategory === null) return 'no-category';
       for (const entry of given) {
-        if (typeof entry !== 'string') return 'unknown-category';
-        const found = table.categoryIndex(entry);
+        // An entry that is not a string of at least one character is a fault in the
+        // call, and one the table does not hold is a fault in the data. Each one has its
+        // own reason, so the host reads which of the two it made.
+        const name = readName(entry);
+        if (name === null) return 'bad-category';
+        const found = table.categoryIndex(name);
         if (found < 0) return 'unknown-category';
-        if (entry === primaryCategory) continue;
-        if (secondaryCategories.includes(entry)) continue;
-        secondaryCategories.push(entry);
-        categories.push(found);
+        if (categoryNames.includes(name)) continue;
+        categoryNames.push(name);
+        categoryIndices.push(found);
       }
     }
-    return { primaryCategory, secondaryCategories, categories };
+    return { categoryNames, categoryIndices };
   };
 
   /**
@@ -638,7 +635,7 @@ export function createShapeSet(
     }
     const named = readCategories(input);
     if (typeof named === 'string') return named;
-    const color = readShapeColor(input.color, named.primaryCategory !== null);
+    const color = readShapeColor(input.color, named.categoryNames.length > 0);
     if (color === 'bad-color') return 'bad-color';
     const opacity = readOpacity(input.opacity);
     if (opacity === null) return 'bad-opacity';
@@ -679,7 +676,7 @@ export function createShapeSet(
     }
     const named = readCategories(input);
     if (typeof named === 'string') return named;
-    const color = readShapeColor(input.color, named.primaryCategory !== null);
+    const color = readShapeColor(input.color, named.categoryNames.length > 0);
     if (color === 'bad-color') return 'bad-color';
     const width = readWidth(input.width);
     if (width === null) return 'bad-width';
@@ -789,10 +786,7 @@ export function createShapeSet(
         : lineReach(shape);
     return {
       ...(shape.name === undefined ? {} : { name: shape.name }),
-      ...(shape.primaryCategory === undefined
-        ? {}
-        : { primaryCategory: shape.primaryCategory }),
-      secondaryCategories: [...(shape.secondaryCategories ?? [])],
+      categories: [...(shape.categories ?? [])],
       centre: placed.centre,
       reach: placed.reach,
       drawn,
@@ -944,9 +938,9 @@ export function createShapeSet(
         ...(found.color === undefined
           ? {}
           : { color: [found.color[0], found.color[1], found.color[2]] as const }),
-        ...(found.secondaryCategories === undefined
+        ...(found.categories === undefined
           ? {}
-          : { secondaryCategories: [...found.secondaryCategories] }),
+          : { categories: [...found.categories] }),
       };
     },
 
@@ -959,9 +953,9 @@ export function createShapeSet(
         ...(found.color === undefined
           ? {}
           : { color: [found.color[0], found.color[1], found.color[2]] as const }),
-        ...(found.secondaryCategories === undefined
+        ...(found.categories === undefined
           ? {}
-          : { secondaryCategories: [...found.secondaryCategories] }),
+          : { categories: [...found.categories] }),
       };
     },
 

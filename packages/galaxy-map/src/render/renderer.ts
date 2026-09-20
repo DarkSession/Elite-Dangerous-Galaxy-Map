@@ -164,14 +164,14 @@ export function createFrameAccumulator(): FrameAccumulator {
 }
 
 /**
- * How much of the volume's extinction the frame sends for one nebula. A value outside 0
- * to 1, and a value that is not a number, take the default. The look settings are a
- * mutable handle, so the rule runs each frame, where the uniform is set.
+ * How much of the volume's extinction the frame sends for one nebula. The value takes
+ * any finite number of 0 or above: above 1 the pass draws more extinction than the
+ * volume carries over the same segment, which is what a tone mapped frame needs. A
+ * value below 0, and a value that is not a number, take the default. The look settings
+ * are a mutable handle, so the rule runs each frame, where the uniform is set.
  */
 export function nebulaOcclusionOf(value: number): number {
-  return Number.isFinite(value) && value >= 0 && value <= 1
-    ? value
-    : DEFAULT_NEBULA_OCCLUSION;
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_NEBULA_OCCLUSION;
 }
 
 /** Which passes draw. */

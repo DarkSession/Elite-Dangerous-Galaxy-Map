@@ -5,7 +5,8 @@ import {
   MAX_DATASETS,
   readDatasets,
 } from './datasets';
-import type { DatasetContent, DatasetEntry } from './datasets';
+import type { DatasetContent, DatasetEntry, DatasetView } from './datasets';
+import type { BrowseBounds } from '../camera/view';
 
 /** An empty set, which a `load` gives back when the test reads no record. */
 const EMPTY: DatasetContent = { categories: [], systems: [] };
@@ -26,17 +27,33 @@ function writer(): {
     categories: { added: number; replaced: number; rejected: [] };
     systems: { added: number; replaced: number; rejected: [] };
   };
+  setBounds: (bounds: BrowseBounds | null) => void;
+  applyView: (view: DatasetView) => void;
   calls: DatasetContent[];
+  /** Every `setBounds` the state machine made, in order. */
+  bounds: (BrowseBounds | null)[];
+  /** Every `applyView` the state machine made, in order. */
+  views: DatasetView[];
 } {
   const calls: DatasetContent[] = [];
+  const bounds: (BrowseBounds | null)[] = [];
+  const views: DatasetView[] = [];
   return {
     calls,
+    bounds,
+    views,
     write(content: DatasetContent) {
       calls.push(content);
       return {
         categories: { added: content.categories.length, replaced: 0, rejected: [] },
         systems: { added: content.systems.length, replaced: 0, rejected: [] },
       };
+    },
+    setBounds(value: BrowseBounds | null) {
+      bounds.push(value);
+    },
+    applyView(view: DatasetView) {
+      views.push(view);
     },
   };
 }
@@ -107,6 +124,34 @@ describe('the catalog reader', () => {
       { index: 257, reason: 'over-capacity' },
       { index: 258, reason: 'over-capacity' },
     ]);
+  });
+
+  test('reads the bounds and the view of an entry', () => {
+    const report = readDatasets([
+      {
+        id: 'one',
+        label: 'One',
+        bounds: { mode: 'auto', marginLy: 500 },
+        view: { fit: 'systems', pitch: 60 },
+        load: () => EMPTY,
+      },
+    ]);
+
+    expect(report.entries[0]).toMatchObject({
+      bounds: { mode: 'auto', marginLy: 500 },
+      view: { fit: 'systems', pitch: 60 },
+    });
+  });
+
+  test('keeps an entry whose bounds and whose view it cannot read', () => {
+    const report = readDatasets([
+      { id: 'one', label: 'One', bounds: 'auto', view: 4, load: () => EMPTY },
+    ]);
+
+    expect(report.rejected).toEqual([]);
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0]).not.toHaveProperty('bounds');
+    expect(report.entries[0]).not.toHaveProperty('view');
   });
 
   test('gives an empty catalog for no option', () => {
@@ -218,6 +263,64 @@ describe('the dataset state', () => {
 
     const empty = createDatasetState({ ...writer() });
     expect(empty.startLoad()).toBeNull();
+  });
+
+  test('writes the bounds and the view of the entry that loaded', async () => {
+    const work = writer();
+    const state = createDatasetState({
+      datasets: [
+        entry('framed', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+        entry('plain'),
+      ],
+      ...work,
+    });
+    // The listener reads what the two calls wrote, so the order is a reading and not a
+    // claim: both run before the announce.
+    const seen: number[] = [];
+    state.onDatasetChange(() => seen.push(work.bounds.length));
+
+    await state.loadDataset('framed');
+
+    expect(work.bounds).toEqual([{ mode: 'auto' }]);
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+    expect(seen).toEqual([1]);
+
+    // An entry that names none restores the map's own option, and leaves the camera.
+    await state.loadDataset('plain');
+
+    expect(work.bounds).toEqual([{ mode: 'auto' }, null]);
+    expect(work.views).toHaveLength(1);
+  });
+
+  test('holds the entry view at start where the options name a start view', async () => {
+    const framed = entry('framed', {
+      view: { fit: 'systems' },
+    } as Partial<DatasetEntry>);
+    const held = writer();
+    const withLink = createDatasetState({
+      datasets: [framed],
+      hasStartView: true,
+      ...held,
+    });
+
+    await withLink.startLoad();
+
+    expect(held.views).toEqual([]);
+    // The bounds are not the deep link's, so they are written all the same.
+    expect(held.bounds).toEqual([null]);
+
+    // A later load of the same entry takes the view, and so does a start load on a map
+    // whose options named no start view.
+    await withLink.loadDataset('framed');
+    expect(held.views).toEqual([{ fit: 'systems' }]);
+
+    const plain = writer();
+    const noLink = createDatasetState({ datasets: [framed], ...plain });
+    await noLink.startLoad();
+    expect(plain.views).toEqual([{ fit: 'systems' }]);
   });
 
   test('an unsubscribed listener hears nothing more', async () => {

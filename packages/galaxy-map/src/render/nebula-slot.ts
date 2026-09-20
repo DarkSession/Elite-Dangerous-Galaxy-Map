@@ -1,17 +1,18 @@
 // The slot the nebulae draw into: what one draw needs per frame, what the renderer
 // calls, and what a host hands the map to fill the slot.
 //
-// This module imports nothing, and it holds two number literals, one array literal and
+// This module imports nothing, and it holds three number literals, one array literal and
 // no other statement.
 // The renderer imports it, so the entry chunk carries what it holds: a type is erased by
 // the build, and a number literal pulls in no pass, no shader text, no atlas and no
 // record file. A third import here would put the nebulae back in the chunk this change
 // takes them out of, so a unit test reads the built output and holds the module to it.
 //
-// The three constants are look defaults the renderer keeps whether or not a host asks
-// for the nebulae, because the light gain, the step rate and `look.nebulaOcclusion` are
-// members of the look settings on every map. Every other look default sits beside its
-// pass; these three sit here, because the renderer must not import the nebula pass.
+// The four constants are look defaults the renderer keeps whether or not a host asks
+// for the nebulae, because the light gain, the step rate, the cull floor and
+// `look.nebulaOcclusion` are members of the look settings on every map. Every other look
+// default sits beside its pass; these four sit here, because the renderer must not
+// import the nebula pass.
 
 /**
  * The light gain the march scales its emission by, one value per colour channel. Every
@@ -35,10 +36,23 @@ export const DEFAULT_NEBULA_STEP_RATE = 32;
 /**
  * How much of the galaxy volume's own extinction a nebula takes. 0 is the look before
  * the march, and 1 is the extinction the volume pass would have carried to the record's
- * centre. The default is 1: the frame already dims its own light by the dust it marches
- * through, so a nebula that did not would contradict it.
+ * centre. The value takes any finite number of 0 or above.
+ *
+ * The default is 2: the frame is tone mapped, so a nebula behind a very bright mass
+ * still reads as a source at the volume's own extinction, and twice that depth is the
+ * first whole multiple that answers it.
  */
-export const DEFAULT_NEBULA_OCCLUSION = 1;
+export const DEFAULT_NEBULA_OCCLUSION = 2;
+
+/**
+ * The mean transmittance a record draws no fragment below. Under it the record adds
+ * less than 2 per cent of its own light and of its own alpha, which the tone map cannot
+ * show against the mass in front of it, so the cull takes the fragment cost and no
+ * visible record.
+ *
+ * The cull sits after the selection, so it changes none of the four selection readings.
+ */
+export const NEBULA_CULL_FLOOR = 0.02;
 
 /**
  * What the renderer knows and one nebula draw needs. The draw selects the records from
@@ -102,7 +116,7 @@ export interface NebulaFrame {
   readonly absorption: number;
   /** The scale one stored detail step stands for. It is 0 without a grid. */
   readonly detailScale: number;
-  /** How much of the galaxy volume's extinction a nebula takes, 0 to 1. */
+  /** How much of the galaxy volume's extinction a nebula takes, 0 or above. */
   readonly occlusion: number;
   /**
    * True draws the selected records in the reverse order. It is a probe and not a look
