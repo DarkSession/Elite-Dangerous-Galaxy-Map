@@ -407,14 +407,16 @@ function buildHost(name: string, entry: string): HostBuild {
  * `new URL(...)` and the marker does not reach the host.
  *
  * The needle therefore takes either form. Reading the base64 from the file means a
- * repacked index cannot make this needle go stale. `+` is the one regular-expression
- * character the base64 alphabet holds, so it is the one to escape.
+ * repacked index cannot make this needle go stale. The base64 goes into the pattern
+ * escaped in full, and not for the `+` the alphabet holds alone: a partial escape reads
+ * as safe only as long as the input stays base64, and the escape is the wrong place to
+ * hold that assumption.
  */
 const VOLUME_INDEX_BASE64 = readFileSync(
   join(root, 'src/render/nebula-art/nebula-volumes.json'),
 )
   .toString('base64')
-  .replace(/\+/g, '\\+');
+  .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * The data URIs an inlined volume takes. A `.ktx2` file reads as `image/ktx2`, not as
