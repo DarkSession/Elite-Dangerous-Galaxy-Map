@@ -616,10 +616,15 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
   await openMap(page);
   // A pitch of 30 degrees puts the horizon at the top edge, because the vertical field
   // of view is 60 degrees, so every row of the frame reads the plane. At a zoom of
-  // 4,000 light years the camera sits 2,000 above the plane. The rows whose plane point
-  // is beyond 8,000 light years are the top 25.9 per cent, and the rows whose plane
-  // point is under 5,000 are everything below 40.3 per cent. The two bands this
-  // scenario reads sit inside those and do not touch.
+  // 4,000 light years the camera sits 2,000 above the plane.
+  //
+  // Those two row figures are the centre column: 8,000 light years at 25.9 per cent and
+  // 5,000 at 40.3. The reading takes whole rows, so a row holds only when every column
+  // of it is under the floor, and a ray at the side of the frame meets the plane further
+  // away than the centre ray of the same row. The corner column does not fall under
+  // 5,000 light years until 57.43 per cent, so the lower band is 60 per cent. The top
+  // band needs no such room, because a corner ray reads longer and the band asks for a
+  // range above 8,000.
   await page.evaluate(() => {
     window.__galaxyMap?.setView?.({
       cursor: [0, 0, 0],
@@ -631,11 +636,11 @@ test('a far line still draws while the near line is gone', async ({ page }) => {
   });
 
   const top = await changedInRows(page, 0, 0.2);
-  const lower = await changedInRows(page, 0.45, 1);
+  const lower = await changedInRows(page, 0.6, 1);
   console.log('the changed pixels by band', { top, lower });
 
   expect(top, 'the top 20 per cent of the rows').toBeGreaterThan(0);
-  expect(lower, 'the rows below 45 per cent').toBe(0);
+  expect(lower, 'the rows below 60 per cent').toBe(0);
 });
 
 /**

@@ -73,18 +73,20 @@
 
 ## 5. The browser suite
 
-- [ ] 5.1 Update `e2e/regions.spec.ts` for the new figures: the close-end scenario at
+- [x] 5.1 Update `e2e/regions.spec.ts` for the new figures: the close-end scenario at
       8,000 and 4,000 light years, the far-line scenario reading the top 20 per cent and
       the rows below 45 per cent, and the close-fade scenario at 8,000, 6,500 and 4,000.
       Verify with `GALAXY_MAP_E2E_BUILT=1 pnpm exec playwright test e2e/regions.spec.ts`.
-      NOT DONE. The close-end and close-fade scenarios pass. The far-line scenario fails
-      the 45 per cent band. Measured: the overlay changes pixels down to row 341 of 720,
-      which is 47.36 per cent, at columns 1,085 to 1,102. The 40.3 per cent figure of the
-      delta is the centre column alone. A ray at the side of the frame leaves the plane at
-      a shallower angle, so its range is longer, and the corner ray at 1280x720 does not
-      fall under 5,000 light years until 57.43 per cent of the frame height. The lower
-      band must start below 57.43 per cent, not 45. Reported rather than changed.
-- [ ] 5.2 Update `e2e/labels.spec.ts`: `smoothstep(5000, 8000, range)`, the zoom ladder of
+      Measured: the 45 per cent band the delta named did not hold. The overlay changes
+      pixels down to row 341 of 720, which is 47.36 per cent, at columns 1,085 to 1,102.
+      The 40.3 per cent figure of the delta is the centre column alone, while the reading
+      takes whole rows. A ray at the side of the frame leaves the plane at a shallower
+      angle, so it reads a longer range on the same row: 7,133.4 light years at 40.3 per
+      cent against the centre column's 4,993.8. The corner column does not fall under
+      5,000 until 57.43 per cent. The delta and the test now read 60 per cent, which
+      clears that with 2.6 points of room. Measured at 60 per cent: the top band holds
+      79,643 changed pixels and the lower band holds 0. The file passes 33 of 33.
+- [x] 5.2 Update `e2e/labels.spec.ts`: `smoothstep(5000, 8000, range)`, the zoom ladder of
       20,000, 15,000, 10,000, 6,500 and 3,000 light years with the clause that one reading
       must land strictly inside the fade band, the sweep view at 2,500 light years, the
       no-line view, and the 40 light year window's worst cost of 0.020 against the room of
@@ -93,14 +95,19 @@
       range at 6,500 against the paragraph "The ladder moves with the fade" in the delta, and
       soften its first sentence if the measurement disagrees with it. Verify with one
       Playwright run over that file.
-      NOT DONE. Measured anchor ranges on the new ladder: 20,000 gives 23,347.76 light
-      years, 15,000 gives 18,411.43, 10,000 gives 13,520.29, 6,500 gives 10,160.61 and
-      3,000 gives 6,940.58 at an opacity of 0.713. The 3,000 rung therefore reads the
-      slope, so the "strictly inside the fade band" clause holds. The clause "at 3,000 the
-      label is not on the page at all" does not hold. Measured further: 4,000 gives
-      7,836.4, 2,500 gives 6,504.6 at 0.501, 2,000 gives 6,077.8 at 0.294, 1,500 gives
-      5,663.5 at 0.125, and 1,000 gives no label. A ladder of 20,000, 15,000, 10,000,
-      2,500 and 1,000 would hold both clauses. Reported rather than changed.
+      Measured on the ladder the delta first named: 20,000 gives 23,347.76 light years,
+      15,000 gives 18,411.43, 10,000 gives 13,520.29, 6,500 gives 10,160.61 and 3,000
+      gives 6,940.58 at an opacity of 0.713. The 3,000 rung therefore still carried a
+      label, so the clause "at 3,000 the label is not on the page at all" did not hold.
+      The anchor range is about 2.3 times the zoom at a pitch of 35 degrees, and not the
+      zoom itself. Probed further: 8,000 gives 11,590.2, 5,000 gives 8,754.2, 4,000 gives
+      7,836.4 at 0.991, 2,500 gives 6,504.6 at 0.501, 2,000 gives 6,077.8 at 0.294, 1,500
+      gives 5,663.5 at 0.125, and 1,000 gives no label.
+
+      The ladder is now 20,000, 15,000, 10,000, 2,500 and 1,000. Measured on it: 20,000
+      gives 23,347.76 at an opacity of 1, 15,000 gives 18,411.43 at 1, 10,000 gives
+      13,520.29 at 1, 2,500 gives 6,504.55 at 0.501, which is strictly inside the fade
+      band, and 1,000 carries no label. The file passes 13 of 13.
 - [x] 5.3 Update the two grid browser scenarios the new gate reaches, in
       `e2e/grid.spec.ts`: "Every label sits on a line" SHALL skip a label whose anchor is
       outside the viewport and SHALL NOT clamp the read rectangle into the canvas, and
@@ -111,7 +118,8 @@
       mean and worst sampling times against the 2 ms and 4 ms bounds. The sweep now runs
       in frames that skipped it, so this is a reading and not an assumption. Measured: the
       sampling budget scenario reads a mean of 0.261 ms and a worst of 0.900 ms over 300
-      frames, against 2 ms and 4 ms. `e2e/frame-budget.spec.ts` passes 21 of 21.
+      frames, against 2 ms and 4 ms. A second run of the same scenario reads a mean of
+      0.243 ms and a worst of 0.700 ms. `e2e/frame-budget.spec.ts` passes 21 of 21.
 - [x] 5.5 Run `e2e/look.spec.ts`, read every snapshot that changed, confirm the change is
       band drawn between 5,000 and 8,000 light years of range, or a grid label kept at the
       frame edge, and nothing else, and accept the new baselines. Name the views that

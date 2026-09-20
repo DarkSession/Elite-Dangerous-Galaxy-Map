@@ -298,15 +298,19 @@ test.describe('the labels at 1280 by 720', () => {
   test('the region the camera is inside is named at every zoom', async ({ page }) => {
     // Every zoom is every zoom the overlay draws in, which is the same set of zooms the
     // boundary draws in. The label takes the range fade at its own plane anchor, so the
-    // name goes at the same distance the line beside it goes. The anchor sits near the
-    // cursor, so a zoom of 3,000 light years takes the name away and the HUD's top bar
-    // names the region there instead.
+    // name goes at the same distance the line beside it goes. A zoom of 1,000 light years
+    // takes the name away, and the HUD's top bar names the region there instead.
     //
     // The ladder moves with the fade, which now runs from 5,000 to 8,000 light years.
     // One rung must read an anchor strictly inside that band, and the test fails when
     // none does, so the run measures the slope rather than assuming it.
+    //
+    // The anchor range is about 2.3 times the zoom at this pitch, because the anchor is
+    // the part of the region the frame shows and that part sits up the frame. The 2,500
+    // rung therefore reads 6,504.6 light years, the middle of the fade, and the 1,000
+    // rung is the first at which the label leaves the page.
     const measured: { distance: number; rangeLy: number }[] = [];
-    for (const distance of [20000, 15000, 10000, 6500, 3000]) {
+    for (const distance of [20000, 15000, 10000, 2500, 1000]) {
       await openView(page, `#c=0,0,0&d=${distance}&p=35&y=0`);
       await settleLabels(page);
       const ranges = await readRegionLabelRanges(page);
@@ -321,9 +325,9 @@ test.describe('the labels at 1280 by 720', () => {
         const box = await readLabelBox(page, 'Inner Orion Spur');
         expect(insideViewport(box as LabelReading, 1280, 720)).toBe(true);
       }
-      if (distance === 3000) {
-        // The anchor sits about 3,000 light years away, where the range fade reads 0.
-        expect(spur, 'an Inner Orion Spur label at 3,000 light years').toBeUndefined();
+      if (distance === 1000) {
+        // The anchor falls under 5,000 light years there, where the range fade reads 0.
+        expect(spur, 'an Inner Orion Spur label at 1,000 light years').toBeUndefined();
       }
       if (spur === undefined) continue;
       measured.push({ distance, rangeLy: spur.rangeLy });
