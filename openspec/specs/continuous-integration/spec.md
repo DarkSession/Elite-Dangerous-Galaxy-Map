@@ -86,6 +86,12 @@ write on the pages, and the id token the Pages deployment uses. It SHALL hold on
 concurrency group for the publish, so two pushes in a row do not race and the later one
 wins.
 
+**The workflow publishes to two places, and each job holds its own permissions.** The Pages
+job writes the demo site and the wiki job of `api-wiki` writes the wiki. Neither job holds
+the other's write permission, and the workflow itself holds read on the contents and
+nothing more. The two jobs hold separate concurrency groups, so a slow Pages deployment
+does not hold the wiki back.
+
 The published site SHALL serve the map, the HUD, the three demo data sets and the loading
 image, all from the Pages host. The one other origin it SHALL reach is the host of the
 demo data's own thumbnails, which a user reaches only by opening the information panel on

@@ -162,7 +162,7 @@
       `openspec-implementation-reviewer` subagent with this change id, wait for the verdict,
       and fix what it blocks on. State the verdict and every finding when presenting,
       including the ones not acted on, and why.
-- [ ] 7.6 After the merge and the first run on `main`, open the wiki: the Overview shows,
+- [x] 7.6 After the merge and the first run on `main`, open the wiki: the Overview shows,
       the sidebar holds the collapsible sections, and opening a page of a section leaves
       that section open. This closes the one scenario the implementation cannot close by
       itself.
