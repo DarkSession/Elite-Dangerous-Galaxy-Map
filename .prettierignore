@@ -29,6 +29,10 @@ apps/demo/demo-data/multifaction-spheres.json
 # of them minified, because nobody reads 110 cycles in a diff and the pretty form is
 # about twice the bytes. The entry covers the manifest beside them.
 apps/demo/demo-data/cycles/
+# The Canonn sets of the Canonn page. `apps/demo/scripts/build-canonn-sets.mjs` writes
+# them minified as well, and the tree is about 39 MB. The entry covers the manifest
+# beside them.
+apps/demo/demo-data/canonn/
 tests/fixtures/guardian-ruins-demo-set.json
 tests/fixtures/guardian-structures-demo-set.json
 tests/fixtures/notable-systems-demo-set.json

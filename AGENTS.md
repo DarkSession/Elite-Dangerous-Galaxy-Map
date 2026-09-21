@@ -173,10 +173,10 @@ entries colon-free or write them as a `|` block, and check with
 ## Working agreements
 
 - Run the dev server as `pnpm dev --host 0.0.0.0` so VS Code's port forwarding reaches
-  it. `apps/demo/vite.config.ts` already sets `server.host: true`. Six root scripts
+  it. `apps/demo/vite.config.ts` already sets `server.host: true`. Seven root scripts
   delegate with `pnpm --filter` — `dev`, `build`, `build:demo-site`, `build:demo-data`,
-  `build:cycle-data` and `preview` — and an argument crosses both hops. The other seven
-  run at the root:
+  `build:cycle-data`, `build:canonn-data` and `preview` — and an argument crosses both
+  hops. The other seven run at the root:
   `test`, `test:e2e`, `test:package`, `audit`, `lint`, `format` and `docs:wiki`.
   `tests/` and `e2e/` belong to no package, so a delegated `pnpm test` would drop every
   root test file.

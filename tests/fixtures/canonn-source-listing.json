@@ -1,0 +1,242 @@
+[
+  {
+    "name": "MapData-AP.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Adamastor.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Aliens.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-All.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-BM.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-BT.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Biology.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-CS.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Carriers.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Cartographics.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Challenge.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Cloud.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Cmdr.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Codex.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Colonisation.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-DCOH.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-FG.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-FM.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Faction.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-FactionRes.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GB.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GEC.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GEN.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GR.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GS.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GV.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-GY.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Galnet.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Geology.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Gnosis.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Guardians.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Hyperdiction.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-IDA.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-LP.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-LS.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Megaships.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-NHSS.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Permit.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Prisons.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Route.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-TB.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-TS.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-TSmsg_3305survey.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-TW.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Thargoids.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-UIA.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Voyager.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-landscape.js",
+    "type": "file"
+  },
+  {
+    "name": "MapData-multifaction.js",
+    "type": "file"
+  },
+  {
+    "name": "csvCache",
+    "type": "file"
+  },
+  {
+    "name": "edsm-eagleeye-systems.json",
+    "type": "file"
+  },
+  {
+    "name": "gec-all.json",
+    "type": "file"
+  },
+  {
+    "name": "json_stations.json",
+    "type": "file"
+  },
+  {
+    "name": "milkyway-ed.json",
+    "type": "file"
+  },
+  {
+    "name": "milkyway.json",
+    "type": "file"
+  },
+  {
+    "name": "rd-banner-v2-1.json",
+    "type": "file"
+  },
+  {
+    "name": "spectral-colors.json",
+    "type": "file"
+  },
+  {
+    "name": "station_stats.json",
+    "type": "file"
+  },
+  {
+    "name": "surface_sites.json",
+    "type": "file"
+  },
+  {
+    "name": "MapData-Unknown.js",
+    "type": "file"
+  }
+]

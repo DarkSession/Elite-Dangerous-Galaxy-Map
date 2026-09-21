@@ -190,6 +190,14 @@ The two factions the entry names, **Canonn** and **Canonn Deep Space Research**,
 players' own in-game groups. The set holds each system's name, its `id64` and its
 coordinates, and the state of each faction in it. It holds no commander name.
 
+**The Canonn page reads the same dump at build time.** Two of its sets come from it:
+`downloads-spansh-co-uk-factions-json-gz-canonn-canonn-deep-space-research.json`, which
+holds 4,249 systems of the two Canonn factions, and
+`downloads-spansh-co-uk-factions-json-gz-operation-ida.json`, which holds 1,098 systems
+of Operation Ida. Those two files are committed, so the Canonn page fetches no dump. The
+conversion takes each system's name, its coordinates and the state of the faction in it,
+and drops every other field.
+
 **The spheres come from Canonn.** `apps/demo/demo-data/multifaction-spheres.json` holds 2 categories
 and 48 spheres, converted from the `permitSpheres` literal of
 `Source/data/MapData-multifaction.js` of
@@ -237,6 +245,94 @@ the built-in symbols they name come from the library's own catalogue.
 
 The systems and the war are of the game's galaxy, so the Frontier Developments terms above
 also apply to them.
+
+## The Canonn page data sets
+
+`apps/demo/demo-data/canonn/` holds 125 set files and one manifest, 38.9 MB in all. The
+Canonn page of the demo site draws them as 114 catalog entries, which come from 40 of the
+49 maps of
+[CanonnED3D-Map](https://github.com/canonn-science/CanonnED3D-Map) by the
+[Canonn Research Group](https://canonn.science/), under the **MIT** licence above.
+`apps/demo/scripts/build-canonn-sets.mjs` makes the conversion, and
+`pnpm build:canonn-data` runs it.
+
+Each map of that project fetches its own data when a browser opens it, so the build reads
+what each map reads: the object literal of the map file, the data files of the source
+tree at `raw.githubusercontent.com/canonn-science/CanonnED3D-Map`, and the three addresses
+the sections below name. The 74 distinct sources hold about 63 MB, and the cache on disk
+holds 273 MB, because the Spansh faction dump is stored once for each of the two selections that
+read it. The build fetches them into
+`apps/demo/data/canonn/`, which the repository ignores, and commits the converted sets
+alone.
+
+The conversion keeps each record's system name, its coordinates, the key its own file
+gives it and the description the source carries, and drops every other field. **A
+committed set carries keys and no names and no colours.** The manifest gives each key the
+name and the colour of the map that reads it, so one file serves every map that reads the
+source and each map still shows its own names. The names are the source's own. A colour
+is the source's own where the map names one, and this project's own where the map gives
+each category a random colour on each load, which 17 of the maps do.
+
+The build never runs a Canonn source file. `parseEd3dData` of `build-demo-systems.mjs` is
+a parser and not an evaluator, as the UIA section above states, so a later source cannot
+run code in this repository.
+
+**One slot of one map is corrected.** `MapData-All.js` points its bark mound slot at a
+Thargoid barnacle dump, so the map draws 140 barnacle systems under a bark mound name.
+The build reads the bark mound dump of `MapData-BM.js` in that slot instead, which is
+3,440 systems under the name the row carries. The deviation is deliberate and the map
+table of the build script says the same.
+
+The systems and the sites are places in the game's galaxy, so the Frontier Developments
+terms above also apply to them.
+
+## The Canonn downloads bucket
+
+`https://storage.googleapis.com/canonn-downloads/` serves the JSON dumps the maps fetch,
+for example the Guardian ruins, the Lagrange clouds, the megaships and the generation
+ships. 18 sources of the build read the bucket this way, one of which is
+`dumpr/hyperdictions.json`: it sits under `dumpr/` and is a JSON dump, not a codex CSV. The dumps are the Canonn
+Research Group's own data, under the **MIT** licence above, and the conversion takes each
+record's system name, its coordinates, the field the map keys its categories on, and the
+description where the dump carries one. It drops every other field, which includes the
+body names, the site ids and the update dates.
+
+## The Canonn codex dumps
+
+The same bucket serves one CSV file for each codex entry, at
+`dumpr/<Subject>/<entry id>.csv`. A file holds no header and four columns: the system
+name and its x, y and z. 157 sources of the build read a codex file this way, which is
+the path the biology maps, the geology maps and the All Sites map take. The conversion
+takes the name and the three numbers, which is every column the file holds, and gives the
+records the one key of that file.
+
+The codex index at
+`https://us-central1-canonn-api-236217.cloudfunctions.net/query/codex/ref?hierarchy=1`
+names 1,072 such files, about 426 MB. The build reads no index: the map table names the
+files each map reads, and the two maps that read the whole codex are left out because
+426 MB passes the 50 MB the committed tree holds.
+
+## The Canonn query endpoints
+
+The Canonn cloud functions answer at
+`https://us-central1-canonn-api-236217.cloudfunctions.net/`. The build reads one of them,
+`query/thargoid/nhss/systems`, which the NHSS map reads, and it takes the system name,
+the coordinates, the signal count and the region name of each of the 6,593 systems. The
+answers are the Canonn Research Group's own data, under the **MIT** licence above.
+
+The build also reads the file list of the source tree from the GitHub contents API, to
+check that the map table names every map file the tree holds. No record comes from that
+call.
+
+## The Galactic Exploration Catalog (edastro.com)
+
+`apps/demo/demo-data/canonn/edastro-com-gec-json-all.json` holds 643 systems of the
+[Galactic Exploration Catalog](https://edastro.com/gec/), at
+`https://edastro.com/gec/json/all`. The Canonn `MapData-GEC.js` map reads the same
+address. The catalog is the work of the commanders who file its entries, and the site
+states no licence on the file, so this notice records where the data came from. The
+conversion takes each place's name, its coordinates, its category and its summary. **The
+summary text is the catalog's own writing**, with the markup removed.
 
 ## The committed extracts of the three CanonnED3D-Map sources
 

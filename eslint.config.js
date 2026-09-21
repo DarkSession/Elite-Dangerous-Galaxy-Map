@@ -234,14 +234,15 @@ export default tseslint.config(
     // the dev server, where the alias table points the name at the library's source, and
     // break for anyone who consumed the built package the same way.
     //
-    // The rule covers the three page directories of the package: `src/`, which holds the
-    // demo page, `examples/`, which holds the nine samples, and `cycles/`. `e2e/`,
-    // `tests/` and the demo's own build scripts reach package source by relative path on
-    // purpose, and that stays legal.
+    // The rule covers the four page directories of the package: `src/`, which holds the
+    // demo page, `examples/`, which holds the nine samples, `cycles/` and `canonn/`.
+    // `e2e/`, `tests/` and the demo's own build scripts reach package source by relative
+    // path on purpose, and that stays legal.
     files: [
       'apps/demo/src/**/*.ts',
       'apps/demo/examples/**/*.ts',
       'apps/demo/cycles/**/*.ts',
+      'apps/demo/canonn/**/*.ts',
     ],
     rules: {
       'no-restricted-imports': [
@@ -258,8 +259,8 @@ export default tseslint.config(
         },
       ],
       // `no-restricted-imports` reads static imports alone. The demo page loads its data
-      // sets with `import()`, and the cycles page loads one cycle the same way. That call
-      // takes the same rule: one level up to `../demo-data/` is the demo's own directory
+      // sets with `import()`, and the cycles page and the Canonn page load a manifest the
+      // same way. That call takes the same rule: one level up to `../demo-data/` is the demo's own directory
       // and stays legal, two levels up or a path through `packages/` reaches out of the
       // package and does not.
       'no-restricted-syntax': [

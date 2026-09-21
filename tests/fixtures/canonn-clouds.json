@@ -1,0 +1,282 @@
+[
+  {
+    "description": "Life Cloud",
+    "category": "FSS Signals",
+    "system": "* tet02 Orionis C",
+    "x": "589.06250",
+    "y": "-425.59375",
+    "z": "-1059.65625"
+  },
+  {
+    "description": "Life Ring",
+    "category": "FSS Signals",
+    "system": "16 Lambda Piscis Austrini",
+    "x": "-110.68750",
+    "y": "-414.71875",
+    "z": "258.43750"
+  },
+  {
+    "description": "Caeruleum Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "Crescent Sector IH-V c2-7",
+    "x": "-4835.34375",
+    "y": "217.65625",
+    "z": "1258.09375"
+  },
+  {
+    "description": "Viride Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "Crescent Sector IH-V c2-7",
+    "x": "-4835.34375",
+    "y": "217.65625",
+    "z": "1258.09375"
+  },
+  {
+    "description": "Viride Lagrange Storm Cloud",
+    "category": "Storm Cloud",
+    "system": "Agnairy JH-U e3-2113",
+    "x": "-2713.65625",
+    "y": "-77.03125",
+    "z": "22617.50000"
+  },
+  {
+    "description": "Luteolum Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "Crescent Sector RY-R b4-0",
+    "x": "-4833.96875",
+    "y": "186.37500",
+    "z": "1249.43750"
+  },
+  {
+    "description": "Luteolum Lagrange Storm Cloud",
+    "category": "Storm Cloud",
+    "system": "Dryoea Flyi II-S e4-6870",
+    "x": "-5141.59375",
+    "y": "-289.46875",
+    "z": "19057.90625"
+  },
+  {
+    "description": "Roseum Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "NGC 6871 Sector EV-L b9-0",
+    "x": "-4813.12500",
+    "y": "106.65625",
+    "z": "1281.56250"
+  },
+  {
+    "description": "Roseum Lagrange Storm Cloud",
+    "category": "Storm Cloud",
+    "system": "Phleedgaa UJ-Q e5-185",
+    "x": "-5370.06250",
+    "y": "-467.00000",
+    "z": "34479.03125"
+  },
+  {
+    "description": "Rubicundum Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "NGC 7026 Sector KS-T c3-0",
+    "x": "-6022.84375",
+    "y": "99.96875",
+    "z": "135.84375"
+  },
+  {
+    "description": "Rubicundum Lagrange Storm Cloud",
+    "category": "Storm Cloud",
+    "system": "Shrogeau GG-Y e119",
+    "x": "5430.87500",
+    "y": "31.71875",
+    "z": "20932.06250"
+  },
+  {
+    "description": "Croceum Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "NGC 7026 Sector KS-T c3-0",
+    "x": "-6022.84375",
+    "y": "99.96875",
+    "z": "135.84375"
+  },
+  {
+    "description": "Croceum Lagrange Storm Cloud",
+    "category": "Storm Cloud",
+    "system": "Thaile HW-V e2-7",
+    "x": "10124.09375",
+    "y": "-339.15625",
+    "z": "4641.09375"
+  },
+  {
+    "description": "Proto-Lagrange Cloud",
+    "category": "Lagrange Cloud",
+    "system": "Cyuefoo LC-D d12-0",
+    "x": "-33742.96875",
+    "y": "53.50000",
+    "z": "26.46875"
+  },
+  {
+    "description": "K02-Type Anomaly",
+    "category": "K-Type Anomaly",
+    "system": "Gru Hypai QT-M c9-22",
+    "x": "3379.65625",
+    "y": "-369.78125",
+    "z": "13441.96875"
+  },
+  {
+    "description": "E02-Type Anomaly",
+    "category": "E-Type Anomaly",
+    "system": "Vegnoae WE-R e4-5451",
+    "x": "-1009.81250",
+    "y": "57.06250",
+    "z": "36867.25000"
+  },
+  {
+    "description": "T01-Type Anomaly",
+    "category": "T-Type Anomaly",
+    "system": "Agnairy DH-F c14-5164",
+    "x": "-2717.18750",
+    "y": "-83.37500",
+    "z": "22613.21875"
+  },
+  {
+    "description": "L01-Type Anomaly",
+    "category": "L-Type Anomaly",
+    "system": "Juenae OX-U e2-8852",
+    "x": "652.46875",
+    "y": "-1056.50000",
+    "z": "26400.37500"
+  },
+  {
+    "description": "P01-Type Anomaly",
+    "category": "P-Type Anomaly",
+    "system": "Pru Aescs NC-M d7-192",
+    "x": "-3183.53125",
+    "y": "73.59375",
+    "z": "8595.65625"
+  },
+  {
+    "description": "Q02-Type Anomaly",
+    "category": "Q-Type Anomaly",
+    "system": "Myriesly HR-N e6-4354",
+    "x": "-530.12500",
+    "y": "38.84375",
+    "z": "25725.90625"
+  },
+  {
+    "description": "Solid Mineral Spheres",
+    "category": "Mineral Spheres",
+    "system": "Ovomly RT-I d9-14",
+    "x": "-19933.81250",
+    "y": "-1130.25000",
+    "z": "7442.40625"
+  },
+  {
+    "description": "Lindigoticum Ice Crystals",
+    "category": "Ice Crystals",
+    "system": "Eorgh Hypa ZS-A a82-0",
+    "x": "17188.21875",
+    "y": "-26.56250",
+    "z": "-12992.25000"
+  },
+  {
+    "description": "Lindigoticum Silicate Crystals",
+    "category": "Silicate Crystals",
+    "system": "Cyuefoo LC-D d12-0",
+    "x": "-33742.96875",
+    "y": "53.50000",
+    "z": "26.46875"
+  },
+  {
+    "description": "Prasinum Metallic Crystals",
+    "category": "Metallic Crystals",
+    "system": "Ovomly RT-I d9-8",
+    "x": "-19935.62500",
+    "y": "-1072.65625",
+    "z": "7417.78125"
+  },
+  {
+    "description": "Luteolum Calcite Plates",
+    "category": "Calcite Plates",
+    "system": "Ovomly VZ-G d10-0",
+    "x": "-19924.56250",
+    "y": "-1125.50000",
+    "z": "7544.25000"
+  },
+  {
+    "description": "Candidum Peduncle Pod",
+    "category": "Peduncle",
+    "system": "Coetz OZ-W d2-19",
+    "x": "25603.43750",
+    "y": "-344.46875",
+    "z": "15846.25000"
+  },
+  {
+    "description": "Cereum Aster Pod",
+    "category": "Aster",
+    "system": "Cliewoae NT-F d12-0",
+    "x": "-5231.96875",
+    "y": "-132.53125",
+    "z": "61470.84375"
+  },
+  {
+    "description": "Niveum Octahedral Pod",
+    "category": "Void",
+    "system": "Shrogaae KK-A d983",
+    "x": "4959.03125",
+    "y": "149.96875",
+    "z": "20725.90625"
+  },
+  {
+    "description": "Albidum Collared Pod",
+    "category": "Collared Pod",
+    "system": "Trifid Sector DL-Y d157",
+    "x": "-629.65625",
+    "y": "-31.09375",
+    "z": "5160.46875"
+  },
+  {
+    "description": "Albidum Chalice Pod",
+    "category": "Chalice Pod",
+    "system": "Crivoe KF-L d9-15",
+    "x": "15367.43750",
+    "y": "-82.31250",
+    "z": "54816.12500"
+  },
+  {
+    "description": "Aurarium Gyre Pod",
+    "category": "Gyre",
+    "system": "Jongoae SX-L d7-0",
+    "x": "25222.78125",
+    "y": "9.53125",
+    "z": "-9345.43750"
+  },
+  {
+    "description": "Candidum Rhizome Pod",
+    "category": "Rhizome",
+    "system": "Priae Hypae UP-W d2-0",
+    "x": "35942.09375",
+    "y": "-494.06250",
+    "z": "8145.78125"
+  },
+  {
+    "description": "Stolon Pod",
+    "category": "Stolon",
+    "system": "Flyoo Groa SO-Z e0",
+    "x": "-26482.43750",
+    "y": "-78.78125",
+    "z": "50335.12500"
+  },
+  {
+    "description": "Albulum Gourd Mollusc",
+    "category": "Mollusc",
+    "system": "Ploea Eurk SX-Z c14-0",
+    "x": "-6621.28125",
+    "y": "420.21875",
+    "z": "-424.28125"
+  },
+  {
+    "description": "Viride Quadripartite Pod",
+    "category": "Quadripartite",
+    "system": "Oodgosly FR-N d6-8",
+    "x": "34787.21875",
+    "y": "-10.21875",
+    "z": "11092.00000"
+  }
+]
