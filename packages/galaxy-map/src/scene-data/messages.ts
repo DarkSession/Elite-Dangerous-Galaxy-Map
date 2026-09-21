@@ -9,6 +9,15 @@ import type {
   SurfaceDetail,
 } from './types';
 
+/**
+ * The first message every worker posts, as soon as its script runs. The browser starts
+ * a worker's thread from a task on the main thread. A main thread that blocks right
+ * after `new Worker` delays the workers by the same time. The map waits for this
+ * message from all three workers before it makes the WebGL context, which can block
+ * the main thread for 250 ms.
+ */
+export const WORKER_STARTED = 'started';
+
 /** What the main thread asks the point cloud worker for. */
 export interface PointCloudRequest {
   readonly count: number;

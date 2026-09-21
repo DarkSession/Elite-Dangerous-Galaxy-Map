@@ -22,6 +22,7 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import { createGalaxyModel } from '../galaxy-model/model';
 import type { HudHandle, HudOptions } from '../hud/types';
 import { createRenderContext } from '../render/context';
+import type { RenderContextResult } from '../render/context';
 import { createProgram } from '../render/program';
 import { createFrameAccumulator, createRenderer } from '../render/renderer';
 import type {
@@ -604,7 +605,10 @@ export interface GalaxyMapDebug {
    */
   zoomTargetLy(): number | null;
   compileTestProgram(vertex: string, fragment: string): string | null;
-  /** The unmasked renderer string the card reports. */
+  /**
+   * The unmasked renderer string the card reports. It is empty until `ready` settles,
+   * because the context is made after the scene workers start.
+   */
   readonly renderer: string;
 }
 
@@ -834,6 +838,13 @@ export interface GalaxyMap {
    */
   readonly debug: GalaxyMapDebug;
 }
+
+/**
+ * How long the start waits for the three scene workers to post `WORKER_STARTED`,
+ * before it makes the context anyway, in milliseconds. On a fast connection the three
+ * post it within 10 ms of the map's creation.
+ */
+const WORKER_START_CAP_MS = 100;
 
 function nextFrame(): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -1182,7 +1193,28 @@ export function createGalaxyMap(
   };
 
   const loadStop = new AbortController();
-  const context = createRenderContext(canvas);
+  // The workers start before the context is made, so they run while the main thread
+  // makes the context and compiles the programs. The scene needs no context, and a
+  // context can cost 250 ms of the main thread. A browser that gives no context
+  // starts the three workers and stops them at the check below, which costs three
+  // script fetches on a page that then shows the error.
+  let workersStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    workersStarted = resolve;
+  });
+  const scenePromise = loadSceneData({
+    signal: loadStop.signal,
+    onStarted: workersStarted,
+  });
+  // A context that fails aborts the load before `start` awaits it, so the rejection
+  // is read here and raises no unhandled rejection. A load that fails before the
+  // workers start ends the wait below, so a test with no `Worker` does not wait for
+  // the cap.
+  const sceneSettled = scenePromise.then(
+    () => undefined,
+    () => undefined,
+  );
+  let context: RenderContextResult | null = null;
 
   const readView = (): MapView => ({
     cursor: [view.cursor[0], view.cursor[1], view.cursor[2]],
@@ -1606,15 +1638,27 @@ export function createGalaxyMap(
   };
 
   const start = async (): Promise<void> => {
+    // The context waits for the workers to start, or for the cap. See `WORKER_STARTED`.
+    // The cap bounds the wait on a slow network, where the worker scripts take longer
+    // than the context does.
+    await Promise.race([
+      started,
+      sceneSettled,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, WORKER_START_CAP_MS);
+      }),
+    ]);
+    if (disposed) return;
+    context = createRenderContext(canvas);
     if (context.gl === null) {
+      loadStop.abort();
       throw new Error(context.error ?? 'The map cannot start.');
     }
     const gl = context.gl;
 
-    // The workers run while the main thread compiles the programs. The star field needs
-    // the model with the detail grid, because its counts and its light both read the
-    // detailed density, so the grid loads beside them.
-    const scenePromise = loadSceneData({ signal: loadStop.signal });
+    // The star field needs the model with the detail grid, because its counts and its
+    // light both read the detailed density. The grid is a small fetch, and the star
+    // field is built after the scene arrives, so the fetch starts here.
     const detailPromise = loadDetailGrid();
     // The nebulae are not part of the first frame. A failure here leaves the map
     // without them and every other pass drawing, so the pair is reported and dropped
@@ -1710,36 +1754,30 @@ export function createGalaxyMap(
     });
     if (disposed || scene === null) return;
 
-    // Each upload gets its own animation frame, so no single task runs long.
+    // The uploads take two animation frames, so no single task runs long. The point
+    // cloud is 26 MB and costs about 50 ms on its own, so it takes a frame of its own.
+    // The other five cost about 40 ms together and share one frame. The volume goes in
+    // before the cloud set, because the cloud pass reads the volume box.
     await nextFrame();
     if (disposed) return;
     renderer.setVolume(scene.volume);
-
-    await nextFrame();
-    if (disposed) return;
-    renderer.setPointCloud(scene.pointCloud);
-
-    await nextFrame();
-    if (disposed) return;
     renderer.setCloudSet(scene.cloudSet);
-
-    await nextFrame();
-    if (disposed) return;
     renderer.setDetail(scene.detail);
-
-    await nextFrame();
-    if (disposed) return;
     renderer.setRegionLines(scene.regionLines);
     renderer.setRegionDraw(regionsVisible);
     labels?.setGrid(scene.regionGrid, scene.regionFlow);
     regionGrid = scene.regionGrid;
     regionLines = scene.regionLines;
 
+    // The grid is a small fetch and is there before the scene, so the await settles
+    // at once.
     const detailGrid = await detailPromise;
     if (disposed) return;
+    renderer.setStarField(createGalaxyModel(parameters, detailGrid));
+
     await nextFrame();
     if (disposed) return;
-    renderer.setStarField(createGalaxyModel(parameters, detailGrid));
+    renderer.setPointCloud(scene.pointCloud);
 
     // The nebulae attach after the loop runs, and the start chain does not wait for
     // them. An await here would hold the first frame, and the loading picture with it,
@@ -2036,7 +2074,7 @@ export function createGalaxyMap(
       return controls?.zoomTargetLy() ?? null;
     },
     compileTestProgram(vertex: string, fragment: string): string | null {
-      const gl = context.gl;
+      const gl = context?.gl ?? null;
       if (gl === null) return 'The map has no context.';
       try {
         const probe = createProgram(gl, 'probe', vertex, fragment);
@@ -2046,7 +2084,9 @@ export function createGalaxyMap(
         return error instanceof Error ? error.message : String(error);
       }
     },
-    renderer: context.renderer,
+    get renderer(): string {
+      return context?.renderer ?? '';
+    },
   };
 
   const map: GalaxyMap = {
