@@ -454,6 +454,11 @@ export interface GalaxyMapDebug {
   /** How much of the screen the last frame's nebulae cover, in screen areas. */
   nebulaCoveredArea(): number;
   /**
+   * The front range and the centre range the last frame sent the two sprite passes, in
+   * light years.
+   */
+  nebulaSpriteRange(): [number, number];
+  /**
    * Whether the nebula records and the volumes reached the renderer. The start chain does
    * not wait for them, so a caller that reads the pass must wait for this.
    */
@@ -1873,6 +1878,9 @@ export function createGalaxyMap(
     },
     nebulaCoveredArea(): number {
       return renderer?.nebulaCoveredArea() ?? 0;
+    },
+    nebulaSpriteRange(): [number, number] {
+      return renderer?.nebulaSpriteRange() ?? [0, 0];
     },
     nebulaeAttached(): boolean {
       return nebulaeAttached;

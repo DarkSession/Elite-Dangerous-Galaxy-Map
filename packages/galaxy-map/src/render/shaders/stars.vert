@@ -22,6 +22,8 @@ uniform float uSuppress;
 
 out float vTint;
 out float vBrightness;
+// The range from the camera to the star, in light years. The nebula gate reads it.
+out float vRange;
 
 // The three steps of `mix` in src/scene-data/boxel.ts. GLSL ES 3.00 wraps an unsigned
 // overflow to the low 32 bits, which is what Math.imul gives on the CPU, so the two
@@ -40,6 +42,10 @@ float unitOf(uint bits) {
 }
 
 void main() {
+  // A varying must be written on every path, and the two early returns below leave the
+  // star clipped, so the range they carry never reaches a fragment.
+  vRange = 0.0;
+
   // A star index at or above the boxel's placed count gets no size and a position the
   // near plane clips away. The count is the placed count and not the drawn count,
   // because a suppressed star sits at any index below it and the mask is what drops it.
@@ -90,6 +96,7 @@ void main() {
 
   gl_PointSize = size;
   vTint = aZone;
+  vRange = range;
   // The sprite deposits lightPerStar * uFocal^2 / range^2 whatever the star's radius
   // is and whatever the size clamp does. The radius sets only how concentrated the
   // light is, never how much of it there is. The spread is a separate factor, so it

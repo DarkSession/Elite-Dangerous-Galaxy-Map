@@ -1,18 +1,18 @@
 // The slot the nebulae draw into: what one draw needs per frame, what the renderer
 // calls, and what a host hands the map to fill the slot.
 //
-// This module imports nothing, and it holds three number literals, one array literal and
+// This module imports nothing, and it holds seven number literals, one array literal and
 // no other statement.
 // The renderer imports it, so the entry chunk carries what it holds: a type is erased by
 // the build, and a number literal pulls in no pass, no shader text, no atlas and no
 // record file. A third import here would put the nebulae back in the chunk this change
 // takes them out of, so a unit test reads the built output and holds the module to it.
 //
-// The four constants are look defaults the renderer keeps whether or not a host asks
-// for the nebulae, because the light gain, the step rate, the cull floor and
-// `look.nebulaOcclusion` are members of the look settings on every map. Every other look
-// default sits beside its pass; these four sit here, because the renderer must not
-// import the nebula pass.
+// The eight constants are look defaults the renderer keeps whether or not a host asks
+// for the nebulae, because the light gain, the step rate, the cull floor, the two block
+// ranges, the two block gains and `look.nebulaOcclusion` are members of the look
+// settings on every map. Every other look default sits beside its pass; these eight sit
+// here, because the renderer must not import the nebula pass.
 
 /**
  * The light gain the march scales its emission by, one value per colour channel. Every
@@ -53,6 +53,33 @@ export const DEFAULT_NEBULA_OCCLUSION = 2;
  * The cull sits after the selection, so it changes none of the four selection readings.
  */
 export const NEBULA_CULL_FLOOR = 0.02;
+
+/**
+ * The range at and below which a record blocks at the near gain, in light years. A
+ * record the camera sits beside is inside it.
+ */
+export const DEFAULT_NEBULA_BLOCK_NEAR = 500;
+
+/**
+ * The range at and above which a record blocks at the far gain, in light years. A record
+ * on the other side of the local arm is beyond it. The zoom band ends at 20,000 light
+ * years, so the two ranges bracket the ranges a record is read at.
+ */
+export const DEFAULT_NEBULA_BLOCK_FAR = 6000;
+
+/**
+ * The gain the record's own transmittance takes at the near range. Below 1 the record
+ * blocks less than the march wrote, which is the softening a record close to the camera
+ * asks for.
+ */
+export const DEFAULT_NEBULA_BLOCK_GAIN_NEAR = 0.7;
+
+/**
+ * The gain the record's own transmittance takes at the far range. Above 1 the record
+ * blocks more than the march wrote, so a far nebula hides what is behind it, which is
+ * what the eye expects.
+ */
+export const DEFAULT_NEBULA_BLOCK_GAIN_FAR = 2;
 
 /**
  * What the renderer knows and one nebula draw needs. The draw selects the records from
@@ -118,6 +145,14 @@ export interface NebulaFrame {
   readonly detailScale: number;
   /** How much of the galaxy volume's extinction a nebula takes, 0 or above. */
   readonly occlusion: number;
+  /** The range at and below which a record blocks at the near gain, in light years. */
+  readonly blockNear: number;
+  /** The range at and above which a record blocks at the far gain, in light years. */
+  readonly blockFar: number;
+  /** The gain the record's own transmittance takes at the near range. */
+  readonly blockGainNear: number;
+  /** The gain the record's own transmittance takes at the far range. */
+  readonly blockGainFar: number;
   /**
    * True draws the selected records in the reverse order. It is a probe and not a look
    * setting: the map draws with it false, and the browser test that reads the order
@@ -144,6 +179,23 @@ export interface NebulaDraw {
   readonly aboveFloorCount: number;
   /** How much of the screen the last draw's records cover, in screen areas. */
   readonly coveredArea: number;
+  /**
+   * The accumulated transmittance of the last draw, or null for a draw that drew no
+   * record. The sprite passes multiply their colour by it, so a star behind a nebula
+   * dims. The draw nulls it at the top of every frame, so the frame before it cannot
+   * leak into a frame that draws nothing.
+   */
+  readonly transmittance: WebGLTexture | null;
+  /**
+   * The least `range - radius` over the records the last draw drew, never below 0, in
+   * light years. A sprite at or nearer than it takes none of the attenuation.
+   */
+  readonly frontRange: number;
+  /**
+   * The centre range of the record the front range came from, in light years. A sprite
+   * at or beyond it takes all of the attenuation.
+   */
+  readonly centreRange: number;
   dispose(): void;
 }
 

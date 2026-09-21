@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openMap } from './helpers';
@@ -25,6 +26,11 @@ interface HudBuild {
    * `rejecting` fails.
    */
   readonly actions?: 'one' | 'throwing' | 'pending' | 'rejecting';
+  /**
+   * True makes the `details` loader answer with one `markdown` value, so the panel draws
+   * a host section under the description.
+   */
+  readonly section?: boolean;
   /**
    * True gives the map a catalog of one entry, so the top bar carries the dataset field
    * and a click on it opens the dataset library dialog. `e2e/datasets.spec.ts` reads the
@@ -69,8 +75,9 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
     document.body.appendChild(wrap);
 
     window.__hudActionCalls = [];
-    const answer = {
-      actions: [
+    const answer: Record<string, unknown> = {};
+    if (options.actions !== undefined) {
+      answer['actions'] = [
         {
           label: 'TOOL NAME 1',
           onSelect: (system: { name: string }): void => {
@@ -80,10 +87,13 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
             }
           },
         },
-      ],
-    };
+      ];
+    }
+    if (options.section === true) {
+      answer['values'] = [{ label: 'HISTORY', markdown: 'A line of history.' }];
+    }
     const details =
-      options.actions === undefined
+      options.actions === undefined && options.section !== true
         ? undefined
         : options.actions === 'pending'
           ? (): Promise<never> => new Promise<never>(() => undefined)
@@ -3238,6 +3248,171 @@ test.describe('the copy buttons', () => {
   });
 });
 
+/**
+ * The computed `user-select` of every element the selector matches, under the HUD the
+ * tests drive. The count is part of the reading, so a selector that matches nothing
+ * cannot read as a pass.
+ */
+async function selectionOf(page: Page, selector: string): Promise<string[]> {
+  return hud(page)
+    .locator(selector)
+    .evaluateAll((nodes) =>
+      nodes.map((node) => getComputedStyle(node).userSelect ?? ''),
+    );
+}
+
+/** The computed `user-select` of every element inside one panel, the panel included. */
+async function selectionInside(page: Page, selector: string): Promise<string[]> {
+  return hud(page)
+    .locator(selector)
+    .evaluateAll((roots) =>
+      roots.flatMap((root) =>
+        [root, ...root.querySelectorAll('*')].map(
+          (node) => getComputedStyle(node).userSelect ?? '',
+        ),
+      ),
+    );
+}
+
+test.describe('the readouts of the information panel are selectable', () => {
+  /** A record with a description, a category, a position and two pictures. */
+  const readable = (): Record<string, unknown> =>
+    record('Pictured', [0, 0, 100], 'Alpha', {
+      description: 'A **body** of text the reader may copy.',
+      images: [{ url: '/picture-one.png', caption: 'APPROACH VECTOR' }],
+    });
+
+  test('the readouts read as text', async ({ page }) => {
+    await openHud(page, { section: true });
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [readable()]);
+    await select(page, 'Pictured');
+    await expect(
+      hud(page).locator('.gm-hud__description[data-name="HISTORY"]'),
+    ).toBeVisible();
+
+    const reading: Record<string, string[]> = {};
+    for (const selector of [
+      '.gm-hud__info-name',
+      '.gm-hud__field-value',
+      '.gm-hud__description',
+      '.gm-hud__description p',
+      '.gm-hud__chip',
+    ]) {
+      reading[selector] = await selectionOf(page, selector);
+    }
+    console.log('the readouts read', reading);
+
+    for (const [selector, values] of Object.entries(reading)) {
+      expect(values.length, selector).toBeGreaterThan(0);
+      for (const value of values) expect(value, selector).toBe('text');
+    }
+  });
+
+  test('the labels and the controls stay unselectable', async ({ page }) => {
+    await openHud(page, { actions: 'one', section: true });
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [readable()]);
+    await select(page, 'Pictured');
+    await expect(hud(page).locator('.gm-hud__action')).toBeVisible();
+
+    const reading: Record<string, string[]> = {};
+    for (const selector of [
+      '.gm-hud__field-label',
+      '.gm-hud__section-title',
+      '.gm-hud__info-close',
+      '.gm-hud__copy',
+      '.gm-hud__footer-button',
+      '.gm-hud__thumb',
+      '.gm-hud__thumb-caption',
+    ]) {
+      reading[selector] = await selectionOf(page, selector);
+    }
+    console.log('the labels and the controls read', reading);
+
+    for (const [selector, values] of Object.entries(reading)) {
+      expect(values.length, selector).toBeGreaterThan(0);
+      for (const value of values) expect(value, selector).toBe('none');
+    }
+  });
+
+  test('the other panels stay unselectable', async ({ page }) => {
+    await openHud(page, { datasets: true });
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [readable()]);
+    await hud(page).locator('.gm-hud__dataset').click();
+    await expect(hud(page).locator('.gm-hud__dialog')).toBeVisible();
+
+    const reading: Record<string, string[]> = {};
+    for (const selector of [
+      '.gm-hud__top-bar',
+      '.gm-hud__category-panel',
+      '.gm-hud__options-panel',
+      '.gm-hud__dialog',
+    ]) {
+      reading[selector] = await selectionInside(page, selector);
+    }
+    console.log(
+      'the element counts of the other panels',
+      Object.fromEntries(
+        Object.entries(reading).map(([name, values]) => [name, values.length]),
+      ),
+    );
+
+    for (const [selector, values] of Object.entries(reading)) {
+      expect(values.length, selector).toBeGreaterThan(1);
+      for (const value of values) expect(value, selector).toBe('none');
+    }
+  });
+
+  test('a field value can be selected', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [readable()]);
+    await select(page, 'Pictured');
+    await expect(fieldValue(page, 'POSITION')).toBeVisible();
+
+    const reading = await fieldValue(page, 'POSITION').evaluate((node) => {
+      const view = node.ownerDocument.defaultView;
+      const selection = view?.getSelection() ?? null;
+      const range = node.ownerDocument.createRange();
+      range.selectNodeContents(node);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return { shown: node.textContent ?? '', selected: selection?.toString() ?? '' };
+    });
+    console.log('the selected position', reading);
+
+    expect(reading.shown).not.toBe('');
+    expect(reading.selected).toBe(reading.shown);
+  });
+
+  test('a drag on the panel does not move the camera', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [readable()]);
+    await select(page, 'Pictured');
+    const description = hud(page).locator('.gm-hud__description').first();
+    await expect(description).toBeVisible();
+    // The selection flies the camera to the system, and the flight is still running when
+    // the panel appears. A view read across it would move with the flight and not with
+    // the drag.
+    await waitForStill(page);
+
+    const before = await readView(page);
+    const area = await description.boundingBox();
+    if (area === null) throw new Error('The description has no box.');
+    await page.mouse.move(area.x + 4, area.y + area.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(area.x + 4 + 120, area.y + area.height / 2, { steps: 12 });
+    await page.mouse.up();
+    const after = await readView(page);
+    console.log('the view across the drag', { before, after });
+
+    expect(after).toEqual(before);
+  });
+});
+
 test.describe('the images and the lightbox', () => {
   /** A record with two pictures the page serves from its own origin. */
   const withImages = (): Record<string, unknown> =>
@@ -3501,6 +3676,152 @@ test.describe('the images and the lightbox', () => {
     await expect(thumb).toBeVisible();
     await expect(thumb.locator('.gm-hud__thumb-caption')).toHaveText('APPROACH VECTOR');
     await expect(thumb.locator('.gm-hud__thumb-image')).toBeHidden();
+  });
+});
+
+/**
+ * The picture of the demo, which is 400 by 300, and one of 4,000 by 3,000 the test
+ * serves from `e2e/fixtures`. The small one is the size the lightbox must not enlarge,
+ * and the large one is the size it must hold to the map.
+ */
+const SMALL_PICTURE = 'demo-images/ruins-site.svg';
+const LARGE_PICTURE = 'demo-images/large-picture.svg';
+
+/** Serves the 4,000 by 3,000 fixture at the large picture's address. */
+async function serveLargePicture(page: Page): Promise<void> {
+  await page.route(`**/${LARGE_PICTURE}`, async (route) => {
+    await route.fulfill({
+      contentType: 'image/svg+xml',
+      path: fileURLToPath(new URL('./fixtures/large-picture.svg', import.meta.url)),
+    });
+  });
+}
+
+/** Opens the lightbox on one picture and waits until the picture is drawn. */
+async function openLightbox(page: Page, url: string): Promise<void> {
+  await openHud(page);
+  await addCategories(page, ['Alpha']);
+  await addSystems(page, [
+    record('Served', [0, 0, 100], 'Alpha', {
+      images: [{ url, caption: 'SITE PLAN' }],
+    }),
+  ]);
+  await select(page, 'Served');
+  await hud(page).locator('.gm-hud__thumb').first().click();
+  await expect(hud(page).locator('.gm-hud__lightbox')).toBeVisible();
+  await expect(hud(page).locator('.gm-hud__lightbox-placeholder')).toBeHidden();
+}
+
+/** The drawn size of the picture, of the frame and of the whole lightbox. */
+async function lightboxSizes(page: Page): Promise<{
+  image: { width: number; height: number };
+  frame: { width: number; height: number };
+  box: { width: number; height: number };
+}> {
+  return hud(page)
+    .locator('.gm-hud__lightbox')
+    .evaluate((node) => {
+      const read = (element: Element | null): { width: number; height: number } => {
+        const area = element?.getBoundingClientRect();
+        return { width: area?.width ?? -1, height: area?.height ?? -1 };
+      };
+      return {
+        image: read(node.querySelector('.gm-hud__lightbox-image')),
+        frame: read(node.querySelector('.gm-hud__lightbox-frame')),
+        box: { width: node.clientWidth, height: node.clientHeight },
+      };
+    });
+}
+
+test.describe('the lightbox fits the picture', () => {
+  test('a small picture is not enlarged', async ({ page }) => {
+    await openLightbox(page, SMALL_PICTURE);
+    const sizes = await lightboxSizes(page);
+    console.log('the sizes at a ratio of 1', sizes);
+
+    expect(sizes.image.width).toBeCloseTo(400, 0);
+    expect(sizes.image.height).toBeCloseTo(300, 0);
+  });
+
+  test('the frame does not run past the picture', async ({ page }) => {
+    await openLightbox(page, SMALL_PICTURE);
+    const sizes = await lightboxSizes(page);
+    console.log('the frame over the picture', sizes);
+
+    expect(sizes.frame.width - sizes.image.width).toBeLessThanOrEqual(48);
+    expect(sizes.frame.height - sizes.image.height).toBeLessThanOrEqual(48);
+    expect(sizes.frame.width).toBeGreaterThanOrEqual(sizes.image.width);
+    expect(sizes.frame.height).toBeGreaterThanOrEqual(sizes.image.height);
+  });
+
+  test('a large picture still fits the map', async ({ page }) => {
+    await serveLargePicture(page);
+    await openLightbox(page, LARGE_PICTURE);
+    const sizes = await lightboxSizes(page);
+    console.log('the sizes of the large picture', sizes);
+
+    expect(sizes.image.width).toBeLessThanOrEqual(1180);
+    expect(sizes.image.width).toBeLessThanOrEqual(sizes.box.width * 0.86 + 0.5);
+    expect(sizes.image.height).toBeLessThanOrEqual(sizes.box.height * 0.82 + 0.5);
+    expect(sizes.image.width / sizes.image.height).toBeCloseTo(4 / 3, 2);
+  });
+
+  test('the same picture keeps its size when the box opens again', async ({ page }) => {
+    // The box writes the size when it opens, and a picture it already holds raises no
+    // `load` to write it again. A hidden box reads a room of 0 by 0, so an open that
+    // measures too early draws the picture at 0 by 0 the second time.
+    await openLightbox(page, SMALL_PICTURE);
+    const first = await lightboxSizes(page);
+    await hud(page).locator('.gm-hud__lightbox-close').click();
+    await expect(hud(page).locator('.gm-hud__lightbox')).toBeHidden();
+
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    await expect(hud(page).locator('.gm-hud__lightbox')).toBeVisible();
+    const second = await lightboxSizes(page);
+    console.log('the sizes of the same picture twice', { first, second });
+
+    expect(second.image.width).toBeCloseTo(first.image.width, 0);
+    expect(second.image.height).toBeCloseTo(first.image.height, 0);
+    expect(second.image.width).toBeCloseTo(400, 0);
+  });
+
+  test('a lightbox with no picture still reads', async ({ page }) => {
+    // `/picture-one.png` is not a file the page serves, so the picture fails.
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [
+      record('Pictured', [0, 0, 100], 'Alpha', {
+        images: [{ url: '/picture-one.png', caption: 'APPROACH VECTOR' }],
+      }),
+    ]);
+    await select(page, 'Pictured');
+    await hud(page).locator('.gm-hud__thumb').first().click();
+    await expect(hud(page).locator('.gm-hud__lightbox')).toBeVisible();
+    await expect(hud(page).locator('.gm-hud__lightbox-image')).toBeHidden();
+
+    const sizes = await lightboxSizes(page);
+    console.log('the frame with no picture', sizes);
+
+    expect(sizes.frame.width).toBeGreaterThanOrEqual(260);
+    expect(sizes.frame.height).toBeGreaterThanOrEqual(160);
+    await expect(hud(page).locator('.gm-hud__lightbox-placeholder')).toHaveText(
+      'APPROACH VECTOR',
+    );
+  });
+});
+
+// The cap follows the device pixel ratio, so this block runs at a ratio of 2. The
+// viewport is tall enough for 600 CSS pixels of picture: 82 percent of 900 is 738.
+test.describe('the lightbox cap at a device pixel ratio of 2', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+
+  test('a small picture draws at twice its pixels', async ({ page }) => {
+    await openLightbox(page, SMALL_PICTURE);
+    const sizes = await lightboxSizes(page);
+    console.log('the sizes at a ratio of 2', sizes);
+
+    expect(sizes.image.width).toBeCloseTo(800, 0);
+    expect(sizes.image.height).toBeCloseTo(600, 0);
   });
 });
 

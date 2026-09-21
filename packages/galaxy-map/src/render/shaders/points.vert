@@ -15,6 +15,8 @@ uniform vec2 uHandover;
 
 out float vTint;
 out float vBrightness;
+// The range from the camera to the sample, in light years. The nebula gate reads it.
+out float vRange;
 
 // A hash of the sample index, in 0 to 1. It uses shifts and exclusive or only, because
 // GLSL ES 3.00 leaves an overflow of a `uint` multiply undefined. Neighbour indices
@@ -38,6 +40,7 @@ void main() {
 
   gl_PointSize = size;
   vTint = aTint;
+  vRange = range;
   // Below one pixel the sprite cannot shrink, so the brightness carries the fall-off
   // instead and the far view keeps the same total light.
   // A spread of brightness over the samples gives the disc its grain. The mean of the

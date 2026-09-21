@@ -14,6 +14,10 @@ import {
 } from './nebula-pass';
 import type { NebulaVolumeTexture, NebulaVolumeTextures } from './nebula-volumes';
 import {
+  DEFAULT_NEBULA_BLOCK_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+  DEFAULT_NEBULA_BLOCK_NEAR,
   DEFAULT_NEBULA_LIGHT_GAIN,
   DEFAULT_NEBULA_OCCLUSION,
   NEBULA_CULL_FLOOR,
@@ -107,6 +111,10 @@ function fakeProgram(): Program {
     'uDetailScale',
     'uOcclusion',
     'uCullFloor',
+    'uBlockNear',
+    'uBlockFar',
+    'uBlockGainNear',
+    'uBlockGainFar',
   ];
   const uniforms: Record<string, WebGLUniformLocation> = {};
   for (const name of names) uniforms[name] = name as unknown as WebGLUniformLocation;
@@ -202,6 +210,10 @@ function frameOf(distance: number, march: Partial<NebulaFrame> = {}): NebulaFram
     absorption: DEFAULT_ABSORPTION,
     detailScale: 1 / 127,
     occlusion: DEFAULT_NEBULA_OCCLUSION,
+    blockNear: DEFAULT_NEBULA_BLOCK_NEAR,
+    blockFar: DEFAULT_NEBULA_BLOCK_FAR,
+    blockGainNear: DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+    blockGainFar: DEFAULT_NEBULA_BLOCK_GAIN_FAR,
     reverseOrder: false,
     ...march,
   };
@@ -632,7 +644,7 @@ describe('the nebula pass', () => {
     expect(alpha).toBe(
       'fragColour = vec4(\n' +
         '    emission * vTransmittance * vWeight,\n' +
-        '    1.0 - (1.0 - transmittance.a) * mean * vWeight);\n}\n',
+        '    1.0 - (1.0 - blocked) * mean * vWeight);\n}\n',
     );
     expect(alpha).not.toContain('uLightGain');
   });
@@ -1099,5 +1111,197 @@ describe('the nebula composite', () => {
     expect(compositeVertexSource).toContain('gl_VertexID');
     expect(compositeVertexSource).toContain('out vec2 vTexture;');
     expect(compositeVertexSource).not.toContain('in vec');
+  });
+});
+
+describe('the range block', () => {
+  test('sends the four block constants the frame carries', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(),
+    );
+    pass.draw(
+      frameOf(6000, {
+        blockNear: 700,
+        blockFar: 9000,
+        blockGainNear: 0.5,
+        blockGainFar: 3,
+      }),
+    );
+
+    const sent = uniformsOf(context);
+    expect(sent.get('uBlockNear')).toBe(JSON.stringify([700]));
+    expect(sent.get('uBlockFar')).toBe(JSON.stringify([9000]));
+    expect(sent.get('uBlockGainNear')).toBe(JSON.stringify([0.5]));
+    expect(sent.get('uBlockGainFar')).toBe(JSON.stringify([3]));
+  });
+
+  test('sends the four defaults for a frame that carries them', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(),
+    );
+    pass.draw(frameOf(6000));
+
+    const sent = uniformsOf(context);
+    expect(sent.get('uBlockNear')).toBe(JSON.stringify([DEFAULT_NEBULA_BLOCK_NEAR]));
+    expect(sent.get('uBlockFar')).toBe(JSON.stringify([DEFAULT_NEBULA_BLOCK_FAR]));
+    expect(sent.get('uBlockGainNear')).toBe(
+      JSON.stringify([DEFAULT_NEBULA_BLOCK_GAIN_NEAR]),
+    );
+    expect(sent.get('uBlockGainFar')).toBe(
+      JSON.stringify([DEFAULT_NEBULA_BLOCK_GAIN_FAR]),
+    );
+  });
+
+  // The gain changes the alpha alone, so the light a record adds at one camera does not
+  // move with it. The pass sends one light gain, and the two frames must agree on it.
+  test('leaves the emission alone at the near gain and at the far gain', () => {
+    const emissions: unknown[] = [];
+    for (const gain of [
+      DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+      DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+    ]) {
+      const context = fakeContext();
+      const pass = createNebulaPass(
+        context.gl,
+        fakeProgram(),
+        manySet(MANY),
+        volumesOf(),
+      );
+      pass.draw(frameOf(6000, { blockGainNear: gain, blockGainFar: gain }));
+      emissions.push(uniformsOf(context).get('uLightGain'));
+    }
+    console.log('the light gain at the two block gains', emissions);
+
+    expect(emissions[0]).toBe(emissions[1]);
+    expect(emissions[0]).toBe(JSON.stringify([...DEFAULT_NEBULA_LIGHT_GAIN]));
+  });
+
+  /**
+   * The alpha rule of `nebulae.frag`, written in TypeScript. The two assertions above it
+   * hold the shader to the same two lines, so the rule here is the rule the card runs.
+   */
+  function alphaRule(
+    transmittance: number,
+    gain: number,
+    mean: number,
+    weight: number,
+  ) {
+    const blocked = gain === 1 ? transmittance : transmittance ** gain;
+    return 1 - (1 - blocked) * mean * weight;
+  }
+
+  test('writes the alpha the pass wrote before the block at a gain of 1', () => {
+    expect(nebulaFragmentSource).toContain(
+      'float blocked = vBlockGain == 1.0\n' +
+        '    ? transmittance.a\n' +
+        '    : pow(transmittance.a, vBlockGain);',
+    );
+    expect(nebulaFragmentSource).toContain('1.0 - (1.0 - blocked) * mean * vWeight);');
+
+    // A transmittance of 0.5, a mean of 1 and a weight of 1, which is the reading the
+    // requirement names. At a gain of 1 the rule is the one the pass wrote before the
+    // block existed.
+    expect(alphaRule(0.5, 1, 1, 1)).toBe(0.5);
+    // A gain above 1 blocks more, so the alpha falls; a gain below 1 blocks less.
+    expect(alphaRule(0.5, 2, 1, 1)).toBeLessThan(0.5);
+    expect(alphaRule(0.5, 0.7, 1, 1)).toBeGreaterThan(0.5);
+  });
+
+  // The vertex stage turns the range into one gain, so every vertex of one record
+  // reaches the same number and the fragment stage pays for no per-vertex work.
+  test('computes the gain from the range to the record centre', () => {
+    expect(nebulaVertexSource).toContain('float range = length(centre);');
+    expect(nebulaVertexSource).toContain(
+      'vBlockGain = mix(uBlockGainNear, uBlockGainFar, share);',
+    );
+    expect(nebulaVertexSource).toContain('out float vBlockGain;');
+    expect(nebulaFragmentSource).toContain('in float vBlockGain;');
+  });
+});
+
+describe('the readings the sprite passes take', () => {
+  test('reports the nearest front range and that record centre range', () => {
+    const context = fakeContext();
+    const set = manySet(MANY);
+    const pass = createNebulaPass(context.gl, fakeProgram(), set, volumesOf());
+    const frame = frameOf(6000);
+    pass.draw(frame);
+
+    const selection = selectionOf(set, 6000);
+    let front = Infinity;
+    let centre = 0;
+    for (const instance of selection.instances) {
+      const value = Math.max(0, instance.range - (set.radii[instance.index] as number));
+      if (value < front) {
+        front = value;
+        centre = instance.range;
+      }
+    }
+    console.log('the reported ranges', {
+      front: pass.frontRange,
+      centre: pass.centreRange,
+    });
+
+    expect(pass.drawnCount).toBeGreaterThan(0);
+    expect(pass.transmittance).not.toBeNull();
+    expect(pass.frontRange).toBeCloseTo(front, 6);
+    expect(pass.centreRange).toBeCloseTo(centre, 6);
+    expect(pass.frontRange).toBeGreaterThanOrEqual(0);
+  });
+
+  test('reports no transmittance for a view above the band', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(),
+    );
+    pass.draw(frameOf(60000));
+
+    expect(pass.drawnCount).toBe(0);
+    expect(pass.transmittance).toBeNull();
+    expect(pass.frontRange).toBe(0);
+    expect(pass.centreRange).toBe(0);
+  });
+
+  test('reports no transmittance where the set holds no asset', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(0),
+    );
+    pass.draw(frameOf(6000));
+
+    expect(pass.drawnCount).toBe(0);
+    expect(pass.transmittance).toBeNull();
+  });
+
+  // A frame that draws no record must not hand back the texture of the frame before it.
+  test('nulls the transmittance of the frame before a frame that draws nothing', () => {
+    const context = fakeContext();
+    const pass = createNebulaPass(
+      context.gl,
+      fakeProgram(),
+      manySet(MANY),
+      volumesOf(),
+    );
+    pass.draw(frameOf(6000));
+    expect(pass.transmittance).not.toBeNull();
+
+    pass.draw(frameOf(60000));
+    expect(pass.transmittance).toBeNull();
+    expect(pass.frontRange).toBe(0);
+    expect(pass.centreRange).toBe(0);
   });
 });

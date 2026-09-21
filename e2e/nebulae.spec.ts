@@ -13,7 +13,11 @@ import {
   waitForReady,
 } from './helpers';
 import { BRIGHT_VIEW, CLOSE_VIEW, DARK_VIEW } from './nebula-views';
-import { DEFAULT_NEBULA_OCCLUSION } from '../packages/galaxy-map/src/render/nebula-slot';
+import {
+  DEFAULT_NEBULA_BLOCK_FAR,
+  DEFAULT_NEBULA_BLOCK_NEAR,
+  DEFAULT_NEBULA_OCCLUSION,
+} from '../packages/galaxy-map/src/render/nebula-slot';
 import { putVolumeDensity } from '../packages/galaxy-map/src/render/shader-include';
 
 /** Reads a shader source file from the tree. */
@@ -1397,4 +1401,479 @@ test('the overlap stays inside the light it was measured at', async ({ page }) =
       `${reading.name} is brighter than its reading`,
     ).toBeLessThanOrEqual(reading.bound);
   }
+});
+
+/**
+ * Turns off every pass but the nebulae and the density volume, and holds the occlusion
+ * at 0 and the light gain at 0.
+ *
+ * The readings of the range block need a background behind the record: the gain changes
+ * the alpha alone, and an alpha over black is black at every gain. The volume is that
+ * background. The occlusion at 0 keeps the volume's own extinction out of the record's
+ * alpha, and the light gain at 0 keeps the record's emission out of the block, so the
+ * frame under the record is the volume times the record's transmittance and nothing
+ * else.
+ */
+async function blockReadingPasses(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({
+      volume: true,
+      clouds: false,
+      points: false,
+      stars: false,
+      glow: false,
+      grid: false,
+      regions: false,
+      shapes: false,
+      systems: false,
+      nebulae: true,
+    });
+    window.__galaxyMap?.setNebulaOcclusion?.(0);
+    const map = window.galaxyMap;
+    if (map !== undefined) map.debug.look.nebulaLightGain = [0, 0, 0];
+  });
+}
+
+/** Writes the two block gains. */
+async function setBlockGains(page: Page, near: number, far: number): Promise<void> {
+  await page.evaluate(
+    (gains) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return;
+      map.debug.look.nebulaBlockGainNear = gains.near;
+      map.debug.look.nebulaBlockGainFar = gains.far;
+    },
+    { near, far },
+  );
+}
+
+/**
+ * The record the range reading stands on, at 59.18 light years. Its nearest neighbour is
+ * 8,630 light years away, which is the largest gap in the set for a record over 40 light
+ * years. The block a camera reads at its centre therefore holds one record and not a
+ * group, and the two cameras below differ in the gain and not in what stands on the ray.
+ */
+const LONE_RECORD: [number, number, number] = [18041.7, 420.9, 13893.9];
+
+/**
+ * Draws one camera on the sight line of a record and reads the share of the background
+ * the record leaves, which is the block reading with the nebulae on over the same block
+ * with them off.
+ *
+ * The share and not the luminance, because the two cameras of the range reading stand at
+ * different ranges and the volume behind the record is not the same light at both. The
+ * share divides that light out, and it is the quantity the gain acts on: the composite
+ * multiplies what is behind the record by the record's transmittance.
+ */
+async function backgroundShare(
+  page: Page,
+  cursor: [number, number, number],
+  distance: number,
+  block: number,
+): Promise<{ share: number; on: number; off: number; drawn: number }> {
+  await page.evaluate(
+    (where) => {
+      window.__galaxyMap?.setView?.({
+        cursor: where.cursor,
+        distance: where.distance,
+        pitch: 0,
+        yaw: 0,
+      });
+    },
+    { cursor, distance },
+  );
+  // The drawn count is read inside the frame that draws the nebulae, because the frame
+  // after it turns them off and would report 0 whatever the view holds.
+  const on = await withNebulae(page, true, () =>
+    meanLuminanceBlock(page, MIDDLE, block),
+  );
+  const drawn = await page.evaluate(
+    () => window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
+  );
+  const off = await withNebulae(page, false, () =>
+    meanLuminanceBlock(page, MIDDLE, block),
+  );
+  return { share: on / off, on, off, drawn };
+}
+
+// The spec's scenario **A far nebula blocks more than a near one**. The two cameras sit
+// on the sight line of the lone record, one at 400 light years, under the near range of
+// 500, and one at 6,500, over the far range of 6,000. The zoom band draws in full below
+// 12,000 light years and the record clears the size floor at both, so both cameras carry
+// a record weight of exactly 1 and the two readings differ by the gain alone.
+//
+// Both cameras read a block of 2 pixels at the middle of the frame, which is the record's
+// own centre ray. A wider block would read the near camera's 92 pixel image against the
+// far camera's 5.7 pixel one, and the far block would carry the sky around the record as
+// well as the record. The ray is the same path through the same volume at both, so the
+// two readings hold the gain and nothing else.
+test('a record beyond the far range blocks more than one inside the near range', async ({
+  page,
+}) => {
+  await openMap(page, '');
+  await blockReadingPasses(page);
+
+  const near = await backgroundShare(page, LONE_RECORD, 400, 2);
+  const far = await backgroundShare(page, LONE_RECORD, 6500, 2);
+  console.log('the range block', { near, far });
+
+  // The positive control: both cameras draw the record the reading is of, and the volume
+  // behind it carries light at both.
+  expect(near.drawn, 'the near camera drew no record').toBeGreaterThan(0);
+  expect(far.drawn, 'the far camera drew no record').toBeGreaterThan(0);
+  expect(near.off, 'the near camera has no background').toBeGreaterThan(0.002);
+  expect(far.off, 'the far camera has no background').toBeGreaterThan(0.002);
+
+  expect(far.share, 'the far camera blocks no more than the near one').toBeLessThan(
+    near.share,
+  );
+});
+
+// The spec's scenario **A higher gain blocks more at one camera**. One camera, one
+// background, and the two gains held equal so the range plays no part: the reading is
+// the gain and nothing else.
+test('a higher gain blocks more at one camera', async ({ page }) => {
+  await openMap(page, '');
+  await blockReadingPasses(page);
+
+  await setBlockGains(page, 1, 1);
+  const one = await backgroundShare(page, LONE_RECORD, 6500, 8);
+  await setBlockGains(page, 2, 2);
+  const two = await backgroundShare(page, LONE_RECORD, 6500, 8);
+  console.log('the gain block', { one, two });
+
+  expect(one.drawn, 'the camera drew no record').toBeGreaterThan(0);
+  expect(one.off, 'the camera has no background').toBeGreaterThan(0.002);
+  expect(two.on, 'the gain of 2 blocks no more than the gain of 1').toBeLessThan(
+    one.on,
+  );
+});
+
+/**
+ * The sweep of the spec's scenario **The blocking does not step as the camera moves**.
+ *
+ * The camera stands on the sight line of Barnard's Loop at 200 places between 450 light
+ * years, under the near range of 500, and 6,600, over the far range of 6,000. Each place
+ * reads a pair of frames, and the two frames of a pair hold the gain the range gives at
+ * that place and the gain it gives 1 per cent further out.
+ *
+ * **The pair holds the camera still and moves the gain alone**, by scaling the two ranges
+ * by 1 over 1.01: `smoothstep(near / 1.01, far / 1.01, range)` is `smoothstep(near, far,
+ * range * 1.01)`, so the second frame carries the gain of a camera 1 per cent further out
+ * and the image of everything else is the image the first frame drew.
+ *
+ * A pair that also moved the camera reads the move and not the blocking. The move of 1
+ * per cent of the range carries the record's marched structure across a bright background,
+ * and the worst pair over this sweep reads **410** that way, on the frame the tree drew
+ * before this change as well as on the frame it draws now: holding both gains at 1 reads
+ * 378 over the same sweep. The step falls with the size of the move, reading 167 at a
+ * tenth of it and 22 at a hundredth, so it is the move and not a step. The reading that
+ * answers the requirement is the one that removes it.
+ */
+const BLOCK_SWEEP_WINDOWS = 200;
+
+/** The near end of the block sweep, in light years. It is under the near range of 500. */
+const BLOCK_SWEEP_NEAR = 450;
+
+/** The far end of the block sweep, in light years. It is over the far range of 6,000. */
+const BLOCK_SWEEP_FAR = 6600;
+
+/** How far apart the two gains of one pair stand, as a share of the range. */
+const BLOCK_SWEEP_STEP = 0.01;
+
+/**
+ * The largest step the block sweep accepts, summed over the three channels on a 0 to 255
+ * scale.
+ *
+ * The spec states 12. The measured worst is **11**, at 3,058 light years, at one pixel of
+ * 518,400, and the bound is that reading rounded up. The gain runs from 0.7 to 2.0 over
+ * the sweep, so 1 per cent of the range moves it by about 0.011 at the steepest place,
+ * and the pixels that carry the reading are the ones where the galactic core stands
+ * behind the record: a tenth of a per cent of a very bright background is several counts.
+ * A gain that stepped would read the whole change of the gain at one pair, which is two
+ * orders above this.
+ */
+const BLOCK_SWEEP_BOUND = 12;
+
+test('the blocking does not step as the camera moves', async ({ page }) => {
+  await openMap(page, '');
+  await blockReadingPasses(page);
+
+  const report = await page.evaluate(
+    (sweep) => {
+      const map = window.__galaxyMap;
+      const look = window.galaxyMap?.debug.look;
+      if (map?.readRect === undefined || look === undefined) return null;
+      const read = map.readRect;
+      const frameAt = (distance: number, scale: number): Uint8Array => {
+        look.nebulaBlockNear = sweep.blockNear / scale;
+        look.nebulaBlockFar = sweep.blockFar / scale;
+        map.setView?.({
+          cursor: [624.4, -425.9, -1229.5],
+          distance,
+          pitch: 0,
+          yaw: 0,
+        });
+        map.drawNow?.();
+        return read(sweep.left, 0, sweep.height, sweep.height);
+      };
+      const ratio = Math.pow(sweep.far / sweep.near, 1 / (sweep.windows - 1));
+      let worst = 0;
+      let worstAt = 0;
+      let drawn = 0;
+      for (let index = 0; index < sweep.windows; index += 1) {
+        const distance = sweep.near * Math.pow(ratio, index);
+        const first = frameAt(distance, 1);
+        const second = frameAt(distance, 1 + sweep.step);
+        drawn = map.nebulaDrawnCount?.() ?? -1;
+        let step = 0;
+        for (let at = 0; at < first.length; at += 4) {
+          const difference =
+            Math.abs((first[at] as number) - (second[at] as number)) +
+            Math.abs((first[at + 1] as number) - (second[at + 1] as number)) +
+            Math.abs((first[at + 2] as number) - (second[at + 2] as number));
+          if (difference > step) step = difference;
+        }
+        if (step > worst) {
+          worst = step;
+          worstAt = distance;
+        }
+      }
+      return { worst, worstAt, drawn };
+    },
+    {
+      near: BLOCK_SWEEP_NEAR,
+      far: BLOCK_SWEEP_FAR,
+      windows: BLOCK_SWEEP_WINDOWS,
+      step: BLOCK_SWEEP_STEP,
+      blockNear: DEFAULT_NEBULA_BLOCK_NEAR,
+      blockFar: DEFAULT_NEBULA_BLOCK_FAR,
+      left: 280,
+      height: 720,
+    },
+  );
+  console.log('the block sweep', { ...report, windows: BLOCK_SWEEP_WINDOWS });
+
+  expect(report).not.toBeNull();
+  // The positive control: the camera draws the record the sweep walks past.
+  expect(report?.drawn ?? 0, 'the sweep drew no record').toBeGreaterThan(0);
+  expect(report?.worst ?? 765).toBeLessThanOrEqual(BLOCK_SWEEP_BOUND);
+});
+
+/**
+ * Turns off every pass but the nebulae and one sprite pass, and holds the occlusion at 0
+ * and the light gain at 0.
+ *
+ * The sprite passes draw after the nebula composite, so the reading is the sprite light
+ * alone: the volume and the clouds are off, and the record adds no emission of its own.
+ * What is left in the block is the point cloud or the star field, multiplied by the
+ * record's transmittance where the gate opens.
+ */
+async function spriteReadingPasses(
+  page: Page,
+  sprite: 'points' | 'stars',
+): Promise<void> {
+  await page.evaluate((which) => {
+    window.__galaxyMap?.setPasses?.({
+      volume: false,
+      clouds: false,
+      points: which === 'points',
+      stars: which === 'stars',
+      glow: false,
+      grid: false,
+      regions: false,
+      shapes: false,
+      systems: false,
+      nebulae: true,
+    });
+    window.__galaxyMap?.setNebulaOcclusion?.(0);
+    const map = window.galaxyMap;
+    if (map !== undefined) map.debug.look.nebulaLightGain = [0, 0, 0];
+  }, sprite);
+}
+
+/**
+ * The dark record of `DARK_VIEW`, at 88.93 light years, with the camera 1,200 light
+ * years from its centre. It draws 46 pixels across its radius there, so the block at the
+ * middle of the frame lies inside it, and its front range of about 1,111 light years is
+ * beyond the handover, so the point cloud behind it carries its full light.
+ */
+const DENSE_RECORD_VIEW = {
+  cursor: [-10642.7, 629.4, 17776.7] as [number, number, number],
+  distance: 1200,
+  pitch: 0,
+  yaw: 0,
+};
+
+/** Draws one view and reads the mean luminance of a block with the nebulae on and off. */
+async function spriteBlock(
+  page: Page,
+  view: typeof DENSE_RECORD_VIEW,
+  point: { x: number; y: number },
+  block: number,
+): Promise<{ on: number; off: number; drawn: number }> {
+  await page.evaluate((where) => window.__galaxyMap?.setView?.(where), view);
+  // The drawn count is read inside the frame that draws the nebulae, because the frame
+  // after it turns them off and would report 0 whatever the view holds.
+  const on = await withNebulae(page, true, () =>
+    meanLuminanceBlock(page, point, block),
+  );
+  const drawn = await page.evaluate(
+    () => window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
+  );
+  const off = await withNebulae(page, false, () =>
+    meanLuminanceBlock(page, point, block),
+  );
+  return { on, off, drawn };
+}
+
+// The spec's scenario **A star behind a nebula dims**. The point cloud draws after the
+// nebula composite, so before this change the record took none of its light away.
+test('the point cloud dims behind a nebula', async ({ page }) => {
+  await openMap(page, '');
+  await spriteReadingPasses(page, 'points');
+
+  const reading = await spriteBlock(page, DENSE_RECORD_VIEW, MIDDLE, 32);
+  console.log('the point cloud block', reading);
+
+  // The positive control: the record draws, and the point cloud carries light there.
+  expect(reading.drawn, 'the view drew no record').toBeGreaterThan(0);
+  expect(reading.off, 'the block holds no point cloud light').toBeGreaterThan(0.002);
+  expect(reading.on, 'the record took no light from the point cloud').toBeLessThan(
+    reading.off,
+  );
+});
+
+/**
+ * The view of the spec's scenario **A star in front of the nearest nebula keeps its
+ * light**. The camera stands 6,000 light years over the disc and looks straight down, so
+ * every sight line crosses the disc once and leaves the model. The point cloud samples in
+ * the two blocks the test reads therefore sit at about 6,000 light years, and the nearest
+ * record above the size floor sits at 8,043, so the pass reports a front range of about
+ * 7,964 and the gate stays shut over both blocks.
+ *
+ * The record is 26 degrees off the view axis, inside the frame, so the second block the
+ * test reads is the one the record covers. The reading is not the record missing the
+ * block: it is the gate holding the sprites in front of the record at their full light.
+ */
+const IN_FRONT_VIEW = {
+  cursor: [6000, 0, 10750] as [number, number, number],
+  distance: 6000,
+  pitch: 89,
+  yaw: 0,
+};
+
+/** The record that sets the front range at `IN_FRONT_VIEW`, at 78.59 light years. */
+const IN_FRONT_RECORD: [number, number, number] = [2889.1, -1212.2, 12480.5];
+
+/**
+ * The least front range `IN_FRONT_VIEW` may report for the reading to mean what it says.
+ * The geometry gives 7,964 light years, and the block at the middle reads samples out to
+ * about 6,030. A smaller reading means a record entered the set and the two blocks are no
+ * longer in front of it.
+ */
+const IN_FRONT_LEAST = 7000;
+
+test('a sprite in front of the nearest nebula keeps its light', async ({ page }) => {
+  await openMap(page, '');
+  await spriteReadingPasses(page, 'points');
+
+  const where = await page.evaluate(
+    (view) => {
+      window.__galaxyMap?.setView?.(view.camera);
+      window.__galaxyMap?.drawNow?.();
+      return {
+        drawn: window.__galaxyMap?.nebulaDrawnCount?.() ?? -1,
+        range: window.__galaxyMap?.nebulaSpriteRange?.() ?? [0, 0],
+        pixel: window.__galaxyMap?.project?.(view.record) ?? { x: -1, y: -1 },
+      };
+    },
+    { camera: IN_FRONT_VIEW, record: IN_FRONT_RECORD },
+  );
+  console.log('the front range', where);
+
+  // The positive control: the record draws, it is inside the frame, and the front range
+  // is the one the geometry gives.
+  expect(where.drawn, 'the view drew no record').toBeGreaterThan(0);
+  expect(
+    where.range[0],
+    'the front range is not the one the view gives',
+  ).toBeGreaterThan(IN_FRONT_LEAST);
+  expect(where.pixel.x, 'the record is off the frame').toBeGreaterThan(0);
+  expect(where.pixel.x, 'the record is off the frame').toBeLessThan(1280);
+  expect(where.pixel.y, 'the record is off the frame').toBeGreaterThan(0);
+  expect(where.pixel.y, 'the record is off the frame').toBeLessThan(720);
+
+  const middle = await spriteBlock(page, IN_FRONT_VIEW, MIDDLE, 120);
+  const under = await spriteBlock(page, IN_FRONT_VIEW, where.pixel, 60);
+  console.log('the blocks in front of the record', { middle, under });
+
+  expect(middle.off, 'the middle block holds no point cloud light').toBeGreaterThan(
+    0.002,
+  );
+  expect(under.off, 'the record block holds no point cloud light').toBeGreaterThan(
+    0.002,
+  );
+  expect(middle.on, 'the middle block changed').toBeCloseTo(middle.off, 6);
+  expect(under.on, 'the block the record covers changed').toBeCloseTo(under.off, 6);
+});
+
+/**
+ * The view of the spec's scenario **The star field dims with the point cloud**. The camera
+ * stands 300 light years from the dark record of `DARK_VIEW`, which draws 185 pixels
+ * across its radius there. The field covers a sphere of 480 light years at that zoom, and
+ * the front range is 211, so the gate opens over the far half of the field.
+ *
+ * The close fade is held at 1, because the field carries no light below a zoom distance of
+ * 640 light years and the record must be close for the field to reach past it.
+ */
+const STAR_BLOCK_VIEW = {
+  cursor: [-10642.7, 629.4, 17776.7] as [number, number, number],
+  distance: 300,
+  pitch: 0,
+  yaw: 0,
+};
+
+test('the star field dims behind a nebula', async ({ page }) => {
+  await openMap(page, '');
+  await spriteReadingPasses(page, 'stars');
+  await page.evaluate(() => window.__galaxyMap?.setCloseFade?.(1));
+
+  const reading = await spriteBlock(page, STAR_BLOCK_VIEW, MIDDLE, 200);
+  console.log('the star field block', reading);
+
+  expect(reading.drawn, 'the view drew no record').toBeGreaterThan(0);
+  expect(reading.off, 'the block holds no star light').toBeGreaterThan(0.002);
+  expect(reading.on, 'the record took no light from the star field').toBeLessThan(
+    reading.off,
+  );
+});
+
+/** The default view, at 60,000 light years, which is over the zoom band. */
+const ABOVE_THE_BAND = {
+  cursor: [0, 0, 0] as [number, number, number],
+  distance: 60000,
+  pitch: 35,
+  yaw: 0,
+};
+
+// The spec's scenario **The frame before does not leak into a frame with no nebula**. The
+// transmittance target holds the last frame that drew a record, so a frame that draws
+// none must read no texture at all and not the one that is still there.
+test('the frame before does not leak into a frame with no nebula', async ({ page }) => {
+  await openMap(page, '');
+  await spriteReadingPasses(page, 'points');
+
+  const alone = await spriteBlock(page, ABOVE_THE_BAND, MIDDLE, 120);
+  const blocking = await spriteBlock(page, DENSE_RECORD_VIEW, MIDDLE, 32);
+  const after = await spriteBlock(page, ABOVE_THE_BAND, MIDDLE, 120);
+  console.log('the stale frame', { alone, blocking, after });
+
+  // The positive control: the frame between the two draws a record and blocks the cloud,
+  // so there is a transmittance to leak.
+  expect(blocking.drawn, 'the frame between drew no record').toBeGreaterThan(0);
+  expect(blocking.on, 'the frame between blocked nothing').toBeLessThan(blocking.off);
+  expect(alone.drawn, 'the view over the band drew a record').toBe(0);
+  expect(alone.off, 'the view over the band holds no light').toBeGreaterThan(0.002);
+  expect(after.on, 'the frame before leaked into it').toBeCloseTo(alone.on, 6);
 });

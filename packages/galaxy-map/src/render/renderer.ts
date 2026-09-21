@@ -49,6 +49,10 @@ import {
 import type { CloudPass } from './cloud-pass';
 import { generateCloudShapes } from './cloud-shapes';
 import {
+  DEFAULT_NEBULA_BLOCK_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+  DEFAULT_NEBULA_BLOCK_NEAR,
   DEFAULT_NEBULA_LIGHT_GAIN,
   DEFAULT_NEBULA_OCCLUSION,
   DEFAULT_NEBULA_STEP_RATE,
@@ -182,6 +186,34 @@ export function nebulaOcclusionOf(value: number): number {
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_NEBULA_OCCLUSION;
 }
 
+/**
+ * The range pair the sprite passes take for a frame that drew no nebula. Both edges sit
+ * far beyond the volume box, so every sprite reads a share of exactly 0 and the shader
+ * makes no texture fetch. The two are not equal, because `smoothstep` is undefined in
+ * GLSL ES 3.00 for `edge0 >= edge1` and the NaN would turn every sprite black.
+ */
+export const NO_NEBULA_RANGE: readonly [number, number] = [1e30, 2e30];
+
+/**
+ * The range pair the sprite passes take for a frame that drew a nebula: the front range
+ * of the record the camera is nearest to, and that record's centre range. A camera at a
+ * record's own centre gives two equal ranges, which `smoothstep` does not read, so the
+ * far edge is lifted above the near one.
+ */
+export function spriteNebulaRange(front: number, centre: number): [number, number] {
+  return [front, centre > front ? centre : front + 1];
+}
+
+/**
+ * One of the four block constants the frame sends: the two ranges and the two gains. A
+ * value that is not finite, and a value below 0, are values the reader cannot read, so
+ * each takes the default the caller names. The rule runs each frame, where the uniform
+ * is set, for the reason `nebulaOcclusionOf` states.
+ */
+export function nebulaBlockOf(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 /** Which passes draw. */
 export interface PassSwitches {
   volume: boolean;
@@ -217,6 +249,26 @@ export interface LookSettings {
    * number, take the default.
    */
   nebulaOcclusion: number;
+  /**
+   * The range at and below which a record blocks at the near gain, in light years. A
+   * value that is not finite, and a value below 0, take the default.
+   */
+  nebulaBlockNear: number;
+  /**
+   * The range at and above which a record blocks at the far gain, in light years. A
+   * value that is not finite, and a value below 0, take the default.
+   */
+  nebulaBlockFar: number;
+  /**
+   * The gain the record's own transmittance takes at the near range. Below 1 the record
+   * blocks less than the march wrote.
+   */
+  nebulaBlockGainNear: number;
+  /**
+   * The gain the record's own transmittance takes at the far range. Above 1 the record
+   * blocks more than the march wrote.
+   */
+  nebulaBlockGainFar: number;
   pointBrightness: number;
   exposure: number;
   glowWeight: number;
@@ -251,6 +303,11 @@ export interface Renderer {
   nebulaAboveFloorCount(): number;
   /** How much of the screen the last frame's nebulae cover, in screen areas. */
   nebulaCoveredArea(): number;
+  /**
+   * The front range and the centre range the last frame sent the two sprite passes, in
+   * light years. A frame that drew no record reports the pair far beyond the volume box.
+   */
+  nebulaSpriteRange(): [number, number];
   /** Uploads the surface detail grid. Call it in its own animation frame. */
   setDetail(detail: SurfaceDetail): void;
   /**
@@ -508,6 +565,9 @@ export function createRenderer(
   let nebulaCalls = 0;
   let nebulaAboveFloor = 0;
   let nebulaCovered = 0;
+  // The range pair the sprite passes were sent for the last frame. A browser test reads
+  // it, because the depth gate is what it names and no pixel states it.
+  let nebulaSprite: [number, number] = [NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]];
   let volumePass: VolumePass | null = null;
   let volumeTexture: VolumeTexture | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -532,6 +592,10 @@ export function createRenderer(
     nebulaLightGain: [...DEFAULT_NEBULA_LIGHT_GAIN],
     nebulaStepRate: DEFAULT_NEBULA_STEP_RATE,
     nebulaOcclusion: DEFAULT_NEBULA_OCCLUSION,
+    nebulaBlockNear: DEFAULT_NEBULA_BLOCK_NEAR,
+    nebulaBlockFar: DEFAULT_NEBULA_BLOCK_FAR,
+    nebulaBlockGainNear: DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+    nebulaBlockGainFar: DEFAULT_NEBULA_BLOCK_GAIN_FAR,
     pointBrightness: DEFAULT_POINT_BRIGHTNESS,
     exposure: DEFAULT_EXPOSURE,
     glowWeight: DEFAULT_GLOW_WEIGHT,
@@ -662,6 +726,12 @@ export function createRenderer(
     nebulaCalls = 0;
     nebulaAboveFloor = 0;
     nebulaCovered = 0;
+    // What the two sprite passes read from the nebula draw. A frame that drew no record
+    // keeps the null and the far pair, so it draws the frame it drew before the nebulae
+    // reached the sprites. The two edges are never equal: `smoothstep` is undefined in
+    // GLSL ES 3.00 for `edge0 >= edge1`, and the NaN would turn every sprite black.
+    let nebulaTexture: WebGLTexture | null = null;
+    let nebulaRange: [number, number] = [NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]];
     if (passes.nebulae && nebulaDraw !== null) {
       const area = viewport();
       // The march reads the volume the volume pass draws. Where the volume pass does
@@ -722,12 +792,26 @@ export function createRenderer(
         // a handle the caller may write to in place, so a clamp in the setter alone is
         // gone around by a write to `debug.look`.
         occlusion: marched ? nebulaOcclusionOf(look.nebulaOcclusion) : 0,
+        blockNear: nebulaBlockOf(look.nebulaBlockNear, DEFAULT_NEBULA_BLOCK_NEAR),
+        blockFar: nebulaBlockOf(look.nebulaBlockFar, DEFAULT_NEBULA_BLOCK_FAR),
+        blockGainNear: nebulaBlockOf(
+          look.nebulaBlockGainNear,
+          DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+        ),
+        blockGainFar: nebulaBlockOf(
+          look.nebulaBlockGainFar,
+          DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+        ),
         reverseOrder: nebulaOrderReversed,
       });
       nebulaDrawn = nebulaDraw.drawnCount;
       nebulaCalls = nebulaDraw.drawCalls;
       nebulaAboveFloor = nebulaDraw.aboveFloorCount;
       nebulaCovered = nebulaDraw.coveredArea;
+      nebulaTexture = nebulaDraw.transmittance;
+      if (nebulaTexture !== null) {
+        nebulaRange = spriteNebulaRange(nebulaDraw.frontRange, nebulaDraw.centreRange);
+      }
     }
 
     // The scene target holds the sum of the scene passes.
@@ -780,6 +864,8 @@ export function createRenderer(
     starSuppressed = 0;
     systemMarkers = 0;
 
+    nebulaSprite = nebulaRange;
+
     if (passes.points && pointPass !== null) {
       pointPass.draw({
         viewProjection: viewProjection as Float32Array,
@@ -788,6 +874,9 @@ export function createRenderer(
         brightness: look.pointBrightness,
         handoverWeight: weight,
         handover,
+        nebulaTransmittance: nebulaTexture,
+        nebulaRange,
+        targetSize: [sceneTarget.width, sceneTarget.height],
       });
     }
 
@@ -803,6 +892,9 @@ export function createRenderer(
         weight: weight * close,
         handover,
         table,
+        nebulaTransmittance: nebulaTexture,
+        nebulaRange,
+        targetSize: [sceneTarget.width, sceneTarget.height],
       });
       starVertices = starPass.vertexCount;
       starStars = table.drawnStars;
@@ -1028,6 +1120,9 @@ export function createRenderer(
     },
     nebulaAboveFloorCount(): number {
       return nebulaAboveFloor;
+    },
+    nebulaSpriteRange(): [number, number] {
+      return [nebulaSprite[0], nebulaSprite[1]];
     },
     nebulaCoveredArea(): number {
       return nebulaCovered;

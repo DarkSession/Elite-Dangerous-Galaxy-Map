@@ -556,6 +556,17 @@ const styleText = `
   gap: 9px;
   min-width: 0;
 }
+/* The readouts of the information panel. The HUD root sets user-select none, so a drag
+   near a panel edge does not highlight a heading. These four are the values the panel
+   states about the selected system, and the reader copies one with the keyboard. The
+   elements the Markdown draw builds sit inside .gm-hud__description and inherit it. */
+.gm-hud__info-name,
+.gm-hud__field-value,
+.gm-hud__description,
+.gm-hud__chip {
+  -webkit-user-select: text;
+  user-select: text;
+}
 .gm-hud__info-name {
   margin: 0;
   font-size: 19px;
@@ -1006,11 +1017,15 @@ const styleText = `
   cursor: zoom-out;
   background: rgba(4, 3, 6, 0.88);
 }
+/* The frame sizes to the picture: no width and no aspect ratio of its own. The caps on
+   the drawn size are written inline on the picture by lightbox.ts, because the
+   picture's own pixel size is known to the script alone. The smallest size keeps a frame
+   with no picture in it readable. */
 .gm-hud__lightbox-frame {
   position: relative;
-  width: min(86%, 1180px);
-  aspect-ratio: 4 / 3;
-  max-height: 82%;
+  display: flex;
+  min-width: 260px;
+  min-height: 160px;
   border: 1px solid rgba(255, 150, 60, 0.45);
   background-color: #140e12;
   background-image: repeating-linear-gradient(
@@ -1034,11 +1049,9 @@ const styleText = `
   color: rgba(244, 230, 216, 0.55);
 }
 .gm-hud__lightbox-image {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  display: block;
+  width: auto;
+  height: auto;
 }
 .gm-hud__lightbox-close {
   position: absolute;

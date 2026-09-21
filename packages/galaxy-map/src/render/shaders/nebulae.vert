@@ -39,6 +39,13 @@ uniform float uOcclusion;
 // The mean transmittance a record draws no fragment below. The box collapses behind the
 // near plane under it, so the fragment stage runs on none of that record.
 uniform float uCullFloor;
+// The two range edges and the two gains of the range block. The record's own
+// transmittance takes the gain the range from the camera to its centre names, so a far
+// nebula hides what is behind it and a near one does not.
+uniform float uBlockNear;
+uniform float uBlockFar;
+uniform float uBlockGainNear;
+uniform float uBlockGainFar;
 
 // The sample point, in the record's object space, where the cube spans [-1, +1].
 out vec3 vMarchObject;
@@ -46,6 +53,9 @@ out vec3 vMarchObject;
 out vec3 vMarchEye;
 out float vWeight;
 out vec3 vTransmittance;
+// The gain the fragment stage raises the record's own transmittance to. Every vertex of
+// one record reads the same number, as vTransmittance does.
+out float vBlockGain;
 
 // @volume-density
 
@@ -102,6 +112,15 @@ vec3 marchTransmittance(vec3 target) {
 
 void main() {
   vec3 centre = uChunkOffset + uPosition;
+
+  // The range to the record's centre. The step is smooth, so no record's blocking steps
+  // as the camera moves. Equal edges leave smoothstep undefined in GLSL ES 3.00, so a
+  // far edge at or below the near one takes the far gain over the whole range.
+  float range = length(centre);
+  float share = uBlockFar > uBlockNear
+    ? smoothstep(uBlockNear, uBlockFar, range)
+    : 1.0;
+  vBlockGain = mix(uBlockGainNear, uBlockGainFar, share);
 
   // The zoom band and the record's own fades scale the colour and the alpha together,
   // so a fading nebula both dims and stops attenuating what is behind it.

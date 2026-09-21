@@ -1,5 +1,48 @@
 // The lightbox: one image over the whole map, with its caption and the system's name.
-import { focusOn, make, makeButton, setAttribute, setShown, setText } from './dom';
+import {
+  focusOn,
+  make,
+  makeButton,
+  setAttribute,
+  setShown,
+  setStyle,
+  setText,
+} from './dom';
+
+/** The drawn size of the picture, in CSS pixels. */
+export interface LightboxSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The size the box draws the picture at. Two caps apply and the lesser wins.
+ *
+ * The **room cap** is the share of the lightbox element the frame may take: 86 percent
+ * of its width, capped at 1180, and 82 percent of its height. The **pixel cap** is the
+ * picture's own pixels times the device pixel ratio. A 400 by 300 picture therefore draws
+ * at 400 by 300 CSS pixels on a 1x screen and at 800 by 600 on a 2x one, which is the same
+ * picture at the same size on the glass.
+ *
+ * The three are read as one scale on the natural size, so the picture keeps its aspect
+ * ratio under either cap.
+ *
+ * A natural size of 0 is a picture with no size to draw to, and the caller leaves the
+ * frame at its smallest size.
+ */
+export function lightboxSize(
+  roomWidth: number,
+  roomHeight: number,
+  naturalWidth: number,
+  naturalHeight: number,
+  ratio: number,
+): LightboxSize | null {
+  if (naturalWidth <= 0 || naturalHeight <= 0) return null;
+  const roomW = Math.min(roomWidth * 0.86, 1180);
+  const roomH = roomHeight * 0.82;
+  const scale = Math.min(roomW / naturalWidth, roomH / naturalHeight, ratio);
+  return { width: naturalWidth * scale, height: naturalHeight * scale };
+}
 
 /** The image lightbox of the HUD. */
 export interface Lightbox {
@@ -34,7 +77,33 @@ export function createLightbox(doc: Document): Lightbox {
   // caption goes as soon as the picture is there. The footer still carries it.
   image.addEventListener('load', () => {
     setShown(placeholder, false);
+    applySize();
   });
+
+  /**
+   * Writes the drawn size on the picture. CSS cannot state "the natural size times the
+   * device pixel ratio, held inside the room", so the size is computed here and carried
+   * by one inline pair. A picture with no natural size yet takes no pair at all, and the
+   * frame holds its smallest size.
+   */
+  function applySize(): void {
+    const size = lightboxSize(
+      element.clientWidth,
+      element.clientHeight,
+      image.naturalWidth,
+      image.naturalHeight,
+      doc.defaultView?.devicePixelRatio ?? 1,
+    );
+    setStyle(image, 'width', size === null ? '' : `${size.width}px`);
+    setStyle(image, 'height', size === null ? '' : `${size.height}px`);
+  }
+
+  // A resize is the one event a monitor change, a browser zoom and a window resize all
+  // raise, so it covers both a change in the device pixel ratio and a change in the
+  // room. The listener runs only while the box is open.
+  const onResize = (): void => {
+    applySize();
+  };
   const close = makeButton(doc, 'gm-hud__lightbox-close');
   close.textContent = 'CLOSE ✕';
   const footer = make(doc, 'div', 'gm-hud__lightbox-footer');
@@ -71,6 +140,7 @@ export function createLightbox(doc: Document): Lightbox {
   const closeBox = (): void => {
     if (element.hidden) return;
     setShown(element, false);
+    doc.defaultView?.removeEventListener('resize', onResize);
     const from = opener;
     opener = null;
     for (const candidate of candidates(from)) {
@@ -111,6 +181,15 @@ export function createLightbox(doc: Document): Lightbox {
       setText(captionText, caption);
       setText(systemText, systemName);
       setShown(element, true);
+      // The size of the picture before this one must not hold this one. A new `src`
+      // leaves the natural size at 0, so this writes no size at all and the `load` that
+      // follows writes the true one; a picture the box already shows raises no `load`,
+      // and has its natural size here, so this is the one call that sizes it.
+      //
+      // It runs after the box is shown, because a hidden element reads a room of 0 by 0
+      // and the size would come out at 0 by 0 with it.
+      applySize();
+      doc.defaultView?.addEventListener('resize', onResize);
       close.focus();
     },
     close: closeBox,

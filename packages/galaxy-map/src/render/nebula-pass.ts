@@ -173,6 +173,10 @@ export function createNebulaProgram(gl: WebGL2RenderingContext): Program {
     'uDetailScale',
     'uOcclusion',
     'uCullFloor',
+    'uBlockNear',
+    'uBlockFar',
+    'uBlockGainNear',
+    'uBlockGainFar',
   ]);
 }
 
@@ -232,6 +236,11 @@ export function createNebulaPass(
   let drawCalls = 0;
   let aboveFloorCount = 0;
   let coveredArea = 0;
+  // The three readings the sprite passes take through the renderer. The texture is null
+  // for a frame that drew no record, so the frame before it cannot leak into it.
+  let transmittance: WebGLTexture | null = null;
+  let frontRange = 0;
+  let centreRange = 0;
 
   return {
     get drawnCount(): number {
@@ -246,11 +255,23 @@ export function createNebulaPass(
     get coveredArea(): number {
       return coveredArea;
     },
+    get transmittance(): WebGLTexture | null {
+      return transmittance;
+    },
+    get frontRange(): number {
+      return frontRange;
+    },
+    get centreRange(): number {
+      return centreRange;
+    },
     draw(frame: NebulaFrame): void {
       drawnCount = 0;
       drawCalls = 0;
       aboveFloorCount = 0;
       coveredArea = 0;
+      transmittance = null;
+      frontRange = 0;
+      centreRange = 0;
       // The size floor and the budget are stated in CSS pixels, so the selection reads
       // the canvas and not the half-resolution target the boxes draw into.
       const selection = selectNebulae(set, {
@@ -358,6 +379,13 @@ export function createNebulaPass(
       );
       gl.uniform1f(program.uniforms['uCullFloor'] ?? null, NEBULA_CULL_FLOOR);
 
+      // The range block. The vertex stage turns the range to the record's centre into
+      // one gain, and the fragment stage raises the record's own transmittance to it.
+      gl.uniform1f(program.uniforms['uBlockNear'] ?? null, frame.blockNear);
+      gl.uniform1f(program.uniforms['uBlockFar'] ?? null, frame.blockFar);
+      gl.uniform1f(program.uniforms['uBlockGainNear'] ?? null, frame.blockGainNear);
+      gl.uniform1f(program.uniforms['uBlockGainFar'] ?? null, frame.blockGainFar);
+
       gl.activeTexture(gl.TEXTURE0 + VOLUME_UNIT);
       gl.bindTexture(gl.TEXTURE_3D, frame.volume);
       gl.uniform1i(program.uniforms['uVolume'] ?? null, VOLUME_UNIT);
@@ -434,6 +462,17 @@ export function createNebulaPass(
 
         gl.drawArrays(gl.TRIANGLES, 0, NEBULA_BOX_VERTICES);
         drawCalls += 1;
+
+        // The nearest front face over the records the pass drew, and the centre range of
+        // that same record. The instance carries the range and the index; the radius sits
+        // in the set. A front range never falls below 0, because a camera inside a record
+        // has the record in front of every sprite.
+        const radius = set.radii[instance.index] as number;
+        const front = Math.max(0, instance.range - radius);
+        if (drawCalls === 1 || front < frontRange) {
+          frontRange = front;
+          centreRange = instance.range;
+        }
       }
 
       gl.bindVertexArray(null);
@@ -468,6 +507,9 @@ export function createNebulaPass(
       gl.activeTexture(gl.TEXTURE0 + DENSITY_UNIT);
 
       drawnCount = drawCalls;
+      // The texture is handed on only after a record has drawn into it, so the two
+      // ranges and the texture always describe one frame.
+      transmittance = accumulation.texture;
     },
     dispose(): void {
       gl.deleteBuffer(cornerBuffer);
