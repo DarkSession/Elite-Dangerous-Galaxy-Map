@@ -301,6 +301,10 @@ describe('every link of the tree', () => {
 });
 
 describe('the build', () => {
+  // The case runs TypeDoc, which the 5 second default of Vitest does not fit: the build
+  // is about 4 seconds on a developer's machine and slower on a GitHub-hosted runner.
+  // The bound is the one `api-wiki` states for the build, 2 minutes on that runner, so
+  // a build that passes here is a build that meets the requirement.
   test('writes the same bytes twice', () => {
     const second = join(scratchDirectory(), 'tree');
     buildWiki({ outDirectory: second });
@@ -311,7 +315,7 @@ describe('the build', () => {
         `${path} differs between two builds`,
       ).toBe(true);
     }
-  });
+  }, 120_000);
 
   test('adds nothing git would commit', () => {
     const ignore = readFileSync(join(root, '.gitignore'), 'utf8');
