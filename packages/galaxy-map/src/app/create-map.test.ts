@@ -1,6 +1,7 @@
 import { ESLint } from 'eslint';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { NO_WEBGL2_MESSAGE } from '../render/context';
+import { WORKER_STARTED } from '../scene-data/messages';
 import { createGalaxyMap, readNebulaSource } from './create-map';
 
 /** A canvas that gives no context, as a browser with no WebGL2 does. */
@@ -540,9 +541,8 @@ function spySource(): {
 // The readings of the three unreadable values pass whether or not the check exists, so
 // the readable source is the control: it is the one that must call the two loaders.
 //
-// No map here is disposed. The fake context fails the start before it reads the scene
-// data, so a dispose would cancel a load nothing is waiting on and leave the rejection
-// with no reader. No map here reaches the frame loop either, so none holds a frame.
+// No map here is disposed, and no map here reaches the frame loop, so none holds a
+// frame.
 describe('the nebula option', () => {
   const scope = globalThis as unknown as {
     window?: unknown;
@@ -566,10 +566,20 @@ describe('the nebula option', () => {
     // neither leaves a rejected promise behind after the map has failed on its context.
     heldFetch = globalThis.fetch;
     globalThis.fetch = (() => new Promise(() => undefined)) as never;
+    // The double posts the start message on its request, as a real worker does once
+    // its script runs, so the start makes the context at once and not at the cap.
     scope.Worker = class {
-      postMessage(): void {}
+      listener: ((event: { data: unknown }) => void) | null = null;
+      postMessage(): void {
+        this.listener?.({ data: WORKER_STARTED });
+      }
       terminate(): void {}
-      addEventListener(): void {}
+      addEventListener(
+        type: string,
+        listener: (event: { data: unknown }) => void,
+      ): void {
+        if (type === 'message') this.listener = listener;
+      }
     };
   });
 
@@ -651,7 +661,9 @@ describe('the nebula option', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const source = spySource();
     source.loadSet.mockReturnValue(Promise.resolve({ count: 0 }));
-    source.loadVolumes.mockReturnValue(
+    // The rejection is made at the call and not here, because a rejected promise that
+    // gets its handler one task later is an unhandled rejection.
+    source.loadVolumes.mockImplementation(() =>
       Promise.reject(new Error('The nebula volume index did not load.')),
     );
 

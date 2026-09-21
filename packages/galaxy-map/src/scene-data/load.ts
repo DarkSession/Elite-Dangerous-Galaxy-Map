@@ -4,6 +4,7 @@ import type {
   PointCloudResponse,
   RegionLinesResponse,
 } from './messages';
+import { WORKER_STARTED } from './messages';
 import { DEFAULT_POINT_COUNT, DEFAULT_SEED } from './point-cloud';
 import type { DensityVolume, SceneData } from './types';
 
@@ -21,6 +22,11 @@ export interface SceneDataOptions {
    * and the promise rejects. `dispose` on the map handle fires it.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Called once, when all three workers have posted `WORKER_STARTED`. A worker that
+   * never posts it, as a test double may not, never calls this.
+   */
+  readonly onStarted?: () => void;
   /**
    * Makes one worker. It is a test seam: a unit test gives its own workers, because a
    * test runner has no `Worker`. Leave it out and the load starts the real ones.
@@ -52,9 +58,14 @@ function startWorker(name: WorkerName): Worker {
 function runWorker<Request, Response>(
   worker: Worker,
   request: Request,
+  onStarted: () => void,
 ): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     worker.addEventListener('message', (event: MessageEvent<Response>) => {
+      if ((event.data as unknown) === WORKER_STARTED) {
+        onStarted();
+        return;
+      }
       resolve(event.data);
       worker.terminate();
     });
@@ -107,11 +118,21 @@ export async function loadSceneData(
     );
   });
 
+  let waiting = workers.length;
+  const started = (): void => {
+    waiting -= 1;
+    if (waiting === 0) options.onStarted?.();
+  };
+
   const [cloud, volume, region] = await Promise.race([
     Promise.all([
-      runWorker<PointCloudRequest, PointCloudResponse>(pointCloudWorker, request),
-      runWorker<null, DensityVolume>(volumeWorker, null),
-      runWorker<null, RegionLinesResponse>(regionWorker, null),
+      runWorker<PointCloudRequest, PointCloudResponse>(
+        pointCloudWorker,
+        request,
+        started,
+      ),
+      runWorker<null, DensityVolume>(volumeWorker, null, started),
+      runWorker<null, RegionLinesResponse>(regionWorker, null, started),
     ]),
     cancelled,
   ]);

@@ -7,6 +7,7 @@ import {
   cloudSetTransferables,
   pointCloudTransferables,
   surfaceDetailTransferables,
+  WORKER_STARTED,
 } from './messages';
 import type { PointCloudRequest, PointCloudResponse } from './messages';
 import {
@@ -17,6 +18,10 @@ import {
 } from './point-cloud';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
+
+// The main thread waits for this message before it makes the context. See
+// `WORKER_STARTED` in `messages.ts`.
+scope.postMessage(WORKER_STARTED);
 
 async function build(request: PointCloudRequest | null): Promise<void> {
   const grid = await loadDetailGrid();
