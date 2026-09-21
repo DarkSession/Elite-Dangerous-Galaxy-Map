@@ -487,14 +487,16 @@ test('the selection work stays inside its budget', async ({ page }) => {
   expect(stats.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
 });
 
-// The scenario "The icon placement holds the budget at a full set" of `system-selection`,
-// and the scenario "The test holds the frame budget" of `system-icons`, which reads the
-// same two numbers over the same set. It is the reading above with every record carrying
-// four icons and the icon switch on, and it reads the frame interval in the same window,
-// because the icon elements are painted by the browser and the draw time does not see
-// them. The occlusion test of `system-icons` runs inside this window, so a walk that cost
-// the overlay a millisecond would show here.
-test('the icon placement holds the selection budget', async ({ page }) => {
+// The scenario "The icon placement holds the budget at a full set" of `system-selection`.
+// It is the reading above with every record carrying four icons and the icon switch on.
+//
+// **The reading is the frame interval and not the selection work.** The stacks draw on
+// the canvas, so the pass selects and places them inside `render` and the selection work
+// statistics no longer see them: a reading of those would pass by measuring nothing. The
+// interval covers the draw and the overlay work together, so work that moved from one to
+// the other cannot hide from it. `system-icons` holds the draw-time reading of the same
+// work, which the draw budget test below takes.
+test('the icon placement holds the frame interval budget', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
   expect(await addSpreadSystems(page, true)).toBe(10000);
@@ -531,8 +533,12 @@ test('the icon placement holds the selection budget', async ({ page }) => {
       meanMs: Number.POSITIVE_INFINITY,
       worstMs: Number.POSITIVE_INFINITY,
     },
-    icons: document.querySelectorAll('.gm-system-icon').length,
-    arrows: document.querySelectorAll('.gm-system-arrow').length,
+    icons: (window.galaxyMap?.debug.iconPlacements() ?? []).filter(
+      (one) => one.kind === 'icon',
+    ).length,
+    arrows: (window.galaxyMap?.debug.iconPlacements() ?? []).filter(
+      (one) => one.kind === 'arrow',
+    ).length,
   }));
   console.log('the selection work with 4 icons a record', { hovered, ...reading });
 
@@ -540,10 +546,49 @@ test('the icon placement holds the selection budget', async ({ page }) => {
   // The frame drew a stack. A frame that drew none would measure no placement at all.
   expect(reading.icons).toBeGreaterThan(0);
   expect(reading.arrows).toBeGreaterThan(0);
-  expect(reading.frames).toBeGreaterThanOrEqual(110);
-  expect(reading.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
   expect(reading.interval.frames).toBeGreaterThanOrEqual(110);
   expect(reading.interval.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+});
+
+// The scenario "A full set of icons holds the draw budget" of `system-icons`. The pass
+// selects, places and draws the stacks inside `render`, so its cost falls in the
+// draw-time budget of `far-view-rendering` and the measurement function is the same one
+// the views above take. The cursor is a system of the set, so the frame the reading
+// covers carries a stack: a frame that placed none would hold the budget by doing
+// nothing.
+test('a full set of icons holds the draw budget', async ({ page }) => {
+  test.setTimeout(180000);
+  await openMap(page);
+  expect(await addSpreadSystems(page, true)).toBe(10000);
+
+  const cursor = await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return null;
+    map.setSystemIconsVisible(true);
+    return [...system.position] as [number, number, number];
+  });
+  expect(cursor).not.toBeNull();
+
+  /** How many icons and arrows the last frame placed. */
+  const placed = async (): Promise<number> =>
+    page.evaluate(() => (window.galaxyMap?.debug.iconPlacements() ?? []).length);
+
+  for (const distance of [2000, 20000]) {
+    await measureView(page, cursor as [number, number, number], distance);
+    // A vector loads asynchronously, so the first frames of the set place fewer icons.
+    await expect.poll(placed, { timeout: 15000 }).toBeGreaterThan(0);
+    const mean = await measureView(page, cursor as [number, number, number], distance);
+    const held = await placed();
+    console.log(
+      `10,000 systems with 4 icons each at ${distance}: ${mean.toFixed(3)} ms, ` +
+        `${held} placements`,
+    );
+
+    expect(mean).toBeGreaterThan(0);
+    expect(mean).toBeLessThan(BUDGET_MS);
+    expect(held).toBeGreaterThan(0);
+  }
 });
 
 test('the frame interval holds with the selection work running', async ({ page }) => {

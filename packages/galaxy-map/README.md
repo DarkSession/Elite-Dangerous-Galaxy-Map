@@ -60,7 +60,18 @@ draws one arrow under the lowest icon in that icon's colour.
 An entry takes one of two forms. A string names a built-in symbol, which the package
 ships as a vector file of its own. An object names a vector the host serves, with the
 colour of the arrow: `{ url, color }`. The library fetches no URL. The browser loads the
-file when the overlay draws the icon.
+file when the renderer first draws that icon.
+
+**A vector on a second origin needs `Access-Control-Allow-Origin`.** The renderer draws
+the stacks on the canvas, and it reads each vector into a texture through an image whose
+`crossOrigin` is `anonymous`. A response with no such header taints the canvas the
+texture is read from, which makes the upload throw. The map draws no icon for that URL,
+reports it once through `console.warn` and never asks for it again.
+
+This is a **breaking change** from version 0.6. An `icons` entry that names a URL on
+another origin with no header drew before and draws no more. It reaches the 16 built-in
+vectors as well, where the host serves the package from a second origin such as a CDN. A
+`data:` URL and a URL on the page's own origin need no header.
 
 ```ts
 map.addSystems([

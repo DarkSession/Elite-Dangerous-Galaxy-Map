@@ -1,20 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import type { ResolvedIcon } from '../scene-data/marker-icons';
-import { markerCssSize } from '../scene-data/marker-size';
 import type { RealSystem, RealSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
 import {
-  ARROW_HEIGHT_CSS,
-  ARROW_WIDTH_CSS,
-  arrowApexCss,
   createMarkerOverlay,
   createNearestKeep,
-  ICON_CSS_SIZE,
-  ICON_GAP_CSS,
-  iconZIndex,
-  MAX_ICON_STACKS,
-  STACK_LAYER_Z,
-  iconBottomCss,
   labelTopCss,
   MARKER_KEEP,
   MIN_RING_CSS,
@@ -95,44 +84,6 @@ describe('the mark placement', () => {
   });
 });
 
-describe('the icon stack geometry', () => {
-  test('puts the apex of the arrow where the tip of the pin sits', () => {
-    expect(arrowApexCss(300, 7, false)).toBe(300 - 3.5 - 2);
-    expect(arrowApexCss(300, 12, false)).toBe(300 - 6 - 2);
-  });
-
-  test('puts the lowest icon on the arrow and each one 30 pixels over the last', () => {
-    expect(iconBottomCss(300, 7, 0, false)).toBe(300 - 3.5 - 7);
-    expect(iconBottomCss(300, 7, 1, false)).toBe(300 - 3.5 - 7 - 30);
-    expect(iconBottomCss(300, 12, 3, false)).toBe(300 - 6 - 7 - 90);
-    expect(ICON_CSS_SIZE + ICON_GAP_CSS).toBe(30);
-  });
-
-  test('holds every stack level under the layer, and the layer under the HUD', () => {
-    // The HUD root sits at 10 in the same parent as the overlay host.
-    expect(STACK_LAYER_Z).toBeLessThan(10);
-    // Over the plane elements at 0 and over the ring, the pin and the labels at 1.
-    expect(STACK_LAYER_Z).toBeGreaterThan(1);
-  });
-
-  test('gives the nearest stack the highest level, and every stack one over a plane', () => {
-    expect(iconZIndex(0)).toBeGreaterThan(iconZIndex(1));
-    expect(iconZIndex(1)).toBeGreaterThan(iconZIndex(MAX_ICON_STACKS - 1));
-    expect(iconZIndex(MAX_ICON_STACKS - 1)).toBeGreaterThan(0);
-    // A slot past the keeper's limit reads as the last one and never falls to a plane.
-    expect(iconZIndex(MAX_ICON_STACKS + 5)).toBe(iconZIndex(MAX_ICON_STACKS - 1));
-  });
-
-  test('lifts the stack of the selected system by the height of the pin', () => {
-    expect(arrowApexCss(300, 7, true)).toBe(
-      arrowApexCss(300, 7, false) - PIN_HEIGHT_CSS,
-    );
-    expect(iconBottomCss(300, 12, 2, true)).toBe(
-      iconBottomCss(300, 12, 2, false) - PIN_HEIGHT_CSS,
-    );
-  });
-});
-
 // The unit run has no DOM, so the placement is read over a fake document. It answers
 // what the overlay writes: the style, the attributes and the parent of each element.
 // The browser suite reads the real elements.
@@ -205,332 +156,110 @@ function fakeHost(): { host: HTMLElement; node: FakeNode; made: () => number } {
   };
 }
 
-/** How many positions and systems the overlay read of a set. */
-interface SetReads {
-  positions: number;
-  systems: number;
-}
-
-/** One system of a fake set, at a position and with its icons. */
+/** One system of a fake set, at a position. */
 function fakeSystem(
   name: string,
   position: readonly [number, number, number],
-  icons?: readonly ResolvedIcon[],
 ): RealSystem {
-  const system: RealSystem = {
-    name,
-    position,
-    categories: ['A'],
-  };
-  return icons === undefined ? system : { ...system, icons };
+  return { name, position, categories: ['A'] };
 }
 
-/**
- * A set of the systems given, with every marker drawing. The positions are behind a
- * proxy that counts each read, so a test reads what the overlay took of the set.
- */
-function fakeSet(systems: readonly RealSystem[]): {
-  set: RealSystemSet;
-  reads: SetReads;
-} {
-  const reads: SetReads = { positions: 0, systems: 0 };
-  const values = new Float64Array(systems.length * 3);
+/** A set of the systems given, with every marker drawing. */
+function fakeSet(systems: readonly RealSystem[]): RealSystemSet {
+  const positions = new Float64Array(systems.length * 3);
   for (let index = 0; index < systems.length; index += 1) {
-    values.set(systems[index]?.position ?? [0, 0, 0], index * 3);
+    positions.set(systems[index]?.position ?? [0, 0, 0], index * 3);
   }
-  const positions = new Proxy(values, {
-    get(target: Float64Array, key: string | symbol): unknown {
-      if (typeof key === 'string' && /^\d+$/.test(key)) reads.positions += 1;
-      return Reflect.get(target, key) as unknown;
-    },
-  });
   const set = {
     count: systems.length,
-    iconSystemCount: systems.filter((one) => one.icons !== undefined).length,
+    iconSystemCount: 0,
     positions,
     markerFlags: new Uint8Array(systems.length).fill(1),
     categoryIndices: new Uint16Array(systems.length),
     category: () => null,
-    system: (index: number): RealSystem | null => {
-      reads.systems += 1;
-      return systems[index] ?? null;
-    },
+    system: (index: number): RealSystem | null => systems[index] ?? null,
   };
-  return { set: set as unknown as RealSystemSet, reads };
+  return set as unknown as RealSystemSet;
 }
 
 /** The view and the viewport every placement test draws through. */
 const VIEW: View = { cursor: [0, 0, 0], distance: 100, yaw: 0, pitch: 0 };
 const VIEWPORT = { width: 800, height: 600 };
 
-/** One icon of the catalogue's shape, without a read of the built vectors. */
-function icon(url: string, color: readonly [number, number, number]): ResolvedIcon {
-  return { url, color };
+/** The name label of a system the host holds, or undefined where none is placed. */
+function labelOf(node: FakeNode, name: string): FakeNode | undefined {
+  return node.children.find(
+    (child) => child.className === 'gm-system-label' && child.textContent === name,
+  );
 }
 
-/** The elements of a tag the host holds. */
-function heldOf(node: FakeNode, tag: string): FakeNode[] {
-  return everyNodeOf(node).filter((child) => child.tag === tag);
+// The occlusion rule. `Sol` sits at the cursor, 100 light years from the camera, and its
+// marker draws at the middle of the viewport with its label 12 to 26 pixels below that.
+// `Beta` sits 50 light years from the camera, and the y below puts its marker at 318 on
+// the screen, which is inside that box. The far position below puts it well under it.
+
+/** The system the label rule hides, and the one that hides it. */
+const FAR: readonly [number, number, number] = [0, 0, 0];
+const OVER: readonly [number, number, number] = [0, -1.75, -50];
+const ASIDE: readonly [number, number, number] = [0, -20, -50];
+
+/** Draws one frame of the two systems, with the nearer one at the position given. */
+function twoSystems(
+  overlay: ReturnType<typeof createMarkerOverlay>,
+  near: readonly [number, number, number],
+  frame: Partial<{ hoverIndex: number; selectedIndex: number }> = {},
+): void {
+  overlay.update({
+    view: VIEW,
+    viewport: VIEWPORT,
+    set: fakeSet([fakeSystem('Sol', FAR), fakeSystem('Beta', near)]),
+    hoverIndex: frame.hoverIndex ?? -1,
+    selectedIndex: frame.selectedIndex ?? -1,
+    namesOn: true,
+  });
 }
 
-/**
- * Every node under one, the node itself last. The icons and the arrows sit in the stack
- * layer and not straight in the host, so a reading of the host has to go down the tree.
- */
-function everyNodeOf(node: FakeNode): FakeNode[] {
-  return node.children.flatMap((child) => [...everyNodeOf(child), child]);
-}
-
-describe('the icon stack placement', () => {
-  test('builds an icon of 28 pixels on a plate and an arrow of the stated border', () => {
+describe('the name label occlusion rule', () => {
+  test('hides a label a nearer marker draws inside, and shows the nearer label', () => {
     const { host, node } = fakeHost();
     const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem('Sol', [0, 0, 0], [icon('/a.svg', [1, 2, 3])]),
-    ]);
 
-    overlay.update({
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    });
+    twoSystems(overlay, OVER);
 
-    const image = heldOf(node, 'img')[0];
-    expect(image?.className).toBe('gm-system-icon');
-    expect(image?.alt).toBe('');
-    expect(image?.getAttribute('src')).toBe('/a.svg');
-    expect(image?.style['pointerEvents']).toBe('none');
-    // The one stack of the frame is the nearest one, so it takes the highest level.
-    expect(image?.style['zIndex']).toBe(`${iconZIndex(0)}`);
-    // The icon goes in the stack layer, which is the stacking context that holds the
-    // level in. The layer is a child of the host and the icon a child of the layer.
-    const layer = node.children.find((child) => child.className === 'gm-system-stacks');
-    expect(layer?.style['zIndex']).toBe(`${STACK_LAYER_Z}`);
-    expect(layer?.children).toContain(image);
-    expect(image?.style['width']).toBe('28px');
-    expect(image?.style['height']).toBe('28px');
-    expect(image?.style['backgroundColor']).toBe('#000');
-
-    const arrow = everyNodeOf(node).find(
-      (child) => child.className === 'gm-system-arrow',
-    );
-    expect(arrow?.style['width']).toBe('0');
-    expect(arrow?.style['height']).toBe('0');
-    expect(arrow?.style['borderStyle']).toBe('solid');
-    expect(arrow?.style['borderTopWidth']).toBe(`${ARROW_HEIGHT_CSS}px`);
-    expect(arrow?.style['borderLeftWidth']).toBe(`${ARROW_WIDTH_CSS / 2}px`);
-    expect(arrow?.style['borderRightWidth']).toBe(`${ARROW_WIDTH_CSS / 2}px`);
-    expect(arrow?.style['borderBottomWidth']).toBe('0');
-    expect(arrow?.style['borderLeftColor']).toBe('transparent');
-    expect(arrow?.style['borderRightColor']).toBe('transparent');
-    expect(arrow?.style['borderTopColor']).toBe('rgb(1, 2, 3)');
-    expect(arrow?.style['pointerEvents']).toBe('none');
+    expect(labelOf(node, 'Sol')?.style['visibility']).toBe('hidden');
+    expect(labelOf(node, 'Beta')?.style['visibility']).toBe('');
   });
 
-  test('places a stack with the name labels off', () => {
+  test('counts a hidden label and keeps it in its place and its pool slot', () => {
+    const { host, node, made } = fakeHost();
+    const overlay = createMarkerOverlay(host);
+
+    twoSystems(overlay, ASIDE);
+    const shown = overlay.labelCount();
+    const place = labelOf(node, 'Sol')?.style['top'];
+    const elements = made();
+
+    twoSystems(overlay, OVER);
+
+    // The count and the place read the same with a covering marker and without one.
+    expect(overlay.labelCount()).toBe(shown);
+    expect(overlay.labelCount()).toBe(2);
+    expect(labelOf(node, 'Sol')?.style['top']).toBe(place);
+    expect(made()).toBe(elements);
+
+    // The frame that takes the cover away shows the label again.
+    twoSystems(overlay, ASIDE);
+    expect(labelOf(node, 'Sol')?.style['visibility']).toBe('');
+  });
+
+  test('never hides the hovered label or the selected label', () => {
     const { host, node } = fakeHost();
     const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem(
-        'Sol',
-        [0, 0, 0],
-        [icon('/a.svg', [1, 2, 3]), icon('/b.svg', [4, 5, 6])],
-      ),
-    ]);
 
-    overlay.update({
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    });
+    twoSystems(overlay, OVER, { hoverIndex: 0 });
+    expect(labelOf(node, 'Sol')?.style['visibility']).toBe('');
 
-    expect(overlay.labelCount()).toBe(0);
-    expect(overlay.iconCount()).toBe(2);
-    expect(overlay.arrowCount()).toBe(1);
-
-    // The system sits at the cursor, so its marker draws at the middle of the viewport.
-    const markerCss = markerCssSize(VIEW.distance);
-    const images = heldOf(node, 'img');
-    expect(images[0]?.style['left']).toBe(`${Math.round(400 - ICON_CSS_SIZE / 2)}px`);
-    expect(images[0]?.style['top']).toBe(
-      `${Math.round(iconBottomCss(300, markerCss, 0, false) - ICON_CSS_SIZE)}px`,
-    );
-    expect(images[1]?.style['top']).toBe(
-      `${Math.round(iconBottomCss(300, markerCss, 1, false) - ICON_CSS_SIZE)}px`,
-    );
-    const arrow = everyNodeOf(node).find(
-      (child) => child.className === 'gm-system-arrow',
-    );
-    expect(arrow?.style['left']).toBe(`${Math.round(400 - ARROW_WIDTH_CSS / 2)}px`);
-    expect(arrow?.style['top']).toBe(
-      `${Math.round(arrowApexCss(300, markerCss, false) - ARROW_HEIGHT_CSS)}px`,
-    );
-  });
-
-  test('draws the arrow of a selected system in the lowest icon colour, lifted', () => {
-    const { host, node } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem(
-        'Sol',
-        [0, 0, 0],
-        [icon('/a.svg', [255, 0, 0]), icon('/b.svg', [0, 0, 255])],
-      ),
-    ]);
-
-    overlay.update({
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: 0,
-      namesOn: false,
-      iconsOn: true,
-    });
-
-    const markerCss = markerCssSize(VIEW.distance);
-    const arrow = everyNodeOf(node).find(
-      (child) => child.className === 'gm-system-arrow',
-    );
-    expect(arrow?.style['borderTopColor']).toBe('rgb(255, 0, 0)');
-    expect(arrow?.style['top']).toBe(
-      `${Math.round(arrowApexCss(300, markerCss, true) - ARROW_HEIGHT_CSS)}px`,
-    );
-    expect(heldOf(node, 'img')[0]?.style['top']).toBe(
-      `${Math.round(iconBottomCss(300, markerCss, 0, true) - ICON_CSS_SIZE)}px`,
-    );
-  });
-
-  test('adds no element on a second frame', () => {
-    const { host, made } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem('Sol', [0, 0, 0], [icon('/a.svg', [1, 2, 3])]),
-      fakeSystem('Alpha', [10, 0, 0], [icon('/b.svg', [4, 5, 6])]),
-    ]);
-    const frame = {
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    };
-
-    overlay.update(frame);
-    const first = made();
-    overlay.update(frame);
-
-    expect(overlay.iconCount()).toBe(2);
-    expect(overlay.arrowCount()).toBe(2);
-    expect(made()).toBe(first);
-  });
-
-  test('places nothing while the switch is off, over the hover and the selection', () => {
-    const { host, node } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem('Sol', [0, 0, 0], [icon('/a.svg', [1, 2, 3])]),
-    ]);
-    const frame = {
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: 0,
-      selectedIndex: 0,
-      namesOn: false,
-      iconsOn: false,
-    };
-
-    overlay.update(frame);
-
-    expect(overlay.iconCount()).toBe(0);
-    expect(overlay.arrowCount()).toBe(0);
-    expect(heldOf(node, 'img')).toHaveLength(0);
-    expect(
-      node.children.filter((child) => child.className === 'gm-system-arrow'),
-    ).toHaveLength(0);
-  });
-
-  test('takes the stack away on the frame that no longer needs it', () => {
-    const { host, node } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const { set } = fakeSet([
-      fakeSystem('Sol', [0, 0, 0], [icon('/a.svg', [1, 2, 3])]),
-    ]);
-    const frame = {
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    };
-
-    overlay.update(frame);
-    overlay.update({ ...frame, iconsOn: false });
-
-    expect(overlay.iconCount()).toBe(0);
-    expect(overlay.arrowCount()).toBe(0);
-    expect(heldOf(node, 'img')).toHaveLength(0);
-  });
-});
-
-describe('the fast path of a set with no icon', () => {
-  const systems: RealSystem[] = [];
-  for (let index = 0; index < 200; index += 1) {
-    systems.push(fakeSystem(`S${index}`, [index, 0, 0]));
-  }
-
-  test('reads no position and no system of the set', () => {
-    const { host } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const { set, reads } = fakeSet(systems);
-
-    overlay.update({
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    });
-
-    expect(reads).toEqual({ positions: 0, systems: 0 });
-    expect(overlay.iconCount()).toBe(0);
-  });
-
-  test('reads the set and draws the stack when one record holds an icon', () => {
-    const { host } = fakeHost();
-    const overlay = createMarkerOverlay(host);
-    const withIcon = [...systems];
-    withIcon[0] = fakeSystem('S0', [0, 0, 0], [icon('/a.svg', [1, 2, 3])]);
-    const { set, reads } = fakeSet(withIcon);
-
-    overlay.update({
-      view: VIEW,
-      viewport: VIEWPORT,
-      set,
-      hoverIndex: -1,
-      selectedIndex: -1,
-      namesOn: false,
-      iconsOn: true,
-    });
-
-    expect(reads.positions).toBeGreaterThan(0);
-    expect(reads.systems).toBeGreaterThan(0);
-    expect(overlay.iconCount()).toBe(1);
-    expect(overlay.arrowCount()).toBe(1);
+    twoSystems(overlay, OVER, { selectedIndex: 0 });
+    expect(labelOf(node, 'Sol')?.style['visibility']).toBe('');
   });
 });

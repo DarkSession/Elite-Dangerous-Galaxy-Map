@@ -29,6 +29,7 @@ import type {
   FrameAccumulator,
   FrameStats,
   GridLevelReading,
+  IconPlacement,
   LookSettings,
   PassSwitches,
   Renderer,
@@ -558,6 +559,19 @@ export interface GalaxyMapDebug {
    * markers and no sphere, and 2 in a frame that also wrote the range buffer.
    */
   markerDrawCalls(): number;
+  /**
+   * Where each icon and each arrow of the last frame drew, in CSS pixels from the top
+   * left of the canvas. The list is empty in a frame that drew no stack. The renderer
+   * places the stacks, so this is the only reading of them: they are pixels on the
+   * canvas and not elements in the overlay.
+   */
+  iconPlacements(): IconPlacement[];
+  /**
+   * How many draw calls the icon pass made in the last frame. It is 1 in a frame with a
+   * stack, whatever the stack count, and 0 in a frame that drew none. The arrows and the
+   * icons share one instance stream, so one call draws them all.
+   */
+  iconDrawCalls(): number;
   /**
    * The width and the height of the range buffer, and null where the context cannot blend
    * into a float target. A test reads it to tell the range path from the fallback.
@@ -1522,6 +1536,13 @@ export function createGalaxyMap(
     // the change and never on the loop's own draw.
     if (timing === STILL_FRAME) wake();
     framesDrawn += 1;
+    const selectedIndex =
+      selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity);
+    // The renderer draws the icon stacks, and it draws before the overlay below works
+    // out its own selection. The switch and the selected index therefore go in first,
+    // or the stack of a selected system lifts one frame late.
+    renderer.setSystemIconsDraw(iconsOn);
+    renderer.setSelectedSystem(selectedIndex);
     renderer.render(view);
     const size = renderer.viewport();
     // The hover pick and the overlay marks are one reading, because the two run together
@@ -1540,10 +1561,8 @@ export function createGalaxyMap(
       viewport: size,
       set,
       hoverIndex,
-      selectedIndex:
-        selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity),
+      selectedIndex,
       namesOn,
-      iconsOn,
     });
     selectionWork.add(performance.now() - started);
     labels?.update(view, size, regionPassOn && regionsVisible, {
@@ -1976,6 +1995,12 @@ export function createGalaxyMap(
     },
     markerDrawCalls(): number {
       return renderer?.markerDrawCalls() ?? 0;
+    },
+    iconPlacements(): IconPlacement[] {
+      return renderer?.iconPlacements() ?? [];
+    },
+    iconDrawCalls(): number {
+      return renderer?.iconDrawCalls() ?? 0;
     },
     rangeBufferSize(): [number, number] | null {
       return renderer?.rangeBufferSize() ?? null;

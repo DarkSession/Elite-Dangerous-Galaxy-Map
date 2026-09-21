@@ -127,8 +127,19 @@ const libraryRoot = join(root, 'packages', 'galaxy-map');
  * built-in vectors and the icon reader; the 16 vectors themselves are files of the build
  * and no part of the chunk. Read 245,830 as the figure this change moved, not 254,496.
  * The bound stays at 260,000, which leaves 11,293 bytes of room.
+ *
+ * The icon stack pass takes the reading to **266,574 bytes**, from **254,478** on the
+ * commit before it. The 12,096 bytes are the pass, the icon texture array, the two
+ * shaders and the placement readings, less the icon and arrow elements of the overlay
+ * this change deletes. The pass draws the stacks on the canvas, so the renderer imports
+ * it and it reaches every map. The bound rises to **275,000**, which leaves 8,426 bytes
+ * of room.
+ *
+ * The reading was **268,965 bytes** while the pass held two programs, two instance
+ * layouts and four shaders. Ordering the arrow with the icons merged them into one of
+ * each, which took 2,755 bytes back out.
  */
-const ENTRY_CHUNK_LIMIT = 260_000;
+const ENTRY_CHUNK_LIMIT = 275_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first

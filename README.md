@@ -88,7 +88,9 @@ A dump carries none of these four fields, so the host adds them. The HUD draws
 a time and sets no `innerHTML`, so raw HTML in your text draws as text. `icons` stack
 over the marker, and a string names one of the built-in symbols the package README lists.
 The library fetches no picture and no vector. The browser loads the URL you give when the
-HUD draws the thumbnail or the overlay draws the icon.
+HUD draws the thumbnail or the renderer draws the icon. **An icon vector on a second
+origin needs an `Access-Control-Allow-Origin` header**, because the renderer reads it
+into a texture; the package README states the rule.
 
 ### The HUD
 

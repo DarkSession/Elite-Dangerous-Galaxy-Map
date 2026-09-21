@@ -825,3 +825,195 @@ describe('the volume texture the renderer owns', () => {
     renderer.dispose();
   });
 });
+
+// The icon stacks draw on the canvas, so the range buffer they read has to exist in a
+// frame that holds a stack and no shape. These cases read the storage and the draws.
+
+/** An image and a canvas the unit run can rasterise a vector through. */
+function fakeImagery(): () => void {
+  const scope = globalThis as Record<string, unknown>;
+  const heldImage = scope['Image'];
+  const heldDocument = scope['document'];
+  scope['Image'] = class {
+    crossOrigin = '';
+    src = '';
+    decode(): Promise<void> {
+      return Promise.resolve();
+    }
+  };
+  scope['document'] = {
+    createElement: (): unknown => ({
+      width: 0,
+      height: 0,
+      getContext: (): unknown => ({
+        clearRect: (): void => undefined,
+        drawImage: (): void => undefined,
+      }),
+    }),
+  };
+  return (): void => {
+    scope['Image'] = heldImage;
+    scope['document'] = heldDocument;
+  };
+}
+
+/** A set of one system, with the icons named. */
+function iconSet(icons: readonly unknown[]): ReturnType<typeof createSystemSet> {
+  const systems = createSystemSet();
+  systems.addCategories([{ name: 'Alpha', color: [255, 0, 0] }]);
+  systems.addSystems([
+    {
+      name: 'Sol',
+      coords: { x: 0, y: 0, z: 20 },
+      categories: ['Alpha'],
+      icons,
+    } as never,
+  ]);
+  return systems;
+}
+
+/** One straight line, which is enough to make the shape overlay draw. */
+function oneLine(): ReturnType<typeof createShapeSet> {
+  const shapes = createShapeSet(() => null);
+  shapes.addLines([
+    {
+      points: [
+        [0, 0, 0],
+        [100, 0, 0],
+      ],
+      color: [0, 255, 0],
+    },
+  ]);
+  return shapes;
+}
+
+/** Lets the icon loads reach their uploads. */
+async function settleIcons(): Promise<void> {
+  for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+}
+
+describe('the icon stack pass', () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  test('allocates the range buffer for a stack with no shape on the map', async () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const restore = fakeImagery();
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setSystems(iconSet([{ url: '/a.svg', color: [1, 2, 3] }]));
+
+    renderer.render(closeView());
+
+    expect(renderer.rangeBufferSize()).toEqual([800, 600]);
+    expect(context.of('clearBufferfv')).toHaveLength(1);
+    renderer.dispose();
+    restore();
+  });
+
+  test('allocates it for a shape with no stack, and allocates none for a frame with neither', () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const restore = fakeImagery();
+
+    const withShape = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const shaped = createRenderer(withShape.gl, fakeCanvas());
+    const plain = createSystemSet();
+    plain.addCategories([{ name: 'Alpha', color: [255, 0, 0] }]);
+    plain.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, categories: ['Alpha'] },
+    ]);
+    shaped.setSystems(plain);
+    shaped.setShapes(oneLine());
+    shaped.render(closeView());
+    expect(shaped.rangeBufferSize()).toEqual([800, 600]);
+    shaped.dispose();
+
+    const bare = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const empty = createRenderer(bare.gl, fakeCanvas());
+    const noIcons = createSystemSet();
+    noIcons.addCategories([{ name: 'Alpha', color: [255, 0, 0] }]);
+    noIcons.addSystems([
+      { name: 'Sol', coords: { x: 0, y: 0, z: 20 }, categories: ['Alpha'] },
+    ]);
+    empty.setSystems(noIcons);
+    empty.render(closeView());
+    // The buffer holds the 2 by 2 it started at, so the frame took no storage for it.
+    expect(empty.rangeBufferSize()).toEqual([2, 2]);
+    expect(bare.of('clearBufferfv')).toHaveLength(0);
+    empty.dispose();
+
+    restore();
+  });
+
+  test('draws the icon over a context with one float extension, and does not throw', async () => {
+    for (const extensions of [['EXT_color_buffer_float'], ['EXT_float_blend']]) {
+      (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+      const restore = fakeImagery();
+      const context = fakeContext(extensions);
+      const renderer = createRenderer(context.gl, fakeCanvas());
+      renderer.setSystems(iconSet([{ url: '/a.svg', color: [1, 2, 3] }]));
+
+      // The first frame starts the load and the second draws the ready vector.
+      expect(() => {
+        renderer.render(closeView());
+      }).not.toThrow();
+      await settleIcons();
+      expect(() => {
+        renderer.render(closeView());
+      }).not.toThrow();
+
+      expect(renderer.rangeBufferSize()).toBeNull();
+      const sources = context.drawSources().map((pair) => pair.join('\n'));
+      expect(sources.some((source) => source.includes('uIcons'))).toBe(true);
+      expect(renderer.iconDrawCalls()).toBe(1);
+      expect(renderer.iconPlacements()).toHaveLength(2);
+      renderer.dispose();
+      restore();
+    }
+  });
+
+  test('reports no placement and issues no call while the switch is off', async () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const restore = fakeImagery();
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setSystems(iconSet([{ url: '/a.svg', color: [1, 2, 3] }]));
+
+    renderer.render(closeView());
+    await settleIcons();
+    renderer.render(closeView());
+    expect(renderer.iconPlacements()).toHaveLength(2);
+
+    expect(renderer.systemIconsDraw()).toBe(true);
+    renderer.setSystemIconsDraw(false);
+    renderer.render(closeView());
+
+    expect(renderer.systemIconsDraw()).toBe(false);
+    expect(renderer.iconPlacements()).toEqual([]);
+    expect(renderer.iconDrawCalls()).toBe(0);
+    renderer.dispose();
+    restore();
+  });
+
+  test('lifts the stack of the system the page named as the selected one', async () => {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const restore = fakeImagery();
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setSystems(iconSet([{ url: '/a.svg', color: [1, 2, 3] }]));
+
+    renderer.render(closeView());
+    await settleIcons();
+    renderer.render(closeView());
+    const before = renderer.iconPlacements()[0]?.top ?? 0;
+
+    renderer.setSelectedSystem(0);
+    renderer.render(closeView());
+    const after = renderer.iconPlacements()[0]?.top ?? 0;
+
+    expect(before - after).toBeCloseTo(28, 0);
+    renderer.dispose();
+    restore();
+  });
+});

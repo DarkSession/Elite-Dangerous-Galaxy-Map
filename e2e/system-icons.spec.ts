@@ -1,13 +1,19 @@
-// The icon stack over a system marker: its order, its geometry, its arrow, its switch
-// and the bounds it holds to.
+// The icon stack over a system marker: its order, its geometry, its arrow, its switch,
+// the bounds it holds to and the markers that draw over it.
+//
+// The stacks draw on the canvas, so this file reads two instruments and no element. The
+// placement half reads `iconPlacements()`, which says what the frame placed. The
+// occlusion half reads canvas pixels, because the range test runs per pixel on the card
+// and no element is ever wholly hidden or wholly shown.
 //
 // Every view of this file puts its systems at a range of 500 to 1,000 light years, which
 // is the plateau of the marker size rule, so the marker is 12 CSS pixels across and the
 // offsets below are exact numbers rather than a reading of the size.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { channels, openMap } from './helpers';
+import { openMap, readRect } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
+import type { IconPlacement } from '../packages/galaxy-map/src/render/icon-pass';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 
@@ -35,11 +41,30 @@ const ICON_CSS = 28;
 /** The step from one icon of a stack to the next, in CSS pixels. */
 const STEP_CSS = 30;
 
-/** The catalogue colour of the `titan` symbol. */
+/** The glyph colour of the `titan` symbol, which is its arrow colour as well. */
 const TITAN: [number, number, number] = [255, 0, 0];
 
-/** The catalogue colour of the `mission` symbol. */
+/** The glyph colour of the `mission` symbol. */
 const MISSION: [number, number, number] = [0, 93, 255];
+
+/** The glyph colour of the `front-line` symbol. */
+const FRONT_LINE: [number, number, number] = [148, 24, 255];
+
+/** The glyph colour of the `squadron-carrier` symbol. */
+const SQUADRON: [number, number, number] = [99, 255, 247];
+
+/**
+ * The colour of the category the occlusion tests give the nearer system. No icon of this
+ * file draws in green, so a pixel that reads green is the marker and a pixel that reads
+ * one of the four colours above is a glyph.
+ */
+const NEAR_COLOUR: [number, number, number] = [0, 255, 0];
+
+/** How far a channel may stand from a colour and still read as that colour. */
+const TOLERANCE = 48;
+
+/** The origin the cross-origin tests read. `playwright.config.ts` starts the server. */
+const SECOND_ORIGIN = 'http://localhost:4174';
 
 /**
  * The camera position at a view of this file, in game coordinates. The arithmetic is the
@@ -69,14 +94,23 @@ function record(
 }
 
 /** Adds one category that draws at every range. */
-async function addCategory(page: Page, name = 'Alpha'): Promise<void> {
+async function addCategory(
+  page: Page,
+  name = 'Alpha',
+  color: readonly [number, number, number] = CORE,
+  maxDrawRange = 200000,
+): Promise<void> {
   await page.evaluate(
     (value) => {
       window.galaxyMap?.addCategories([
-        { name: value.name, color: value.color, maxDrawRange: 200000 },
+        {
+          name: value.name,
+          color: value.color as [number, number, number],
+          maxDrawRange: value.maxDrawRange,
+        },
       ]);
     },
-    { name, color: CORE },
+    { name, color, maxDrawRange },
   );
 }
 
@@ -135,68 +169,56 @@ async function projectOf(
   );
 }
 
-/** One element of the overlay, with its box in CSS pixels. */
-interface Mark {
-  readonly left: number;
-  readonly top: number;
-  readonly right: number;
-  readonly bottom: number;
-  readonly width: number;
-  readonly height: number;
-  /** The `src` of an icon, and an empty string for an arrow. */
-  readonly src: string;
-  /** The top border colour, which is the fill of an arrow. */
-  readonly fill: string;
-  /** The background colour, which is the plate under an icon. */
-  readonly plate: string;
-  /** The stacking level, which puts a near stack over a far one. */
-  readonly level: string;
-  /** True where the occlusion rule hid the element. */
-  readonly hidden: boolean;
+/** What the last frame placed. */
+async function placements(page: Page): Promise<IconPlacement[]> {
+  return page.evaluate(() => window.galaxyMap?.debug.iconPlacements() ?? []);
 }
 
 /**
- * Reads every element of a class, top of the screen first. The order is the reading
- * order of the stack from its highest icon down, so the last entry is the lowest one.
+ * The icons of the last frame, top of the screen first. The order is the reading order
+ * of a stack from its highest icon down, so the last entry of one stack is its lowest.
  */
-async function marksOf(page: Page, selector: string): Promise<Mark[]> {
-  const marks = await page.evaluate((name) => {
-    return [...document.querySelectorAll(name)].map((element) => {
-      const box = element.getBoundingClientRect();
-      return {
-        left: box.left,
-        top: box.top,
-        right: box.right,
-        bottom: box.bottom,
-        width: box.width,
-        height: box.height,
-        src: element.getAttribute('src') ?? '',
-        fill: getComputedStyle(element).borderTopColor,
-        plate: getComputedStyle(element).backgroundColor,
-        level: getComputedStyle(element).zIndex,
-        hidden: getComputedStyle(element).visibility === 'hidden',
-      };
-    });
-  }, selector);
-  return [...marks].sort((one, other) => one.top - other.top);
+async function icons(page: Page): Promise<IconPlacement[]> {
+  const held = await placements(page);
+  return held
+    .filter((one) => one.kind === 'icon')
+    .sort((one, other) => one.top - other.top);
 }
 
-/** The icons of the overlay, top of the screen first. */
-async function icons(page: Page): Promise<Mark[]> {
-  return marksOf(page, '.gm-system-icon');
+/** The arrows of the last frame, top of the screen first. */
+async function arrows(page: Page): Promise<IconPlacement[]> {
+  const held = await placements(page);
+  return held
+    .filter((one) => one.kind === 'arrow')
+    .sort((one, other) => one.top - other.top);
 }
 
-/** The arrows of the overlay, top of the screen first. */
-async function arrows(page: Page): Promise<Mark[]> {
-  return marksOf(page, '.gm-system-arrow');
-}
-
-/** How many icons and arrows the overlay holds. */
+/** How many icons and arrows the last frame placed. */
 async function counts(page: Page): Promise<{ icons: number; arrows: number }> {
-  return page.evaluate(() => ({
-    icons: document.querySelectorAll('.gm-system-icon').length,
-    arrows: document.querySelectorAll('.gm-system-arrow').length,
-  }));
+  const held = await placements(page);
+  return {
+    icons: held.filter((one) => one.kind === 'icon').length,
+    arrows: held.filter((one) => one.kind === 'arrow').length,
+  };
+}
+
+/**
+ * Draws frames until the frame places the icon count wanted.
+ *
+ * A vector loads asynchronously and an icon draws only once its texture is ready, so the
+ * first frames after a record arrives place fewer icons than the record names. Every
+ * test that reads a placement waits here first.
+ */
+async function settleIcons(page: Page, wanted: number): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await drawFrame(page);
+        return (await counts(page)).icons;
+      },
+      { timeout: 15000, message: `the frame never placed ${wanted} icons` },
+    )
+    .toBe(wanted);
 }
 
 /** Opens the map at a view of this file, with one category and the records. */
@@ -211,6 +233,55 @@ async function openWith(
   await setView(page, [0, 0, 0], distance);
 }
 
+/** The middle of a placement's box, in CSS pixels. */
+function centreOf(box: IconPlacement): { x: number; y: number } {
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+}
+
+/** True where a pixel reads a colour, within the tolerance. */
+function reads(
+  pixel: readonly number[],
+  colour: readonly [number, number, number],
+  tolerance = TOLERANCE,
+): boolean {
+  for (let part = 0; part < 3; part += 1) {
+    if (Math.abs((pixel[part] as number) - (colour[part] as number)) > tolerance) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The four bytes of one pixel of the frame, at a CSS pixel. */
+async function pixelAt(page: Page, point: { x: number; y: number }): Promise<number[]> {
+  return readRect(page, Math.round(point.x), Math.round(point.y), 1, 1);
+}
+
+/**
+ * How many pixels of a box read a colour. The plate under a glyph is black and the sky
+ * behind a far marker is near black, so a reading of "the box is dark" also passes with
+ * no icon drawn at all. A count of the glyph's own colour is the reading that separates
+ * the two.
+ */
+async function glyphPixels(
+  page: Page,
+  box: IconPlacement,
+  colour: readonly [number, number, number],
+): Promise<number> {
+  const bytes = await readRect(
+    page,
+    Math.round(box.left),
+    Math.round(box.top),
+    Math.round(box.width),
+    Math.round(box.height),
+  );
+  let found = 0;
+  for (let at = 0; at < bytes.length; at += 4) {
+    if (reads(bytes.slice(at, at + 3), colour)) found += 1;
+  }
+  return found;
+}
+
 test.describe('the icon stack', () => {
   test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
@@ -219,82 +290,106 @@ test.describe('the icon stack', () => {
     await openWith(page, [
       record('One', [0, 0, 0], 'Alpha', ['titan', 'mission', 'waypoint']),
     ]);
+    await settleIcons(page, 3);
 
     const stack = await icons(page);
     console.log(
       'the stack, top first',
-      stack.map((mark) => mark.src),
+      stack.map((one) => ({ url: one.url, stackIndex: one.stackIndex, top: one.top })),
     );
 
     expect(stack).toHaveLength(3);
     // The reading runs top of the screen down, so the record's first icon is last.
-    expect(stack[2]?.src).toContain('titan');
-    expect(stack[1]?.src).toContain('mission');
-    expect(stack[0]?.src).toContain('waypoint');
-    for (const mark of stack) {
-      expect(mark.width).toBe(ICON_CSS);
-      expect(mark.height).toBe(ICON_CSS);
-      // The plate, so a thin light line of a vector reads against black and not against
-      // whatever the camera puts behind the marker.
-      expect(mark.plate).toBe('rgb(0, 0, 0)');
+    expect(stack[2]?.url).toContain('titan');
+    expect(stack[1]?.url).toContain('mission');
+    expect(stack[0]?.url).toContain('waypoint');
+    expect(stack[2]?.stackIndex).toBe(0);
+    expect(stack[0]?.stackIndex).toBe(2);
+    for (const one of stack) {
+      expect(one.width).toBe(ICON_CSS);
+      expect(one.height).toBe(ICON_CSS);
+      expect(one.systemIndex).toBe(0);
     }
     // Each icon sits one step over the one below it.
     for (let at = 1; at < stack.length; at += 1) {
-      const step = (stack[at] as Mark).bottom - (stack[at - 1] as Mark).bottom;
+      const step =
+        (stack[at] as IconPlacement).top - (stack[at - 1] as IconPlacement).top;
       expect(Math.abs(step - STEP_CSS)).toBeLessThanOrEqual(1);
+    }
+
+    // The plate, so a thin light line of a vector reads against black and not against
+    // whatever the camera puts behind the marker. The reading is 4 pixels in from the
+    // corner of the box: every vector of the catalogue draws a frame of its own colour
+    // around its edge, and that frame covers the outermost pixels of the box.
+    for (const one of stack) {
+      const plate = await pixelAt(page, { x: one.left + 4, y: one.top + 4 });
+      console.log('the plate of', one.url, plate);
+      expect(reads(plate, [0, 0, 0], 12)).toBe(true);
     }
   });
 
   // The scenario "The stack sits at the stated offset".
   test('the stack sits at the stated offset', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
 
     const marker = await projectOf(page, [0, 0, 0]);
     const stack = await icons(page);
-    const icon = stack[0] as Mark;
+    const icon = stack[0] as IconPlacement;
     console.log('the icon against the marker', { marker, icon });
 
     expect(stack).toHaveLength(1);
-    expect(Math.abs((icon.left + icon.right) / 2 - marker.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(icon.bottom - (marker.y - LOWEST_BOTTOM_CSS))).toBeLessThanOrEqual(
-      1,
-    );
+    expect(Math.abs(icon.left + icon.width / 2 - marker.x)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(icon.top + icon.height - (marker.y - LOWEST_BOTTOM_CSS)),
+    ).toBeLessThanOrEqual(1);
   });
 
   // The scenario "Two icons sit two pixels apart".
   test('two icons sit two pixels apart', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan', 'mission'])]);
+    await settleIcons(page, 2);
 
     const stack = await icons(page);
-    const upper = stack[0] as Mark;
-    const lower = stack[1] as Mark;
+    const upper = stack[0] as IconPlacement;
+    const lower = stack[1] as IconPlacement;
     console.log('the gap of the stack', { upper, lower });
 
     expect(stack).toHaveLength(2);
-    expect(Math.abs(lower.top - upper.bottom - 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lower.top - (upper.top + upper.height) - 2)).toBeLessThanOrEqual(1);
   });
 
   // The scenario "A selection lifts the stack over the pin".
   test('a selection lifts the stack over the pin', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
 
-    const before = (await icons(page))[0] as Mark;
+    const before = (await icons(page))[0] as IconPlacement;
     await page.evaluate(() => {
       window.galaxyMap?.setSelection('One');
     });
     await drawFrame(page);
-    const after = (await icons(page))[0] as Mark;
-    const pin = (await marksOf(page, '.gm-system-pin'))[0] as Mark;
+    const after = (await icons(page))[0] as IconPlacement;
+    // The pin is a DOM element of the overlay, which the stacks are not.
+    const pin = await page.evaluate(() => {
+      const element = document.querySelector('.gm-system-pin');
+      if (element === null) return null;
+      const box = element.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom };
+    });
     console.log('the stack over the pin', { before, after, pin });
 
-    expect(Math.abs(before.bottom - after.bottom - LIFT_CSS)).toBeLessThanOrEqual(1);
+    expect(pin).not.toBeNull();
+    const lift = before.top + before.height - (after.top + after.height);
+    expect(Math.abs(lift - LIFT_CSS)).toBeLessThanOrEqual(1);
     // The two boxes do not overlap: the icon ends above the top of the pin.
-    expect(after.bottom).toBeLessThanOrEqual(pin.top);
+    expect(after.top + after.height).toBeLessThanOrEqual((pin?.top ?? 0) + 1);
   });
 
   // The scenario "The icons go when the marker goes".
   test('the icons go when the category goes', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan', 'mission'])]);
+    await settleIcons(page, 2);
 
     await page.evaluate(() => {
       window.galaxyMap?.setCategoryVisible('Alpha', false);
@@ -308,10 +403,8 @@ test.describe('the icon stack', () => {
     const on = await counts(page);
     console.log('the icon counts with the category off and on', { off, on });
 
-    expect(off.icons).toBe(0);
-    expect(off.arrows).toBe(0);
-    expect(on.icons).toBe(2);
-    expect(on.arrows).toBe(1);
+    expect(off).toEqual({ icons: 0, arrows: 0 });
+    expect(on).toEqual({ icons: 2, arrows: 1 });
   });
 
   // The scenario "The stack follows the marker through a camera move". The left drag
@@ -320,6 +413,7 @@ test.describe('the icon stack', () => {
   test('the stack follows the marker through an orbit', async ({ page }) => {
     const place: [number, number, number] = [200, 0, 0];
     await openWith(page, [record('One', place, 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
 
     const readOffset = async (): Promise<{
       marker: { x: number; y: number };
@@ -327,8 +421,9 @@ test.describe('the icon stack', () => {
       offset: number;
     }> => {
       const marker = await projectOf(page, place);
-      const icon = (await icons(page))[0] as Mark;
-      return { marker, bottom: icon.bottom, offset: marker.y - icon.bottom };
+      const icon = (await icons(page))[0] as IconPlacement;
+      const bottom = icon.top + icon.height;
+      return { marker, bottom, offset: marker.y - bottom };
     };
 
     const before = await readOffset();
@@ -344,52 +439,16 @@ test.describe('the icon stack', () => {
     expect(Math.abs(after.offset - before.offset)).toBeLessThanOrEqual(1);
   });
 
-  // The scenario "The nearer stack draws over the further one". Both systems sit on the
-  // line from the camera through the cursor, so the two stacks land on one pixel and
-  // cover each other.
-  test('the nearer stack draws over the further one', async ({ page }) => {
-    const distance = 1000;
-    const camera = cameraAt(distance);
-    // The cursor is the origin, so a point of the ray is the camera scaled down. 0.4 of
-    // the way leaves the near system inside the plateau of the marker size rule.
-    const near: [number, number, number] = [
-      camera[0] * 0.4,
-      camera[1] * 0.4,
-      camera[2] * 0.4,
-    ];
-
-    await openWith(
-      page,
-      [
-        record('Far', [0, 0, 0], 'Alpha', ['titan']),
-        record('Near', near, 'Alpha', ['mission']),
-      ],
-      distance,
-    );
-
-    const stack = await icons(page);
-    const far = stack.find((mark) => mark.src.includes('titan')) as Mark;
-    const close = stack.find((mark) => mark.src.includes('mission')) as Mark;
-    console.log('the two stacks', {
-      far: { left: far.left, top: far.top, level: far.level },
-      near: { left: close.left, top: close.top, level: close.level },
-    });
-
-    // The two cover each other, or the levels would decide nothing on the screen.
-    expect(Math.abs(close.left - far.left)).toBeLessThanOrEqual(1);
-    expect(Number(close.level)).toBeGreaterThan(Number(far.level));
-    expect(Number(far.level)).toBeGreaterThan(0);
-  });
-
   // The scenario "The icon holds its size as the camera comes in".
   test('the icon holds its size as the camera comes in', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan'])], 1000);
+    await settleIcons(page, 1);
 
     const sizes: { distance: number; width: number; height: number }[] = [];
     for (const distance of [1000, 200, 40, 10]) {
       await setView(page, [0, 0, 0], distance);
       await drawFrame(page);
-      const icon = (await icons(page))[0] as Mark;
+      const icon = (await icons(page))[0] as IconPlacement;
       sizes.push({ distance, width: icon.width, height: icon.height });
     }
     console.log('the icon through the approach', sizes);
@@ -400,12 +459,15 @@ test.describe('the icon stack', () => {
     }
   });
 
-  // The scenario "A camera move leaves the icon on whole pixels". An icon is a bitmap
-  // the browser makes from a vector. At a fraction of a pixel it samples the vector at a
-  // new phase in every frame, and the glyph shakes while the camera moves.
+  // The scenario "A camera move leaves the icon on whole pixels". The pass copies one
+  // texel to one pixel, and at a fraction of a pixel the card samples the texture at a
+  // new phase in every frame, which makes the glyph shake while the camera moves. The
+  // device pixel ratio of this file is 1, so a CSS pixel is a device pixel here.
   test('an orbit leaves the icon on whole pixels', async ({ page }) => {
     const place: [number, number, number] = [200, 0, 0];
     await openWith(page, [record('One', place, 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
+    const ratio = await page.evaluate(() => window.devicePixelRatio);
 
     const places: { left: number; top: number }[] = [];
     await page.mouse.move(200, 600);
@@ -413,8 +475,8 @@ test.describe('the icon stack', () => {
     for (let step = 0; step < 30; step += 1) {
       await page.mouse.move(200 + step * 3, 600);
       await drawFrame(page);
-      const icon = (await icons(page))[0] as Mark;
-      places.push({ left: icon.left, top: icon.top });
+      const icon = (await icons(page))[0] as IconPlacement;
+      places.push({ left: icon.left * ratio, top: icon.top * ratio });
     }
     await page.mouse.up();
 
@@ -422,6 +484,7 @@ test.describe('the icon stack', () => {
       (spot) => spot.left % 1 !== 0 || spot.top % 1 !== 0,
     );
     console.log('the icon through the orbit', {
+      ratio,
       steps: places.length,
       first: places[0],
       last: places[places.length - 1],
@@ -438,16 +501,13 @@ test.describe('the icon stack', () => {
     await openWith(page, [
       record('One', [0, 0, 0], 'Alpha', ['titan', 'mission', 'waypoint', 'bookmark']),
     ]);
+    await settleIcons(page, 4);
 
     const marker = await projectOf(page, [0, 0, 0]);
     const stack = await icons(page);
-    const middle = stack[1] as Mark;
-    const at = {
-      x: (middle.left + middle.right) / 2,
-      y: (middle.top + middle.bottom) / 2,
-    };
-    // The element under that point is the canvas and not the icon, because an icon
-    // takes no pointer event.
+    const at = centreOf(stack[1] as IconPlacement);
+    // The element under that point is the canvas: the stacks are pixels of the frame and
+    // hold no element that could take a pointer event.
     const under = await page.evaluate(
       (where) => document.elementFromPoint(where.x, where.y)?.tagName ?? '',
       at,
@@ -469,6 +529,194 @@ test.describe('the icon stack', () => {
     expect(overStack).toBeNull();
     expect(overMarker).toBe('One');
   });
+
+  // The scenario "The glyph draws the way the browser draws the vector". Every other icon
+  // reading of this file counts a colour or reads a corner, and a turned glyph holds both
+  // of those, so this is the one reading that sees the way up. It compares the drawn box
+  // with the browser's own drawing of the same vector at the same side.
+  test('the glyph draws the way the browser draws the vector', async ({ page }) => {
+    // `waypoint` is asymmetric about the horizontal axis, so a turn moves its pixels.
+    await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['waypoint'])]);
+    await settleIcons(page, 1);
+
+    const icon = (await icons(page))[0] as IconPlacement;
+    const reading = await page.evaluate(async (box) => {
+      const map = window.__galaxyMap;
+      if (map?.readRect === undefined) return null;
+      const side = Math.round(box.width);
+      const frame = map.readRect(Math.round(box.left), Math.round(box.top), side, side);
+      // The browser's own drawing of the vector, at the side the pass rasterises at. The
+      // ratio is 1 here, so one texel of the layer meets one pixel of the quad.
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.src = box.url;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = side;
+      canvas.height = side;
+      const context = canvas.getContext('2d');
+      if (context === null) return null;
+      context.clearRect(0, 0, side, side);
+      context.drawImage(image, 0, 0, side, side);
+      const source = context.getImageData(0, 0, side, side).data;
+
+      // The pass draws the glyph's own colour weighted by its coverage over a black
+      // plate, so the reading composes the source the same way before it compares.
+      const differs = (at: number, from: number): boolean => {
+        const alpha = (source[from + 3] as number) / 255;
+        for (let part = 0; part < 3; part += 1) {
+          const want = Math.round((source[from + part] as number) * alpha);
+          if (Math.abs((frame[at + part] as number) - want) > 16) return true;
+        }
+        return false;
+      };
+      let asDrawn = 0;
+      let turned = 0;
+      for (let row = 0; row < side; row += 1) {
+        for (let column = 0; column < side; column += 1) {
+          const at = (row * side + column) * 4;
+          if (differs(at, at)) asDrawn += 1;
+          if (differs(at, ((side - 1 - row) * side + column) * 4)) turned += 1;
+        }
+      }
+      return { side, pixels: side * side, asDrawn, turned };
+    }, icon);
+    console.log('the glyph against the browser drawing', reading);
+
+    expect(reading).not.toBeNull();
+    const held = reading as {
+      side: number;
+      pixels: number;
+      asDrawn: number;
+      turned: number;
+    };
+    expect(held.side).toBe(ICON_CSS);
+    // The count as they are is the lower of the two. The second reading guards the first:
+    // a vector the turn does not move would read the same either way up, and both counts
+    // would then be the same.
+    expect(held.asDrawn).toBeLessThan(held.turned);
+    expect(held.turned).toBeGreaterThan(0);
+  });
+
+  // The scenario "The nearer stack draws over the further one". Both systems sit on the
+  // line from the camera through the cursor, so the two stacks land on one pixel and
+  // cover each other. The icons are opaque, so the nearer one takes the pixel.
+  test('the nearer stack draws over the further one', async ({ page }) => {
+    const distance = 1000;
+    const camera = cameraAt(distance);
+    // The cursor is the origin, so a point of the ray is the camera scaled down. 0.4 of
+    // the way leaves the near system inside the plateau of the marker size rule.
+    const near: [number, number, number] = [
+      camera[0] * 0.4,
+      camera[1] * 0.4,
+      camera[2] * 0.4,
+    ];
+
+    await openWith(
+      page,
+      [
+        record('Far', [0, 0, 0], 'Alpha', ['titan']),
+        record('Near', near, 'Alpha', ['mission']),
+      ],
+      distance,
+    );
+    await settleIcons(page, 2);
+
+    const stack = await icons(page);
+    const far = stack.find((one) => one.url.includes('titan')) as IconPlacement;
+    const close = stack.find((one) => one.url.includes('mission')) as IconPlacement;
+    console.log('the two stacks', { far, close });
+
+    // The two cover each other, or the draw order would decide nothing on the screen.
+    expect(Math.abs(close.left - far.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(close.top - far.top)).toBeLessThan(ICON_CSS);
+    // The nearer stack is the last one drawn, so it holds the pixels the two share.
+    const overlap: IconPlacement = {
+      ...close,
+      top: Math.max(close.top, far.top),
+      height:
+        Math.min(close.top + close.height, far.top + far.height) -
+        Math.max(close.top, far.top),
+    };
+    const nearPixels = await glyphPixels(page, overlap, MISSION);
+    const farPixels = await glyphPixels(page, overlap, TITAN);
+    console.log('the pixels where the stacks cross', { nearPixels, farPixels });
+
+    expect(overlap.height).toBeGreaterThan(4);
+    expect(nearPixels).toBeGreaterThan(0);
+    expect(farPixels).toBe(0);
+  });
+
+  // The scenario "A nearer stack's icon draws over a further stack's arrow". The two
+  // stacks sit on one line of sight, and the further system stands a little higher on
+  // the screen, so its arrow falls inside the nearer system's icon plate. One draw call
+  // orders the arrow with the icons of its own stack, so the plate takes the pixels.
+  test('a nearer stack icon draws over a further stack arrow', async ({ page }) => {
+    const distance = 1000;
+    const camera = cameraAt(distance);
+    // 0.4 of the way from the cursor to the camera leaves the near system inside the
+    // plateau of the marker size rule, as the test above does.
+    const near: [number, number, number] = [
+      camera[0] * 0.4,
+      camera[1] * 0.4,
+      camera[2] * 0.4,
+    ];
+
+    await openMap(page, `#c=0,0,0&d=${distance}&p=${PITCH}&y=0`);
+    await addCategory(page);
+    await setView(page, [0, 0, 0], distance);
+    // How far the screen moves for one light year of height at the cursor. The arrow of
+    // the further stack has to land inside the plate of the nearer one, which is 28 CSS
+    // pixels tall, so the lift is read from the frame and not guessed.
+    const base = await projectOf(page, [0, 0, 0]);
+    const lifted = await projectOf(page, [0, 100, 0]);
+    const perLightYear = (base.y - lifted.y) / 100;
+    const height = 8 / perLightYear;
+
+    expect(
+      await addSystems(page, [
+        record('Far', [0, height, 0], 'Alpha', ['titan']),
+        record('Near', near, 'Alpha', ['mission']),
+      ]),
+    ).toBe(2);
+    await setView(page, [0, 0, 0], distance);
+    await settleIcons(page, 2);
+
+    const plate = (await icons(page)).find((one) =>
+      one.url.includes('mission'),
+    ) as IconPlacement;
+    const held = await arrows(page);
+    // An arrow takes the colour of the lowest icon of its own stack, so the two arrows
+    // of this frame are told apart by their fill.
+    const farArrow = held.find((one) => one.color[0] === TITAN[0]) as
+      IconPlacement | undefined;
+    const nearArrow = held.find((one) => one.color[2] === MISSION[2]) as IconPlacement;
+    console.log('the arrow of the further stack on the nearer plate', {
+      plate,
+      farArrow,
+      nearArrow,
+    });
+
+    // The arrow of the further stack lies inside the plate of the nearer one, or the
+    // draw order would decide nothing on the screen.
+    expect(farArrow).toBeDefined();
+    const arrow = farArrow as IconPlacement;
+    expect(arrow.top).toBeGreaterThanOrEqual(plate.top);
+    expect(arrow.top + arrow.height).toBeLessThanOrEqual(plate.top + plate.height);
+    expect(arrow.left).toBeGreaterThanOrEqual(plate.left);
+    expect(arrow.left + arrow.width).toBeLessThanOrEqual(plate.left + plate.width);
+
+    const arrowPixels = await glyphPixels(page, plate, TITAN);
+    const glyph = await glyphPixels(page, plate, MISSION);
+    // The arrow of the nearer stack draws under its own plate and nothing covers it, so
+    // a reading of zero there would mean no arrow drew in this frame at all.
+    const nearArrowPixels = await glyphPixels(page, nearArrow, MISSION);
+    console.log('the pixels of the plate', { arrowPixels, glyph, nearArrowPixels });
+
+    expect(arrowPixels).toBe(0);
+    expect(glyph).toBeGreaterThan(0);
+    expect(nearArrowPixels).toBeGreaterThan(0);
+  });
 });
 
 test.describe('the arrow under the lowest icon', () => {
@@ -479,14 +727,16 @@ test.describe('the arrow under the lowest icon', () => {
     await openWith(page, [
       record('One', [0, 0, 0], 'Alpha', ['titan', 'mission', 'waypoint', 'bookmark']),
     ]);
+    await settleIcons(page, 4);
 
     const marker = await projectOf(page, [0, 0, 0]);
-    const held = await arrows(page);
-    const arrow = held[0] as Mark;
+    const arrow = (await arrows(page))[0] as IconPlacement;
     console.log('the arrow of a stack of four', { marker, arrow });
 
     expect(await counts(page)).toEqual({ icons: 4, arrows: 1 });
-    expect(Math.abs((arrow.left + arrow.right) / 2 - marker.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(arrow.left + arrow.width / 2 - marker.x)).toBeLessThanOrEqual(1);
+    expect(arrow.stackIndex).toBe(0);
+    expect(arrow.url).toBe('');
   });
 
   // The scenario "The arrow takes the lowest icon's colour".
@@ -495,19 +745,27 @@ test.describe('the arrow under the lowest icon', () => {
       record('First', [-200, 0, 0], 'Alpha', ['titan', 'mission']),
       record('Second', [200, 0, 0], 'Alpha', ['mission', 'titan']),
     ]);
+    await settleIcons(page, 4);
 
-    const left = await projectOf(page, [-200, 0, 0]);
     const held = await arrows(page);
     const byX = [...held].sort((one, other) => one.left - other.left);
-    const first = channels((byX[0] as Mark).fill);
-    const second = channels((byX[1] as Mark).fill);
-    console.log('the two arrow fills', { left, first, second });
+    const first = (byX[0] as IconPlacement).color;
+    const second = (byX[1] as IconPlacement).color;
+    console.log('the two arrow fills', { first, second });
 
     expect(held).toHaveLength(2);
-    for (let part = 0; part < 3; part += 1) {
-      expect(Math.abs(first[part] - (TITAN[part] as number))).toBeLessThanOrEqual(2);
-      expect(Math.abs(second[part] - (MISSION[part] as number))).toBeLessThanOrEqual(2);
-    }
+    expect(first).toEqual(TITAN);
+    expect(second).toEqual(MISSION);
+
+    // The fill reaches the frame. The arrow is 8 by 5 with its apex down, so the pixel
+    // one row under its top edge and on its middle is inside the triangle.
+    const middle = byX[0] as IconPlacement;
+    const pixel = await pixelAt(page, {
+      x: middle.left + middle.width / 2,
+      y: middle.top + 1,
+    });
+    console.log('the pixel of the first arrow', pixel);
+    expect(reads(pixel, TITAN)).toBe(true);
   });
 
   // The scenario "The arrow takes a host icon's colour". The demo site serves the
@@ -518,38 +776,43 @@ test.describe('the arrow under the lowest icon', () => {
         { url: 'demo-images/ruins-site.svg', color: [0, 205, 247] },
       ]),
     ]);
+    await settleIcons(page, 1);
 
     const held = await arrows(page);
-    const fill = channels((held[0] as Mark).fill);
     const stack = await icons(page);
-    console.log('the host icon and its arrow', { fill, src: stack[0]?.src });
+    console.log('the host icon and its arrow', {
+      fill: held[0]?.color,
+      url: stack[0]?.url,
+    });
 
     expect(held).toHaveLength(1);
-    expect(stack[0]?.src).toContain('demo-images/ruins-site.svg');
-    for (const [part, want] of [0, 205, 247].entries()) {
-      expect(Math.abs((fill[part] as number) - want)).toBeLessThanOrEqual(2);
-    }
+    expect(stack[0]?.url).toContain('demo-images/ruins-site.svg');
+    expect(held[0]?.color).toEqual([0, 205, 247]);
   });
 
   // The scenario "The apex points at the marker".
   test('the apex points at the marker', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
 
     const marker = await projectOf(page, [0, 0, 0]);
-    const arrow = (await arrows(page))[0] as Mark;
-    const icon = (await icons(page))[0] as Mark;
+    const arrow = (await arrows(page))[0] as IconPlacement;
+    const icon = (await icons(page))[0] as IconPlacement;
     console.log('the apex against the marker', { marker, arrow, icon });
 
-    expect(Math.abs(arrow.bottom - (marker.y - APEX_CSS))).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(arrow.top + arrow.height - (marker.y - APEX_CSS)),
+    ).toBeLessThanOrEqual(1);
     expect(arrow.height).toBe(5);
     expect(arrow.width).toBe(8);
     // The top of the arrow meets the bottom of the lowest icon.
-    expect(Math.abs(arrow.top - icon.bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(arrow.top - (icon.top + icon.height))).toBeLessThanOrEqual(1);
   });
 
   // The scenario "A system with no icon carries no arrow".
   test('a system with no icon carries no arrow', async ({ page }) => {
     await openWith(page, [record('One', [0, 0, 0], 'Alpha')]);
+    await drawFrame(page);
 
     const held = await counts(page);
     console.log('the counts of a system with no icon', held);
@@ -580,26 +843,30 @@ test.describe('the icon switch', () => {
     }, on);
   }
 
-  // The scenario "The switch turns the icons off and on".
+  // The scenario "The switch turns the icons off and on", and the scenario "A frame with
+  // no stack reports nothing".
   test('the switch turns the icons off and on', async ({ page }) => {
     await openWith(page, fiveWithTwo());
+    await settleIcons(page, 10);
 
     const first = await counts(page);
     await setSwitch(page, false);
     const second = await counts(page);
+    const empty = await placements(page);
     await setSwitch(page, true);
     const third = await counts(page);
     console.log('the icon counts over the switch', { first, second, third });
 
     expect(first.icons).toBe(10);
-    expect(second.icons).toBe(0);
-    expect(second.arrows).toBe(0);
+    expect(second).toEqual({ icons: 0, arrows: 0 });
+    expect(empty).toEqual([]);
     expect(third.icons).toBe(10);
   });
 
   // The scenario "The switch holds over the hover and the selection".
   test('the switch holds over the hover and the selection', async ({ page }) => {
     await openWith(page, fiveWithTwo());
+    await settleIcons(page, 10);
     await setSwitch(page, false);
     await page.evaluate(() => {
       window.galaxyMap?.setSelection('S0');
@@ -629,7 +896,7 @@ test.describe('the system icons option', () => {
   /**
    * Builds a map with the `systemIcons` the test names, over a canvas of its own, and
    * adds 5 systems with two icons each in view. The demo page's map comes down first,
-   * so the icon count of the document is the count of this map alone.
+   * so the placements of the document are the placements of this map alone.
    */
   async function buildIconsMap(page: Page, options: unknown): Promise<void> {
     await page.evaluate(async (settings) => {
@@ -662,10 +929,32 @@ test.describe('the system icons option', () => {
         });
       }
       map.addSystems(records as never);
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
     }, options);
+  }
+
+  /** How many icons the map of the test placed in its last frame. */
+  async function mapIcons(page: Page): Promise<number> {
+    return page.evaluate(
+      () =>
+        (window.__iconsMap?.debug.iconPlacements() ?? []).filter(
+          (one) => one.kind === 'icon',
+        ).length,
+    );
+  }
+
+  /** Draws frames of the map of the test until it places the count wanted. */
+  async function settleMapIcons(page: Page, wanted: number): Promise<void> {
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            window.__iconsMap?.debug.drawNow();
+          });
+          return mapIcons(page);
+        },
+        { timeout: 15000 },
+      )
+      .toBe(wanted);
   }
 
   /** Takes the map of the test down, so the next build counts its own icons. */
@@ -685,20 +974,27 @@ test.describe('the system icons option', () => {
   test('the option starts the icons off', async ({ page }) => {
     await openMap(page);
     await buildIconsMap(page, { systemIcons: false });
+    // Four frames, so a map that draws its stacks late still draws them here.
+    for (let frame = 0; frame < 4; frame += 1) {
+      await page.evaluate(() => {
+        window.__iconsMap?.debug.drawNow();
+      });
+    }
     const off = {
       reading: await page.evaluate(
         () => window.__iconsMap?.areSystemIconsVisible() ?? true,
       ),
-      icons: (await counts(page)).icons,
+      icons: await mapIcons(page),
     };
     await dropIconsMap(page);
 
     await buildIconsMap(page, {});
+    await settleMapIcons(page, 10);
     const on = {
       reading: await page.evaluate(
         () => window.__iconsMap?.areSystemIconsVisible() ?? false,
       ),
-      icons: (await counts(page)).icons,
+      icons: await mapIcons(page),
     };
     console.log('the two maps of the option', { off, on });
 
@@ -710,11 +1006,12 @@ test.describe('the system icons option', () => {
   test('an unreadable option keeps the icons on', async ({ page }) => {
     await openMap(page);
     await buildIconsMap(page, { systemIcons: 'no' });
+    await settleMapIcons(page, 10);
 
     const reading = await page.evaluate(
       () => window.__iconsMap?.areSystemIconsVisible() ?? false,
     );
-    const held = (await counts(page)).icons;
+    const held = await mapIcons(page);
     console.log('the reading of an unreadable option', { reading, held });
 
     expect(reading).toBe(true);
@@ -723,8 +1020,11 @@ test.describe('the system icons option', () => {
 });
 
 test.describe('the bounds of the placement', () => {
-  // The scenario "The stack count is capped at a full set".
-  test('the stack count is capped at a full set', async ({ page }) => {
+  // The scenarios "The stack count is capped at a full set", "The draw calls are capped
+  // at a full set" and "No icon reaches the DOM".
+  test('the stack count and the draw calls are capped at a full set', async ({
+    page,
+  }) => {
     test.setTimeout(120000);
     await openMap(page, `#c=0,0,0&d=1000&p=${PITCH}&y=0`);
     await addCategory(page);
@@ -752,14 +1052,31 @@ test.describe('the bounds of the placement', () => {
       return map.addSystems(records).added;
     });
     await setView(page, [0, 0, 0], 1000);
+    await settleIcons(page, 128);
 
     const held = await counts(page);
-    console.log('the counts at 10,000 systems with 4 icons each', held);
+    const calls = await page.evaluate(
+      () => window.galaxyMap?.debug.iconDrawCalls() ?? -1,
+    );
+    const elements = await page.evaluate(() => ({
+      icons: document.querySelectorAll('.gm-system-icon').length,
+      arrows: document.querySelectorAll('.gm-system-arrow').length,
+      layers: document.querySelectorAll('.gm-system-stacks').length,
+    }));
+    console.log('the bounds at 10,000 systems with 4 icons each', {
+      held,
+      calls,
+      elements,
+    });
 
     expect(added).toBe(10000);
     expect(held.arrows).toBeGreaterThan(0);
     expect(held.arrows).toBeLessThanOrEqual(32);
     expect(held.icons).toBeLessThanOrEqual(128);
+    expect(calls).toBeLessThanOrEqual(1);
+    expect(calls).toBeGreaterThan(0);
+    // The stacks are pixels of the frame, so the overlay holds nothing of them.
+    expect(elements).toEqual({ icons: 0, arrows: 0, layers: 0 });
   });
 
   // The scenario "The nearest stacks are the ones kept". The systems run along one
@@ -774,6 +1091,7 @@ test.describe('the bounds of the placement', () => {
       records.push(record(`S${index}`, place, 'Alpha', ['titan']));
     }
     await openWith(page, records);
+    await settleIcons(page, 32);
 
     const spots: { x: number; y: number }[] = [];
     for (const place of places) spots.push(await projectOf(page, place));
@@ -786,7 +1104,7 @@ test.describe('the bounds of the placement', () => {
       expect(spot.x).toBeGreaterThan(0);
       expect(spot.x).toBeLessThan(1280);
       const carries = held.some(
-        (mark) => Math.abs((mark.left + mark.right) / 2 - spot.x) <= 2,
+        (one) => Math.abs(one.left + one.width / 2 - spot.x) <= 2,
       );
       if (carries) wanted.push(index);
     }
@@ -806,8 +1124,8 @@ test.describe('the bounds of the placement', () => {
   test('an off-screen system carries no stack', async ({ page }) => {
     const place: [number, number, number] = [0, 0, 1500];
     await openWith(page, [record('One', place, 'Alpha', ['titan'])]);
+    await settleIcons(page, 1);
     const inView = await projectOf(page, place);
-    expect((await counts(page)).icons).toBe(1);
 
     await setView(page, [0, 0, 0], 1000, 90);
     const spot = await projectOf(page, place);
@@ -819,12 +1137,142 @@ test.describe('the bounds of the placement', () => {
     expect(spot.x < 0 || spot.x > 1280 || spot.y < 0 || spot.y > 720).toBe(true);
     expect(held).toEqual({ icons: 0, arrows: 0 });
   });
+
+  // The scenario "A 65th distinct vector does not draw". The texture array holds 64
+  // layers and a layer is taken by the frame that first places its URL, so the 65 URLs
+  // arrive over three views of 22, 22 and 21 systems. Each view holds fewer than the 32
+  // stacks the pass keeps, so every system of a view places its own icon.
+  test('a 65th distinct vector does not draw', async ({ page }) => {
+    test.setTimeout(120000);
+    const warnings: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'warning') warnings.push(message.text());
+    });
+
+    // A draw range of 5,000 light years, so the groups below leave each other's frame.
+    // The groups stand 20,000 light years apart, and the model bounds hold them all.
+    await openMap(page, `#c=0,0,0&d=1000&p=${PITCH}&y=0`);
+    await addCategory(page, 'Alpha', CORE, 5000);
+
+    const groups = [22, 22, 21];
+    const records: Record<string, unknown>[] = [];
+    let made = 0;
+    groups.forEach((size, group) => {
+      for (let index = 0; index < size; index += 1) {
+        records.push(
+          record(`S${made}`, [group * 20000 + index * 25, 0, 0], 'Alpha', [
+            { url: `${SECOND_ORIGIN}/cors/v${made}.svg`, color: [255, 0, 255] },
+          ]),
+        );
+        made += 1;
+      }
+    });
+    expect(made).toBe(65);
+    expect(await addSystems(page, records)).toBe(65);
+
+    const drawn: number[] = [];
+    for (let group = 0; group < groups.length; group += 1) {
+      await setView(page, [group * 20000, 0, 0], 1000);
+      // The last group asks for the 65th URL, which takes no layer and draws nothing.
+      const wanted =
+        group === 2 ? (groups[group] as number) - 1 : (groups[group] as number);
+      await settleIcons(page, wanted);
+      drawn.push((await counts(page)).icons);
+    }
+    const capWarnings = warnings.filter((text) => text.includes('distinct icon'));
+    console.log('the icons of the three groups', { drawn, capWarnings });
+
+    expect(drawn).toEqual([22, 22, 20]);
+    expect(capWarnings).toHaveLength(1);
+    // The pass asks for a layer as it places, and it places the furthest stack first, so
+    // the URL that meets the full array is the one of the system nearest the camera.
+    // That is the first record of the last group, which sits at the cursor.
+    expect(capWarnings[0]).toContain('v44.svg');
+  });
 });
 
-// The requirement "A nearer marker hides an icon". Every test below puts a system with a
-// stack far from the camera, then a system with no icon nearer to it, at the pixel the
-// element sits on.
-test.describe('a nearer marker hides an icon', () => {
+// The requirement "The library loads an icon vector as a cross-origin image". The second
+// origin of `e2e/fixtures/icon-origin-server.mjs` serves one vector with the header and
+// the same vector without it.
+test.describe('an icon on a second origin', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  /** What the second origin has answered for each path. */
+  async function serverRequests(page: Page): Promise<Record<string, number>> {
+    return page.evaluate(async (origin) => {
+      const answer = await fetch(`${origin}/requests`, { cache: 'no-store' });
+      return (await answer.json()) as Record<string, number>;
+    }, SECOND_ORIGIN);
+  }
+
+  // The scenario "A cross-origin icon with the header draws".
+  test('an icon with the header draws', async ({ page }) => {
+    const url = `${SECOND_ORIGIN}/cors/draws.svg`;
+    await openWith(page, [
+      record('One', [0, 0, 0], 'Alpha', [{ url, color: [255, 0, 255] }]),
+    ]);
+    await settleIcons(page, 1);
+
+    const stack = await icons(page);
+    const pixels = await glyphPixels(page, stack[0] as IconPlacement, [255, 0, 255]);
+    console.log('the cross-origin icon with the header', { stack, pixels });
+
+    expect(stack).toHaveLength(1);
+    expect(stack[0]?.url).toBe(url);
+    expect(pixels).toBeGreaterThan(0);
+  });
+
+  // The scenarios "A cross-origin icon with no header does not draw" and "A refused URL
+  // is tried once".
+  test('an icon with no header does not draw and is asked for once', async ({
+    page,
+  }) => {
+    const path = '/no-cors/refused.svg';
+    const url = `${SECOND_ORIGIN}${path}`;
+    const warnings: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'warning') warnings.push(message.text());
+    });
+
+    // The load of a vector starts as its record arrives, so the count of the second
+    // origin is read before the record goes in.
+    await openMap(page, `#c=0,0,0&d=1000&p=${PITCH}&y=0`);
+    await addCategory(page);
+    const before = await serverRequests(page);
+    expect(
+      await addSystems(page, [
+        record('One', [0, 0, 0], 'Alpha', ['titan', { url, color: [255, 0, 255] }]),
+      ]),
+    ).toBe(1);
+    await setView(page, [0, 0, 0], 1000);
+    // The built-in icon draws and the refused one never does, so the count settles at 1.
+    await settleIcons(page, 1);
+    for (let frame = 0; frame < 30; frame += 1) await drawFrame(page);
+
+    const stack = await icons(page);
+    const held = await counts(page);
+    const after = await serverRequests(page);
+    const asked = (after[path] ?? 0) - (before[path] ?? 0);
+    const refusals = warnings.filter((text) => text.includes(path));
+    console.log('the cross-origin icon with no header', {
+      held,
+      asked,
+      refusals,
+      url: stack[0]?.url,
+    });
+
+    // The stack holds the built-in icon and its arrow, and holds no second icon.
+    expect(held).toEqual({ icons: 1, arrows: 1 });
+    expect(stack[0]?.url).toContain('titan');
+    expect(refusals).toHaveLength(1);
+    expect(asked).toBe(1);
+  });
+});
+
+// The requirement "A nearer marker draws over an icon". The reading is the frame itself:
+// the range test runs per pixel on the card, so an element is never wholly hidden or
+// wholly shown, and a nearer marker cuts its own shape out of the icon over it.
+test.describe('a nearer marker draws over an icon', () => {
   test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
   /** The distance every view of this group takes. */
@@ -881,187 +1329,259 @@ test.describe('a nearer marker hides an icon', () => {
     );
   }
 
-  /** The centre of an element's box, in CSS pixels. */
-  function centreOf(mark: Mark): { x: number; y: number } {
-    return { x: (mark.left + mark.right) / 2, y: (mark.top + mark.bottom) / 2 };
+  /**
+   * A point at an exact range from the camera that draws at a pixel of the frame.
+   * `atPixel` measures its range along the view axis and then steps across the screen,
+   * which leaves the point a little further out. The test below compares two ranges
+   * inside a bias of a hundred-thousandth, so it takes the point on that same ray whose
+   * range from the camera is the number given.
+   */
+  function atRange(
+    view: { focal: number; cx: number; cy: number },
+    range: number,
+    spot: { x: number; y: number },
+  ): [number, number, number] {
+    const camera = cameraAt(VIEW);
+    const point = atPixel(view, range, spot.x, spot.y);
+    const offset = [
+      point[0] - camera[0],
+      point[1] - camera[1],
+      point[2] - camera[2],
+    ] as const;
+    const scale = range / Math.hypot(offset[0], offset[1], offset[2]);
+    return [
+      camera[0] + offset[0] * scale,
+      camera[1] + offset[1] * scale,
+      camera[2] + offset[2] * scale,
+    ];
   }
 
   /** Opens the map with one system that carries a stack, on the view axis. */
   async function openStack(page: Page, symbols: readonly string[]): Promise<void> {
     await openMap(page, `#c=0,0,0&d=${VIEW}&p=${PITCH}&y=0`);
     await addCategory(page);
+    // The nearer system takes a category of its own, in a colour no icon draws in.
+    await addCategory(page, 'Near', NEAR_COLOUR);
     expect(
       await addSystems(page, [
         record('Far', atScreen(VIEW, FAR, 0, 0), 'Alpha', symbols),
       ]),
     ).toBe(1);
     await setView(page, [0, 0, 0], VIEW);
+    await settleIcons(page, symbols.length);
   }
 
   /** Adds one system with no icon at a pixel of the frame, and draws a frame. */
-  async function addPlainAt(
+  async function addNearAt(
     page: Page,
     range: number,
     spot: { x: number; y: number },
   ): Promise<[number, number, number]> {
     const view = await focalPixels(page);
     const place = atPixel(view, range, spot.x, spot.y);
-    expect(await addSystems(page, [record('Near', place, 'Alpha')])).toBe(1);
+    expect(await addSystems(page, [record('Near', place, 'Near')])).toBe(1);
     await drawFrame(page);
     return place;
   }
 
-  /** What the browser finds at a pixel of the page. */
-  async function elementAt(page: Page, x: number, y: number): Promise<string> {
-    return page.evaluate(
-      (spot) => document.elementFromPoint(spot.x, spot.y)?.className ?? 'nothing',
-      { x, y },
-    );
-  }
-
-  test('a nearer marker hides the icon over it', async ({ page }) => {
+  // The scenario "A nearer marker cuts through the icon over it".
+  test('a nearer marker cuts through the icon over it', async ({ page }) => {
     await openStack(page, ['titan']);
-    const target = centreOf((await icons(page))[0] as Mark);
-    await addPlainAt(page, 400, target);
+    const icon = (await icons(page))[0] as IconPlacement;
+    const target = centreOf(icon);
+    await addNearAt(page, 40, target);
 
-    const stack = await icons(page);
-    const found = await elementAt(page, target.x, target.y);
-    console.log('the covered icon', { target, hidden: stack[0]?.hidden, found });
+    const centre = await pixelAt(page, target);
+    const glyph = await glyphPixels(page, icon, TITAN);
+    console.log('the cut icon', { target, centre, glyph });
 
-    expect(stack).toHaveLength(1);
-    expect(stack[0]?.hidden).toBe(true);
-    // A hidden element takes no pointer event, so the pixel over the nearer marker is
-    // the canvas and not the icon.
-    expect(found).not.toContain('gm-system-icon');
+    // The marker took the pixel it covers, and the rest of the icon still draws.
+    expect(reads(centre, NEAR_COLOUR)).toBe(true);
+    expect(glyph).toBeGreaterThan(0);
   });
 
+  // The scenario "A further marker hides nothing".
   test('a further marker hides nothing', async ({ page }) => {
     await openStack(page, ['titan']);
-    const target = centreOf((await icons(page))[0] as Mark);
-    await addPlainAt(page, 8000, target);
+    const icon = (await icons(page))[0] as IconPlacement;
+    const target = centreOf(icon);
+    await addNearAt(page, 8000, target);
 
-    const stack = await icons(page);
-    console.log('the further marker', { target, hidden: stack[0]?.hidden });
+    const centre = await pixelAt(page, target);
+    const glyph = await glyphPixels(page, icon, TITAN);
+    console.log('the further marker', { target, centre, glyph });
 
-    expect(stack).toHaveLength(1);
-    expect(stack[0]?.hidden).toBe(false);
+    expect(reads(centre, NEAR_COLOUR)).toBe(false);
+    expect(glyph).toBeGreaterThan(0);
   });
 
-  test('only the covered icon of a stack hides', async ({ page }) => {
-    await openStack(page, ['titan', 'mission', 'waypoint', 'bookmark']);
+  // The scenario "Only the covered part of a stack goes".
+  test('only the covered part of a stack goes', async ({ page }) => {
+    await openStack(page, ['titan', 'mission', 'front-line', 'squadron-carrier']);
     // The reading runs top of the screen down, so the record's third icon is the second
-    // of four.
+    // of the four.
     const before = await icons(page);
     expect(before).toHaveLength(4);
-    const target = centreOf(before[1] as Mark);
-    await addPlainAt(page, 400, target);
+    const third = before[1] as IconPlacement;
+    const target = centreOf(third);
+    await addNearAt(page, 40, target);
 
     const stack = await icons(page);
-    const arrow = (await arrows(page))[0] as Mark;
-    console.log('the covered icon of a stack', {
-      hidden: stack.map((mark) => mark.hidden),
-      arrow: arrow.hidden,
+    const colours = [TITAN, MISSION, FRONT_LINE, SQUADRON];
+    const found: number[] = [];
+    for (let at = 0; at < 4; at += 1) {
+      const box = stack[3 - at] as IconPlacement;
+      found.push(await glyphPixels(page, box, colours[at] as [number, number, number]));
+    }
+    const arrow = (await arrows(page))[0] as IconPlacement;
+    const arrowPixel = await pixelAt(page, {
+      x: arrow.left + arrow.width / 2,
+      y: arrow.top + 1,
     });
+    const centre = await pixelAt(page, target);
+    console.log('the covered icon of a stack', { found, arrowPixel, centre });
 
-    expect(stack.map((mark) => mark.hidden)).toEqual([false, true, false, false]);
-    expect(arrow.hidden).toBe(false);
+    for (const count of found) expect(count).toBeGreaterThan(0);
+    expect(reads(arrowPixel, TITAN)).toBe(true);
+    expect(reads(centre, NEAR_COLOUR)).toBe(true);
   });
 
+  // The scenario "The arrow follows the same rule".
   test('the arrow follows the same rule', async ({ page }) => {
     await openStack(page, ['titan']);
-    const target = centreOf((await arrows(page))[0] as Mark);
-    await addPlainAt(page, 400, target);
+    const arrow = (await arrows(page))[0] as IconPlacement;
+    const target = { x: arrow.left + arrow.width / 2, y: arrow.top + 1 };
+    await addNearAt(page, 40, target);
 
-    const stack = await icons(page);
-    const arrow = (await arrows(page))[0] as Mark;
-    console.log('the covered arrow', { target, arrow: arrow.hidden });
+    const pixel = await pixelAt(page, target);
+    console.log('the covered arrow', { target, pixel });
 
-    expect(arrow.hidden).toBe(true);
-    expect(stack.every((mark) => !mark.hidden)).toBe(true);
+    expect(reads(pixel, NEAR_COLOUR)).toBe(true);
+    expect(reads(pixel, TITAN)).toBe(false);
   });
 
-  test('a system does not hide its own stack', async ({ page }) => {
-    await openStack(page, ['titan', 'mission', 'waypoint', 'bookmark']);
-
-    const stack = await icons(page);
-    const arrow = (await arrows(page))[0] as Mark;
-    console.log('the stack of a lone system', {
-      hidden: stack.map((mark) => mark.hidden),
-      arrow: arrow.hidden,
-    });
-
-    expect(stack).toHaveLength(4);
-    expect(stack.every((mark) => !mark.hidden)).toBe(true);
-    expect(arrow.hidden).toBe(false);
-  });
-
-  test('the element comes back when the marker moves away', async ({ page }) => {
-    await openStack(page, ['titan']);
-    const target = centreOf((await icons(page))[0] as Mark);
-    const near = await addPlainAt(page, 400, target);
-    expect((await icons(page))[0]?.hidden).toBe(true);
-    const held = await counts(page);
-
-    // An orbit moves the near marker much further across the screen than the far one,
-    // because the screen offset of a point is its offset from the axis over its range.
-    await setView(page, [0, 0, 0], VIEW, 3);
-    const stack = await icons(page);
-    const marker = await projectOf(page, near);
-    const box = stack[0] as Mark;
-    const after = await counts(page);
-    console.log('the marker moved away', { marker, box, held, after });
-
-    expect(marker.x < box.left || marker.x > box.right).toBe(true);
-    expect(box.hidden).toBe(false);
-    // The element stayed in the pool, so the frame that shows it again allocates none.
-    expect(after).toEqual(held);
-  });
-
-  test('the keeper holds the hovered and the selected marker', async ({ page }) => {
-    await openStack(page, ['titan']);
-    const target = centreOf((await icons(page))[0] as Mark);
-    const near = await addPlainAt(page, 400, target);
-    const namesOn = await page.evaluate(
-      () => window.galaxyMap?.areSystemNamesVisible() ?? true,
+  /**
+   * The range the range buffer holds at a pixel, in light years. A pixel where no marker
+   * body drew reads a value above every drawable range.
+   */
+  async function rangeAt(page: Page, spot: { x: number; y: number }): Promise<number> {
+    const held = await page.evaluate(
+      (where) =>
+        window.galaxyMap?.debug.readRange(Math.round(where.x), Math.round(where.y)) ??
+        null,
+      spot,
     );
+    expect(held).not.toBeNull();
+    return held as number;
+  }
 
-    const marker = await projectOf(page, near);
-    await page.mouse.move(marker.x, marker.y);
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }),
-    );
-    const hovered = (await icons(page))[0]?.hidden;
-    const hoverName = await page.evaluate(
-      () => window.galaxyMap?.getHover()?.name ?? null,
-    );
+  // The scenario "A marker at the stack's own range cuts nothing". Two systems stand at
+  // one range from the camera, inside the bias the fragment compares with, and the second
+  // one projects inside the first one's icon box.
+  //
+  // A system's own marker cannot reach its own stack: the body of a `glow` sprite holds
+  // under 0.41 of the marker size from its centre and the arrow apex stands half the
+  // marker size and 2 pixels over it. A test written on one system therefore passes with
+  // the comparison deleted. Two systems inside the bias read the same comparison and can
+  // fail: with the bias at 0 the second marker cuts its shape out of the icon.
+  test('a marker at the stack own range cuts nothing', async ({ page }) => {
+    // The pair stands at 600 light years, which is the plateau of the marker size rule,
+    // so the second marker is 12 CSS pixels across and reads its category colour.
+    const pairRange = 600;
+    // The bias of the pass, as `ICON_RANGE_BIAS` states it. A value import would pull the
+    // pass and its shaders through Playwright's transform, which reads no `?raw`.
+    const bias = 1e-5;
 
-    await page.mouse.move(1, 1);
-    await page.evaluate((name) => {
-      window.galaxyMap?.setSelection(name);
-    }, 'Near');
+    await openMap(page, `#c=0,0,0&d=${VIEW}&p=${PITCH}&y=0`);
+    await addCategory(page);
+    await addCategory(page, 'Near', NEAR_COLOUR);
+    const stack = atScreen(VIEW, pairRange, 0, 0);
+    expect(await addSystems(page, [record('Far', stack, 'Alpha', ['titan'])])).toBe(1);
     await setView(page, [0, 0, 0], VIEW);
-    const selected = (await icons(page))[0]?.hidden;
-    const labels = await page.evaluate(() =>
-      [...document.querySelectorAll('.gm-system-label')].map(
-        (element) => element.textContent ?? '',
-      ),
+    await settleIcons(page, 1);
+
+    const icon = (await icons(page))[0] as IconPlacement;
+    const target = centreOf(icon);
+    const view = await focalPixels(page);
+    // The range the card measures to the system that carries the stack, read at its own
+    // marker. The two numbers the fragment compares are both written by the card, so the
+    // test places the second system against this reading and not against its own
+    // arithmetic: the difference between the reading and the modelled 600 is the part of
+    // the camera the model of this file does not hold.
+    const stackRange = await rangeAt(page, await projectOf(page, stack));
+    // The second system stands nearer by half the bias, which is 3 thousandths of a light
+    // year here. That is near enough that a comparison with no bias hides the icon, and
+    // far enough that the bias leaves it alone. Both margins are about 40 times the
+    // `float32` step at this range, so neither reading turns on a rounding.
+    const wanted = stackRange * (1 - bias / 2);
+    const inside = atRange(view, wanted - (stackRange - pairRange), target);
+    // The third system draws beside the box at the same range. It is the control: it says
+    // that a marker of this category at this range draws its colour on the frame at all,
+    // so a count of 0 inside the box is the plate over the marker and not a marker that
+    // never drew.
+    const beside = atRange(view, pairRange, { x: icon.left - 24, y: target.y });
+    expect(
+      await addSystems(page, [
+        record('Inside', inside, 'Near'),
+        record('Beside', beside, 'Near'),
+      ]),
+    ).toBe(2);
+    await drawFrame(page);
+
+    const marker = await projectOf(page, inside);
+    const control = await projectOf(page, beside);
+    const nearRange = await rangeAt(page, target);
+    const glyph = await glyphPixels(page, icon, TITAN);
+    const green = await glyphPixels(page, icon, NEAR_COLOUR);
+    const besideGreen = await glyphPixels(
+      page,
+      { ...icon, left: control.x - 8, top: control.y - 8, width: 16, height: 16 },
+      NEAR_COLOUR,
     );
-    console.log('the keeper under a hover and a selection', {
-      namesOn,
-      hoverName,
-      hovered,
-      selected,
-      labels,
+    console.log('the marker at the stack own range', {
+      stackRange,
+      nearRange,
+      marker,
+      glyph,
+      green,
+      besideGreen,
     });
 
-    expect(namesOn).toBe(false);
-    expect(hoverName).toBe('Near');
-    expect(hovered).toBe(true);
-    expect(selected).toBe(true);
-    // No system carries two name labels.
-    expect(new Set(labels).size).toBe(labels.length);
+    // The second marker draws inside the box, or the reading below covers nothing.
+    expect(marker.x).toBeGreaterThan(icon.left);
+    expect(marker.x).toBeLessThan(icon.left + icon.width);
+    expect(marker.y).toBeGreaterThan(icon.top);
+    expect(marker.y).toBeLessThan(icon.top + icon.height);
+    expect(besideGreen).toBeGreaterThan(0);
+    // The body of the second marker holds the pixel, and its range stands under the
+    // stack's own and inside the bias. This is the comparison the fragment makes: with
+    // the bias the icon draws, and without it the marker cuts through.
+    expect(nearRange).toBeLessThan(stackRange);
+    expect(nearRange).toBeGreaterThan(stackRange * (1 - bias));
+
+    expect(glyph).toBeGreaterThan(0);
+    expect(green).toBe(0);
+  });
+
+  // The scenario "The cut goes when the marker moves away". An orbit moves the near
+  // marker much further across the screen than the far one, because the screen offset of
+  // a point is its offset from the view axis over its range.
+  test('the cut goes when the marker moves away', async ({ page }) => {
+    await openStack(page, ['titan']);
+    const icon = (await icons(page))[0] as IconPlacement;
+    const target = centreOf(icon);
+    const near = await addNearAt(page, 40, target);
+    expect(reads(await pixelAt(page, target), NEAR_COLOUR)).toBe(true);
+
+    await setView(page, [0, 0, 0], VIEW, 3);
+    const moved = (await icons(page))[0] as IconPlacement;
+    const marker = await projectOf(page, near);
+    const green = await glyphPixels(page, moved, NEAR_COLOUR);
+    const glyph = await glyphPixels(page, moved, TITAN);
+    console.log('the marker moved away', { marker, moved, green, glyph });
+
+    expect(marker.x < moved.left || marker.x > moved.left + moved.width).toBe(true);
+    expect(green).toBe(0);
+    expect(glyph).toBeGreaterThan(0);
   });
 });

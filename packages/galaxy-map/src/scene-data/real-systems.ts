@@ -270,16 +270,29 @@ export interface RealSystemSet {
   /** How many systems the set holds. */
   readonly count: number;
   /**
-   * How many systems of the set hold at least one icon. The marker overlay skips its
-   * whole icon placement while this reads 0, because the icon switch is on by default
-   * and a set that names no icon must pay no per-frame work for it.
+   * How many systems of the set named at least one icon, which is how many indices
+   * `iconIndices` holds. The icon pass skips its whole placement while this reads 0,
+   * because the icon switch is on by default and a set that names no icon must pay no
+   * per-frame work for it.
    *
    * The count may be high and never low. A record that replaces one with icons by one
-   * without leaves it where it is, because a correction would need a sweep of the set.
-   * A high count costs the fast path alone and every icon still draws; a low one would
-   * hide every icon on the map with no report.
+   * without leaves its index where it is, because a correction would need a sweep of the
+   * set. A high count costs one read of that record per frame and every icon still
+   * draws; a low one would hide icons on the map with no report.
    */
   readonly iconSystemCount: number;
+  /**
+   * The index of each system whose record named at least one icon, in the order the
+   * records were added. The icon pass walks this list and not the set, so the per-frame
+   * placement cost follows the records that carry icons.
+   *
+   * It follows the rule `iconSystemCount` states: an index goes in and comes out only
+   * where the set is emptied. A reader takes `system(index)?.icons` per entry, so an
+   * index whose record lost its icons costs one read and draws nothing.
+   */
+  readonly iconIndices: Int32Array;
+  /** How many indices the list above holds. */
+  readonly iconIndexCount: number;
   /** How many categories the table holds. */
   readonly categoryCount: number;
   /** Rises on every change to the set. */
@@ -524,9 +537,26 @@ export function createSystemSet(): RealSystemSet {
   // rather than a scan of the set for each record.
   const slotOf = new Map<string, number>();
   let version = 0;
-  // How many records hold at least one icon. It rises with a record that carries one
-  // and falls only where the set is emptied, so it reads high and never low.
-  let iconSystems = 0;
+  // The slots whose record named at least one icon, and a flag per slot so a
+  // replacement writes no second entry. The renderer walks this list and not the set,
+  // so the per-frame stack work follows the records that carry icons and not the 10,000
+  // the set can hold.
+  //
+  // The list rises with a record that carries an icon and empties only where the set
+  // does, so it reads high and never low. A record that replaces one with icons by one
+  // without leaves its index in the list: the reader takes the icons of each entry, so
+  // a stale entry costs one read and draws nothing.
+  const iconIndices = new Int32Array(MAX_SYSTEMS);
+  const iconFlags = new Uint8Array(MAX_SYSTEMS);
+  let iconIndexCount = 0;
+
+  /** Puts a slot in the icon list, once. */
+  const noteIconSystem = (slot: number): void => {
+    if (iconFlags[slot] === 1) return;
+    iconFlags[slot] = 1;
+    iconIndices[iconIndexCount] = slot;
+    iconIndexCount += 1;
+  };
   // How many records name no category. It follows the same rule as the icon count: a
   // record raises it and only a clear resets it, so a replacement needs no sweep.
   // `addCategories` rejects every category while it is above 0.
@@ -812,22 +842,23 @@ export function createSystemSet(): RealSystemSet {
           // no sweep of the set. Only a clear resets it.
           uncategorisedSystems += 1;
         }
-        if (icons.length > 0) {
-          system.icons = icons;
-          // A replacement raises it again, so a record that loses its icons leaves the
-          // count high. The interface states why that direction is the safe one.
-          iconSystems += 1;
-        }
+        if (icons.length > 0) system.icons = icons;
 
+        let at: number;
         if (slot === undefined) {
-          const next = systems.length;
-          slotOf.set(identity, next);
-          writeSystem(next, system);
+          at = systems.length;
+          slotOf.set(identity, at);
+          writeSystem(at, system);
           added += 1;
         } else {
+          at = slot;
           writeSystem(slot, system);
           replaced += 1;
         }
+        // The list keeps the slot after the write, because a new record takes its slot
+        // here. A record that loses its icons leaves the entry: the interface states why
+        // that direction is the safe one.
+        if (icons.length > 0) noteIconSystem(at);
       }
 
       if (added > 0 || replaced > 0) version += 1;
@@ -837,7 +868,8 @@ export function createSystemSet(): RealSystemSet {
     clearSystems(): void {
       systems.length = 0;
       slotOf.clear();
-      iconSystems = 0;
+      iconIndexCount = 0;
+      iconFlags.fill(0);
       uncategorisedSystems = 0;
       boxEmpty = true;
       version += 1;
@@ -846,7 +878,8 @@ export function createSystemSet(): RealSystemSet {
     clearSystemsAndCategories(): void {
       systems.length = 0;
       slotOf.clear();
-      iconSystems = 0;
+      iconIndexCount = 0;
+      iconFlags.fill(0);
       uncategorisedSystems = 0;
       boxEmpty = true;
       categories.length = 0;
@@ -861,7 +894,13 @@ export function createSystemSet(): RealSystemSet {
       return systems.length;
     },
     get iconSystemCount(): number {
-      return iconSystems;
+      return iconIndexCount;
+    },
+    get iconIndices(): Int32Array {
+      return iconIndices.subarray(0, iconIndexCount);
+    },
+    get iconIndexCount(): number {
+      return iconIndexCount;
     },
     get systemBox(): SystemBox {
       return {
