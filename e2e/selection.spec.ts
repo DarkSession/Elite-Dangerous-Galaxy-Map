@@ -1721,3 +1721,279 @@ test.describe('the system names option', () => {
     expect(labels).toBe(0);
   });
 });
+
+// The requirement "A nearer marker hides a name label". A label is a DOM element over
+// the canvas, so it draws over every pixel the canvas drew at that place, whatever the
+// depth: without the rule the name of a system 4,000 light years away covers a star
+// 40 light years from the camera.
+//
+// The test is the whole element and not a part of it, so the reading is `visibility` on
+// the element. The icon stacks take the opposite call, because they draw on the canvas
+// and the card cuts them per pixel; `e2e/system-icons.spec.ts` reads those as pixels.
+test.describe('a nearer marker hides a name label', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  /** The distance every view of this group takes. */
+  const LABEL_VIEW = 1000;
+
+  /** How far the system that carries the label stands from the camera. */
+  const LABEL_FAR = 4000;
+
+  /** The colour of the nearer system's category. The far one keeps `CORE`. */
+  const NEAR_COLOUR: [number, number, number] = [0, 255, 0];
+
+  /**
+   * A point at a range from the camera, offset across the screen and up it. The camera
+   * looks along `(0, -sin p, cos p)` at a yaw of 0, the screen's right is the world `x`
+   * axis and the screen's up is `(0, cos p, sin p)`.
+   */
+  function atScreen(
+    range: number,
+    right: number,
+    up: number,
+  ): [number, number, number] {
+    const pitch = (PITCH * Math.PI) / 180;
+    const camera: [number, number, number] = [
+      0,
+      Math.sin(pitch) * LABEL_VIEW,
+      -Math.cos(pitch) * LABEL_VIEW,
+    ];
+    return [
+      camera[0] + right,
+      camera[1] - Math.sin(pitch) * range + Math.cos(pitch) * up,
+      camera[2] + Math.cos(pitch) * range + Math.sin(pitch) * up,
+    ];
+  }
+
+  /**
+   * The focal length of the view in CSS pixels, read from the frame itself. A point `u`
+   * light years up from the view axis at a range `r` draws `focal * u / r` pixels over
+   * the centre of the screen.
+   */
+  async function focalPixels(
+    page: Page,
+  ): Promise<{ focal: number; cx: number; cy: number }> {
+    const centre = await projectOf(page, atScreen(LABEL_FAR, 0, 0));
+    const up = await projectOf(page, atScreen(LABEL_FAR, 0, 100));
+    return { focal: ((centre.y - up.y) * LABEL_FAR) / 100, cx: centre.x, cy: centre.y };
+  }
+
+  /** A point at a range from the camera that draws at a pixel of the frame. */
+  function atPixel(
+    view: { focal: number; cx: number; cy: number },
+    range: number,
+    x: number,
+    y: number,
+  ): [number, number, number] {
+    return atScreen(
+      range,
+      ((x - view.cx) * range) / view.focal,
+      ((view.cy - y) * range) / view.focal,
+    );
+  }
+
+  /** The box and the visibility of the label of a name. */
+  async function labelOf(
+    page: Page,
+    name: string,
+  ): Promise<{ left: number; top: number; bottom: number; hidden: boolean } | null> {
+    return page.evaluate((wanted) => {
+      const element = [...document.querySelectorAll('.gm-system-label')].find(
+        (one) => one.textContent === wanted,
+      );
+      if (element === undefined) return null;
+      const box = element.getBoundingClientRect();
+      return {
+        left: box.left,
+        top: box.top,
+        bottom: box.bottom,
+        hidden: getComputedStyle(element).visibility === 'hidden',
+      };
+    }, name);
+  }
+
+  /** How many name labels the overlay holds, hidden ones included. */
+  async function labelCount(page: Page): Promise<number> {
+    return page.evaluate(() => document.querySelectorAll('.gm-system-label').length);
+  }
+
+  /** Opens the map with one far system, its name label on. */
+  async function openFar(page: Page): Promise<void> {
+    await openMap(page, `#c=0,0,0&d=${LABEL_VIEW}&p=${PITCH}&y=0`);
+    await addCategory(page, 'Alpha');
+    await page.evaluate(
+      (colour) => {
+        window.galaxyMap?.addCategories([
+          { name: 'Near', color: colour as [number, number, number] },
+        ]);
+        window.galaxyMap?.setSystemNamesVisible(true);
+      },
+      NEAR_COLOUR as readonly number[],
+    );
+    expect(
+      await addSystems(page, [record('Far', atScreen(LABEL_FAR, 0, 0), 'Alpha')]),
+    ).toBe(1);
+    await setView(page, [0, 0, 0], LABEL_VIEW);
+  }
+
+  /** Adds one system of the `Near` category at a pixel of the frame. */
+  async function addNearAt(
+    page: Page,
+    range: number,
+    spot: { x: number; y: number },
+  ): Promise<[number, number, number]> {
+    const view = await focalPixels(page);
+    const place = atPixel(view, range, spot.x, spot.y);
+    expect(await addSystems(page, [record('Near', place, 'Near')])).toBe(1);
+    await drawFrame(page);
+    return place;
+  }
+
+  /** The middle of the label of the far system, in CSS pixels. */
+  async function labelMiddle(page: Page): Promise<{ x: number; y: number }> {
+    const label = await labelOf(page, 'Far');
+    if (label === null) throw new Error('The frame placed no label for Far.');
+    return { x: label.left + 10, y: (label.top + label.bottom) / 2 };
+  }
+
+  // The scenario "A nearer marker hides the label under it".
+  test('a nearer marker hides the label under it', async ({ page }) => {
+    await openFar(page);
+    const target = await labelMiddle(page);
+    await addNearAt(page, 40, target);
+
+    const label = await labelOf(page, 'Far');
+    const pixel = await page.evaluate(
+      (where) => window.__galaxyMap?.readPixel?.(where.x, where.y) ?? [],
+      target,
+    );
+    console.log('the covered label', { target, label, pixel });
+
+    expect(label?.hidden).toBe(true);
+    // The canvas at that pixel reads the nearer marker, in its own category colour.
+    expect((pixel[1] as number) ?? 0).toBeGreaterThan((pixel[0] as number) ?? 0);
+    expect((pixel[1] as number) ?? 0).toBeGreaterThan((pixel[2] as number) ?? 0);
+  });
+
+  // The scenario "A further marker hides no label".
+  test('a further marker hides no label', async ({ page }) => {
+    await openFar(page);
+    const target = await labelMiddle(page);
+    await addNearAt(page, 8000, target);
+
+    const label = await labelOf(page, 'Far');
+    console.log('the further marker', { target, label });
+
+    expect(label?.hidden).toBe(false);
+  });
+
+  // The scenario "A system does not hide its own label". The test compares ranges from
+  // one reading of one position, so a marker at the label's own range never counts as
+  // nearer, whatever the sprite covers.
+  test('a system does not hide its own label', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=40&p=35&y=0');
+    await addCategory(page, 'Alpha');
+    await page.evaluate(() => {
+      window.galaxyMap?.setSystemNamesVisible(true);
+    });
+    // The camera stands 40 light years away, where the marker sprite is at its widest
+    // and its glow reaches down into its own label box.
+    expect(await addSystems(page, [record('Alone', [0, 0, 0], 'Alpha')])).toBe(1);
+    await setView(page, [0, 0, 0], 40);
+
+    const label = await labelOf(page, 'Alone');
+    console.log('the label of a lone system', label);
+
+    expect(label).not.toBeNull();
+    expect(label?.hidden).toBe(false);
+  });
+
+  // The scenario "The hovered and the selected label do not hide".
+  test('the hovered and the selected label do not hide', async ({ page }) => {
+    await openFar(page);
+    const target = await labelMiddle(page);
+    await addNearAt(page, 40, target);
+    expect((await labelOf(page, 'Far'))?.hidden).toBe(true);
+
+    const marker = await projectOf(page, atScreen(LABEL_FAR, 0, 0));
+    await page.mouse.move(marker.x, marker.y);
+    await waitFrames(page);
+    const hovered = await labelOf(page, 'Far');
+    const hoverName = await page.evaluate(
+      () => window.galaxyMap?.getHover()?.name ?? null,
+    );
+
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => {
+      window.galaxyMap?.setSelection('Far');
+    });
+    await setView(page, [0, 0, 0], LABEL_VIEW);
+    const selected = await labelOf(page, 'Far');
+    console.log('the hovered and the selected label', {
+      hoverName,
+      hovered,
+      selected,
+    });
+
+    expect(hoverName).toBe('Far');
+    expect(hovered?.hidden).toBe(false);
+    expect(selected?.hidden).toBe(false);
+  });
+
+  // The scenario "A hidden label still holds its count". A hidden label keeps its place,
+  // its pool slot and its count, so every count reads the same with the rule and without.
+  test('a hidden label still holds its count', async ({ page }) => {
+    await openFar(page);
+    const target = await labelMiddle(page);
+    await addNearAt(page, 8000, target);
+    const behind = {
+      labels: await labelCount(page),
+      label: await labelOf(page, 'Far'),
+    };
+
+    await page.evaluate(() => {
+      window.galaxyMap?.clearSystems();
+    });
+    await openFarAgain(page);
+    const front = { labels: await labelCount(page), label: await labelOf(page, 'Far') };
+    console.log('the counts behind and in front', { behind, front });
+
+    expect(behind.label?.hidden).toBe(false);
+    expect(front.label?.hidden).toBe(true);
+    expect(front.labels).toBe(behind.labels);
+    expect(front.label?.top).toBe(behind.label?.top);
+  });
+
+  /** Builds the covered frame again, over a map whose systems are cleared. */
+  async function openFarAgain(page: Page): Promise<void> {
+    expect(
+      await addSystems(page, [record('Far', atScreen(LABEL_FAR, 0, 0), 'Alpha')]),
+    ).toBe(1);
+    await setView(page, [0, 0, 0], LABEL_VIEW);
+    const target = await labelMiddle(page);
+    await addNearAt(page, 40, target);
+  }
+
+  // The scenario "The label comes back when the marker moves away". An orbit moves the
+  // near marker much further across the screen than the far one, because the screen
+  // offset of a point is its offset from the view axis over its range.
+  test('the label comes back when the marker moves away', async ({ page }) => {
+    await openFar(page);
+    const target = await labelMiddle(page);
+    const near = await addNearAt(page, 40, target);
+    expect((await labelOf(page, 'Far'))?.hidden).toBe(true);
+    const held = await labelCount(page);
+
+    await setView(page, [0, 0, 0], LABEL_VIEW, 3);
+    const label = await labelOf(page, 'Far');
+    const marker = await projectOf(page, near);
+    console.log('the marker moved away', { marker, label, held });
+
+    expect(label?.hidden).toBe(false);
+    expect(marker.x < (label?.left ?? 0) || marker.x > (label?.left ?? 0) + 100).toBe(
+      true,
+    );
+    // The label stayed in the pool, so the frame that shows it again allocates none.
+    expect(await labelCount(page)).toBe(held);
+  });
+});

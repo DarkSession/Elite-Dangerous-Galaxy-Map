@@ -2306,7 +2306,8 @@ test.describe('the map options panel', () => {
     );
   });
 
-  // The scenario "The system icons switch moves the stacks".
+  // The scenario "The system icons switch moves the stacks". The stacks draw on the
+  // canvas, so the reading is the placement count of the frame and not an element count.
   test('the system icons switch moves the stacks', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
@@ -2320,8 +2321,12 @@ test.describe('the map options panel', () => {
     const count = async (): Promise<number> =>
       page.evaluate(() => {
         window.__hudMap?.debug.drawNow();
-        return document.querySelectorAll('.gm-system-icon').length;
+        return (window.__hudMap?.debug.iconPlacements() ?? []).filter(
+          (one) => one.kind === 'icon',
+        ).length;
       });
+    // A vector loads asynchronously, so the first frames place fewer icons.
+    await expect.poll(count, { timeout: 15000 }).toBe(2);
     await expect(icons).toHaveAttribute('aria-pressed', 'true');
 
     await icons.click();
@@ -2336,47 +2341,98 @@ test.describe('the map options panel', () => {
     await expect(icons).toHaveAttribute('aria-pressed', 'true');
   });
 
-  // The scenario "The HUD draws over an icon stack". A stack takes a stacking level of
-  // its own for its depth order, and a level escapes into the page where its parent is
-  // not a stacking context. The stack layer carries a level, so it is one, and it holds
-  // every stack level inside it. The test reads the levels and the tree, because the two
-  // together are what CSS decides the paint order from: a HUD panel is part clear, so a
-  // reading of the picture cannot tell a stack behind it from one in front.
+  // The scenario "The HUD draws over an icon stack". The stacks are pixels of the canvas
+  // now, so every element of the page draws over them and the reading is the element at
+  // the middle of an icon. The test moves the system until its stack lies under the
+  // options panel, because a stack at the middle of the screen lies under no panel.
   test('the HUD draws over an icon stack', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
     await setView(page, { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 });
+    const panel = await hud(page).locator('.gm-hud__options-panel').boundingBox();
+    if (panel === null) throw new Error('The HUD holds no options panel.');
+    // Below the middle of the panel by a stack height, so the icons over the marker land
+    // inside it.
+    const target = {
+      x: panel.x + panel.width / 2,
+      y: panel.y + panel.height / 2 + 45,
+    };
+
+    /** Draws a frame and reads where a game position lands, in CSS pixels. */
+    const projectOf = async (
+      point: [number, number, number],
+    ): Promise<{ x: number; y: number }> =>
+      page.evaluate((where) => {
+        window.__hudMap?.debug.drawNow();
+        return window.__hudMap?.debug.project(where) ?? { x: -1, y: -1 };
+      }, point);
+
+    // Two probes of 100 light years give the pixels a light year moves near the cursor.
+    // The perspective divide makes the scale change with the offset, so the place below
+    // is an approximation, and the test reads where the stack lands.
+    expect(await addSystems(page, [record('One', [0, 0, 0], 'Alpha')])).toBe(1);
+    const centre = await projectOf([0, 0, 0]);
+    const right = await projectOf([100, 0, 0]);
+    const up = await projectOf([0, 100, 0]);
+    const place: [number, number, number] = [
+      ((target.x - centre.x) * 100) / (right.x - centre.x),
+      ((target.y - centre.y) * 100) / (up.y - centre.y),
+      0,
+    ];
+    await page.evaluate(() => {
+      window.__hudMap?.clearSystems();
+    });
     expect(
       await addSystems(page, [
-        record('One', [0, 0, 0], 'Alpha', { icons: ['titan', 'mission'] }),
+        record('One', place, 'Alpha', { icons: ['titan', 'mission'] }),
       ]),
     ).toBe(1);
+    // A vector loads asynchronously, so the first frames place fewer icons.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            window.__hudMap?.debug.drawNow();
+            return (window.__hudMap?.debug.iconPlacements() ?? []).filter(
+              (one) => one.kind === 'icon',
+            ).length;
+          }),
+        { timeout: 15000 },
+      )
+      .toBe(2);
 
     const reading = await page.evaluate(() => {
       window.__hudMap?.debug.drawNow();
-      const icon = document.querySelector('.gm-system-icon');
-      const layer = document.querySelector('.gm-system-stacks');
-      const root = window.__hudMap?.hud?.element ?? null;
-      if (icon === null || layer === null || root === null) return null;
-      const levelOf = (element: Element): string => getComputedStyle(element).zIndex;
+      const stack = (window.__hudMap?.debug.iconPlacements() ?? []).filter(
+        (one) => one.kind === 'icon',
+      );
+      const icon = stack[0];
+      if (icon === undefined) return null;
+      const at = {
+        x: icon.left + icon.width / 2,
+        y: icon.top + icon.height / 2,
+      };
+      const element = document.elementFromPoint(at.x, at.y);
       return {
-        icon: levelOf(icon),
-        layer: levelOf(layer),
-        hud: levelOf(root),
-        iconInLayer: layer.contains(icon),
-        sameParent: layer.parentElement?.parentElement === root.parentElement,
+        at,
+        icons: stack.length,
+        tag: element?.tagName ?? '',
+        className: element?.className ?? '',
+        inHud: window.__hudMap?.hud?.element?.contains(element) ?? false,
       };
     });
-    console.log('the levels of the stack and the HUD', reading);
-    if (reading === null) throw new Error('The page holds no stack or no HUD.');
+    console.log('the element over the stack', { panel, target, reading });
+    if (reading === null) throw new Error('The frame placed no icon.');
 
-    // Every stack level lives inside the layer, so the page never reads it.
-    expect(reading.iconInLayer).toBe(true);
-    expect(reading.layer).not.toBe('auto');
-    expect(Number(reading.icon)).toBeGreaterThan(0);
-    // The layer and the HUD meet in one stacking context, and the HUD is over it.
-    expect(reading.sameParent).toBe(true);
-    expect(Number(reading.layer)).toBeLessThan(Number(reading.hud));
+    expect(reading.icons).toBeGreaterThan(0);
+    // The precondition of the scenario: the stack lies under the options panel.
+    expect(reading.at.x).toBeGreaterThanOrEqual(panel.x);
+    expect(reading.at.x).toBeLessThanOrEqual(panel.x + panel.width);
+    expect(reading.at.y).toBeGreaterThanOrEqual(panel.y);
+    expect(reading.at.y).toBeLessThanOrEqual(panel.y + panel.height);
+    // The HUD panel is over the canvas, so the point reads the panel and not the canvas.
+    expect(reading.tag).not.toBe('CANVAS');
+    expect(reading.inHud).toBe(true);
   });
 
   // The scenario "The system icons switch opens on the option". The test above, which

@@ -94,8 +94,14 @@ interface Reading {
   readonly labels: number;
   /** How many of those were coordinate labels. */
   readonly gridLabels: number;
-  /** How many icons of a system stack the last frame of the move held. */
+  /** How many icons of a system stack the last frame of the move placed. */
   readonly icons: number;
+  /**
+   * How many icon and arrow elements the overlay holds. The stacks draw on the canvas,
+   * so the number is 0 and a count is the cheaper guard that the paint reading covers
+   * the frame this budget is written for.
+   */
+  readonly iconElements: number;
   /** How many HUD panels had a box on the screen in the last frame. */
   readonly panels: number;
   /** The boxes of those panels, in CSS pixels. */
@@ -121,6 +127,7 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
         labels: 0,
         gridLabels: 0,
         icons: 0,
+        iconElements: 0,
         panels: 0,
         panelBoxes: [] as string[],
       };
@@ -142,7 +149,12 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
       const stats = probe.frameIntervalStats?.() ?? empty;
       const gridLabels = document.querySelectorAll('.gm-grid-label').length;
       const labels = gridLabels + document.querySelectorAll('.gm-system-label').length;
-      const icons = document.querySelectorAll('.gm-system-icon').length;
+      const icons = map.debug
+        .iconPlacements()
+        .filter((one) => one.kind === 'icon').length;
+      const iconElements = document.querySelectorAll(
+        '.gm-system-icon, .gm-system-arrow',
+      ).length;
       let panels = 0;
       const panelBoxes: string[] = [];
       for (const element of document.querySelectorAll('.gm-hud__panel')) {
@@ -152,7 +164,7 @@ async function move(page: Page, frames = FRAMES): Promise<Reading> {
           panelBoxes.push(`${Math.round(box.width)}x${Math.round(box.height)}`);
         }
       }
-      return { ...stats, labels, gridLabels, icons, panels, panelBoxes };
+      return { ...stats, labels, gridLabels, icons, iconElements, panels, panelBoxes };
     },
     { frames, warm: WARM_FRAMES },
   );
@@ -316,10 +328,15 @@ test('the camera move holds the paint budget', async ({ page }) => {
   expect(reading.meanMs).toBeLessThanOrEqual(BUDGET_MS);
 });
 
-// The scenario "A camera move with icons holds the Firefox budget" of `system-icons`.
-// It is a second reading at the view the test above measures, with every record carrying
-// four icons, and it holds to the same 7 ms. The budget is not raised for the icons.
-// The reading above is the frame with no icon, and it stays as it is.
+// The scenarios "A camera move with icons holds the Firefox budget" and "The test holds
+// the frame budget" of `system-icons`. It is a second reading at the view the test above
+// measures, with 10,000 records carrying four icons each and the icon switch on, and it
+// holds to the same 7 ms. The budget is not raised for the icons. The reading above is
+// the frame with no icon, and it stays as it is.
+//
+// The second scenario asks for the mean frame interval of that move, which is what
+// `meanMs` below holds: the pass draws inside `render`, so its cost is in the frame and
+// no longer in the overlay.
 test('the camera move with icons holds the paint budget', async ({ page }) => {
   test.setTimeout(180000);
   await openForMove(page, true);
@@ -330,6 +347,9 @@ test('the camera move with icons holds the paint budget', async ({ page }) => {
   // The icon count is part of the assertion. A frame that drew no icon would measure
   // none of the cost this reading exists for.
   expect(reading.icons).toBeGreaterThan(0);
+  // The stacks draw on the canvas, so the overlay this budget measures holds none of
+  // them. That is what the move to the card was for.
+  expect(reading.iconElements).toBe(0);
   expect(reading.labels).toBeGreaterThanOrEqual(8);
   expect(reading.panels).toBeGreaterThanOrEqual(2);
   expect(reading.frames).toBeGreaterThanOrEqual(FRAMES - WARM_FRAMES - 10);

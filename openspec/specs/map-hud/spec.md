@@ -894,9 +894,13 @@ the handle moves the control with it.
 #### Scenario: The system icons switch moves the stacks
 
 - **WHEN** a browser test builds a map with the HUD, adds one system with two icons in
-  view, clicks the **System icons** switch, draws a frame and counts the icon elements,
-  then clicks it again, draws and counts
+  view, clicks the **System icons** switch, draws a frame and counts the icon placements
+  the handle reports, then clicks it again, draws and counts
 - **THEN** the counts are 0 and 2, and the switch reads off and then on
+
+  The stacks draw on the canvas and not in the overlay, which `system-icons` states, so
+  the count is of the placements the handle reports and not of DOM elements. A count of
+  elements would read 0 at both readings and the scenario would pass on nothing.
 
 #### Scenario: The system icons switch opens on the option
 

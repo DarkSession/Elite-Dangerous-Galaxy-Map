@@ -1046,3 +1046,62 @@ describe('the name filter', () => {
     expect(set.getNameFilter()).toBe('sol');
   });
 });
+
+describe('the icon index list', () => {
+  test('reads nothing while no record names an icon', () => {
+    const set = setWith('A');
+    set.addSystems([record('Sol', 'A'), record('Achenar', 'A')]);
+
+    expect(set.iconIndexCount).toBe(0);
+    expect(set.iconSystemCount).toBe(0);
+    expect(Array.from(set.iconIndices)).toEqual([]);
+  });
+
+  test('names the index of each record that holds an icon', () => {
+    const set = setWith('A');
+    set.addSystems(
+      asRecords([
+        { ...record('one', 'A'), icons: ['titan'] },
+        record('two', 'A'),
+        { ...record('three', 'A'), icons: ['waypoint', 'mission'] },
+        record('four', 'A'),
+        { ...record('five', 'A'), icons: ['engineer'] },
+      ]),
+    );
+
+    expect(set.iconIndexCount).toBe(3);
+    expect(Array.from(set.iconIndices)).toEqual([0, 2, 4]);
+    expect(set.iconSystemCount).toBe(3);
+  });
+
+  test('keeps the index of a record replaced by one with no icon', () => {
+    const set = setWith('A');
+    set.addSystems(asRecords([{ ...record('Sol', 'A'), icons: ['titan'] }]));
+    set.addSystems([record('Sol', 'A')]);
+
+    // The list reads high and never low, so the entry stays and the reader finds no
+    // icons at it. A correction would need a sweep of the set.
+    expect(Array.from(set.iconIndices)).toEqual([0]);
+    expect(set.system(0)?.icons).toBeUndefined();
+  });
+
+  test('writes one entry for a record replaced by one that still holds icons', () => {
+    const set = setWith('A');
+    set.addSystems(asRecords([{ ...record('Sol', 'A'), icons: ['titan'] }]));
+    set.addSystems(asRecords([{ ...record('Sol', 'A'), icons: ['waypoint'] }]));
+
+    expect(Array.from(set.iconIndices)).toEqual([0]);
+  });
+
+  test('empties with the set', () => {
+    const set = setWith('A');
+    set.addSystems(asRecords([{ ...record('Sol', 'A'), icons: ['titan'] }]));
+    set.clearSystems();
+
+    expect(set.iconIndexCount).toBe(0);
+    expect(Array.from(set.iconIndices)).toEqual([]);
+
+    set.addSystems(asRecords([{ ...record('Achenar', 'A'), icons: ['titan'] }]));
+    expect(Array.from(set.iconIndices)).toEqual([0]);
+  });
+});

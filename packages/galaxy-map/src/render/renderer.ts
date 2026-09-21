@@ -1,6 +1,11 @@
 // Ties the passes together and holds the frame loop's state.
 import { mat4 } from 'gl-matrix';
-import { cameraPosition, projectionMatrix, viewMatrix } from '../camera/projection';
+import {
+  cameraPosition,
+  nearPlane,
+  projectionMatrix,
+  viewMatrix,
+} from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import { FIELD_OF_VIEW_DEGREES } from '../camera/view';
 import type { View } from '../camera/view';
@@ -87,6 +92,9 @@ import type { PointPass } from './point-pass';
 import type { Program } from './program';
 import { createRegionPass, createRegionPrograms, regionFade } from './region-pass';
 import type { RegionPass, RegionPrograms } from './region-pass';
+import { createIconPass, createIconProgram } from './icon-pass';
+import type { IconPass, IconPlacement } from './icon-pass';
+export type { IconPlacement } from './icon-pass';
 import { createShapePass, createShapePrograms } from './shape-pass';
 import type { ShapePass, ShapePrograms } from './shape-pass';
 import {
@@ -263,6 +271,30 @@ export interface Renderer {
   setShapeDraw(draw: boolean): void;
   /** How many draw calls the last frame's shape overlay issued. */
   shapeDrawCalls(): number;
+  /**
+   * Turns the system icon stacks on or off. They are on unless the host turns them off,
+   * which `system-icons` states: an icon draws only where a record names one.
+   */
+  setSystemIconsDraw(draw: boolean): void;
+  /** True while the icon stacks draw. */
+  systemIconsDraw(): boolean;
+  /**
+   * The selected system, or -1. The stack of that system rises by the height of the
+   * pin, so the pin and the stack do not draw over each other. The renderer draws before
+   * the overlay runs, so the page writes the index here rather than the pass reading it
+   * off a mark the overlay has not placed yet.
+   */
+  setSelectedSystem(index: number): void;
+  /**
+   * What the last frame's icon pass placed: one entry per icon and one per arrow, in
+   * draw order, which is the furthest stack first. The reading says what the frame
+   * **placed** and not what the range test then discarded, because that test runs per
+   * pixel on the card.
+   */
+  iconPlacements(): IconPlacement[];
+  /** How many draw calls the last frame's icon pass issued: at most one, because the
+   * arrows and the icons share one instance stream. */
+  iconDrawCalls(): number;
   /** The size of the shape line buffer in device pixels, or null while it holds none. */
   shapeLineBufferSize(): [number, number] | null;
   /**
@@ -412,6 +444,7 @@ export function createRenderer(
     : null;
   const regionPrograms: RegionPrograms = createRegionPrograms(gl);
   const shapePrograms: ShapePrograms = createShapePrograms(gl);
+  const iconProgram: Program = createIconProgram(gl);
   const cloudProgram: Program = createCloudProgram(gl);
   const volumeProgram: Program = createVolumeProgram(gl);
   const composite: CompositePass = createCompositePass(gl, triangle.vertexArray);
@@ -462,6 +495,10 @@ export function createRenderer(
   let shapeDraw = true;
   let shapeCalls = 0;
   let markerCalls = 0;
+  const iconPass: IconPass = createIconPass(gl, iconProgram);
+  let iconDraw = true;
+  let iconCalls = 0;
+  let selectedSystem = -1;
   let cloudPass: CloudPass | null = null;
   let nebulaDraw: NebulaDraw | null = null;
   // The draw order of the records. The map draws in the order the selection gives, and
@@ -847,12 +884,37 @@ export function createRenderer(
       drawnShapes === null
         ? { spheres: 0, segments: 0 }
         : shapePass.prepare(drawnShapes);
-    // A map with no shape that draws writes no range, and costs what it costs without the
-    // buffer. A line reads the buffer as a sphere does: the line step caps its own wash
-    // over a marker body, and a set of lines and no sphere is an ordinary set, so the
-    // range draw follows the shapes and not the spheres alone.
+    // The icon stacks read the same buffer, so the pass selects and places them here,
+    // before the marker pass draws, and the count joins the shape counts below.
+    iconCalls = 0;
+    let stacks = 0;
+    if (passes.systems && iconDraw && systemSet !== null) {
+      stacks = iconPass.prepare({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        cursorOffset: [
+          view.cursor[0] - camera[0],
+          view.cursor[1] - camera[1],
+          camera[2] - view.cursor[2],
+        ],
+        near: nearHold ?? nearPlane(view.distance),
+        pixelRatio,
+        set: systemSet,
+        selectedIndex: selectedSystem,
+      });
+    } else {
+      // A frame with the switch off reports no placement, and not the placements of the
+      // frame before it.
+      iconPass.clear();
+    }
+    // A map with no shape and no stack writes no range, and costs what it costs without
+    // the buffer. A line reads the buffer as a sphere does: the line step caps its own
+    // wash over a marker body, and a set of lines and no sphere is an ordinary set, so
+    // the range draw follows the shapes and not the spheres alone.
     const rangeTarget =
-      shapeCounts.spheres > 0 || shapeCounts.segments > 0 ? rangeBuffer : null;
+      shapeCounts.spheres > 0 || shapeCounts.segments > 0 || stacks > 0
+        ? rangeBuffer
+        : null;
     if (rangeTarget !== null) {
       // The shape steps read the buffer at their own fragment coordinate, so it holds the
       // drawing buffer size and not a share of it. The size follows the first frame that
@@ -898,6 +960,26 @@ export function createRenderer(
         pixelRatio,
         focal,
         set: drawnShapes,
+        range: rangeTarget === null ? null : rangeTarget.texture,
+      });
+    }
+
+    // The icon stacks draw last. They sat over the shapes as DOM elements, so drawing
+    // them after the shapes keeps that order. The DOM overlay still draws over them,
+    // which `system-icons` states and accepts.
+    if (stacks > 0 && systemSet !== null) {
+      iconCalls = iconPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        cursorOffset: [
+          view.cursor[0] - camera[0],
+          view.cursor[1] - camera[1],
+          camera[2] - view.cursor[2],
+        ],
+        near: nearHold ?? nearPlane(view.distance),
+        pixelRatio,
+        set: systemSet,
+        selectedIndex: selectedSystem,
         range: rangeTarget === null ? null : rangeTarget.texture,
       });
     }
@@ -969,6 +1051,21 @@ export function createRenderer(
     },
     shapeDrawCalls(): number {
       return shapeCalls;
+    },
+    setSystemIconsDraw(draw: boolean): void {
+      iconDraw = draw;
+    },
+    systemIconsDraw(): boolean {
+      return iconDraw;
+    },
+    setSelectedSystem(index: number): void {
+      selectedSystem = index;
+    },
+    iconPlacements(): IconPlacement[] {
+      return iconPass.placements();
+    },
+    iconDrawCalls(): number {
+      return iconCalls;
     },
     shapeLineBufferSize(): [number, number] | null {
       return shapePass.lineBufferSize();
@@ -1188,6 +1285,7 @@ export function createRenderer(
       gridPass.dispose();
       regionPass?.dispose();
       shapePass.dispose();
+      iconPass.dispose();
       cloudPass?.dispose();
       nebulaDraw?.dispose();
       volumeTexture?.dispose();
@@ -1206,6 +1304,7 @@ export function createRenderer(
       gl.deleteProgram(shapePrograms.spheres.program);
       gl.deleteProgram(shapePrograms.lines.program);
       gl.deleteProgram(shapePrograms.composite.program);
+      gl.deleteProgram(iconProgram.program);
       gl.deleteProgram(cloudProgram.program);
       gl.deleteProgram(volumeProgram.program);
       composite.dispose();

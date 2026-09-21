@@ -156,18 +156,32 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    // The suite serves the demo site build, which carries the page and the demo data.
-    // `pnpm build` emits the library, which has no page to open.
-    //
-    // Always build and serve the code under test. A server left over from an earlier
-    // run would serve a stale bundle. The second pass of `pnpm test:e2e` sets
-    // GALAXY_MAP_E2E_BUILT, because the first pass built the same tree a moment before.
-    command: process.env['GALAXY_MAP_E2E_BUILT']
-      ? 'pnpm preview'
-      : 'pnpm build:demo-site && pnpm preview',
-    url: 'http://localhost:4173/Galaxy-Map/',
-    reuseExistingServer: false,
-    timeout: 300_000,
-  },
+  webServer: [
+    {
+      // The suite serves the demo site build, which carries the page and the demo data.
+      // `pnpm build` emits the library, which has no page to open.
+      //
+      // Always build and serve the code under test. A server left over from an earlier
+      // run would serve a stale bundle. The second pass of `pnpm test:e2e` sets
+      // GALAXY_MAP_E2E_BUILT, because the first pass built the same tree a moment before.
+      command: process.env['GALAXY_MAP_E2E_BUILT']
+        ? 'pnpm preview'
+        : 'pnpm build:demo-site && pnpm preview',
+      url: 'http://localhost:4173/Galaxy-Map/',
+      reuseExistingServer: false,
+      timeout: 300_000,
+    },
+    {
+      // The second origin. The icon tests read one vector with
+      // `Access-Control-Allow-Origin` and the same vector without it, which the demo
+      // site cannot serve: a fixture it serves itself is same-origin.
+      //
+      // The port is fixed, as 4173 is, so a run left over from an earlier job holds it.
+      // The project's one-Playwright-run-at-a-time rule therefore covers two ports.
+      command: 'node e2e/fixtures/icon-origin-server.mjs',
+      url: 'http://localhost:4174/requests',
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+  ],
 });

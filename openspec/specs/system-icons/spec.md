@@ -158,9 +158,10 @@ than a system that silently lost its icon.
 
 ### Requirement: The icons of a system draw as a stack over its marker
 
-The map SHALL draw each kept icon as an element in the overlay the library owns for the
-region labels, the pin, the ring and the name labels — not as a pass on the canvas — so it
-stays a crisp vector at every device pixel ratio.
+The renderer SHALL draw each kept icon as a pass on the canvas, after the markers and after
+the shapes, over the finished frame. The pass SHALL rasterise each vector once for the
+device pixel ratio in force and SHALL draw it at that same size, so the icon stays as crisp
+as the vector the browser draws.
 
 **The size.** An icon SHALL be **28 CSS pixels** square at every zoom distance, as the pin
 holds a fixed size. The marker under it grows as the camera comes in and the icon does
@@ -174,22 +175,47 @@ dark nor one colour, so without the plate the line reads against whatever the ca
 there.
 
 **The depth order.** Where two stacks cross on the screen, the stack of the system nearer
-the camera SHALL draw over the stack of the one further away. The overlay hands an element
-of its pool to a system by its place in the frame and not by its depth, so the tree order
-cannot carry the rule and each stack SHALL take a stacking level from its depth.
+the camera SHALL draw over the stack of the one further away. The pass SHALL draw the
+stacks back to front, furthest first, which gives that order without a depth buffer.
 
-The library SHALL hold every stack in a **layer of its own**, which carries a stacking
-level and is therefore a stacking context. No stack level then reaches the page. The layer
-SHALL sit over the plane elements, which sit at 0, and over the ring, the pin and the name
-labels, which sit at 1. The layer SHALL sit **under the HUD**, which sits at 10 in the same
-parent as the overlay host. The overlay host is often one the caller gave and the library
-cannot rely on its style, so the bound belongs to the layer and not to the host.
+**A stack is its arrow and its icons together.** The arrow SHALL take the same order as the
+icons of its own stack: an arrow SHALL draw over a further stack and under a nearer one. The
+pass therefore SHALL put the arrows and the icons in **one** instance stream, in that one
+back-to-front order. Two draw calls cannot state this order, because a second call draws
+every arrow over every icon of the first whatever the range.
 
-**Whole pixels.** The map SHALL place an icon and an arrow at whole CSS pixels. An icon is
-a bitmap the browser makes from a vector: at a fraction of a pixel the browser samples it
-at a new phase in every frame, and the glyph shakes while the camera moves. The rounding
-moves a stack by less than half a pixel, which is inside the tolerance the offset
-scenarios below give.
+**What draws over a stack.** The stacks are on the canvas, so every element of the DOM
+overlay draws over them. That is the HUD, which the scenario below reads, and it is also
+the plane elements, the ring, the pin and the name labels. **This reverses the old order
+for those four**, which sat under the stack layer. The reversal is accepted rather than
+repaired: the name labels sit below a marker and a stack sits above it, the pin and the
+stack hold apart by the lift the rule below gives, and the ring and the plane line are
+thin marks a 28 pixel glyph reads under.
+
+**Whole pixels.** The pass SHALL place an icon and an arrow on whole **device** pixels, and
+SHALL draw each icon quad at the same size in device pixels as its texture. The texture
+then copies to the frame one texel to one pixel, which is what keeps the glyph from
+shaking as the camera moves. The rounding moves a stack by less than half a device pixel.
+
+*The way up.* The pass SHALL draw the glyph the way the browser draws the vector. The
+rasteriser writes the vector into a 2D canvas whose first row is the top one, and the upload
+leaves `UNPACK_FLIP_Y_WEBGL` at its default of false, so the first row lands at the texture
+coordinate 0. The top of the quad SHALL therefore read the texture coordinate 0 and not 1.
+
+#### Scenario: The glyph draws the way the browser draws the vector
+
+- **WHEN** the browser test draws a stack holding one icon of an asymmetric vector, reads the
+  icon's box off the canvas, draws the same vector into a 2D canvas of the same side, and
+  counts the pixels that differ between the two as they are and with one turned over
+- **THEN** the count as they are is the lower of the two
+
+*Where the two sizes part.* The texture side SHALL hold the device pixel ratio at **1 or
+above** and SHALL cap at **128** texels. The quad side follows the true ratio, so one texel
+meets one pixel at every ratio from 1 to about 4.57 and not outside that band. Below a ratio
+of 1 the texture holds more texels than the quad has pixels, and above 4.57 the cap holds it
+under. The size rule wins in both cases, because a 28 CSS pixel icon at every ratio is what
+a reader sees; a quad that followed the texture instead would draw a 56 CSS pixel icon at a
+ratio of 0.5, over a stack step of 15 device pixels.
 
 **The place.** A stack SHALL be centred on the marker's projected centre on the horizontal
 axis. The first icon of the record SHALL be the **lowest** of the stack, and each later
@@ -206,27 +232,34 @@ category is off, whose name the filter drops, or which the camera has left the d
 of, SHALL show no icon. The stack SHALL move with the marker in the same frame the marker
 moves, so the two never separate on the screen.
 
-An icon SHALL take no pointer event, so it never covers the marker under it for the hover
-pick or the click.
+An icon SHALL take no pointer event. The pick reads the systems of the set on the CPU and
+reads no drawn pixel, so a stack on the canvas cannot take the hover or the click from the
+marker under it.
 
 #### Scenario: A stack draws in the record's order
 
 - **WHEN** the browser test adds a system whose `icons` names three symbols, draws a frame
-  and reads the icon elements of that system, top to bottom on the screen
+  and reads the icon placements of that system, top to bottom on the screen
 - **THEN** three icons are present, the lowest is the record's first, each icon is
-  28 CSS pixels square, and each one has an opaque black background
+  28 CSS pixels square, and the canvas pixel **4 CSS pixels in from each corner** reads
+  opaque black.
+
+  **Not the corner itself.** Every vector of the catalogue draws a frame around its box —
+  `titan.svg` is a 60 unit rect with a 4 unit stroke in a 64 unit view box — so the
+  outermost pixels of the box hold the glyph colour and not the plate. 4 CSS pixels in
+  clears that frame at a box of 28.
 
 #### Scenario: The stack sits at the stated offset
 
 - **WHEN** the browser test adds one unselected system with one icon at a known projection,
-  draws a frame and reads the icon's box and the marker's projected centre
+  draws a frame and reads the icon's placement and the marker's projected centre
 - **THEN** the icon's horizontal centre is within 1 CSS pixel of the marker's, and its
   bottom is within 1 CSS pixel of `markerCssSize / 2 + 7` above the marker's centre
 
 #### Scenario: Two icons sit two pixels apart
 
 - **WHEN** the browser test adds a system with two icons, draws a frame and reads both
-  boxes
+  placements
 - **THEN** the gap between the top of the lower icon and the bottom of the upper one is
   within 1 CSS pixel of 2
 
@@ -240,7 +273,7 @@ pick or the click.
 #### Scenario: The icons go when the marker goes
 
 - **WHEN** the browser test adds a system with two icons, turns its category off, draws a
-  frame and counts the icons, then turns the category on, draws and counts again
+  frame and counts the icon placements, then turns the category on, draws and counts again
 - **THEN** the counts are 0 and 2
 
 #### Scenario: The stack follows the marker through a camera move
@@ -252,30 +285,35 @@ pick or the click.
 
 #### Scenario: The HUD draws over an icon stack
 
-- **WHEN** the browser test opens a map with the HUD, adds a system with two icons, draws
-  a frame and reads the stacking level of the icon, of the stack layer and of the HUD root
-- **THEN** the icon sits inside the layer, the layer carries a level of its own, and that
-  level is below the HUD's
+- **WHEN** the browser test opens a map with the HUD, places a system with two icons so its
+  stack lies under a HUD panel, draws a frame and reads the page at the middle of the icon
+- **THEN** the element at that point is the HUD panel and not the canvas
 
 #### Scenario: The nearer stack draws over the further one
 
-- **WHEN** the browser test adds two systems on one line of sight, each with one icon, so
-  their stacks cover each other on the screen, draws a frame and reads the stacking level
-  of each icon
-- **THEN** the level of the nearer system's icon is the higher of the two, and both are
-  over 0
+- **WHEN** the browser test adds two systems on one line of sight, each with one icon whose
+  glyph colour differs, so their stacks cover each other on the screen, draws a frame and
+  reads the canvas pixel where the two icons cross
+- **THEN** the pixel reads the nearer system's icon
+
+#### Scenario: A nearer stack's icon draws over a further stack's arrow
+
+- **WHEN** the browser test adds two systems on one line of sight, each with one icon, and
+  places them so the further system's arrow falls on the nearer system's icon plate, then
+  draws a frame and reads the canvas pixel where the two cross
+- **THEN** the pixel reads the nearer system's icon and not the further system's arrow fill
 
 #### Scenario: The icon holds its size as the camera comes in
 
-- **WHEN** the browser test adds one system with one icon and reads the icon's box at the
-  camera distances 1,000, 200, 40 and 10 light years
+- **WHEN** the browser test adds one system with one icon and reads the icon's placement at
+  the camera distances 1,000, 200, 40 and 10 light years
 - **THEN** the icon is 28 CSS pixels square at each of the four
 
 #### Scenario: A camera move leaves the icon on whole pixels
 
 - **WHEN** the browser test adds a system with one icon, orbits it through 30 small steps
-  and reads the icon's `left` and `top` after each step
-- **THEN** every reading is a whole number of CSS pixels
+  and reads the icon's `left` and `top` in device pixels after each step
+- **THEN** every reading is a whole number of device pixels
 
 #### Scenario: An icon does not take the pick
 
@@ -334,7 +372,7 @@ A system with no icon SHALL carry no arrow. A system with four icons SHALL carry
 ### Requirement: The icon stack has a switch
 
 The handle SHALL carry `setSystemIconsVisible(on)` and `areSystemIconsVisible()`. While the
-switch is off, no icon and no arrow SHALL be in the overlay, whatever the hover and the
+switch is off, the pass SHALL draw no icon and no arrow, whatever the hover and the
 selection are. Unlike the name labels, the hovered and the selected system SHALL carry no
 exception: the switch is the whole rule.
 
@@ -346,15 +384,15 @@ new — which is not the position the name labels are in.
 
 #### Scenario: The switch turns the icons off and on
 
-- **WHEN** the browser test adds 5 systems in view, each with two icons, counts the icons,
-  calls `setSystemIconsVisible(false)`, draws a frame and counts again, then turns it on,
-  draws and counts a third time
+- **WHEN** the browser test adds 5 systems in view, each with two icons, counts the icon
+  placements, calls `setSystemIconsVisible(false)`, draws a frame and counts again, then
+  turns it on, draws and counts a third time
 - **THEN** the counts are 10, 0 and 10
 
 #### Scenario: The switch holds over the hover and the selection
 
 - **WHEN** the browser test turns the switch off, selects one system with icons and hovers
-  another, draws a frame and counts the icons and the arrows
+  another, draws a frame and counts the icon and the arrow placements
 - **THEN** both counts are 0
 
 #### Scenario: The option starts the icons off
@@ -372,46 +410,44 @@ new — which is not the position the name labels are in.
 
 ### Requirement: The icon placement is bounded
 
-The placement SHALL hold to these bounds, so the DOM node count does not follow the size of
-the set:
+The placement SHALL hold to these bounds, so neither the draw work nor the texture storage
+follows the size of the set:
 
 - A candidate whose projected centre lies outside the viewport SHALL be dropped before any
   other work.
 - The **32** stacks nearest the camera SHALL be kept, by the same rule the name labels keep
   their **66**: a sort of the whole candidate list every frame is what that rules out,
   because the list can hold 10,000 entries.
-
-  The label keeper is no longer the label pass's own list. It holds 66 entries and every
-  drawn marker, which `system-selection` states, and the requirement "A nearer marker hides
-  an icon" reads it to find the marker that hides an element. The stack keeper is unchanged
-  at 32.
-- At most **32** arrows and **128** icons SHALL be in the overlay in any frame, because a
-  record holds at most 4 icons.
-- The placement SHALL allocate no element a frame before it did not need. The elements SHALL
-  be held in a pool and reused.
-- A set in which **no record holds an icon** SHALL cost no per-frame placement work, whatever
-  the state of the switch. The switch defaults on, so without this a host that names no icon
-  would begin paying for a sweep of its whole set. The measure is the **reads the overlay
-  makes of the set** in a frame, not the element count: a set with no icon draws no icon
-  either way, so an element count cannot tell the fast path from its absence.
+- At most **32** arrows and **128** icons SHALL be drawn in any frame, because a record
+  holds at most 4 icons.
+- The pass SHALL issue at most **1** draw call in a frame, whatever the stack count. The
+  arrows and the icons share one instance stream and one program, which is what the depth
+  order above asks for.
+- The pass SHALL hold at most **64** distinct icon vectors as textures. A 65th distinct URL
+  SHALL NOT draw, and the map SHALL report it once through `console.warn`. 64 covers the
+  16 built-in symbols and a host's own set.
+- The pass SHALL allocate no buffer a frame before it needs it, and SHALL reuse its buffers
+  from frame to frame.
+- A set in which **no record holds an icon** SHALL cost no per-frame placement work,
+  whatever the state of the switch. The switch defaults on, so without this a host that
+  names no icon would begin paying for a sweep of its whole set.
+- **The sweep SHALL read the systems that carry an icon and not the whole set.** The set
+  SHALL be able to name those systems, so the per-frame cost follows the number of records
+  with icons and not the 10,000 the set can hold.
 
 #### Scenario: A set with no icon reads nothing
 
 - **WHEN** a map holds 10,000 systems, no record names an icon, the icon switch is on, the
   name switch is off, and there is no hover and no selection
-- **THEN** the overlay reads no position and no system of the set, counted over a frame
-
-The hover and the selection place themselves before the sweep and read a position of their
-own, so the scenario excludes them. That is what lets the count be plainly zero rather than
-a count an implementer has to separate icon reads out of.
+- **THEN** the pass places no stack and reads no system of the set, counted over a frame
 
 #### Scenario: One icon turns the placement back on
 
 - **WHEN** one record of that same set is given an icon
-- **THEN** the overlay's reads of the set rise above zero, and the stack draws
+- **THEN** the pass's reads of the set rise above zero, and the stack draws
 
 The second scenario is the control for the first. Without it, the first also passes on the
-day the overlay stops sweeping at all.
+day the pass stops sweeping at all.
 
 There SHALL be **no overlap test** between two stacks, unlike the name labels. Two markers
 a few pixels apart hold their own icons, and dropping one of the two stacks on an overlap
@@ -422,8 +458,13 @@ partial cover.
 #### Scenario: The stack count is capped at a full set
 
 - **WHEN** the browser test adds 10,000 systems inside the frame, each carrying 4 icons,
-  draws a frame and counts the icon elements and the arrow elements
+  draws a frame and counts the icon and the arrow placements
 - **THEN** the icon count is 128 or fewer and the arrow count is 32 or fewer
+
+#### Scenario: The draw calls are capped at a full set
+
+- **WHEN** the browser test reads the icon pass's draw call count in that same frame
+- **THEN** the count is 1 or fewer
 
 #### Scenario: The nearest stacks are the ones kept
 
@@ -437,17 +478,27 @@ partial cover.
   the viewport, then draws a frame and counts the icons
 - **THEN** the count is 0
 
+#### Scenario: A 65th distinct vector does not draw
+
+- **WHEN** the browser test adds 65 systems, each with one icon naming a distinct host URL,
+  waits for the loads to settle, draws a frame and reads the placements and the console
+- **THEN** 64 of the systems carry an icon, one carries none, and the console holds one
+  warning about the cap
+
 ### Requirement: The icon stack holds the Firefox paint budget
 
 Firefox rasterises overlay work on the CPU, which is why `browser-suite` measures a camera
-move there at all: the blurred label shadow alone read 4.2 ms of a 12.1 ms frame. A stack
-adds up to 128 vector rasterisations and 32 triangles to that same overlay, so "it is only
-DOM" is not a reading.
+move there at all: the blurred label shadow alone read 4.2 ms of a 12.1 ms frame. The
+stacks no longer add to that overlay, because they draw on the canvas. The budget stays as
+the guard that the move to the card did not trade paint time for frame time somewhere else.
 
 With the icon switch on and every record carrying 4 icons, at the view and the move
 "A camera move holds the paint budget in Firefox" states, the mean frame interval SHALL stay
 at or below the **7 ms** that requirement already gives. The budget is not raised for the
 icons: the icons fit inside it or they are cut.
+
+**The overlay SHALL hold no icon element and no arrow element in any frame.** This is what
+the reading above is a budget for, and a count is the cheaper guard.
 
 The measured table of `browser-suite` is a reading of a frame that carries **no** icon, and
 this requirement SHALL NOT change it. This is a second reading at the same view, not a
@@ -460,6 +511,12 @@ restatement of that one.
   on, and reads the mean frame interval over 180 frames
 - **THEN** the mean is 7 ms or less, and the frame drew at least one icon, so a frame that
   drew none cannot pass the reading by measuring nothing
+
+#### Scenario: No icon reaches the DOM
+
+- **WHEN** the browser test adds 10,000 systems that each carry 4 icons, draws a frame and
+  counts the elements of the overlay
+- **THEN** the overlay holds no icon element and no arrow element
 
 ### Requirement: The demo site shows the icon stack
 
@@ -494,121 +551,206 @@ by feeding each set to the reader.
 - **WHEN** the demo set test feeds each committed set to the reader
 - **THEN** every set reports no rejection
 
-### Requirement: A nearer marker hides an icon
+### Requirement: The library loads an icon vector as a cross-origin image
 
-An icon stack is a DOM element over the canvas, so it draws over every pixel the canvas
-drew at that place, whatever the depth. Without a rule the icons of a system 4,000 light
-years away cover a star 40 light years from the camera, and the frame reads back to front.
+The renderer draws an icon from a texture, and a texture upload from a tainted canvas
+fails. The library SHALL therefore load every icon vector as an image whose `crossOrigin`
+is `anonymous`.
 
-**Each icon of a stack, and the arrow under it, SHALL be hidden in a frame where the marker
-of a system nearer to the camera than the stack's own system projects inside that element's
-box on the screen.** The element's box is the square the icon occupies, or the triangle's
-bounding box for the arrow, in CSS pixels. "Projects inside" means the marker's drawn centre
-lies in that box.
+**A vector served from a second origin SHALL carry `Access-Control-Allow-Origin`.** This
+is a **breaking change** for a host whose `icons` entries name a URL on another origin
+with no such header. It also reaches the 16 built-in vectors, because a host that serves
+the library from a second origin, such as a CDN, loads them from that origin as well.
 
-**The test is per element and not per stack.** A stack whose top icon alone is covered
-SHALL keep its other icons and its arrow. That is what an occlusion looks like: the nearer
-star draws in the gap the hidden icon leaves, and the stack still says what the system is.
-A stack that hid in whole on one covered pixel would blink as the camera moves through a
-cluster, which is the fault the requirement "The icon placement is bounded" already names
-for a stack-against-stack test.
+A `data:` URL and a URL on the page's own origin need no header.
 
-**A hidden element SHALL draw nothing and SHALL take no pointer event.** It SHALL stay in
-the pool and SHALL keep its place, so a frame that shows it again allocates nothing. Every
-element of the stack is placed by `position: absolute`, so a hidden one holds no other
-element out of its own place.
+**An icon the browser refuses SHALL NOT draw, and SHALL NOT stop the stack.** The other
+icons of that stack, and the arrow, SHALL draw as they would. The map SHALL report the
+refusal once per URL through `console.warn`, and SHALL NOT try that URL again while the
+map lives. A refusal SHALL NOT throw out of the frame.
+
+**An icon SHALL NOT draw before its vector is ready.** Loading is asynchronous, so the
+first frames after a record arrives may draw fewer icons than the record names. The stack
+SHALL draw the icons it holds and SHALL add each later one in the frame it becomes ready.
+
+#### Scenario: A cross-origin icon with the header draws
+
+- **WHEN** the browser test adds a system whose one icon names an SVG on a second origin
+  that sends `Access-Control-Allow-Origin: *`, waits for the icon, draws a frame and reads
+  the icon placements
+- **THEN** the stack holds one icon
+
+#### Scenario: A cross-origin icon with no header does not draw
+
+- **WHEN** the browser test adds a system with two icons, the first a built-in symbol and
+  the second an SVG on a second origin that sends no `Access-Control-Allow-Origin`, waits
+  for the load to settle, draws a frame and reads the placements and the console
+- **THEN** the stack holds the built-in icon and its arrow, holds no second icon, and the
+  console carries one warning that names that URL
+
+#### Scenario: A refused URL is tried once
+
+- **WHEN** the browser test counts the network requests for that same URL over 30 frames
+- **THEN** the count is 1
+
+### Requirement: The handle reports the icon placements
+
+The browser tests can no longer read an icon as a DOM element, so the handle SHALL report
+what the last frame placed. `iconPlacements()` SHALL return one entry per icon and one per
+arrow, and an empty list in a frame that drew no stack.
+
+Each entry SHALL carry:
+
+- `kind`, which is `icon` or `arrow`;
+- `systemIndex`, the index of the system the stack belongs to;
+- `stackIndex`, the place of the icon in the record's own order, and 0 for an arrow;
+- `left`, `top`, `width` and `height`, the element's box in **CSS pixels** from the top
+  left of the canvas;
+- `color`, the arrow's fill as three numbers 0 to 255, and the icon's own colour for an
+  icon;
+- `url`, the vector the icon draws, and an empty string for an arrow.
+
+The list SHALL be in draw order, which is the furthest stack first. The reading SHALL say
+what the frame **placed**, and SHALL NOT say what the range test then discarded: the test
+runs per pixel on the card, so an element is never wholly hidden or wholly shown. A test
+of the occlusion reads canvas pixels.
+
+#### Scenario: The placements name the boxes of a stack
+
+- **WHEN** the browser test adds one system with three icons, draws a frame and reads
+  `iconPlacements()`
+- **THEN** the list holds four entries, three of kind `icon` and one of kind `arrow`, each
+  with the box the placement requirements give
+
+#### Scenario: A frame with no stack reports nothing
+
+- **WHEN** the browser test turns the icon switch off, draws a frame and reads
+  `iconPlacements()`
+- **THEN** the list is empty
+
+### Requirement: A nearer marker draws over an icon
+
+Without a rule the icons of a system 4,000 light years away cover a star 40 light years
+from the camera, and the frame reads back to front.
+
+**An icon and its arrow SHALL draw at a pixel only where no marker body nearer the camera
+than the stack's own system covers that pixel.** The test SHALL run per pixel. A nearer
+marker therefore cuts its own shape out of the icon and takes nothing else: the rest of the
+icon draws, and the stack still says what the system is.
+
+**"Marker body" is the part of a marker sprite the map already names as its body**, which
+is the part a sphere and a line do not wash. The soft halo of a `glow` sprite outside that
+body SHALL NOT hide an icon. The halo is light and not a mark, and an icon over it reads as
+an icon in front of a glow.
 
 **The rule reads the systems of the set alone.** The invented decoration stars of
-`close-view-stars` SHALL NOT be tested: the map holds no list of them on the main thread,
-and a real system already suppresses the invented stars near it. The rule SHALL NOT read
-the frame buffer.
+`close-view-stars` SHALL NOT be tested: a real system already suppresses the invented stars
+near it.
 
-**A system does not hide its own stack.** The stack's own marker sits under the arrow by
-construction, and the test SHALL skip it.
+**A system does not hide its own stack.** The test compares ranges from the same reading of
+the same position, so a marker at the stack's own range never counts as nearer. A `glow`
+sprite whose body reaches up into its own arrow therefore leaves the arrow alone.
+
+**Where the card cannot carry the test, the icons SHALL draw with no test.** The map needs
+a 32-bit float colour target it can blend into, which `EXT_color_buffer_float` and
+`EXT_float_blend` give together. A context that holds less than both draws every icon over
+every marker, which is the frame the map drew before any such rule existed. This is the fallback the
+spheres already take, and the map SHALL NOT refuse to draw over it.
 
 **This narrows two requirements above and replaces neither.** "The icons of a system draw
 as a stack over its marker" and "The lowest icon of a stack carries an arrow" say what is
-drawn and where; this requirement says when one of those elements is hidden. A hidden
-element is still placed, still in the pool and still counted, because `visibility: hidden`
-leaves it in the layout. Every count the bound requirement states therefore reads the same
-with this rule as without it.
+drawn and where; this requirement says which of its pixels reach the frame. Every count the
+bound requirement states therefore reads the same with this rule as without it, because the
+element is placed either way.
 
-**The candidates are bounded.** The test SHALL read the **66** markers nearest the camera,
-which is the keeper the name labels already fill, and SHALL stop at the first candidate no
-nearer than the stack's own system, because that keeper is held in ascending range.
+#### Scenario: A nearer marker cuts through the icon over it
 
-**That keeper SHALL hold every marker on the screen and not the subset the labels want.**
-It is filled today only where the name switch is on and only for a system that is neither
-hovered nor selected. Each of the three is a marker that can cover an icon, so the sweep
-SHALL offer every system on the screen to it. The two exceptions move to the label pass,
-which SHALL skip the hovered and the selected index as it reads the keeper, and which
-reads nothing while the switch is off. The reason the labels hold those two out does not
-change: each places its own label first. One keeper, two readers, one rule each.
+- **WHEN** the browser test places one system 4,000 light years away carrying the `titan`
+  icon, and a second system with no icon 40 light years away, in a category of a colour that
+  no icon uses, whose marker projects inside that icon's box, draws a frame, reads the canvas
+  pixel at the nearer marker's centre and counts the pixels of the icon's glyph colour inside
+  the icon's box
+- **THEN** the centre pixel reads the nearer marker's category colour, and the glyph pixel
+  count is above zero.
 
-**The keeper SHALL grow from 64 entries to 66**, and the label pass SHALL stop after 64
-labels are placed. `system-selection` "The marker name labels are bounded" owns both rules
-and states why. The work bound of this requirement reads 66 because that is what the keeper
-now holds. The
-work is therefore at most 32 stacks by 5 elements by 66 candidates in a frame, and it SHALL
-run inside the per-frame budget the requirement "The icon stack holds the Firefox paint
-budget" states. A marker further from the camera than all 66 SHALL NOT hide anything, which
-is a marker the frame draws small and behind a crowd.
-
-#### Scenario: The keeper holds the hovered and the selected marker
-
-- **WHEN** the browser test turns the name switch off, hovers a system nearer the camera
-  than a stack it covers, draws a frame and reads the covered element, then selects that
-  same system and reads it again
-- **THEN** the element is hidden in both readings, and no system carries two name labels
-
-#### Scenario: A nearer marker hides the icon over it
-
-- **WHEN** the browser test places a system with one icon 4,000 light years from the
-  camera, a second system with no icon 400 light years from the camera, and moves the
-  second until its marker projects inside the first's icon box, then draws a frame and
-  reads the icon element
-- **THEN** the icon is hidden, and the pixel at the second system's marker centre reads the
-  marker and not the icon
+  **The count is part of the test.** The plate is black and the sky behind a marker
+  4,000 light years out is near black, so a reading of "the corner is dark" also passes with
+  no icon drawn at all. The glyph colour is the only reading that separates the two.
 
 #### Scenario: A further marker hides nothing
 
-- **WHEN** the browser test swaps the two ranges, so the marker with no icon is 8,000 light
-  years away and projects inside the same box, draws a frame and reads the icon
-- **THEN** the icon is shown
+- **WHEN** the browser test moves that second system behind the first, draws a frame and
+  takes the same two readings
+- **THEN** the pixel at the further marker's centre does not read that marker's category
+  colour, and the glyph pixel count is above zero
 
-#### Scenario: Only the covered icon of a stack hides
+#### Scenario: Only the covered part of a stack goes
 
-- **WHEN** the browser test places a system with four icons, and a nearer system whose
-  marker projects inside the box of the third icon alone, draws a frame and reads the four
-  icons and the arrow
-- **THEN** the third icon is hidden and the other three and the arrow are shown
+- **WHEN** the browser test places a system with four icons of four different glyph colours,
+  and a nearer system whose marker projects inside the third icon's box, draws a frame,
+  counts the glyph pixels inside each of the four icon boxes and reads the pixel at the
+  arrow's middle and at the nearer marker's centre
+- **THEN** each of the four counts is above zero, the arrow pixel reads the lowest icon's
+  colour, and the pixel at the nearer marker's centre reads that marker's category colour
 
 #### Scenario: The arrow follows the same rule
 
-- **WHEN** the browser test moves the nearer marker so it projects inside the arrow's box
-  and inside no icon's box, draws a frame and reads the arrow and the icons
-- **THEN** the arrow is hidden and every icon is shown
+- **WHEN** the browser test moves the nearer marker so it projects inside the arrow's box,
+  draws a frame and reads the pixel at that marker's centre
+- **THEN** the pixel reads that marker's category colour and not the arrow's fill
 
-#### Scenario: A system does not hide its own stack
+#### Scenario: A marker at the stack's own range cuts nothing
 
-- **WHEN** the browser test places one system with four icons and no other system, draws a
-  frame and reads the icons and the arrow
-- **THEN** every element is shown
+- **WHEN** the browser test adds two systems at the **same** range from the camera, the
+  first carrying an icon and the second, in a category of a colour no icon uses, projecting
+  inside that icon's box, draws a frame and counts the glyph pixels inside the icon's box
+- **THEN** the count is above zero, and no pixel of the box reads the second system's
+  category colour.
 
-#### Scenario: The element comes back when the marker moves away
+  **The stack's own marker cannot reach its own stack, so this is the reading that holds
+  the rule.** The body of a `glow` sprite reaches at most about `0.41 * markerCssSize`
+  from the marker's centre, and the arrow apex stands `markerCssSize / 2 + 2` above it, so
+  no marker of any size touches the stack above it. A scenario written on a system's own
+  marker would pass with the range comparison removed. Two systems at one range exercise
+  the same comparison and can fail. A unit test of the pass holds the own-index case.
 
-- **WHEN** the browser test orbits the camera until the nearer marker leaves the icon's
-  box, draws a frame and reads the icon and the element count
-- **THEN** the icon is shown and the count did not rise, because the element stayed in the
-  pool
+#### Scenario: The cut goes when the marker moves away
+
+- **WHEN** the browser test orbits the camera until the nearer marker leaves the icon's box,
+  draws a frame and takes the two readings of the first scenario again
+- **THEN** no pixel of the icon's box reads the nearer marker's category colour, and the
+  glyph pixel count is above zero
+
+#### Scenario: A card with no float blend draws every icon
+
+- **WHEN** a unit test builds a renderer over a context that reports `EXT_color_buffer_float`
+  alone, and a second over one that reports `EXT_float_blend` alone, draws a frame with a
+  stack in each and reads `rangeBufferSize()`
+- **THEN** both read null, both draw the icon, and neither throws
 
 #### Scenario: The test holds the frame budget
 
+- **WHEN** the browser test runs the camera move of `browser-suite` with 10,000 systems that
+  each carry 4 icons and the icon switch on
+- **THEN** the mean frame interval holds the budget that requirement gives
+
+### Requirement: The icon pass holds the draw budget
+
+The pass selects, places and draws the stacks inside `render`, so its cost falls in the
+**draw-time** budget of `far-view-rendering` and no longer in the 2 ms overlay budget of
+`system-selection`. Both of those requirements state the move.
+
+With 10,000 systems, every record carrying 4 icons, and the icon switch on, the mean render
+time over 300 frames SHALL stay under the **16.7 ms** that `far-view-rendering` gives, at
+the views it names, measured by the measurement function it already states.
+
+**The reading SHALL show that the frame drew a stack.** A frame that placed none holds the
+budget by doing nothing, which is not the reading this requirement asks for.
+
+#### Scenario: A full set of icons holds the draw budget
+
 - **WHEN** the browser test adds 10,000 systems inside the frame, each carrying 4 icons,
-  measures the mean frame interval over 120 frames, and compares it with the same view and
-  the icon switch off
-- **THEN** the exposed selection-work statistic reads a mean of **2 milliseconds** or less
-  and the frame interval holds **18 milliseconds**, which are the two numbers
-  `system-selection` "Selection holds the frame budget" states. That requirement's 2 ms
-  covers the name label placement and the icon stack placement by name, and this test is
-  the first work added to it since the number was set
+  turns the icon switch on, and calls the render measurement function for 300 frames at
+  1920x1080 at the zoom distances 2,000 and 20,000 light years
+- **THEN** each mean is under 16.7 ms, and `iconPlacements()` holds at least one entry in
+  the same frame
