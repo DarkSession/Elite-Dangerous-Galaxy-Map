@@ -508,7 +508,7 @@ nearer. A line that runs behind a marker and a line that runs in front of it rea
 ### Requirement: The shape set holds the frame budget
 
 With **1,024 spheres** and **4,096 lines** whose points come to **65,536**, at
-**1920x1080**, with 10,000 systems, the HUD on and the shapes on, the mean interval between
+**1920x1080**, with 50,000 systems, the HUD on and the shapes on, the mean interval between
 animation frames SHALL be **18 milliseconds or less** over a camera move. That is the bound
 `system-selection` and `map-hud` already hold for the same view.
 
@@ -523,7 +523,8 @@ frame. `design.md` states why the lines take the second step.
 
 **The marker pass costs one draw call more**, which writes the range buffer the spheres
 read. It is a second `POINTS` draw over the same marker buffer, with a shader that writes
-one value and no colour, so it costs at most 10,000 points whatever the shape set holds. The map SHALL make that
+one value and no colour, so it costs at most 50,000 points whatever the shape set holds,
+which is the set bound. The map SHALL make that
 draw only while the shape set holds a **shape** that draws, so a map with no shape costs
 what it costs today.
 
@@ -546,9 +547,14 @@ answer `null` until that frame, because a read at a canvas coordinate would fall
 the buffer the map still holds. A context that gives neither float extension SHALL compile
 no range shader, because no frame of that context can draw one.
 
+**A full set is the set bound, and the bound moved.** `system-selection` and `map-hud` read
+the same 18 ms interval at the same set, so the three SHALL name one number. This budget
+does not move with the bound: where the reading fails, the implementation SHALL make the
+work cheaper, or the set bound SHALL land lower.
+
 #### Scenario: A full shape set holds the frame rate
 
-- **WHEN** the browser test adds 10,000 systems, 1,024 spheres and 4,096 lines of 65,536
+- **WHEN** the browser test adds 50,000 systems, 1,024 spheres and 4,096 lines of 65,536
   points at 1920x1080, resets the animation frame interval statistics, pans the camera
   1,000 light years and zooms from 20,000 light years to 2,000 over two seconds, and reads
   the statistics

@@ -44,10 +44,32 @@ within 1e-6 CSS pixels of each other, the one nearer the camera SHALL win. When 
 equal as well, the one added to the set first SHALL win. The rule is total, so the same
 frame and the same pixel always give the same system.
 
-`systemAt` SHALL sweep the set once. The set holds at most 10,000 systems, so one call
-projects at most 10,000 positions and allocates nothing per system. No identity buffer is
-read back from the card, because a read back would stall the frame and 10,000 projections
-do not.
+`systemAt` SHALL sweep the set once and SHALL allocate nothing per system. The set holds
+at most 50,000 systems, so one call reads at most 50,000 positions. No identity buffer is
+read back from the card, because a read back would stall the frame and the sweep does not.
+
+**The sweep SHALL reject a system before it projects it.** The marker flag and the
+category's `maxDrawRange` against the distance to the cursor are both read before the matrix
+is applied today, and they SHALL stay before it. A system the gate rejects SHALL cost a flag
+read and a squared range test, and no projection. The sweep is linear in the set either way:
+the gate takes the projection out of the inner loop, not the loop.
+
+**The cost of the call SHALL be read at two set sizes before it is made cheaper.**
+`systemAt` cost **0.477 ms** over a set of 10,000 on 2026-09-21, against this 1 ms bound.
+That is one reading of a whole call, and a whole call holds a fixed part — the camera, the
+matrix and the handle hop — as well as the part that follows the set. The implementation
+SHALL read the call at two set sizes, SHALL state the fixed part and the part per system,
+and SHALL make cheaper whichever one the reading names. A remedy chosen from one point is a
+remedy chosen from a guess.
+
+**The reading that fails is the accept path.** The scenario below puts every system inside
+its category range, so the gate rejects nothing and every system is projected and divided.
+A cheaper reject path does not touch that reading. Where the per-system part governs, the
+implementation SHALL look at the accept path first: the range square root that runs before
+the gate, the category lookup per system, and the two divides per system that a clip-space
+reject could come before.
+
+Neither the rule that decides the winner nor the rule that gates a marker changes here.
 
 #### Scenario: The pick returns the system under the pixel
 
@@ -87,9 +109,17 @@ do not.
 
 #### Scenario: The pick holds its time bound at a full set
 
-- **WHEN** the browser test adds 10,000 systems inside the frame, draws a frame, and times
+- **WHEN** the browser test adds 50,000 systems inside the frame, draws a frame, and times
   200 calls to `systemAt`
 - **THEN** the mean call takes 1 ms or less
+
+#### Scenario: The pick holds its time bound with the set out of range
+
+- **WHEN** the browser test adds 50,000 systems of one category whose `maxDrawRange` is
+  100 light years, puts the cursor 5,000 light years away from all of them, draws a frame
+  and times 200 calls to `systemAt`
+- **THEN** the mean call takes 1 ms or less and every call is null, so the range test runs
+  before the projection and not after it
 
 #### Scenario: A drawn marker is pickable however far the camera stands off
 
@@ -712,11 +742,16 @@ The placement SHALL hold to these bounds:
 ### Requirement: Selection holds the frame budget
 
 The hover pick, the pin, the ring and the name label placement together SHALL add at most
-**2 ms** to the mean frame with a set of 10,000 systems, the name switch on, the icon
+**2 ms** to the mean frame with a set of 50,000 systems, the name switch on, the icon
 switch on, every record carrying 4 icons, and the pointer over the canvas, at 1920x1080 on
 the project's test card.
 
-The budget is unchanged at 2 ms. **The icon stack placement has left this reading.** The
+The budget is unchanged at 2 ms, and the set it is read at is now five times the size.
+**The budget SHALL NOT be raised to hold the larger set.** Where a reading fails, the
+implementation SHALL make the work cheaper, or SHALL lower the set bound, and the
+requirement "The set holds up to 50,000 systems" states which.
+
+**The icon stack placement has left this reading.** The
 stacks draw on the canvas, so the pass selects and places them inside `render`, which
 `system-icons` states. `frameStats` times `render` alone, so that work now falls inside the
 draw-time budget of `far-view-rendering`, and `system-icons` carries the requirement that
@@ -745,7 +780,7 @@ This requirement adds the two readings the new work needs and does not restate t
 
 #### Scenario: The selection work fits its own budget
 
-- **WHEN** the browser test adds 10,000 systems in view, turns the name switch on, puts
+- **WHEN** the browser test adds 50,000 systems in view, turns the name switch on, puts
   the pointer over a marker, draws 120 frames at 1920x1080 and reads the selection work
   statistics
 - **THEN** the mean is 2 ms or less
@@ -758,14 +793,14 @@ This requirement adds the two readings the new work needs and does not restate t
 
 #### Scenario: The label placement holds its bound at a full set
 
-- **WHEN** the browser test adds 10,000 systems inside the frame, turns the name switch on
+- **WHEN** the browser test adds 50,000 systems inside the frame, turns the name switch on
   and reads the selection work statistics over 120 frames
 - **THEN** the mean is 2 ms or less, which a sort of the whole candidate list every frame
   would not hold
 
 #### Scenario: The icon placement holds the budget at a full set
 
-- **WHEN** the browser test adds 10,000 systems inside the frame, each carrying 4 icons,
+- **WHEN** the browser test adds 50,000 systems inside the frame, each carrying 4 icons,
   turns the name switch and the icon switch on, puts the pointer over a marker and reads
   the frame interval statistics over 120 frames
 - **THEN** the mean interval is 18 ms or less.
@@ -777,7 +812,8 @@ This requirement adds the two readings the new work needs and does not restate t
 
 #### Scenario: The label occlusion test does not raise the selection work
 
-- **WHEN** the browser test repeats the label bound reading above with 10,000 systems, the
+- **WHEN** the browser test repeats the label bound reading above with 50,000 systems, the
   name switch on and every label tested against the keeper
 - **THEN** the mean is 2 ms or less, so the per-label walk of the keeper stays inside the
   budget the placement already held
+
