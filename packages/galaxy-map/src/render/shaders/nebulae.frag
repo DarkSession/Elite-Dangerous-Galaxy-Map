@@ -18,6 +18,8 @@ in float vWeight;
 // It is 1 where no volume has arrived, where the volume pass does not draw and where
 // the look constant is 0.
 in vec3 vTransmittance;
+// The gain the record's own transmittance takes, from the range to its centre.
+in float vBlockGain;
 
 uniform sampler2DArray uDensity;
 uniform sampler2DArray uColour;
@@ -101,8 +103,17 @@ void main() {
   //
   // The alpha is the record's transmittance and not one minus it, because the pass
   // multiplies the accumulated alpha by `SRC_ALPHA`.
+  // The range block raises the record's own transmittance to a gain before the alpha is
+  // written. A power on the transmittance is a multiply on the optical depth, which is
+  // the physical form: T^g == exp(-g * tau). The march writes T and not tau, so the
+  // power is the cheap way to say it, and it holds T inside 0 to 1 for any gain at or
+  // above 0. The branch keeps a gain of exactly 1 on the path the pass wrote before the
+  // block existed, on an implementation that is not exact for pow(x, 1.0).
+  float blocked = vBlockGain == 1.0
+    ? transmittance.a
+    : pow(transmittance.a, vBlockGain);
   float mean = dot(vTransmittance, vec3(1.0 / 3.0));
   fragColour = vec4(
     emission * vTransmittance * vWeight,
-    1.0 - (1.0 - transmittance.a) * mean * vWeight);
+    1.0 - (1.0 - blocked) * mean * vWeight);
 }

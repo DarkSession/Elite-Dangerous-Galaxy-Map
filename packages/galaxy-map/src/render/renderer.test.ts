@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRangeBuffer, RANGE_EMPTY, readsFloatTargets } from './buffers';
-import { createFrameAccumulator, createRenderer } from './renderer';
+import {
+  createFrameAccumulator,
+  createRenderer,
+  NO_NEBULA_RANGE,
+  spriteNebulaRange,
+} from './renderer';
+import type { LookSettings } from './renderer';
 import { createShapeSet } from '../scene-data/shapes';
 import { createSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
@@ -9,12 +15,21 @@ import type { NebulaSet } from '../scene-data/nebulae';
 import { createNebulaPass, createNebulaProgram } from './nebula-pass';
 import type { NebulaVolumeTextures } from './nebula-volumes';
 import {
+  DEFAULT_NEBULA_BLOCK_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+  DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+  DEFAULT_NEBULA_BLOCK_NEAR,
   DEFAULT_NEBULA_LIGHT_GAIN,
   DEFAULT_NEBULA_OCCLUSION,
   DEFAULT_NEBULA_STEP_RATE,
 } from './nebula-slot';
 import type { NebulaDraw, NebulaFrame } from './nebula-slot';
-import type { CloudSet, DensityVolume, RegionLines } from '../scene-data/types';
+import type {
+  CloudSet,
+  DensityVolume,
+  PointCloud,
+  RegionLines,
+} from '../scene-data/types';
 
 describe('the frame time accumulator', () => {
   test('reads the count, the mean and the worst over 10 frames', () => {
@@ -464,6 +479,9 @@ function countingDraw(): NebulaDraw & { disposals(): number } {
     drawCalls: 0,
     aboveFloorCount: 0,
     coveredArea: 0,
+    transmittance: null,
+    frontRange: 0,
+    centreRange: 0,
     dispose(): void {
       freed += 1;
     },
@@ -583,6 +601,9 @@ describe('the nebula pass in the frame', () => {
         drawCalls: 0,
         aboveFloorCount: 0,
         coveredArea: 0,
+        transmittance: null,
+        frontRange: 0,
+        centreRange: 0,
         dispose: (): void => undefined,
       });
       renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
@@ -1015,5 +1036,184 @@ describe('the icon stack pass', () => {
     expect(before - after).toBeCloseTo(28, 0);
     renderer.dispose();
     restore();
+  });
+});
+
+describe('the nebula block constants the renderer sends', () => {
+  /** The frames one render hands the nebula draw. */
+  function framesOf(write: (look: LookSettings) => void): NebulaFrame[] {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    const frames: NebulaFrame[] = [];
+    renderer.setNebulae({
+      draw(frame: NebulaFrame): void {
+        frames.push(frame);
+      },
+      drawnCount: 0,
+      drawCalls: 0,
+      aboveFloorCount: 0,
+      coveredArea: 0,
+      transmittance: null,
+      frontRange: 0,
+      centreRange: 0,
+      dispose: (): void => undefined,
+    });
+    write(renderer.look);
+    renderer.render({ cursor: [0, 0, 0], distance: 6000, yaw: 0, pitch: 30 });
+    renderer.dispose();
+    return frames;
+  }
+
+  /** The four block values one frame carries. */
+  function blockOf(frame: NebulaFrame | undefined): number[] {
+    return [
+      frame?.blockNear ?? -1,
+      frame?.blockFar ?? -1,
+      frame?.blockGainNear ?? -1,
+      frame?.blockGainFar ?? -1,
+    ];
+  }
+
+  const DEFAULTS = [
+    DEFAULT_NEBULA_BLOCK_NEAR,
+    DEFAULT_NEBULA_BLOCK_FAR,
+    DEFAULT_NEBULA_BLOCK_GAIN_NEAR,
+    DEFAULT_NEBULA_BLOCK_GAIN_FAR,
+  ];
+
+  test('sends the four defaults with no write', () => {
+    expect(blockOf(framesOf(() => undefined)[0])).toEqual(DEFAULTS);
+  });
+
+  test('sends a value inside range as it is written', () => {
+    const frames = framesOf((look) => {
+      look.nebulaBlockNear = 200;
+      look.nebulaBlockFar = 12000;
+      look.nebulaBlockGainNear = 0;
+      look.nebulaBlockGainFar = 4;
+    });
+    expect(blockOf(frames[0])).toEqual([200, 12000, 0, 4]);
+  });
+
+  test('drops a value that is not finite', () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const frames = framesOf((look) => {
+        look.nebulaBlockNear = value;
+        look.nebulaBlockFar = value;
+        look.nebulaBlockGainNear = value;
+        look.nebulaBlockGainFar = value;
+      });
+      expect(blockOf(frames[0]), String(value)).toEqual(DEFAULTS);
+    }
+  });
+
+  test('drops a value below 0', () => {
+    const frames = framesOf((look) => {
+      look.nebulaBlockNear = -1;
+      look.nebulaBlockFar = -0.5;
+      look.nebulaBlockGainNear = -0.001;
+      look.nebulaBlockGainFar = -100;
+    });
+    expect(blockOf(frames[0])).toEqual(DEFAULTS);
+  });
+});
+
+describe('the nebula transmittance the sprite passes read', () => {
+  /** One point cloud sample at the cursor. */
+  function oneSample(): PointCloud {
+    return {
+      count: 1,
+      positions: Float32Array.from([0, 0, 0]),
+      tints: Uint8Array.from([128]),
+    };
+  }
+
+  /** A nebula draw that reports the three readings the test names. */
+  function drawReporting(
+    transmittance: WebGLTexture | null,
+    frontRange: number,
+    centreRange: number,
+  ): NebulaDraw {
+    return {
+      draw: (): void => undefined,
+      drawnCount: transmittance === null ? 0 : 1,
+      drawCalls: transmittance === null ? 0 : 1,
+      aboveFloorCount: 0,
+      coveredArea: 0,
+      transmittance,
+      frontRange,
+      centreRange,
+      dispose: (): void => undefined,
+    };
+  }
+
+  /** Every value one uniform name took, in the order the render sent them. */
+  function valuesOf(context: FakeContext, name: string): unknown[][] {
+    return context.calls
+      .filter((call) => call.name.startsWith('uniform') && call.args[0] === name)
+      .map((call) => call.args.slice(1));
+  }
+
+  /** The texture bound just before each write of the transmittance sampler. */
+  function boundTextures(context: FakeContext): unknown[] {
+    const out: unknown[] = [];
+    let last: unknown = 'none';
+    for (const call of context.calls) {
+      if (call.name === 'bindTexture') last = call.args[1];
+      if (call.name === 'uniform1i' && call.args[0] === 'uNebulaTransmittance') {
+        out.push(last);
+      }
+    }
+    return out;
+  }
+
+  function withCloud(draw: NebulaDraw, distance: number): FakeContext {
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const context = fakeContext(['EXT_color_buffer_float', 'EXT_float_blend']);
+    const renderer = createRenderer(context.gl, fakeCanvas());
+    renderer.setPointCloud(oneSample());
+    renderer.setNebulae(draw);
+    renderer.render({ cursor: [0, 0, 0], distance, yaw: 0, pitch: 30 });
+    renderer.dispose();
+    return context;
+  }
+
+  // The edges must not be equal: `smoothstep` is undefined in GLSL ES 3.00 for
+  // `edge0 >= edge1`, and the NaN it gives would turn every sprite of the frame black.
+  test('sends a far pair and no texture for a frame that drew no record', () => {
+    const context = withCloud(drawReporting(null, 0, 0), 60000);
+    const ranges = valuesOf(context, 'uNebulaRange');
+    console.log('the range pair above the band', ranges);
+
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]).toEqual([NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]]);
+    expect(NO_NEBULA_RANGE[0]).toBeLessThan(NO_NEBULA_RANGE[1]);
+    expect(boundTextures(context)).toEqual([null]);
+  });
+
+  test('sends the two ranges and the texture for a frame that drew a record', () => {
+    const texture = { name: 'accumulated' } as unknown as WebGLTexture;
+    const context = withCloud(drawReporting(texture, 400, 900), 6000);
+    const ranges = valuesOf(context, 'uNebulaRange');
+    console.log('the range pair inside the band', ranges);
+
+    expect(ranges[0]).toEqual([400, 900]);
+    expect(boundTextures(context)).toEqual([texture]);
+  });
+
+  test('sends one over the scene target size', () => {
+    const texture = { name: 'accumulated' } as unknown as WebGLTexture;
+    const context = withCloud(drawReporting(texture, 400, 900), 6000);
+    // The canvas is 800 by 600 at a device pixel ratio of 1, and the sprites draw into
+    // the full-resolution scene target.
+    expect(valuesOf(context, 'uInverseTarget')[0]).toEqual([1 / 800, 1 / 600]);
+  });
+
+  test('lifts the far edge where the camera sits at a record centre', () => {
+    expect(spriteNebulaRange(400, 900)).toEqual([400, 900]);
+    expect(spriteNebulaRange(0, 0)).toEqual([0, 1]);
+    const [near, far] = spriteNebulaRange(120, 120);
+    expect(far).toBeGreaterThan(near);
   });
 });

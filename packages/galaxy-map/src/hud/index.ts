@@ -127,6 +127,8 @@ export function createHud(
       stopViewListener();
       stopSelectionListener();
       categories.dispose();
+      // The box holds a resize listener on the window while it is open.
+      lightbox.close();
       datasetDialog?.dispose();
       info.dispose();
       element.remove();

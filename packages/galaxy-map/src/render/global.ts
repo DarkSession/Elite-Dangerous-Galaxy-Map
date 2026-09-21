@@ -51,6 +51,11 @@ export interface GalaxyMapGlobal {
   nebulaAboveFloorCount?: () => number;
   /** How much of the screen the last frame's nebulae cover, in screen areas. */
   nebulaCoveredArea?: () => number;
+  /**
+   * The front range and the centre range the last frame sent the point pass and the star
+   * pass, in light years. The depth gate reads the pair, and no pixel states it.
+   */
+  nebulaSpriteRange?: () => [number, number];
   /** Whether the nebula records and the volumes reached the renderer. */
   nebulaeAttached?: () => boolean;
   /**

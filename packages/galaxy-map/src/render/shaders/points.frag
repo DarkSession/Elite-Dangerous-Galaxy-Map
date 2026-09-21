@@ -4,6 +4,21 @@ precision highp float;
 
 in float vTint;
 in float vBrightness;
+// The range from the camera to the sprite, in light years.
+in float vRange;
+
+// The accumulated nebula transmittance of the frame, at half the scene target's size.
+// The sprite passes draw after the nebula composite, so a star behind a nebula takes
+// none of its blocking without this fetch.
+uniform sampler2D uNebulaTransmittance;
+// The front range and the centre range of the record the camera is nearest to. A sprite
+// at or nearer than the first takes none of the attenuation and one at or beyond the
+// second takes all of it. The renderer sends a pair far beyond the volume box for a
+// frame that drew no record, and the two are never equal: smoothstep is undefined in
+// GLSL ES 3.00 for edge0 >= edge1, and the NaN would turn every sprite black.
+uniform vec2 uNebulaRange;
+// One over the size of the target the sprites draw into, in pixels.
+uniform vec2 uInverseTarget;
 
 out vec4 fragColour;
 
@@ -30,5 +45,13 @@ void main() {
   falloff *= falloff;
   vec3 colour = mix(COOL, WARM, clamp(vTint * ZONE_SCALE, 0.0, 1.0));
   colour = mix(colour, CORE, smoothstep(CORE_LOW, CORE_HIGH, vTint));
-  fragColour = vec4(colour * (falloff * vBrightness), 1.0);
+  // A frame that drew no nebula reads a share of exactly 0 and makes no fetch at all,
+  // so it draws what it drew before this rule existed.
+  float share = smoothstep(uNebulaRange.x, uNebulaRange.y, vRange);
+  float block = 1.0;
+  if (share > 0.0) {
+    float held = texture(uNebulaTransmittance, gl_FragCoord.xy * uInverseTarget).a;
+    block = mix(1.0, held, share);
+  }
+  fragColour = vec4(colour * (falloff * vBrightness) * block, 1.0);
 }

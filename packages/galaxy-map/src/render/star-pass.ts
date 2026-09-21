@@ -199,7 +199,26 @@ export interface StarPassFrame {
   readonly handover: readonly [number, number];
   /** The boxel table for this frame. */
   readonly table: StarBoxelTable;
+  /**
+   * The accumulated nebula transmittance of this frame, or null for a frame that drew
+   * no record. A star behind a nebula is multiplied by it.
+   */
+  readonly nebulaTransmittance: WebGLTexture | null;
+  /**
+   * The front range and the centre range of the record the camera is nearest to, in
+   * light years. The two are never equal, because `smoothstep` is undefined for
+   * `edge0 >= edge1`.
+   */
+  readonly nebulaRange: readonly [number, number];
+  /** The size of the target the sprites draw into, in pixels. */
+  readonly targetSize: readonly [number, number];
 }
+
+/**
+ * The texture unit the nebula transmittance reads. The suppression mask holds unit 0, so
+ * the transmittance takes the next one.
+ */
+const NEBULA_UNIT = 1;
 
 /** The star pass. */
 export interface StarPass {
@@ -218,6 +237,9 @@ export function createStarProgram(gl: WebGL2RenderingContext): Program {
     'uHandover',
     'uMask',
     'uSuppress',
+    'uNebulaTransmittance',
+    'uNebulaRange',
+    'uInverseTarget',
   ]);
 }
 
@@ -311,12 +333,31 @@ export function createStarPass(gl: WebGL2RenderingContext, program: Program): St
         frame.handover[1],
       );
 
+      // The nebula gate. A frame that drew no record sends a range pair far beyond the
+      // volume box, so the share is exactly 0 and the shader makes no fetch.
+      gl.activeTexture(gl.TEXTURE0 + NEBULA_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, frame.nebulaTransmittance);
+      gl.uniform1i(program.uniforms['uNebulaTransmittance'] ?? null, NEBULA_UNIT);
+      gl.uniform2f(
+        program.uniforms['uNebulaRange'] ?? null,
+        frame.nebulaRange[0],
+        frame.nebulaRange[1],
+      );
+      gl.uniform2f(
+        program.uniforms['uInverseTarget'] ?? null,
+        1 / Math.max(1, frame.targetSize[0]),
+        1 / Math.max(1, frame.targetSize[1]),
+      );
+
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(vertexArray);
       gl.drawArraysInstanced(gl.POINTS, 0, STARS_PER_BOXEL, rows);
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
+      gl.activeTexture(gl.TEXTURE0 + NEBULA_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0);
     },
     dispose(): void {
       gl.deleteBuffer(buffer);

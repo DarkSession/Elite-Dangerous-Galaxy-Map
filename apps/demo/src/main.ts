@@ -363,6 +363,7 @@ function start(target: HTMLCanvasElement): void {
   global.nebulaDrawCalls = () => debug.nebulaDrawCalls();
   global.nebulaAboveFloorCount = () => debug.nebulaAboveFloorCount();
   global.nebulaCoveredArea = () => debug.nebulaCoveredArea();
+  global.nebulaSpriteRange = () => debug.nebulaSpriteRange();
   global.nebulaeAttached = () => debug.nebulaeAttached();
   global.setCloseFade = (value) => debug.setCloseFade(value);
   global.setNearPlane = (value) => debug.setNearPlane(value);
