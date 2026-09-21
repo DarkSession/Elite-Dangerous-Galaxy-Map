@@ -6,8 +6,11 @@ The package draws the galaxy model, your own star systems as markers, region bou
 spheres and lines, and an optional set of nebulae. It gives you a handle: you add the
 systems, you move the camera, and you read what the user selects.
 
-This README is the package's own. The repository holds the demo site, the browser suite
-and the development setup: <https://github.com/Elite-Dangerous-Almanac/Galaxy-Map>.
+This README is the package's own. The **API reference** is on the repository's wiki,
+with one page per exported member:
+<https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/wiki>. The repository holds the
+demo site, the browser suite and the development setup:
+<https://github.com/Elite-Dangerous-Almanac/Galaxy-Map>.
 
 ## Install
 

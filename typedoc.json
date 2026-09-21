@@ -1,0 +1,44 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+
+  // The two supported entry points. `src/testing.ts` is **not** here: it carries no
+  // compatibility promise, and its three exports must not reach the five sections of
+  // the wiki. `docs/wiki/Testing-subpath.md` covers that subpath by hand.
+  "entryPoints": [
+    "packages/galaxy-map/src/index.ts",
+    "packages/galaxy-map/src/nebulae/index.ts"
+  ],
+  "tsconfig": "tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+
+  // `scripts/build-wiki.mjs` passes its own `--out`. This default keeps a bare
+  // `pnpm exec typedoc` inside the ignored build directory, and away from `docs/`,
+  // which TypeDoc would otherwise write into.
+  "out": "wiki-build/typedoc",
+  "readme": "none",
+
+  // The page header and the breadcrumbs name the module and the output root, which the
+  // wiki has no folders for. The arrange pass gives the wiki its own navigation.
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+
+  // The "Defined in" link carries the commit the build ran on. With it, every push to
+  // `main` rewrites every page, and the "an unchanged tree writes no commit" rule of
+  // the publish job never fires.
+  "disableSources": true,
+
+  // Leaves out every member tagged `@internal`. Today that is one: `GalaxyMap.debug`,
+  // the renderer probe set the browser suite reads. `GalaxyMapDebug` is exported from
+  // no entry point, so the member's type has no page and the entry would be a dead end
+  // on the handle's page. No tsconfig of the workspace sets `stripInternal`, so the
+  // emitted declaration keeps the member and the browser suite still compiles.
+  "excludeInternal": true,
+
+  "validation": {
+    // Eight types are referenced by a documented member and exported from no entry
+    // point -- `NebulaSet`, `NebulaVolumeSet`, `NebulaDraw`, `GalaxyMapDebug`,
+    // `MarkerStyle` and the three reject reasons. They are internal, and the wiki links
+    // to a page only where the page exists.
+    "notExported": false
+  }
+}

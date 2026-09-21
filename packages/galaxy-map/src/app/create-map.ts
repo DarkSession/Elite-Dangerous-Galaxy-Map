@@ -823,7 +823,15 @@ export interface GalaxyMap {
    * dynamic import, so the member is null until `ready` settles.
    */
   readonly hud: HudHandle | null;
-  /** The renderer probes the browser tests read. */
+  /**
+   * The renderer probes the browser tests read.
+   *
+   * @internal `GalaxyMapDebug` is exported from no entry point, so the member is not
+   * part of the supported surface and the API wiki leaves it out. The tag is what
+   * `excludeInternal` in `typedoc.json` reads. No tsconfig of the workspace sets
+   * `stripInternal`, so the emitted declaration keeps the member and the browser suite
+   * still compiles against it.
+   */
   readonly debug: GalaxyMapDebug;
 }
 
