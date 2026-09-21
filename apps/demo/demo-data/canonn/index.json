@@ -1,0 +1,6786 @@
+[
+  {
+    "id": "GR",
+    "label": "Guardian Ruins",
+    "group": "Guardians",
+    "description": "Guardian Ruins, a map of the Canonn ED3D map project. The entry holds 212 records in 3 categories, from storage.googleapis.com.",
+    "systemCount": 212,
+    "files": [
+      {
+        "path": "guardian-ruins.json",
+        "categories": {
+          "Beta": {
+            "name": "Beta",
+            "color": [
+              217,
+              113,
+              98
+            ]
+          },
+          "Alpha": {
+            "name": "Alpha",
+            "color": [
+              98,
+              217,
+              102
+            ]
+          },
+          "Gamma": {
+            "name": "Gamma",
+            "color": [
+              98,
+              139,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GS",
+    "label": "Guardian Structures",
+    "group": "Guardians",
+    "description": "Guardian Structures, a map of the Canonn ED3D map project. The entry holds 163 records in 10 categories, from storage.googleapis.com.",
+    "systemCount": 163,
+    "files": [
+      {
+        "path": "guardian-structures.json",
+        "categories": {
+          "Fistbump": {
+            "name": "Fistbump",
+            "color": [
+              98,
+              217,
+              147
+            ]
+          },
+          "Bear": {
+            "name": "Bear",
+            "color": [
+              217,
+              98,
+              103
+            ]
+          },
+          "Hammerbot": {
+            "name": "Hammerbot",
+            "color": [
+              125,
+              98,
+              217
+            ]
+          },
+          "Lacrosse": {
+            "name": "Lacrosse",
+            "color": [
+              217,
+              98,
+              195
+            ]
+          },
+          "Turtle": {
+            "name": "Turtle",
+            "color": [
+              217,
+              98,
+              119
+            ]
+          },
+          "Crossroads": {
+            "name": "Crossroads",
+            "color": [
+              113,
+              98,
+              217
+            ]
+          },
+          "Bowl": {
+            "name": "Bowl",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          },
+          "Stickyhand": {
+            "name": "Stickyhand",
+            "color": [
+              217,
+              98,
+              111
+            ]
+          },
+          "Squid": {
+            "name": "Squid",
+            "color": [
+              217,
+              98,
+              187
+            ]
+          },
+          "Robolobster": {
+            "name": "Robolobster",
+            "color": [
+              113,
+              98,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GB",
+    "label": "Guardian Beacons",
+    "group": "Guardians",
+    "description": "Guardian Beacons, a map of the Canonn ED3D map project. The entry holds 30 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 30,
+    "files": [
+      {
+        "path": "guardian-beacons.json",
+        "categories": {
+          "Beacon": {
+            "name": "Beacon",
+            "color": [
+              149,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Guardians",
+    "label": "Guardian Sites",
+    "group": "Guardians",
+    "description": "Guardian Sites, a map of the Canonn ED3D map project. The entry holds 20214 records in 22 categories, from storage.googleapis.com.",
+    "systemCount": 20214,
+    "files": [
+      {
+        "path": "guardian-ruins.json",
+        "categories": {
+          "Beta": {
+            "name": "Beta",
+            "color": [
+              217,
+              98,
+              167
+            ]
+          },
+          "Alpha": {
+            "name": "Alpha",
+            "color": [
+              98,
+              217,
+              100
+            ]
+          },
+          "Gamma": {
+            "name": "Gamma",
+            "color": [
+              98,
+              217,
+              121
+            ]
+          }
+        }
+      },
+      {
+        "path": "guardian-structures.json",
+        "categories": {
+          "Fistbump": {
+            "name": "Fistbump",
+            "color": [
+              191,
+              217,
+              98
+            ]
+          },
+          "Bear": {
+            "name": "Bear",
+            "color": [
+              98,
+              119,
+              217
+            ]
+          },
+          "Hammerbot": {
+            "name": "Hammerbot",
+            "color": [
+              98,
+              197,
+              217
+            ]
+          },
+          "Lacrosse": {
+            "name": "Lacrosse",
+            "color": [
+              217,
+              98,
+              163
+            ]
+          },
+          "Turtle": {
+            "name": "Turtle",
+            "color": [
+              203,
+              98,
+              217
+            ]
+          },
+          "Crossroads": {
+            "name": "Crossroads",
+            "color": [
+              129,
+              98,
+              217
+            ]
+          },
+          "Bowl": {
+            "name": "Bowl",
+            "color": [
+              217,
+              98,
+              155
+            ]
+          },
+          "Stickyhand": {
+            "name": "Stickyhand",
+            "color": [
+              217,
+              98,
+              159
+            ]
+          },
+          "Squid": {
+            "name": "Squid",
+            "color": [
+              98,
+              217,
+              199
+            ]
+          },
+          "Robolobster": {
+            "name": "Robolobster",
+            "color": [
+              98,
+              217,
+              177
+            ]
+          }
+        }
+      },
+      {
+        "path": "guardian-beacons.json",
+        "categories": {
+          "Beacon": {
+            "name": "Beacon",
+            "color": [
+              217,
+              98,
+              203
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100201.json",
+        "categories": {
+          "": {
+            "name": "Roseum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100202.json",
+        "categories": {
+          "": {
+            "name": "Gypseeum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100203.json",
+        "categories": {
+          "": {
+            "name": "Ostrinum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100204.json",
+        "categories": {
+          "": {
+            "name": "Viride",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100205.json",
+        "categories": {
+          "": {
+            "name": "Lividum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100206.json",
+        "categories": {
+          "": {
+            "name": "Aureum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100207.json",
+        "categories": {
+          "": {
+            "name": "Puniceum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100208.json",
+        "categories": {
+          "": {
+            "name": "Lindigoticum",
+            "color": [
+              191,
+              98,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "AP",
+    "label": "Amphora Plants",
+    "group": "Codex biology",
+    "description": "Amphora Plants, a map of the Canonn ED3D map project. The entry holds 651 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 651,
+    "files": [
+      {
+        "path": "dumpr-biology-2101400.json",
+        "categories": {
+          "": {
+            "name": "Amphora Plant",
+            "color": [
+              98,
+              217,
+              149
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "BM",
+    "label": "Bark Mounds",
+    "group": "Codex biology",
+    "description": "Bark Mounds, a map of the Canonn ED3D map project. The entry holds 3440 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3440,
+    "files": [
+      {
+        "path": "dumpr-biology-2100301.json",
+        "categories": {
+          "": {
+            "name": "Bark Mound",
+            "color": [
+              98,
+              133,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "BT",
+    "label": "Brain Trees",
+    "group": "Codex biology",
+    "description": "Brain Trees, a map of the Canonn ED3D map project. The entry holds 19809 records in 8 categories, from storage.googleapis.com.",
+    "systemCount": 19809,
+    "files": [
+      {
+        "path": "dumpr-biology-2100201.json",
+        "categories": {
+          "": {
+            "name": "Roseum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100202.json",
+        "categories": {
+          "": {
+            "name": "Gypseeum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100203.json",
+        "categories": {
+          "": {
+            "name": "Ostrinum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100204.json",
+        "categories": {
+          "": {
+            "name": "Viride Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100205.json",
+        "categories": {
+          "": {
+            "name": "Lividum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100206.json",
+        "categories": {
+          "": {
+            "name": "Aureum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100207.json",
+        "categories": {
+          "": {
+            "name": "Puniceum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100208.json",
+        "categories": {
+          "": {
+            "name": "Lindigoticum Brain Tree",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "CS",
+    "label": "Crystalline Shards",
+    "group": "Codex biology",
+    "description": "Crystalline Shards, a map of the Canonn ED3D map project. The entry holds 3826 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3826,
+    "files": [
+      {
+        "path": "dumpr-biology-2101500.json",
+        "categories": {
+          "": {
+            "name": "Crystalline Shards",
+            "color": [
+              187,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FG",
+    "label": "Fungal Gourds",
+    "group": "Codex biology",
+    "description": "Fungal Gourds, a map of the Canonn ED3D map project. The entry holds 10343 records in 8 categories, from storage.googleapis.com.",
+    "systemCount": 10343,
+    "files": [
+      {
+        "path": "dumpr-biology-2100401.json",
+        "categories": {
+          "": {
+            "name": "Luteolum Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100402.json",
+        "categories": {
+          "": {
+            "name": "Croceum Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100403.json",
+        "categories": {
+          "": {
+            "name": "Puniceum Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100404.json",
+        "categories": {
+          "": {
+            "name": "Roseum Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100405.json",
+        "categories": {
+          "": {
+            "name": "Blatteum Bioluminescent Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100406.json",
+        "categories": {
+          "": {
+            "name": "Rubeum Bioluminescent Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100407.json",
+        "categories": {
+          "": {
+            "name": "Prasinum Bioluminescent Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100408.json",
+        "categories": {
+          "": {
+            "name": "Roseum Bioluminescent Anemone",
+            "color": [
+              161,
+              98,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "TW",
+    "label": "Tube Worms",
+    "group": "Codex biology",
+    "description": "Tube Worms, a map of the Canonn ED3D map project. The entry holds 969 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 969,
+    "files": [
+      {
+        "path": "dumpr-biology-2100501.json",
+        "categories": {
+          "": {
+            "name": "Roseum Sinuous Tubers",
+            "color": [
+              213,
+              98,
+              217
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-sulphur-dioxide-fumarole",
+    "label": "Fumaroles, Sulphur Dioxide Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Sulphur Dioxide Fumarole, a map of the Canonn ED3D map project. The entry holds 30667 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 30667,
+    "files": [
+      {
+        "path": "dumpr-geology-1400102.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Fumarole",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-water-fumarole",
+    "label": "Fumaroles, Water Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Water Fumarole, a map of the Canonn ED3D map project. The entry holds 722 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 722,
+    "files": [
+      {
+        "path": "dumpr-geology-1400108.json",
+        "categories": {
+          "": {
+            "name": "Water Fumarole",
+            "color": [
+              178,
+              34,
+              34
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-silicate-vapour-fumarole",
+    "label": "Fumaroles, Silicate Vapour Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Silicate Vapour Fumarole, a map of the Canonn ED3D map project. The entry holds 22837 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 22837,
+    "files": [
+      {
+        "path": "dumpr-geology-1400114.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Fumarole",
+            "color": [
+              255,
+              127,
+              80
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-sulphur-dioxide-ice-fumarole",
+    "label": "Fumaroles, Sulphur Dioxide Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Sulphur Dioxide Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 266 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 266,
+    "files": [
+      {
+        "path": "dumpr-geology-1400152.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Ice Fumarole",
+            "color": [
+              255,
+              255,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-water-ice-fumarole",
+    "label": "Fumaroles, Water Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Water Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 15567 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 15567,
+    "files": [
+      {
+        "path": "dumpr-geology-1400158.json",
+        "categories": {
+          "": {
+            "name": "Water Ice Fumarole",
+            "color": [
+              0,
+              255,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-carbon-dioxide-ice-fumarole",
+    "label": "Fumaroles, Carbon Dioxide Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Carbon Dioxide Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 6340 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 6340,
+    "files": [
+      {
+        "path": "dumpr-geology-1400159.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Ice Fumarole",
+            "color": [
+              0,
+              0,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-ammonia-ice-fumarole",
+    "label": "Fumaroles, Ammonia Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Ammonia Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 2321 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 2321,
+    "files": [
+      {
+        "path": "dumpr-geology-1400160.json",
+        "categories": {
+          "": {
+            "name": "Ammonia Ice Fumarole",
+            "color": [
+              238,
+              130,
+              238
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-methane-ice-fumarole",
+    "label": "Fumaroles, Methane Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Methane Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 3602 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3602,
+    "files": [
+      {
+        "path": "dumpr-geology-1400161.json",
+        "categories": {
+          "": {
+            "name": "Methane Ice Fumarole",
+            "color": [
+              255,
+              0,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-nitrogen-ice-fumarole",
+    "label": "Fumaroles, Nitrogen Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Nitrogen Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 5397 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 5397,
+    "files": [
+      {
+        "path": "dumpr-geology-1400162.json",
+        "categories": {
+          "": {
+            "name": "Nitrogen Ice Fumarole",
+            "color": [
+              128,
+              0,
+              128
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "FM-silicate-vapour-ice-fumarole",
+    "label": "Fumaroles, Silicate Vapour Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Fumaroles, Silicate Vapour Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 435 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 435,
+    "files": [
+      {
+        "path": "dumpr-geology-1400164.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Ice Fumarole",
+            "color": [
+              165,
+              42,
+              42
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GV-sulphur-dioxide-gas-vent",
+    "label": "Gas Vents, Sulphur Dioxide Gas Vent",
+    "group": "Codex geology",
+    "description": "Gas Vents, Sulphur Dioxide Gas Vent, a map of the Canonn ED3D map project. The entry holds 25162 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25162,
+    "files": [
+      {
+        "path": "dumpr-geology-1400402.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Gas Vent",
+            "color": [
+              217,
+              109,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GV-water-gas-vent",
+    "label": "Gas Vents, Water Gas Vent",
+    "group": "Codex geology",
+    "description": "Gas Vents, Water Gas Vent, a map of the Canonn ED3D map project. The entry holds 1322 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 1322,
+    "files": [
+      {
+        "path": "dumpr-geology-1400408.json",
+        "categories": {
+          "": {
+            "name": "Water Gas Vent",
+            "color": [
+              217,
+              109,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GV-carbon-dioxide-gas-vent",
+    "label": "Gas Vents, Carbon Dioxide Gas Vent",
+    "group": "Codex geology",
+    "description": "Gas Vents, Carbon Dioxide Gas Vent, a map of the Canonn ED3D map project. The entry holds 346 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 346,
+    "files": [
+      {
+        "path": "dumpr-geology-1400409.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Gas Vent",
+            "color": [
+              217,
+              109,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GV-silicate-vapour-gas-vent",
+    "label": "Gas Vents, Silicate Vapour Gas Vent",
+    "group": "Codex geology",
+    "description": "Gas Vents, Silicate Vapour Gas Vent, a map of the Canonn ED3D map project. The entry holds 25360 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25360,
+    "files": [
+      {
+        "path": "dumpr-geology-1400414.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Gas Vent",
+            "color": [
+              217,
+              109,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GY",
+    "label": "Geysers",
+    "group": "Codex geology",
+    "description": "Geysers, a map of the Canonn ED3D map project. The entry holds 41387 records in 6 categories, from storage.googleapis.com.",
+    "systemCount": 41387,
+    "files": [
+      {
+        "path": "dumpr-geology-1400208.json",
+        "categories": {
+          "": {
+            "name": "Water Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400258.json",
+        "categories": {
+          "": {
+            "name": "Water Ice Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400259.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Ice Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400260.json",
+        "categories": {
+          "": {
+            "name": "Ammonia Ice Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400261.json",
+        "categories": {
+          "": {
+            "name": "Methane Ice Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400262.json",
+        "categories": {
+          "": {
+            "name": "Nitrogen Ice Geyser",
+            "color": [
+              217,
+              171,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "LS",
+    "label": "Lava Spouts",
+    "group": "Codex geology",
+    "description": "Lava Spouts, a map of the Canonn ED3D map project. The entry holds 40996 records in 2 categories, from storage.googleapis.com.",
+    "systemCount": 40996,
+    "files": [
+      {
+        "path": "dumpr-geology-1400306.json",
+        "categories": {
+          "": {
+            "name": "Silicate Magma Lava Spout",
+            "color": [
+              197,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400307.json",
+        "categories": {
+          "": {
+            "name": "Iron Magma Lava Spout",
+            "color": [
+              197,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-crystalline-shards",
+    "label": "Geology Sites, Crystalline Shards",
+    "group": "Codex geology",
+    "description": "Geology Sites, Crystalline Shards, a map of the Canonn ED3D map project. The entry holds 3826 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3826,
+    "files": [
+      {
+        "path": "dumpr-biology-2101500.json",
+        "categories": {
+          "": {
+            "name": "Crystalline Shards",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-sulphur-dioxide-fumarole",
+    "label": "Geology Sites, Sulphur Dioxide Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Sulphur Dioxide Fumarole, a map of the Canonn ED3D map project. The entry holds 30667 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 30667,
+    "files": [
+      {
+        "path": "dumpr-geology-1400102.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-water-fumarole",
+    "label": "Geology Sites, Water Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Water Fumarole, a map of the Canonn ED3D map project. The entry holds 722 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 722,
+    "files": [
+      {
+        "path": "dumpr-geology-1400108.json",
+        "categories": {
+          "": {
+            "name": "Water Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-silicate-vapour-fumarole",
+    "label": "Geology Sites, Silicate Vapour Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Silicate Vapour Fumarole, a map of the Canonn ED3D map project. The entry holds 22837 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 22837,
+    "files": [
+      {
+        "path": "dumpr-geology-1400114.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-sulphur-dioxide-ice-fumarole",
+    "label": "Geology Sites, Sulphur Dioxide Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Sulphur Dioxide Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 266 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 266,
+    "files": [
+      {
+        "path": "dumpr-geology-1400152.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-water-ice-fumarole",
+    "label": "Geology Sites, Water Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Water Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 15567 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 15567,
+    "files": [
+      {
+        "path": "dumpr-geology-1400158.json",
+        "categories": {
+          "": {
+            "name": "Water Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-carbon-dioxide-ice-fumarole",
+    "label": "Geology Sites, Carbon Dioxide Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Carbon Dioxide Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 6340 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 6340,
+    "files": [
+      {
+        "path": "dumpr-geology-1400159.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-ammonia-ice-fumarole",
+    "label": "Geology Sites, Ammonia Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Ammonia Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 2321 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 2321,
+    "files": [
+      {
+        "path": "dumpr-geology-1400160.json",
+        "categories": {
+          "": {
+            "name": "Ammonia Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-methane-ice-fumarole",
+    "label": "Geology Sites, Methane Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Methane Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 3602 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3602,
+    "files": [
+      {
+        "path": "dumpr-geology-1400161.json",
+        "categories": {
+          "": {
+            "name": "Methane Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-nitrogen-ice-fumarole",
+    "label": "Geology Sites, Nitrogen Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Nitrogen Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 5397 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 5397,
+    "files": [
+      {
+        "path": "dumpr-geology-1400162.json",
+        "categories": {
+          "": {
+            "name": "Nitrogen Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-silicate-vapour-ice-fumarole",
+    "label": "Geology Sites, Silicate Vapour Ice Fumarole",
+    "group": "Codex geology",
+    "description": "Geology Sites, Silicate Vapour Ice Fumarole, a map of the Canonn ED3D map project. The entry holds 435 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 435,
+    "files": [
+      {
+        "path": "dumpr-geology-1400164.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Ice Fumarole",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-sulphur-dioxide-gas-vent",
+    "label": "Geology Sites, Sulphur Dioxide Gas Vent",
+    "group": "Codex geology",
+    "description": "Geology Sites, Sulphur Dioxide Gas Vent, a map of the Canonn ED3D map project. The entry holds 25162 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25162,
+    "files": [
+      {
+        "path": "dumpr-geology-1400402.json",
+        "categories": {
+          "": {
+            "name": "Sulphur Dioxide Gas Vent",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-water-gas-vent",
+    "label": "Geology Sites, Water Gas Vent",
+    "group": "Codex geology",
+    "description": "Geology Sites, Water Gas Vent, a map of the Canonn ED3D map project. The entry holds 1322 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 1322,
+    "files": [
+      {
+        "path": "dumpr-geology-1400408.json",
+        "categories": {
+          "": {
+            "name": "Water Gas Vent",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-carbon-dioxide-gas-vent",
+    "label": "Geology Sites, Carbon Dioxide Gas Vent",
+    "group": "Codex geology",
+    "description": "Geology Sites, Carbon Dioxide Gas Vent, a map of the Canonn ED3D map project. The entry holds 346 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 346,
+    "files": [
+      {
+        "path": "dumpr-geology-1400409.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Gas Vent",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-silicate-vapour-gas-vent",
+    "label": "Geology Sites, Silicate Vapour Gas Vent",
+    "group": "Codex geology",
+    "description": "Geology Sites, Silicate Vapour Gas Vent, a map of the Canonn ED3D map project. The entry holds 25360 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25360,
+    "files": [
+      {
+        "path": "dumpr-geology-1400414.json",
+        "categories": {
+          "": {
+            "name": "Silicate Vapour Gas Vent",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-water-geyser",
+    "label": "Geology Sites, Water Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Water Geyser, a map of the Canonn ED3D map project. The entry holds 700 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 700,
+    "files": [
+      {
+        "path": "dumpr-geology-1400208.json",
+        "categories": {
+          "": {
+            "name": "Water Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-water-ice-geyser",
+    "label": "Geology Sites, Water Ice Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Water Ice Geyser, a map of the Canonn ED3D map project. The entry holds 19230 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 19230,
+    "files": [
+      {
+        "path": "dumpr-geology-1400258.json",
+        "categories": {
+          "": {
+            "name": "Water Ice Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-carbon-dioxide-ice-geyser",
+    "label": "Geology Sites, Carbon Dioxide Ice Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Carbon Dioxide Ice Geyser, a map of the Canonn ED3D map project. The entry holds 7041 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 7041,
+    "files": [
+      {
+        "path": "dumpr-geology-1400259.json",
+        "categories": {
+          "": {
+            "name": "Carbon Dioxide Ice Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-ammonia-ice-geyser",
+    "label": "Geology Sites, Ammonia Ice Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Ammonia Ice Geyser, a map of the Canonn ED3D map project. The entry holds 2611 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 2611,
+    "files": [
+      {
+        "path": "dumpr-geology-1400260.json",
+        "categories": {
+          "": {
+            "name": "Ammonia Ice Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-methane-ice-geyser",
+    "label": "Geology Sites, Methane Ice Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Methane Ice Geyser, a map of the Canonn ED3D map project. The entry holds 4614 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 4614,
+    "files": [
+      {
+        "path": "dumpr-geology-1400261.json",
+        "categories": {
+          "": {
+            "name": "Methane Ice Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-nitrogen-ice-geyser",
+    "label": "Geology Sites, Nitrogen Ice Geyser",
+    "group": "Codex geology",
+    "description": "Geology Sites, Nitrogen Ice Geyser, a map of the Canonn ED3D map project. The entry holds 7191 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 7191,
+    "files": [
+      {
+        "path": "dumpr-geology-1400262.json",
+        "categories": {
+          "": {
+            "name": "Nitrogen Ice Geyser",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-silicate-magma-lava-spout",
+    "label": "Geology Sites, Silicate Magma Lava Spout",
+    "group": "Codex geology",
+    "description": "Geology Sites, Silicate Magma Lava Spout, a map of the Canonn ED3D map project. The entry holds 25827 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25827,
+    "files": [
+      {
+        "path": "dumpr-geology-1400306.json",
+        "categories": {
+          "": {
+            "name": "Silicate Magma Lava Spout",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Geology-iron-magma-lava-spout",
+    "label": "Geology Sites, Iron Magma Lava Spout",
+    "group": "Codex geology",
+    "description": "Geology Sites, Iron Magma Lava Spout, a map of the Canonn ED3D map project. The entry holds 15169 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 15169,
+    "files": [
+      {
+        "path": "dumpr-geology-1400307.json",
+        "categories": {
+          "": {
+            "name": "Iron Magma Lava Spout",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "TB",
+    "label": "Thargoid Barnacles",
+    "group": "Thargoids",
+    "description": "Thargoid Barnacles, a map of the Canonn ED3D map project. The entry holds 599 records in 5 categories, from storage.googleapis.com.",
+    "systemCount": 599,
+    "files": [
+      {
+        "path": "dumpr-thargoid-2100101.json",
+        "categories": {
+          "": {
+            "name": "Common Thargoid Barnacle",
+            "color": [
+              98,
+              217,
+              151
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100102.json",
+        "categories": {
+          "": {
+            "name": "Large Thargoid Barnacle",
+            "color": [
+              98,
+              217,
+              151
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100103.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacle Barbs",
+            "color": [
+              98,
+              217,
+              151
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100104.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacle Matrix",
+            "color": [
+              98,
+              217,
+              151
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100105.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Mega Barnacles",
+            "color": [
+              98,
+              217,
+              151
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "TS",
+    "label": "Thargoid Structures",
+    "group": "Thargoids",
+    "description": "Thargoid Structures, a map of the Canonn ED3D map project. The entry holds 233 records in 7 categories, from raw.githubusercontent.com.",
+    "systemCount": 233,
+    "files": [
+      {
+        "path": "data-surface-sites.json",
+        "categories": {
+          "0": {
+            "name": "0 Inactive",
+            "color": [
+              166,
+              51,
+              51
+            ]
+          },
+          "1": {
+            "name": "1 Inactive",
+            "color": [
+              230,
+              51,
+              51
+            ]
+          },
+          "2": {
+            "name": "2 Inactive",
+            "color": [
+              255,
+              107,
+              107
+            ]
+          },
+          "3": {
+            "name": "3 Active",
+            "color": [
+              255,
+              165,
+              0
+            ]
+          },
+          "4": {
+            "name": "4 Active",
+            "color": [
+              255,
+              255,
+              0
+            ]
+          },
+          "5": {
+            "name": "5 Active",
+            "color": [
+              144,
+              238,
+              144
+            ]
+          },
+          "6": {
+            "name": "6 Active",
+            "color": [
+              0,
+              255,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "TSmsg_3305survey",
+    "label": "Thargoid Structure Messages",
+    "group": "Thargoids",
+    "description": "Thargoid Structure Messages, a map of the Canonn ED3D map project. The entry holds 229 records in 2 categories, from raw.githubusercontent.com.",
+    "systemCount": 229,
+    "files": [
+      {
+        "path": "data-csvcache-202011052200-canonn-universal-science-db-ts-export-export-csv-data.json",
+        "categories": {
+          "Inactive": {
+            "name": "Inactive T-Structure",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          },
+          "Active": {
+            "name": "Active T-Structure",
+            "color": [
+              0,
+              255,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Thargoids",
+    "label": "Thargoid Sites",
+    "group": "Thargoids",
+    "description": "Thargoid Sites, a map of the Canonn ED3D map project. The entry holds 7425 records in 19 categories, from storage.googleapis.com, raw.githubusercontent.com and us-central1-canonn-api-236217.cloudfunctions.net.",
+    "systemCount": 7425,
+    "files": [
+      {
+        "path": "dumpr-thargoid-2100101.json",
+        "categories": {
+          "": {
+            "name": "Common Thargoid Barnacle",
+            "color": [
+              98,
+              217,
+              201
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100102.json",
+        "categories": {
+          "": {
+            "name": "Large Thargoid Barnacle",
+            "color": [
+              98,
+              217,
+              201
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100103.json",
+        "categories": {
+          "": {
+            "name": "Barnacle Barbs",
+            "color": [
+              98,
+              217,
+              201
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100104.json",
+        "categories": {
+          "": {
+            "name": "Barnacle Matrix",
+            "color": [
+              98,
+              217,
+              201
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100105.json",
+        "categories": {
+          "": {
+            "name": "Mega Barnacles",
+            "color": [
+              98,
+              217,
+              201
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-surface-sites.json",
+        "categories": {
+          "0": {
+            "name": "0 Inactive",
+            "color": [
+              166,
+              51,
+              51
+            ]
+          },
+          "1": {
+            "name": "1 Inactive",
+            "color": [
+              230,
+              51,
+              51
+            ]
+          },
+          "2": {
+            "name": "2 Inactive",
+            "color": [
+              255,
+              107,
+              107
+            ]
+          },
+          "3": {
+            "name": "3 Active",
+            "color": [
+              255,
+              165,
+              0
+            ]
+          },
+          "4": {
+            "name": "4 Active",
+            "color": [
+              255,
+              255,
+              0
+            ]
+          },
+          "5": {
+            "name": "5 Active",
+            "color": [
+              144,
+              238,
+              144
+            ]
+          },
+          "6": {
+            "name": "6 Active",
+            "color": [
+              0,
+              255,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "query-query-thargoid-nhss-systems.json",
+        "categories": {
+          "3": {
+            "name": "Threat 3",
+            "color": [
+              255,
+              255,
+              0
+            ]
+          },
+          "4": {
+            "name": "Threat 4",
+            "color": [
+              255,
+              215,
+              0
+            ]
+          },
+          "5": {
+            "name": "Threat 5",
+            "color": [
+              255,
+              165,
+              0
+            ]
+          },
+          "6": {
+            "name": "Threat 6",
+            "color": [
+              255,
+              99,
+              71
+            ]
+          },
+          "7": {
+            "name": "Threat 7",
+            "color": [
+              255,
+              69,
+              0
+            ]
+          },
+          "8": {
+            "name": "Threat 8",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "name": "Threat 9",
+            "color": [
+              139,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "NHSS",
+    "label": "Non-Human Signal Sources",
+    "group": "Thargoids",
+    "description": "Non-Human Signal Sources, a map of the Canonn ED3D map project. The entry holds 6593 records in 8 categories, from us-central1-canonn-api-236217.cloudfunctions.net.",
+    "systemCount": 6593,
+    "files": [
+      {
+        "path": "query-query-thargoid-nhss-systems.json",
+        "categories": {
+          "0": {
+            "name": "Threat 0",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "name": "Threat 3",
+            "color": [
+              231,
+              138,
+              97
+            ]
+          },
+          "4": {
+            "name": "Threat 4",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "5": {
+            "name": "Threat 5",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "6": {
+            "name": "Threat 6",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "7": {
+            "name": "Threat 7",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "8": {
+            "name": "Threat 8",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "9": {
+            "name": "Threat 9",
+            "color": [
+              56,
+              124,
+              68
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Aliens",
+    "label": "Alien Sites",
+    "group": "Thargoids",
+    "description": "Alien Sites, a map of the Canonn ED3D map project. The entry holds 27639 records in 7 categories, from storage.googleapis.com, raw.githubusercontent.com and us-central1-canonn-api-236217.cloudfunctions.net.",
+    "systemCount": 27639,
+    "files": [
+      {
+        "path": "guardian-ruins.json",
+        "categories": {
+          "Beta": {
+            "name": "Guardian Ruins",
+            "color": [
+              68,
+              136,
+              255
+            ]
+          },
+          "Alpha": {
+            "name": "Guardian Ruins",
+            "color": [
+              68,
+              136,
+              255
+            ]
+          },
+          "Gamma": {
+            "name": "Guardian Ruins",
+            "color": [
+              68,
+              136,
+              255
+            ]
+          }
+        }
+      },
+      {
+        "path": "guardian-structures.json",
+        "categories": {
+          "Fistbump": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Bear": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Hammerbot": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Lacrosse": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Turtle": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Crossroads": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Bowl": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Stickyhand": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Squid": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          },
+          "Robolobster": {
+            "name": "Guardian Structures",
+            "color": [
+              0,
+              85,
+              204
+            ]
+          }
+        }
+      },
+      {
+        "path": "guardian-beacons.json",
+        "categories": {
+          "Beacon": {
+            "name": "Guardian Beacons",
+            "color": [
+              136,
+              187,
+              255
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100201.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100202.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100203.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100204.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100205.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100206.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100207.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100208.json",
+        "categories": {
+          "": {
+            "name": "Brain Trees",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100101.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacles",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100102.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacles",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100103.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacles",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100104.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacles",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100105.json",
+        "categories": {
+          "": {
+            "name": "Thargoid Barnacles",
+            "color": [
+              215,
+              217,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-surface-sites.json",
+        "categories": {
+          "0": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "1": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "2": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "3": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "4": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "5": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          },
+          "6": {
+            "name": "Thargoid Structures",
+            "color": [
+              0,
+              136,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "query-query-thargoid-nhss-systems.json",
+        "categories": {
+          "0": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "3": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "4": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "5": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "6": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "7": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "8": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          },
+          "9": {
+            "name": "Non-Human Signal Sources",
+            "color": [
+              68,
+              255,
+              136
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Hyperdiction",
+    "label": "Hyperdictions",
+    "group": "Thargoids",
+    "description": "Hyperdictions, a map of the Canonn ED3D map project. The entry holds 10539 records in 39 categories, from storage.googleapis.com.",
+    "systemCount": 10539,
+    "files": [
+      {
+        "path": "dumpr-hyperdictions.json",
+        "categories": {
+          "Merope 3312": {
+            "name": "Merope 3312",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Sol 3312": {
+            "name": "Sol 3312",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "California Sector 3312": {
+            "name": "California Sector 3312",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3312": {
+            "name": "Coalsack 3312",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Witchhead 3312": {
+            "name": "Witchhead 3312",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "Merope 3311": {
+            "name": "Merope 3311",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Sol 3311": {
+            "name": "Sol 3311",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "Witchhead 3311": {
+            "name": "Witchhead 3311",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "California Sector 3311": {
+            "name": "California Sector 3311",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3311": {
+            "name": "Coalsack 3311",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Sol 3310": {
+            "name": "Sol 3310",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "Merope 3310": {
+            "name": "Merope 3310",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Witchhead 3310": {
+            "name": "Witchhead 3310",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "California Sector 3310": {
+            "name": "California Sector 3310",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3310": {
+            "name": "Coalsack 3310",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Sol 3309": {
+            "name": "Sol 3309",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "Merope 3309": {
+            "name": "Merope 3309",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Witchhead 3309": {
+            "name": "Witchhead 3309",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "California Sector 3309": {
+            "name": "California Sector 3309",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3309": {
+            "name": "Coalsack 3309",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Merope 3308": {
+            "name": "Merope 3308",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Sol 3308": {
+            "name": "Sol 3308",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "California Sector 3308": {
+            "name": "California Sector 3308",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3308": {
+            "name": "Coalsack 3308",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Witchhead 3308": {
+            "name": "Witchhead 3308",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "Merope 3307": {
+            "name": "Merope 3307",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Sol 3307": {
+            "name": "Sol 3307",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "California Sector 3307": {
+            "name": "California Sector 3307",
+            "color": [
+              0,
+              255,
+              255
+            ]
+          },
+          "Coalsack 3307": {
+            "name": "Coalsack 3307",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Witchhead 3307": {
+            "name": "Witchhead 3307",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "Sol 3306": {
+            "name": "Sol 3306",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "Merope 3306": {
+            "name": "Merope 3306",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Witchhead 3306": {
+            "name": "Witchhead 3306",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "Coalsack 3306": {
+            "name": "Coalsack 3306",
+            "color": [
+              255,
+              187,
+              0
+            ]
+          },
+          "Sol 3305": {
+            "name": "Sol 3305",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          },
+          "Merope 3305": {
+            "name": "Merope 3305",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Witchhead 3305": {
+            "name": "Witchhead 3305",
+            "color": [
+              0,
+              161,
+              241
+            ]
+          },
+          "Merope 3304": {
+            "name": "Merope 3304",
+            "color": [
+              246,
+              83,
+              20
+            ]
+          },
+          "Sol 3304": {
+            "name": "Sol 3304",
+            "color": [
+              124,
+              187,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "multifaction",
+    "label": "Canonn Factions",
+    "group": "Factions",
+    "description": "Canonn Factions, a map of the Canonn ED3D map project. The entry holds 4249 records in 4 categories, from downloads.spansh.co.uk.",
+    "systemCount": 4249,
+    "files": [
+      {
+        "path": "downloads-spansh-co-uk-factions-json-gz-canonn-canonn-deep-space-research.json",
+        "categories": {
+          "Canonn Present": {
+            "name": "Canonn Present",
+            "color": [
+              168,
+              235,
+              106
+            ]
+          },
+          "Canonn Deep Space Research Controlled": {
+            "name": "Canonn Deep Space Research Controlled",
+            "color": [
+              37,
+              84,
+              199
+            ]
+          },
+          "Canonn Deep Space Research Present": {
+            "name": "Canonn Deep Space Research Present",
+            "color": [
+              121,
+              186,
+              236
+            ]
+          },
+          "Canonn Controlled": {
+            "name": "Canonn Controlled",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "IDA",
+    "label": "Operation Ida",
+    "group": "Factions",
+    "description": "Operation Ida, a map of the Canonn ED3D map project. The entry holds 1668 records in 4 categories, from storage.googleapis.com and downloads.spansh.co.uk.",
+    "systemCount": 1668,
+    "files": [
+      {
+        "path": "ida-repairs.json",
+        "categories": {
+          "Repairs": {
+            "name": "Repairs",
+            "color": [
+              255,
+              107,
+              53
+            ]
+          }
+        }
+      },
+      {
+        "path": "ida-colonisation.json",
+        "categories": {
+          "Colonisation": {
+            "name": "Colonisation",
+            "color": [
+              0,
+              206,
+              209
+            ]
+          }
+        }
+      },
+      {
+        "path": "downloads-spansh-co-uk-factions-json-gz-operation-ida.json",
+        "categories": {
+          "Operation Ida Present": {
+            "name": "Present",
+            "color": [
+              168,
+              235,
+              106
+            ]
+          },
+          "Operation Ida Controlled": {
+            "name": "Controlled",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Adamastor",
+    "label": "Adamastor",
+    "group": "Expeditions",
+    "description": "Adamastor, a map of the Canonn ED3D map project. The entry holds 87 records in 6 categories, from raw.githubusercontent.com.",
+    "systemCount": 87,
+    "files": [
+      {
+        "path": "data-mapdata-adamastor.json",
+        "categories": {
+          "Aegis' Alexandria Disappeared": {
+            "name": "Aegis' Alexandria Disappeared",
+            "color": [
+              102,
+              255,
+              102
+            ]
+          },
+          "Project Seraph Settlements": {
+            "name": "Project Seraph Settlements",
+            "color": [
+              102,
+              102,
+              255
+            ]
+          },
+          "Hyford's Cache & D-2's LPs": {
+            "name": "Hyford's Cache & D-2's LPs",
+            "color": [
+              255,
+              102,
+              102
+            ]
+          },
+          "Battles of Cornsar": {
+            "name": "Battles of Cornsar",
+            "color": [
+              255,
+              102,
+              102
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-adamastor.json",
+        "categories": {
+          "Adamastor": {
+            "name": "Adamastor",
+            "color": [
+              245,
+              161,
+              66
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-hesperus.json",
+        "categories": {
+          "Hesperus": {
+            "name": "Hesperus",
+            "color": [
+              66,
+              176,
+              245
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Challenge",
+    "label": "Canonn Challenge",
+    "group": "Expeditions",
+    "description": "Canonn Challenge, a map of the Canonn ED3D map project. The entry holds 124 records in 2 categories, from raw.githubusercontent.com.",
+    "systemCount": 124,
+    "files": [
+      {
+        "path": "data-csvcache-expedition.json",
+        "categories": {
+          "Waypoint": {
+            "name": "Waypoint",
+            "color": [
+              66,
+              245,
+              87
+            ]
+          },
+          "Varati": {
+            "name": "Varati",
+            "color": [
+              245,
+              161,
+              66
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Gnosis",
+    "label": "The Gnosis",
+    "group": "Expeditions",
+    "description": "The Gnosis, a map of the Canonn ED3D map project. The entry holds 136 records in 8 categories, from raw.githubusercontent.com.",
+    "systemCount": 136,
+    "files": [
+      {
+        "path": "data-csvcache-gnosis.json",
+        "categories": {
+          "Varati": {
+            "name": "Varati",
+            "color": [
+              103,
+              98,
+              217
+            ]
+          },
+          "Other System": {
+            "name": "Other System",
+            "color": [
+              139,
+              217,
+              98
+            ]
+          },
+          "HIP 17862": {
+            "name": "HIP 17862",
+            "color": [
+              143,
+              217,
+              98
+            ]
+          },
+          "Pleiades Sector PN-T b3-0": {
+            "name": "Pleiades Sector PN-T b3-0",
+            "color": [
+              98,
+              217,
+              98
+            ]
+          },
+          "Synuefe PR-L b40-1": {
+            "name": "Synuefe PR-L b40-1",
+            "color": [
+              217,
+              98,
+              105
+            ]
+          },
+          "HIP 18120": {
+            "name": "HIP 18120",
+            "color": [
+              143,
+              98,
+              217
+            ]
+          },
+          "IC 2391 Sector CQ-Y c16": {
+            "name": "IC 2391 Sector CQ-Y c16",
+            "color": [
+              217,
+              98,
+              147
+            ]
+          },
+          "Kappa-1 Volantis": {
+            "name": "Kappa-1 Volantis",
+            "color": [
+              98,
+              217,
+              131
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "LP",
+    "label": "Listening Posts",
+    "group": "Expeditions",
+    "description": "Listening Posts, a map of the Canonn ED3D map project. The entry holds 307 records in 2 categories, from raw.githubusercontent.com.",
+    "systemCount": 307,
+    "files": [
+      {
+        "path": "data-csvcache-listening-posts.json",
+        "categories": {
+          "Hint": {
+            "name": "Hint",
+            "color": [
+              245,
+              161,
+              66
+            ]
+          },
+          "Discovery": {
+            "name": "Discovery",
+            "color": [
+              66,
+              245,
+              87
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "UIA",
+    "label": "Unknown Instrument Array",
+    "group": "Expeditions",
+    "description": "Unknown Instrument Array, a map of the Canonn ED3D map project. The entry holds 2009 records in 13 categories, from raw.githubusercontent.com.",
+    "systemCount": 2009,
+    "files": [
+      {
+        "path": "data-mapdata-uia.json",
+        "categories": {
+          "Thargoid Systems": {
+            "name": "Thargoid Systems",
+            "color": [
+              102,
+              255,
+              102
+            ]
+          },
+          "Populated Systems": {
+            "name": "Populated Systems",
+            "color": [
+              255,
+              157,
+              0
+            ]
+          },
+          "Permit Locked Centers": {
+            "name": "Permit Locked Centers",
+            "color": [
+              255,
+              51,
+              51
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-1.json",
+        "categories": {
+          "": {
+            "name": "UIA 1, Taranis",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-2.json",
+        "categories": {
+          "": {
+            "name": "UIA 2, Leigong",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-3.json",
+        "categories": {
+          "": {
+            "name": "UIA 3, Indra",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-4.json",
+        "categories": {
+          "": {
+            "name": "UIA 4, Oya",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-5.json",
+        "categories": {
+          "": {
+            "name": "UIA 5, Cocijo",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-6.json",
+        "categories": {
+          "": {
+            "name": "UIA 6, Thor",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-7.json",
+        "categories": {
+          "": {
+            "name": "UIA 7, Raijin",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-uia-waypoints-8.json",
+        "categories": {
+          "": {
+            "name": "UIA 8, Hadad",
+            "color": [
+              153,
+              153,
+              0
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-route-uia-hyperdictions.json",
+        "categories": {
+          "Hyperdiction": {
+            "name": "All Hyperdictions",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          },
+          "Hostile": {
+            "name": "Hostile Hyperdictions",
+            "color": [
+              139,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Voyager",
+    "label": "Voyager Probes",
+    "group": "Expeditions",
+    "description": "Voyager Probes, a map of the Canonn ED3D map project. The entry holds 15 records in 2 categories, from raw.githubusercontent.com.",
+    "systemCount": 15,
+    "files": [
+      {
+        "path": "data-csvcache-voyager.json",
+        "categories": {
+          "Voyager System": {
+            "name": "Voyager System",
+            "color": [
+              255,
+              255,
+              255
+            ]
+          },
+          "Sol": {
+            "name": "Sol",
+            "color": [
+              255,
+              215,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cartographics",
+    "label": "Cartographics",
+    "group": "Regions and routes",
+    "description": "Cartographics, a map of the Canonn ED3D map project. The entry holds 1809 records in 11 categories, from storage.googleapis.com and raw.githubusercontent.com.",
+    "systemCount": 1809,
+    "files": [
+      {
+        "path": "generationships.json",
+        "categories": {
+          "Generation Ship": {
+            "name": "Generation Ship",
+            "color": [
+              217,
+              143,
+              98
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-col70.json",
+        "categories": {
+          "1070": {
+            "name": "Col 70 Sector",
+            "color": [
+              68,
+              34,
+              153
+            ]
+          },
+          "1097": {
+            "name": "Col 97 Sector",
+            "color": [
+              68,
+              68,
+              221
+            ]
+          },
+          "1121": {
+            "name": "Col 121 Sector",
+            "color": [
+              17,
+              170,
+              187
+            ]
+          },
+          "2000": {
+            "name": "Cone Sector",
+            "color": [
+              34,
+              204,
+              170
+            ]
+          },
+          "3000": {
+            "name": "Horsehead Dark Sector",
+            "color": [
+              166,
+              204,
+              51
+            ]
+          },
+          "4000": {
+            "name": "M41",
+            "color": [
+              105,
+              208,
+              37
+            ]
+          },
+          "6647": {
+            "name": "NGC 1647",
+            "color": [
+              170,
+              204,
+              34
+            ]
+          },
+          "7264": {
+            "name": "NGC 2264",
+            "color": [
+              208,
+              195,
+              16
+            ]
+          },
+          "7286": {
+            "name": "NGC 2286",
+            "color": [
+              204,
+              187,
+              51
+            ]
+          },
+          "8603": {
+            "name": "NGC 3603",
+            "color": [
+              255,
+              153,
+              51
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Permit",
+    "label": "Permit Locked Regions",
+    "group": "Regions and routes",
+    "description": "Permit Locked Regions, a map of the Canonn ED3D map project. The entry holds 1812 records in 18 categories, from raw.githubusercontent.com.",
+    "systemCount": 1812,
+    "files": [
+      {
+        "path": "data-mapdata-permit.json",
+        "categories": {
+          "NGC 2286": {
+            "name": "NGC 2286",
+            "color": [
+              204,
+              187,
+              51
+            ]
+          },
+          "NGC 3603": {
+            "name": "NGC 3603",
+            "color": [
+              255,
+              153,
+              51
+            ]
+          },
+          "IC 4673 Sector": {
+            "name": "IC 4673 Sector",
+            "color": [
+              238,
+              136,
+              0
+            ]
+          },
+          "Bleia Permit Zone": {
+            "name": "Bleia Permit Zone",
+            "color": [
+              221,
+              119,
+              0
+            ]
+          },
+          "Bovomit": {
+            "name": "Bovomit",
+            "color": [
+              204,
+              102,
+              0
+            ]
+          },
+          "Dryman": {
+            "name": "Dryman",
+            "color": [
+              187,
+              85,
+              0
+            ]
+          },
+          "Froadik": {
+            "name": "Froadik",
+            "color": [
+              170,
+              68,
+              0
+            ]
+          },
+          "Hyponia": {
+            "name": "Hyponia",
+            "color": [
+              153,
+              68,
+              51
+            ]
+          },
+          "Praei Permit Zone": {
+            "name": "Praei Permit Zone",
+            "color": [
+              136,
+              51,
+              34
+            ]
+          },
+          "Sidgoir": {
+            "name": "Sidgoir",
+            "color": [
+              119,
+              34,
+              17
+            ]
+          }
+        }
+      },
+      {
+        "path": "data-csvcache-col70.json",
+        "categories": {
+          "1070": {
+            "name": "Col 70 Sector",
+            "color": [
+              68,
+              34,
+              153
+            ]
+          },
+          "1097": {
+            "name": "Col 97 Sector",
+            "color": [
+              68,
+              68,
+              221
+            ]
+          },
+          "1121": {
+            "name": "Col 121 Sector",
+            "color": [
+              17,
+              170,
+              187
+            ]
+          },
+          "2000": {
+            "name": "Cone Sector",
+            "color": [
+              34,
+              204,
+              170
+            ]
+          },
+          "3000": {
+            "name": "Horsehead Dark Sector",
+            "color": [
+              166,
+              204,
+              51
+            ]
+          },
+          "4000": {
+            "name": "M41",
+            "color": [
+              105,
+              208,
+              37
+            ]
+          },
+          "6647": {
+            "name": "NGC 1647",
+            "color": [
+              170,
+              204,
+              34
+            ]
+          },
+          "7264": {
+            "name": "NGC 2264",
+            "color": [
+              208,
+              195,
+              16
+            ]
+          },
+          "7286": {
+            "name": "NGC 2286",
+            "color": [
+              204,
+              187,
+              51
+            ]
+          },
+          "8603": {
+            "name": "NGC 3603",
+            "color": [
+              255,
+              153,
+              51
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Prisons",
+    "label": "Prison Ships",
+    "group": "Regions and routes",
+    "description": "Prison Ships, a map of the Canonn ED3D map project. The entry holds 799 records in 2 categories, from raw.githubusercontent.com.",
+    "systemCount": 799,
+    "files": [
+      {
+        "path": "data-station-stats.json",
+        "categories": {
+          "Stations": {
+            "name": "Stations",
+            "color": [
+              98,
+              141,
+              217
+            ]
+          },
+          "Prisons": {
+            "name": "Prisons",
+            "color": [
+              217,
+              98,
+              191
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-life-cloud",
+    "label": "Lagrange Clouds, Life Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Life Cloud, a map of the Canonn ED3D map project. The entry holds 21604 records in 34 categories, from storage.googleapis.com.",
+    "systemCount": 21604,
+    "files": [
+      {
+        "path": "clouds-life-cloud.json",
+        "categories": {
+          "Life Cloud": {
+            "name": "Life Cloud",
+            "color": [
+              126,
+              88,
+              126
+            ]
+          },
+          "Life Ring": {
+            "name": "Life Ring",
+            "color": [
+              231,
+              138,
+              97
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "Luteolum Lagrange Cloud": {
+            "name": "Luteolum Lagrange Cloud",
+            "color": [
+              56,
+              124,
+              68
+            ]
+          },
+          "Roseum Lagrange Cloud": {
+            "name": "Roseum Lagrange Cloud",
+            "color": [
+              72,
+              99,
+              160
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Viride Lagrange Cloud": {
+            "name": "Viride Lagrange Cloud",
+            "color": [
+              209,
+              101,
+              135
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Caeruleum Lagrange Cloud": {
+            "name": "Caeruleum Lagrange Cloud",
+            "color": [
+              108,
+              187,
+              60
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "T-Type Anomaly": {
+            "name": "T-Type Anomaly",
+            "color": [
+              100,
+              109,
+              126
+            ]
+          },
+          "Viride Lagrange Storm Cloud": {
+            "name": "Viride Lagrange Storm Cloud",
+            "color": [
+              200,
+              129,
+              65
+            ]
+          },
+          "Q-Type Anomaly": {
+            "name": "Q-Type Anomaly",
+            "color": [
+              249,
+              150,
+              107
+            ]
+          },
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          },
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          },
+          "Aster": {
+            "name": "Aster",
+            "color": [
+              194,
+              223,
+              255
+            ]
+          },
+          "L-Type Anomaly": {
+            "name": "L-Type Anomaly",
+            "color": [
+              149,
+              69,
+              53
+            ]
+          },
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          },
+          "Luteolum Lagrange Storm Cloud": {
+            "name": "Luteolum Lagrange Storm Cloud",
+            "color": [
+              0,
+              0,
+              128
+            ]
+          },
+          "Calcite Plates": {
+            "name": "Calcite Plates",
+            "color": [
+              227,
+              49,
+              157
+            ]
+          },
+          "Stolon": {
+            "name": "Stolon",
+            "color": [
+              67,
+              124,
+              23
+            ]
+          },
+          "P-Type Anomaly": {
+            "name": "P-Type Anomaly",
+            "color": [
+              141,
+              56,
+              201
+            ]
+          },
+          "Roseum Lagrange Storm Cloud": {
+            "name": "Roseum Lagrange Storm Cloud",
+            "color": [
+              108,
+              196,
+              23
+            ]
+          },
+          "Rubicundum Lagrange Storm Cloud": {
+            "name": "Rubicundum Lagrange Storm Cloud",
+            "color": [
+              181,
+              234,
+              170
+            ]
+          },
+          "Croceum Lagrange Storm Cloud": {
+            "name": "Croceum Lagrange Storm Cloud",
+            "color": [
+              132,
+              103,
+              215
+            ]
+          },
+          "Collared Pod": {
+            "name": "Collared Pod",
+            "color": [
+              80,
+              235,
+              236
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-life-ring",
+    "label": "Lagrange Clouds, Life Ring",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Life Ring, a map of the Canonn ED3D map project. The entry holds 2370 records in 23 categories, from storage.googleapis.com.",
+    "systemCount": 2370,
+    "files": [
+      {
+        "path": "clouds-life-ring.json",
+        "categories": {
+          "Life Ring": {
+            "name": "Life Ring",
+            "color": [
+              231,
+              138,
+              97
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          },
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          },
+          "L-Type Anomaly": {
+            "name": "L-Type Anomaly",
+            "color": [
+              149,
+              69,
+              53
+            ]
+          },
+          "P-Type Anomaly": {
+            "name": "P-Type Anomaly",
+            "color": [
+              141,
+              56,
+              201
+            ]
+          },
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          },
+          "Q-Type Anomaly": {
+            "name": "Q-Type Anomaly",
+            "color": [
+              249,
+              150,
+              107
+            ]
+          },
+          "Viride Lagrange Cloud": {
+            "name": "Viride Lagrange Cloud",
+            "color": [
+              209,
+              101,
+              135
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Void": {
+            "name": "Void",
+            "color": [
+              234,
+              193,
+              23
+            ]
+          },
+          "Calcite Plates": {
+            "name": "Calcite Plates",
+            "color": [
+              227,
+              49,
+              157
+            ]
+          },
+          "Aster": {
+            "name": "Aster",
+            "color": [
+              194,
+              223,
+              255
+            ]
+          },
+          "Collared Pod": {
+            "name": "Collared Pod",
+            "color": [
+              80,
+              235,
+              236
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-caeruleum-lagrange-cloud",
+    "label": "Lagrange Clouds, Caeruleum Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Caeruleum Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 184 records in 13 categories, from storage.googleapis.com.",
+    "systemCount": 184,
+    "files": [
+      {
+        "path": "clouds-caeruleum-lagrange-cloud.json",
+        "categories": {
+          "Caeruleum Lagrange Cloud": {
+            "name": "Caeruleum Lagrange Cloud",
+            "color": [
+              108,
+              187,
+              60
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Viride Lagrange Cloud": {
+            "name": "Viride Lagrange Cloud",
+            "color": [
+              209,
+              101,
+              135
+            ]
+          },
+          "Roseum Lagrange Cloud": {
+            "name": "Roseum Lagrange Cloud",
+            "color": [
+              72,
+              99,
+              160
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Luteolum Lagrange Cloud": {
+            "name": "Luteolum Lagrange Cloud",
+            "color": [
+              56,
+              124,
+              68
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-viride-lagrange-cloud",
+    "label": "Lagrange Clouds, Viride Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Viride Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 336 records in 14 categories, from storage.googleapis.com.",
+    "systemCount": 336,
+    "files": [
+      {
+        "path": "clouds-viride-lagrange-cloud.json",
+        "categories": {
+          "Viride Lagrange Cloud": {
+            "name": "Viride Lagrange Cloud",
+            "color": [
+              209,
+              101,
+              135
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Luteolum Lagrange Cloud": {
+            "name": "Luteolum Lagrange Cloud",
+            "color": [
+              56,
+              124,
+              68
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Roseum Lagrange Cloud": {
+            "name": "Roseum Lagrange Cloud",
+            "color": [
+              72,
+              99,
+              160
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "T-Type Anomaly": {
+            "name": "T-Type Anomaly",
+            "color": [
+              100,
+              109,
+              126
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-luteolum-lagrange-cloud",
+    "label": "Lagrange Clouds, Luteolum Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Luteolum Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 147 records in 11 categories, from storage.googleapis.com.",
+    "systemCount": 147,
+    "files": [
+      {
+        "path": "clouds-luteolum-lagrange-cloud.json",
+        "categories": {
+          "Luteolum Lagrange Cloud": {
+            "name": "Luteolum Lagrange Cloud",
+            "color": [
+              56,
+              124,
+              68
+            ]
+          },
+          "Roseum Lagrange Cloud": {
+            "name": "Roseum Lagrange Cloud",
+            "color": [
+              72,
+              99,
+              160
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "T-Type Anomaly": {
+            "name": "T-Type Anomaly",
+            "color": [
+              100,
+              109,
+              126
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-roseum-lagrange-cloud",
+    "label": "Lagrange Clouds, Roseum Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Roseum Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 240 records in 11 categories, from storage.googleapis.com.",
+    "systemCount": 240,
+    "files": [
+      {
+        "path": "clouds-roseum-lagrange-cloud.json",
+        "categories": {
+          "Roseum Lagrange Cloud": {
+            "name": "Roseum Lagrange Cloud",
+            "color": [
+              72,
+              99,
+              160
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "T-Type Anomaly": {
+            "name": "T-Type Anomaly",
+            "color": [
+              100,
+              109,
+              126
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-rubicundum-lagrange-cloud",
+    "label": "Lagrange Clouds, Rubicundum Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Rubicundum Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 173 records in 10 categories, from storage.googleapis.com.",
+    "systemCount": 173,
+    "files": [
+      {
+        "path": "clouds-rubicundum-lagrange-cloud.json",
+        "categories": {
+          "Rubicundum Lagrange Cloud": {
+            "name": "Rubicundum Lagrange Cloud",
+            "color": [
+              212,
+              98,
+              255
+            ]
+          },
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Q-Type Anomaly": {
+            "name": "Q-Type Anomaly",
+            "color": [
+              249,
+              150,
+              107
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-croceum-lagrange-cloud",
+    "label": "Lagrange Clouds, Croceum Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Croceum Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 131 records in 7 categories, from storage.googleapis.com.",
+    "systemCount": 131,
+    "files": [
+      {
+        "path": "clouds-croceum-lagrange-cloud.json",
+        "categories": {
+          "Croceum Lagrange Cloud": {
+            "name": "Croceum Lagrange Cloud",
+            "color": [
+              129,
+              216,
+              208
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-croceum-lagrange-storm-cloud",
+    "label": "Lagrange Clouds, Croceum Lagrange Storm Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Croceum Lagrange Storm Cloud, a map of the Canonn ED3D map project. The entry holds 1 records in 2 categories, from storage.googleapis.com.",
+    "systemCount": 1,
+    "files": [
+      {
+        "path": "clouds-croceum-lagrange-storm-cloud.json",
+        "categories": {
+          "Croceum Lagrange Storm Cloud": {
+            "name": "Croceum Lagrange Storm Cloud",
+            "color": [
+              132,
+              103,
+              215
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-proto-lagrange-cloud",
+    "label": "Lagrange Clouds, Proto-Lagrange Cloud",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Proto-Lagrange Cloud, a map of the Canonn ED3D map project. The entry holds 10951 records in 14 categories, from storage.googleapis.com.",
+    "systemCount": 10951,
+    "files": [
+      {
+        "path": "clouds-proto-lagrange-cloud.json",
+        "categories": {
+          "Proto-Lagrange Cloud": {
+            "name": "Proto-Lagrange Cloud",
+            "color": [
+              250,
+              235,
+              215
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Calcite Plates": {
+            "name": "Calcite Plates",
+            "color": [
+              227,
+              49,
+              157
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          },
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          },
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-e-type-anomaly",
+    "label": "Lagrange Clouds, E-Type Anomaly",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, E-Type Anomaly, a map of the Canonn ED3D map project. The entry holds 12 records in 4 categories, from storage.googleapis.com.",
+    "systemCount": 12,
+    "files": [
+      {
+        "path": "clouds-e-type-anomaly.json",
+        "categories": {
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-t-type-anomaly",
+    "label": "Lagrange Clouds, T-Type Anomaly",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, T-Type Anomaly, a map of the Canonn ED3D map project. The entry holds 3 records in 3 categories, from storage.googleapis.com.",
+    "systemCount": 3,
+    "files": [
+      {
+        "path": "clouds-t-type-anomaly.json",
+        "categories": {
+          "T-Type Anomaly": {
+            "name": "T-Type Anomaly",
+            "color": [
+              100,
+              109,
+              126
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-q-type-anomaly",
+    "label": "Lagrange Clouds, Q-Type Anomaly",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Q-Type Anomaly, a map of the Canonn ED3D map project. The entry holds 2 records in 2 categories, from storage.googleapis.com.",
+    "systemCount": 2,
+    "files": [
+      {
+        "path": "clouds-q-type-anomaly.json",
+        "categories": {
+          "Q-Type Anomaly": {
+            "name": "Q-Type Anomaly",
+            "color": [
+              249,
+              150,
+              107
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-mineral-spheres",
+    "label": "Lagrange Clouds, Mineral Spheres",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Mineral Spheres, a map of the Canonn ED3D map project. The entry holds 2189 records in 9 categories, from storage.googleapis.com.",
+    "systemCount": 2189,
+    "files": [
+      {
+        "path": "clouds-mineral-spheres.json",
+        "categories": {
+          "Mineral Spheres": {
+            "name": "Mineral Spheres",
+            "color": [
+              70,
+              199,
+              199
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-ice-crystals",
+    "label": "Lagrange Clouds, Ice Crystals",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Ice Crystals, a map of the Canonn ED3D map project. The entry holds 3727 records in 9 categories, from storage.googleapis.com.",
+    "systemCount": 3727,
+    "files": [
+      {
+        "path": "clouds-ice-crystals.json",
+        "categories": {
+          "Ice Crystals": {
+            "name": "Ice Crystals",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          },
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-silicate-crystals",
+    "label": "Lagrange Clouds, Silicate Crystals",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Silicate Crystals, a map of the Canonn ED3D map project. The entry holds 691 records in 8 categories, from storage.googleapis.com.",
+    "systemCount": 691,
+    "files": [
+      {
+        "path": "clouds-silicate-crystals.json",
+        "categories": {
+          "Silicate Crystals": {
+            "name": "Silicate Crystals",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          },
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          },
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-metallic-crystals",
+    "label": "Lagrange Clouds, Metallic Crystals",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Metallic Crystals, a map of the Canonn ED3D map project. The entry holds 14936 records in 8 categories, from storage.googleapis.com.",
+    "systemCount": 14936,
+    "files": [
+      {
+        "path": "clouds-metallic-crystals.json",
+        "categories": {
+          "Metallic Crystals": {
+            "name": "Metallic Crystals",
+            "color": [
+              240,
+              255,
+              255
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          },
+          "Q-Type Anomaly": {
+            "name": "Q-Type Anomaly",
+            "color": [
+              249,
+              150,
+              107
+            ]
+          },
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "E-Type Anomaly": {
+            "name": "E-Type Anomaly",
+            "color": [
+              109,
+              123,
+              141
+            ]
+          },
+          "P-Type Anomaly": {
+            "name": "P-Type Anomaly",
+            "color": [
+              141,
+              56,
+              201
+            ]
+          },
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-calcite-plates",
+    "label": "Lagrange Clouds, Calcite Plates",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Calcite Plates, a map of the Canonn ED3D map project. The entry holds 4 records in 2 categories, from storage.googleapis.com.",
+    "systemCount": 4,
+    "files": [
+      {
+        "path": "clouds-calcite-plates.json",
+        "categories": {
+          "Calcite Plates": {
+            "name": "Calcite Plates",
+            "color": [
+              227,
+              49,
+              157
+            ]
+          },
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-peduncle",
+    "label": "Lagrange Clouds, Peduncle",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Peduncle, a map of the Canonn ED3D map project. The entry holds 12410 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 12410,
+    "files": [
+      {
+        "path": "clouds-peduncle.json",
+        "categories": {
+          "Peduncle": {
+            "name": "Peduncle",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-chalice-pod",
+    "label": "Lagrange Clouds, Chalice Pod",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Chalice Pod, a map of the Canonn ED3D map project. The entry holds 36 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 36,
+    "files": [
+      {
+        "path": "clouds-chalice-pod.json",
+        "categories": {
+          "Chalice Pod": {
+            "name": "Chalice Pod",
+            "color": [
+              142,
+              235,
+              236
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-rhizome",
+    "label": "Lagrange Clouds, Rhizome",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Rhizome, a map of the Canonn ED3D map project. The entry holds 85 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 85,
+    "files": [
+      {
+        "path": "clouds-rhizome.json",
+        "categories": {
+          "Rhizome": {
+            "name": "Rhizome",
+            "color": [
+              228,
+              34,
+              23
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-gyre",
+    "label": "Lagrange Clouds, Gyre",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Gyre, a map of the Canonn ED3D map project. The entry holds 38 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 38,
+    "files": [
+      {
+        "path": "clouds-gyre.json",
+        "categories": {
+          "Gyre": {
+            "name": "Gyre",
+            "color": [
+              176,
+              65,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-mollusc",
+    "label": "Lagrange Clouds, Mollusc",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Mollusc, a map of the Canonn ED3D map project. The entry holds 836 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 836,
+    "files": [
+      {
+        "path": "clouds-mollusc.json",
+        "categories": {
+          "Mollusc": {
+            "name": "Mollusc",
+            "color": [
+              127,
+              90,
+              88
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-quadripartite",
+    "label": "Lagrange Clouds, Quadripartite",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, Quadripartite, a map of the Canonn ED3D map project. The entry holds 7 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 7,
+    "files": [
+      {
+        "path": "clouds-quadripartite.json",
+        "categories": {
+          "Quadripartite": {
+            "name": "Quadripartite",
+            "color": [
+              255,
+              248,
+              220
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Cloud-k-type-anomaly",
+    "label": "Lagrange Clouds, K-Type Anomaly",
+    "group": "Points of interest",
+    "description": "Lagrange Clouds, K-Type Anomaly, a map of the Canonn ED3D map project. The entry holds 29 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 29,
+    "files": [
+      {
+        "path": "clouds-k-type-anomaly.json",
+        "categories": {
+          "K-Type Anomaly": {
+            "name": "K-Type Anomaly",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-ap-amphora-plants",
+    "label": "All Sites, (AP) Amphora Plants",
+    "group": "Points of interest",
+    "description": "All Sites, (AP) Amphora Plants, a map of the Canonn ED3D map project. The entry holds 651 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 651,
+    "files": [
+      {
+        "path": "dumpr-biology-2101400.json",
+        "categories": {
+          "": {
+            "name": "(AP) Amphora Plants",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-bm-bark-mounds",
+    "label": "All Sites, (BM) Bark Mounds",
+    "group": "Points of interest",
+    "description": "All Sites, (BM) Bark Mounds, a map of the Canonn ED3D map project. The entry holds 3440 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3440,
+    "files": [
+      {
+        "path": "dumpr-biology-2100301.json",
+        "categories": {
+          "": {
+            "name": "(BM) Bark Mounds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-tb-thargoid-barnacles",
+    "label": "All Sites, (TB) Thargoid Barnacles",
+    "group": "Points of interest",
+    "description": "All Sites, (TB) Thargoid Barnacles, a map of the Canonn ED3D map project. The entry holds 145 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 145,
+    "files": [
+      {
+        "path": "dumpr-thargoid-2100101.json",
+        "categories": {
+          "": {
+            "name": "(TB) Thargoid Barnacles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-2100102.json",
+        "categories": {
+          "": {
+            "name": "(TB) Thargoid Barnacles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-bt-brain-trees",
+    "label": "All Sites, (BT) Brain Trees",
+    "group": "Points of interest",
+    "description": "All Sites, (BT) Brain Trees, a map of the Canonn ED3D map project. The entry holds 19809 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 19809,
+    "files": [
+      {
+        "path": "dumpr-biology-2100201.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100202.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100203.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100204.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100205.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100206.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100207.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100208.json",
+        "categories": {
+          "": {
+            "name": "(BT) Brain Trees",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-cs-crystalline-shards",
+    "label": "All Sites, (CS) Crystalline Shards",
+    "group": "Points of interest",
+    "description": "All Sites, (CS) Crystalline Shards, a map of the Canonn ED3D map project. The entry holds 3826 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 3826,
+    "files": [
+      {
+        "path": "dumpr-biology-2101500.json",
+        "categories": {
+          "": {
+            "name": "(CS) Crystalline Shards",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-fg-fungal-gourds",
+    "label": "All Sites, (FG) Fungal Gourds",
+    "group": "Points of interest",
+    "description": "All Sites, (FG) Fungal Gourds, a map of the Canonn ED3D map project. The entry holds 10343 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 10343,
+    "files": [
+      {
+        "path": "dumpr-biology-2100401.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100402.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100403.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100404.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100405.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100406.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100407.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100408.json",
+        "categories": {
+          "": {
+            "name": "(FG) Fungal Gourds",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-fm-fumaroles-1",
+    "label": "All Sites, (FM) Fumaroles, part 1",
+    "group": "Points of interest",
+    "description": "All Sites, (FM) Fumaroles, part 1, a map of the Canonn ED3D map project. The entry holds 31389 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 31389,
+    "files": [
+      {
+        "path": "dumpr-geology-1400102.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400108.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-fm-fumaroles-2",
+    "label": "All Sites, (FM) Fumaroles, part 2",
+    "group": "Points of interest",
+    "description": "All Sites, (FM) Fumaroles, part 2, a map of the Canonn ED3D map project. The entry holds 47331 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 47331,
+    "files": [
+      {
+        "path": "dumpr-geology-1400114.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400152.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400158.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400159.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400160.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-fm-fumaroles-3",
+    "label": "All Sites, (FM) Fumaroles, part 3",
+    "group": "Points of interest",
+    "description": "All Sites, (FM) Fumaroles, part 3, a map of the Canonn ED3D map project. The entry holds 9444 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 9444,
+    "files": [
+      {
+        "path": "dumpr-geology-1400161.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400162.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400164.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400109.json",
+        "categories": {
+          "": {
+            "name": "(FM) Fumaroles",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-gb-guardian-beacons",
+    "label": "All Sites, (GB) Guardian Beacons",
+    "group": "Points of interest",
+    "description": "All Sites, (GB) Guardian Beacons, a map of the Canonn ED3D map project. The entry holds 30 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 30,
+    "files": [
+      {
+        "path": "dumpr-guardian-3200800.json",
+        "categories": {
+          "": {
+            "name": "(GB) Guardian Beacons",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-g-guardian-sites",
+    "label": "All Sites, (G) Guardian Sites",
+    "group": "Points of interest",
+    "description": "All Sites, (G) Guardian Sites, a map of the Canonn ED3D map project. The entry holds 1061 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 1061,
+    "files": [
+      {
+        "path": "dumpr-guardian-3200200.json",
+        "categories": {
+          "": {
+            "name": "(G) Guardian Sites",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-guardian-3200300.json",
+        "categories": {
+          "": {
+            "name": "(G) Guardian Sites",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-guardian-3200400.json",
+        "categories": {
+          "": {
+            "name": "(G) Guardian Sites",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-guardian-3200500.json",
+        "categories": {
+          "": {
+            "name": "(G) Guardian Sites",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-guardian-3200600.json",
+        "categories": {
+          "": {
+            "name": "(G) Guardian Sites",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-gv-gas-vents-1",
+    "label": "All Sites, (GV) Gas Vents, part 1",
+    "group": "Points of interest",
+    "description": "All Sites, (GV) Gas Vents, part 1, a map of the Canonn ED3D map project. The entry holds 26830 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 26830,
+    "files": [
+      {
+        "path": "dumpr-geology-1400402.json",
+        "categories": {
+          "": {
+            "name": "(GV) Gas Vents",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400408.json",
+        "categories": {
+          "": {
+            "name": "(GV) Gas Vents",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400409.json",
+        "categories": {
+          "": {
+            "name": "(GV) Gas Vents",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-gv-gas-vents-2",
+    "label": "All Sites, (GV) Gas Vents, part 2",
+    "group": "Points of interest",
+    "description": "All Sites, (GV) Gas Vents, part 2, a map of the Canonn ED3D map project. The entry holds 25360 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 25360,
+    "files": [
+      {
+        "path": "dumpr-geology-1400414.json",
+        "categories": {
+          "": {
+            "name": "(GV) Gas Vents",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-gy-geysers",
+    "label": "All Sites, (GY) Geysers",
+    "group": "Points of interest",
+    "description": "All Sites, (GY) Geysers, a map of the Canonn ED3D map project. The entry holds 41387 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 41387,
+    "files": [
+      {
+        "path": "dumpr-geology-1400208.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400258.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400259.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400260.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400261.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400262.json",
+        "categories": {
+          "": {
+            "name": "(GY) Geysers",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-ls-lava-spouts",
+    "label": "All Sites, (LS) Lava Spouts",
+    "group": "Points of interest",
+    "description": "All Sites, (LS) Lava Spouts, a map of the Canonn ED3D map project. The entry holds 40996 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 40996,
+    "files": [
+      {
+        "path": "dumpr-geology-1400306.json",
+        "categories": {
+          "": {
+            "name": "(LS) Lava Spouts",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-geology-1400307.json",
+        "categories": {
+          "": {
+            "name": "(LS) Lava Spouts",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-ts-thargoid-structure",
+    "label": "All Sites, (TS) Thargoid Structure",
+    "group": "Points of interest",
+    "description": "All Sites, (TS) Thargoid Structure, a map of the Canonn ED3D map project. The entry holds 625 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 625,
+    "files": [
+      {
+        "path": "dumpr-thargoid-3101000.json",
+        "categories": {
+          "": {
+            "name": "(TS) Thargoid Structure",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-3101100.json",
+        "categories": {
+          "": {
+            "name": "(TS) Thargoid Structure",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-thargoid-3101200.json",
+        "categories": {
+          "": {
+            "name": "(TS) Thargoid Structure",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "All-tw-tube-worms",
+    "label": "All Sites, (TW) Tube Worms",
+    "group": "Points of interest",
+    "description": "All Sites, (TW) Tube Worms, a map of the Canonn ED3D map project. The entry holds 5548 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 5548,
+    "files": [
+      {
+        "path": "dumpr-biology-2100501.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100503.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100502.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100505.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100508.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100507.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100506.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      },
+      {
+        "path": "dumpr-biology-2100504.json",
+        "categories": {
+          "": {
+            "name": "(TW) Tube Worms",
+            "color": [
+              98,
+              217,
+              133
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GEC",
+    "label": "Galactic Exploration Catalog",
+    "group": "Points of interest",
+    "description": "Galactic Exploration Catalog, a map of the Canonn ED3D map project. The entry holds 643 records in 17 categories, from edastro.com.",
+    "systemCount": 643,
+    "files": [
+      {
+        "path": "edastro-com-gec-json-all.json",
+        "categories": {
+          "Sights and Scenery": {
+            "name": "Sights and Scenery",
+            "color": [
+              245,
+              161,
+              66
+            ]
+          },
+          "Planetary Features": {
+            "name": "Planetary Features",
+            "color": [
+              66,
+              176,
+              245
+            ]
+          },
+          "Mystery and Xenology": {
+            "name": "Mystery and Xenology",
+            "color": [
+              126,
+              88,
+              126
+            ]
+          },
+          "Tourist Beacons": {
+            "name": "Tourist Beacons",
+            "color": [
+              231,
+              138,
+              97
+            ]
+          },
+          "Notable Stellar Phenomena": {
+            "name": "Notable Stellar Phenomena",
+            "color": [
+              177,
+              251,
+              23
+            ]
+          },
+          "Community": {
+            "name": "Community",
+            "color": [
+              230,
+              116,
+              81
+            ]
+          },
+          "Stellar Features": {
+            "name": "Stellar Features",
+            "color": [
+              108,
+              187,
+              60
+            ]
+          },
+          "Deep Space Outpost": {
+            "name": "Deep Space Outpost",
+            "color": [
+              133,
+              187,
+              101
+            ]
+          },
+          "Inhabited System": {
+            "name": "Inhabited System",
+            "color": [
+              74,
+              160,
+              44
+            ]
+          },
+          "Historical": {
+            "name": "Historical",
+            "color": [
+              234,
+              193,
+              23
+            ]
+          },
+          "Nebulae": {
+            "name": "Nebulae",
+            "color": [
+              255,
+              255,
+              0
+            ]
+          },
+          "Memorials": {
+            "name": "Memorials",
+            "color": [
+              226,
+              56,
+              236
+            ]
+          },
+          "Green Gas Giants": {
+            "name": "Green Gas Giants",
+            "color": [
+              204,
+              102,
+              0
+            ]
+          },
+          "Planetary Circumnavigation": {
+            "name": "Planetary Circumnavigation",
+            "color": [
+              125,
+              5,
+              65
+            ]
+          },
+          "Organic": {
+            "name": "Organic",
+            "color": [
+              152,
+              175,
+              199
+            ]
+          },
+          "Other": {
+            "name": "Other",
+            "color": [
+              237,
+              201,
+              175
+            ]
+          },
+          "Glitches": {
+            "name": "Glitches",
+            "color": [
+              224,
+              255,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Galnet",
+    "label": "Galnet Relays",
+    "group": "Points of interest",
+    "description": "Galnet Relays, a map of the Canonn ED3D map project. The entry holds 29 records in 2 categories, from storage.googleapis.com.",
+    "systemCount": 29,
+    "files": [
+      {
+        "path": "galnet.json",
+        "categories": {
+          "All Names": {
+            "name": "All Names",
+            "color": [
+              66,
+              176,
+              245
+            ]
+          },
+          "Galnet News Digest": {
+            "name": "Galnet News Digest",
+            "color": [
+              245,
+              161,
+              66
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "Megaships",
+    "label": "Megaships",
+    "group": "Points of interest",
+    "description": "Megaships, a map of the Canonn ED3D map project. The entry holds 87 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 87,
+    "files": [
+      {
+        "path": "megaships.json",
+        "categories": {
+          "Megaship": {
+            "name": "Megaship",
+            "color": [
+              0,
+              191,
+              255
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "GEN",
+    "label": "Generation Ships",
+    "group": "Points of interest",
+    "description": "Generation Ships, a map of the Canonn ED3D map project. The entry holds 16 records in 1 category, from storage.googleapis.com.",
+    "systemCount": 16,
+    "files": [
+      {
+        "path": "generationships.json",
+        "categories": {
+          "Generation Ship": {
+            "name": "Generation Ship",
+            "color": [
+              255,
+              102,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "landscape",
+    "label": "Landscape Signals",
+    "group": "Points of interest",
+    "description": "Landscape Signals, a map of the Canonn ED3D map project. The entry holds 20675 records in 6 categories, from storage.googleapis.com.",
+    "systemCount": 20675,
+    "files": [
+      {
+        "path": "landscape.json",
+        "categories": {
+          "Surveyed": {
+            "name": "Surveyed",
+            "color": [
+              0,
+              192,
+              0
+            ]
+          },
+          "Stuemeae UY-S": {
+            "name": "Stuemeae UY-S",
+            "color": [
+              255,
+              68,
+              187
+            ]
+          },
+          "Stuemeae KM-W": {
+            "name": "Stuemeae KM-W",
+            "color": [
+              255,
+              238,
+              0
+            ]
+          },
+          "Visited": {
+            "name": "Visited",
+            "color": [
+              255,
+              165,
+              0
+            ]
+          },
+          "Stuemeae FG-Y": {
+            "name": "Stuemeae FG-Y",
+            "color": [
+              68,
+              170,
+              255
+            ]
+          },
+          "Unvisited": {
+            "name": "Unvisited",
+            "color": [
+              255,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

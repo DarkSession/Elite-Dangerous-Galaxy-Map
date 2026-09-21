@@ -23,7 +23,7 @@ const demoPackage = join(root, 'apps', 'demo');
 
 /**
  * Every page the demo package holds, as the path the build writes it at: the demo page at
- * the root, one page per sample of `examples/`, and the cycles page.
+ * the root, one page per sample of `examples/`, the cycles page and the Canonn page.
  *
  * The list is read from the source rather than written out, so a new sample is covered by
  * the readings below with no edit here. `apps/demo/vite.config.ts` builds its input list
@@ -37,8 +37,10 @@ function sourcePages(): string[] {
       found.push(['examples', name, 'index.html'].join('/'));
     }
   }
-  if (existsSync(join(demoPackage, 'cycles', 'index.html'))) {
-    found.push(['cycles', 'index.html'].join('/'));
+  for (const name of ['cycles', 'canonn']) {
+    if (existsSync(join(demoPackage, name, 'index.html'))) {
+      found.push([name, 'index.html'].join('/'));
+    }
   }
   return found;
 }
@@ -84,7 +86,8 @@ beforeAll(() => {
 }, 600000);
 
 describe('the demo site build', () => {
-  // The build takes many inputs now: the demo page, the nine samples and the cycles page.
+  // The build takes many inputs now: the demo page, the nine samples, the cycles page
+  // and the Canonn page.
   // The reading is of the whole set, so a page the configuration drops is named here.
   test('writes every page of the demo package', () => {
     const built = demoFiles
@@ -180,6 +183,40 @@ describe('the demo site build', () => {
     // The spheres of the Canonn Factions entry are a committed file, as the other six
     // sets are.
     expect(text).toContain('Permit Unlocked Sector');
+  });
+
+  // `assetsInlineLimit` is 0 in `apps/demo/vite.config.ts`, so every Canonn set stays a
+  // file. Vite otherwise writes an asset under 4,096 bytes into the chunk that names it,
+  // as a data URL, and the Canonn page fetches its sets: an inlined one is a request the
+  // browser cannot make, and every "one fetch per pick" reading would measure nothing.
+  test('keeps the smallest Canonn set a file of its own', () => {
+    const canonn = join(root, 'apps', 'demo', 'demo-data', 'canonn');
+    const smallest = readdirSync(canonn)
+      .filter((name) => name !== 'index.json')
+      .map((name) => ({ name, bytes: statSync(join(canonn, name)).size }))
+      .sort((a, b) => a.bytes - b.bytes)[0] as { name: string; bytes: number };
+    const stem = smallest.name.replace(/\.json$/, '');
+    const built = demoFiles
+      .map((path) => relative(demoDist, path).split(sep).join('/'))
+      .filter((path) => new RegExp(`(^|/)${stem}-[A-Za-z0-9_-]+\\.json$`).test(path));
+    console.log('the smallest Canonn set', { ...smallest, built });
+
+    // The set is small enough that the build would inline it with the setting removed.
+    expect(smallest.bytes).toBeLessThan(4096);
+    expect(built, `${smallest.name} is not a file of the built site`).toHaveLength(1);
+
+    // And no chunk of the site holds its records.
+    const first = (
+      JSON.parse(readFileSync(join(canonn, smallest.name), 'utf8')) as {
+        records: { name: string }[];
+      }
+    ).records[0]?.name as string;
+    for (const path of demoFiles.filter((one) => one.endsWith('.js'))) {
+      expect(
+        readFileSync(path, 'utf8'),
+        `${path} holds the records of ${smallest.name}`,
+      ).not.toContain(first);
+    }
   });
 
   test('holds the demo data, which the library build does not', () => {

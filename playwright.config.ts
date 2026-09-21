@@ -32,6 +32,10 @@ const timedSpecs = [
   'count-cost.spec.ts',
   'stars.spec.ts',
   'labels.spec.ts',
+  // The Canonn page reads the frame interval over the load of its largest entry against
+  // 18 ms, and the selection work over that entry against 2 ms. The second one reads
+  // 0.70 ms on an idle card, and a 2 ms budget does not survive five other browsers.
+  'canonn-page.spec.ts',
 ];
 
 /**

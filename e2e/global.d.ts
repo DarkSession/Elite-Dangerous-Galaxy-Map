@@ -4,6 +4,7 @@ import type {
 } from '../packages/galaxy-map/src/app/create-map';
 import type { NebulaSource } from '../packages/galaxy-map/src/render/nebula-slot';
 import type { GalaxyMapGlobal } from '../packages/galaxy-map/src/render/global';
+import type { CanonnTiming } from '../apps/demo/canonn/main';
 
 /** One long task the browser reported. */
 export interface LongTaskRecord {
@@ -63,6 +64,8 @@ declare global {
     __hudRefreshCalls?: number;
     /** How each flight ended, for the flight-end listener test. */
     __flightEnds?: ('landed' | 'interrupted')[];
+    /** What the last load of the Canonn page cost, which that page writes. */
+    canonnTiming?: CanonnTiming;
   }
 }
 

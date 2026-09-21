@@ -8,9 +8,9 @@
 // 2. Every file that navigates **to the demo page** takes the same start state the
 //    helper gives. The demo page loads the Guardian Ruins set at start and turns the
 //    grid on, so a test that reaches no helper would read a set it did not ask for. The
-//    site holds other pages as well — the nine samples and the cycles page — and each
-//    one is a host of its own that loads what its own source says. The start state
-//    belongs to the demo page and to no other.
+//    site holds other pages as well — the nine samples, the cycles page and the Canonn
+//    page — and each one is a host of its own that loads what its own source says. The
+//    start state belongs to the demo page and to no other.
 //
 // The third rule is the demo set's own: no browser test selects a record of it, because
 // every record of that set names a thumbnail on another host and the information panel
@@ -47,12 +47,12 @@ function gotoTargets(text: string): string[] {
 }
 
 /**
- * Whether a navigation target is the demo page. A target under `examples/` or `cycles/`
- * is another page of the site, which loads no set of the demo page and takes no start
- * state.
+ * Whether a navigation target is the demo page. A target under `examples/`, `cycles/` or
+ * `canonn/` is another page of the site, which loads no set of the demo page and takes no
+ * start state.
  */
 function isDemoPage(target: string): boolean {
-  return !/^\.\/(examples|cycles)\//.test(target);
+  return !/^\.\/(examples|cycles|canonn)\//.test(target);
 }
 
 /** How many times a file calls a function by name. */

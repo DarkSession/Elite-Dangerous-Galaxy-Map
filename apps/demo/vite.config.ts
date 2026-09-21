@@ -19,7 +19,7 @@ const DEMO_ROOT = fileURLToPath(new URL('.', import.meta.url));
 
 /**
  * Every page the demo site build takes as an input: the demo page at the base path, one
- * page for each sample directory of `examples/`, and the cycles page.
+ * page for each sample directory of `examples/`, the cycles page and the Canonn page.
  *
  * The list is read from the directory rather than written out, so a new sample needs no
  * edit here. Vite writes each page under its own path, and the base path already
@@ -34,8 +34,10 @@ function pageInputs(): string[] {
       if (existsSync(page)) found.push(page);
     }
   }
-  const cycles = join(DEMO_ROOT, 'cycles', 'index.html');
-  if (existsSync(cycles)) found.push(cycles);
+  for (const name of ['cycles', 'canonn']) {
+    const page = join(DEMO_ROOT, name, 'index.html');
+    if (existsSync(page)) found.push(page);
+  }
   return found;
 }
 
@@ -80,6 +82,11 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
+    // Every set of the Canonn page stays a file. Vite otherwise writes an asset under
+    // 4,096 bytes into the chunk that names it, as a data URL, and the smallest Canonn
+    // sets are 317 bytes. The page fetches its sets, so an inlined one would be a
+    // request the browser cannot make.
+    assetsInlineLimit: 0,
     rollupOptions: {
       input: pageInputs(),
     },

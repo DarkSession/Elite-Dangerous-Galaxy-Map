@@ -10,10 +10,12 @@ owns the canvas, the camera and the frame loop, and it fetches nothing of yours.
 
 The demo site is <https://elite-dangerous-almanac.github.io/Galaxy-Map/> and the API
 reference is on the wiki: <https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/wiki>.
-The site holds three kinds of page: the demo page at the root, the nine sample pages at
-`examples/<name>/`, and the cycles page at
+The site holds four kinds of page: the demo page at the root, the nine sample pages at
+`examples/<name>/`, the cycles page at
 [cycles/](https://elite-dangerous-almanac.github.io/Galaxy-Map/cycles/), which holds every
-cycle of the Thargoid war as a record set of its own.
+cycle of the Thargoid war as a record set of its own, and the Canonn page at
+[canonn/](https://elite-dangerous-almanac.github.io/Galaxy-Map/canonn/), which holds the
+maps of the Canonn ED3D map project as 114 record sets.
 This repository holds the library, that site and the tests. The published package carries
 its own README: [packages/galaxy-map/README.md](packages/galaxy-map/README.md).
 
@@ -84,21 +86,22 @@ pnpm install
 pnpm exec playwright install chromium
 ```
 
-| Script                  | What it does                                                              |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `pnpm dev`              | Starts the Vite dev server on port 5173                                   |
-| `pnpm build`            | Checks the types, then builds the library                                 |
-| `pnpm build:demo-site`  | Builds the demo site                                                      |
-| `pnpm build:demo-data`  | Writes the demo record sets again from their sources                      |
-| `pnpm build:cycle-data` | Writes the cycle sets of the cycles page again from the archive           |
-| `pnpm preview`          | Serves the built demo site on port 4173                                   |
-| `pnpm test`             | Runs the Vitest unit tests                                                |
-| `pnpm test:package`     | Reads what `npm pack` would ship and fails on a file that does not belong |
-| `pnpm test:e2e`         | Builds, serves and runs the Playwright browser tests                      |
-| `pnpm docs:wiki`        | Builds the wiki tree into `wiki-build/`                                   |
-| `pnpm audit`            | Fails on a known high or critical advisory                                |
-| `pnpm lint`             | Runs ESLint                                                               |
-| `pnpm format`           | Runs Prettier over the repository                                         |
+| Script                   | What it does                                                              |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `pnpm dev`               | Starts the Vite dev server on port 5173                                   |
+| `pnpm build`             | Checks the types, then builds the library                                 |
+| `pnpm build:demo-site`   | Builds the demo site                                                      |
+| `pnpm build:demo-data`   | Writes the demo record sets again from their sources                      |
+| `pnpm build:cycle-data`  | Writes the cycle sets of the cycles page again from the archive           |
+| `pnpm build:canonn-data` | Writes the Canonn sets of the Canonn page again from their sources        |
+| `pnpm preview`           | Serves the built demo site on port 4173                                   |
+| `pnpm test`              | Runs the Vitest unit tests                                                |
+| `pnpm test:package`      | Reads what `npm pack` would ship and fails on a file that does not belong |
+| `pnpm test:e2e`          | Builds, serves and runs the Playwright browser tests                      |
+| `pnpm docs:wiki`         | Builds the wiki tree into `wiki-build/`                                   |
+| `pnpm audit`             | Fails on a known high or critical advisory                                |
+| `pnpm lint`              | Runs ESLint                                                               |
+| `pnpm format`            | Runs Prettier over the repository                                         |
 
 Start the dev server as `pnpm dev --host 0.0.0.0` so the editor's port forwarding reaches
 it. An argument crosses both hops of a delegated script.

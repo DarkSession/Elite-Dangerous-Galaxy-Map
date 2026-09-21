@@ -140,13 +140,17 @@ describe('the demo import rule', () => {
     expect(result[0]?.messages[0]?.ruleId).toBe('no-restricted-imports');
   });
 
-  // The samples and the cycles page are pages of the demo package as much as
-  // `apps/demo/src/` is, and a reader copies a sample's imports into their own project.
-  // The rule therefore covers all three directories, and this case is what proves the
-  // two new ones are covered.
-  test('covers the sample directories and the cycles page', async () => {
+  // The samples, the cycles page and the Canonn page are pages of the demo package as
+  // much as `apps/demo/src/` is, and a reader copies a sample's imports into their own
+  // project. The rule therefore covers all four directories, and this case is what
+  // proves the three other ones are covered.
+  test('covers the sample directories, the cycles page and the Canonn page', async () => {
     const eslint = new ESLint();
-    const pages = ['apps/demo/examples/probe/main.ts', 'apps/demo/cycles/main.ts'];
+    const pages = [
+      'apps/demo/examples/probe/main.ts',
+      'apps/demo/cycles/main.ts',
+      'apps/demo/canonn/main.ts',
+    ];
     const source =
       "export { createGalaxyMap } from '../../../../packages/galaxy-map/src';\n";
 
@@ -172,6 +176,18 @@ describe('the demo import rule', () => {
       'no-restricted-syntax',
       'no-restricted-syntax',
     ]);
+  });
+
+  test('passes the manifest load the Canonn page makes', async () => {
+    const eslint = new ESLint();
+    const source =
+      'export const load = async (): Promise<unknown> =>\n' +
+      "  (await import('../demo-data/canonn/index.json')).default;\n";
+
+    const result = await eslint.lintText(source, {
+      filePath: 'apps/demo/canonn/main.ts',
+    });
+    expect(result[0]?.messages).toEqual([]);
   });
 
   test('passes the cycle load the cycles page makes', async () => {

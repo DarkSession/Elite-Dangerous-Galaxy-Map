@@ -57,6 +57,8 @@ The repository holds the library, the demo site and the tests:
 [Elite-Dangerous-Almanac/Galaxy-Map](https://github.com/Elite-Dangerous-Almanac/Galaxy-Map).
 The demo site is
 [elite-dangerous-almanac.github.io/Galaxy-Map](https://elite-dangerous-almanac.github.io/Galaxy-Map/).
-It holds the demo page, the example pages above and
+It holds the demo page, the example pages above,
 [the cycles page](https://elite-dangerous-almanac.github.io/Galaxy-Map/cycles/), which
-draws every cycle of the Thargoid war, one week at a time.
+draws every cycle of the Thargoid war, one week at a time, and
+[the Canonn page](https://elite-dangerous-almanac.github.io/Galaxy-Map/canonn/), which
+draws the maps of the Canonn ED3D map project, one map at a time.
