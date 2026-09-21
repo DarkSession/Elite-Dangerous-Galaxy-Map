@@ -4,8 +4,9 @@
 precision highp float;
 precision highp sampler3D;
 
-in vec3 vRay;
+in vec2 vTexture;
 
+uniform mat4 uInverseViewProjection;
 uniform sampler3D uVolume;
 uniform sampler2D uDetail;
 uniform vec3 uBoxMin;
@@ -47,7 +48,14 @@ const float BLEND_IN = 20000.0;
 const float BLEND_OUT = 32000.0;
 
 void main() {
-  vec3 direction = normalize(vRay);
+  // The camera is the origin of this frame. The point on the near plane is therefore
+  // the direction of the ray through this pixel.
+  // The unprojection runs for each fragment. The far point's w is a cancellation. A far
+  // point built at a corner of the triangle carries a scale error of 1 to 3 per cent.
+  // Each corner carries a different one. The interpolation mixes three unequal scales.
+  // It turns them into a direction error of up to 2.6 degrees.
+  vec4 nearPoint = uInverseViewProjection * vec4(vTexture * 2.0 - 1.0, -1.0, 1.0);
+  vec3 direction = normalize(nearPoint.xyz / nearPoint.w);
   // A zero component gives an infinite inverse, and zero times infinity is NaN below.
   vec3 safe = mix(direction, vec3(1e-7), lessThan(abs(direction), vec3(1e-7)));
   vec3 inverse = 1.0 / safe;

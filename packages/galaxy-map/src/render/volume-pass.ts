@@ -3,7 +3,7 @@ import type { VolumeTexture } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
 import { withVolumeDensity } from './volume-density';
-import vertexSource from './shaders/volume.vert?raw';
+import vertexSource from './shaders/fullscreen.vert?raw';
 import fragmentSource from './shaders/volume.frag?raw';
 
 /** The emission per unit of compressed density per light year. */
