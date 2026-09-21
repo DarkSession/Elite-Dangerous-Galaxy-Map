@@ -187,11 +187,114 @@ export function arrange(generatedDirectory, treeDirectory, pages) {
 }
 
 /**
+ * Where the Pages site serves the sample pages. Every link the build writes under a
+ * block is built from this one address, so a move of the site is one edit here.
+ */
+export const SAMPLE_BASE_URL =
+  'https://elite-dangerous-almanac.github.io/Galaxy-Map/examples/';
+
+/** Where the sample sources live. One directory per sample, each holding `main.ts`. */
+const SAMPLES_DIRECTORY = join(root, 'apps', 'demo', 'examples');
+
+/** One marker of an example page, which names the sample the build writes in its place. */
+const SAMPLE_MARKER = /^<!--\s*sample:\s*([\w-]+)\s*-->$/gm;
+
+/**
+ * The lines of a sample that the wiki shows: the lines between its `wiki:start` and its
+ * `wiki:end`, or the whole file where it holds neither. A page has to find its canvas and
+ * narrow its type, and a reader of the block does not; the pair is how a sample carries
+ * that setup and still shows four lines.
+ *
+ * It fails, naming the sample, on a `wiki:start` with no `wiki:end`.
+ */
+export function sampleRegion(id, source) {
+  const lines = source.split('\n');
+  const start = lines.findIndex((line) => /^\s*\/\/\s*wiki:start\s*$/.test(line));
+  if (start < 0) return source.replace(/\n+$/, '');
+  const end = lines.findIndex(
+    (line, at) => at > start && /^\s*\/\/\s*wiki:end\s*$/.test(line),
+  );
+  if (end < 0) {
+    throw new Error(
+      `the sample '${id}' opens a marked region with 'wiki:start' and never closes ` +
+        `it. Add a 'wiki:end' line to apps/demo/examples/${id}/main.ts, or take the ` +
+        `'wiki:start' line out.`,
+    );
+  }
+  return lines.slice(start + 1, end).join('\n');
+}
+
+/**
+ * The text one marker becomes: the sample's code as a TypeScript block, and the address
+ * of the page that runs it.
+ */
+function sampleBlock(id, source) {
+  return [
+    '```ts',
+    sampleRegion(id, source),
+    '```',
+    '',
+    `[Run this example](${SAMPLE_BASE_URL}${id}/)`,
+  ].join('\n');
+}
+
+/**
+ * Writes the sample of each marker of one example page into the page text.
+ *
+ * `claimed` is the page that claimed each sample so far. A wiki page and a sample are one
+ * pair, so a sample named twice is a mistake to report: one of the two pages would show a
+ * block that belongs to the other.
+ */
+function fillSamples(text, page, samplesDirectory, claimed) {
+  const markers = [...text.matchAll(SAMPLE_MARKER)];
+  if (markers.length === 0) {
+    throw new Error(
+      `the example page '${page}' carries no sample marker. An example page holds no ` +
+        `hand-written code block: write '<!-- sample: <id> -->' where the block was, ` +
+        `and put the code in apps/demo/examples/<id>/main.ts.`,
+    );
+  }
+  let out = text;
+  for (const marker of markers) {
+    const id = marker[1];
+    const held = claimed.get(id);
+    if (held !== undefined) {
+      throw new Error(
+        `the example page '${page}' and the page '${held}' both carry the marker ` +
+          `'${marker[0]}'. One sample belongs to one block, so rename one of them or ` +
+          `add a second sample.`,
+      );
+    }
+    claimed.set(id, page);
+    const source = join(samplesDirectory, id, 'main.ts');
+    if (!exists(source)) {
+      throw new Error(
+        `the example page '${page}' carries the marker '${marker[0]}', and the sample ` +
+          `'${source}' is missing. Write the sample, or correct the marker.`,
+      );
+    }
+    const block = sampleBlock(id, readFileSync(source, 'utf8'));
+    out = out.replace(marker[0], () => block);
+  }
+  return out;
+}
+
+/**
  * Copies the hand-written pages of `docsDirectory` into the tree: the three pages that
  * belong to no section, and every page of `Examples/`. It fails, naming the file, where
  * one of the three is missing.
+ *
+ * An example page carries a marker for each block it shows, and the copy writes the
+ * sample's code and the address of its live page in the marker's place. The pass fails,
+ * naming the page and the marker, on a marker that names no sample, on an example page
+ * with no marker, and on one sample that two markers name.
  */
-export function copyProse(docsDirectory, treeDirectory, pages) {
+export function copyProse(
+  docsDirectory,
+  treeDirectory,
+  pages,
+  samplesDirectory = SAMPLES_DIRECTORY,
+) {
   for (const [name] of SINGLE_PAGES) {
     const file = join(docsDirectory, `${name}.md`);
     if (!exists(file)) {
@@ -207,12 +310,17 @@ export function copyProse(docsDirectory, treeDirectory, pages) {
   const examplesDirectory = join(docsDirectory, 'Examples');
   if (!exists(examplesDirectory)) return [];
   const examples = [];
+  const claimed = new Map();
   for (const file of sortedNames(examplesDirectory)) {
     if (!file.endsWith('.md')) continue;
     const page = basename(file, '.md');
     claim(pages, page, join(examplesDirectory, file));
     mkdirSync(join(treeDirectory, 'Examples'), { recursive: true });
-    cpSync(join(examplesDirectory, file), join(treeDirectory, 'Examples', file));
+    const text = readFileSync(join(examplesDirectory, file), 'utf8');
+    writeFileSync(
+      join(treeDirectory, 'Examples', file),
+      fillSamples(text, page, samplesDirectory, claimed),
+    );
     examples.push(page);
   }
   return examples;
@@ -263,6 +371,7 @@ export function writeSidebars(sections, treeDirectory) {
 export function buildWiki({
   docsDirectory = join(root, 'docs', 'wiki'),
   outDirectory = join(root, 'wiki-build'),
+  samplesDirectory = SAMPLES_DIRECTORY,
 } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'galaxy-map-wiki-'));
   try {
@@ -273,7 +382,7 @@ export function buildWiki({
     // The prose copy runs first because it is the cheap pass, and the one that fails on
     // a missing file. A build with a page missing therefore fails before TypeDoc runs.
     const pages = new Map();
-    const examples = copyProse(docsDirectory, tree, pages);
+    const examples = copyProse(docsDirectory, tree, pages, samplesDirectory);
     generate(generated);
     const sections = arrange(generated, tree, pages);
     if (examples.length > 0) sections.set('Examples', examples);

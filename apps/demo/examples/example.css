@@ -1,0 +1,19 @@
+/* The stylesheet the nine sample pages and the cycles page share. Each of the ten is one
+   full-window canvas on a black field, which is what the demo page draws its map on. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #e6e6e6;
+  font-family: system-ui, sans-serif;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}

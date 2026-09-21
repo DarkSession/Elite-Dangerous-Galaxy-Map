@@ -1,17 +1,6 @@
 # The camera
 
-```ts
-import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
-
-const map = createGalaxyMap(canvas, {
-  bounds: { mode: 'sphere', centre: [0, 0, 0], radiusLy: 1000 },
-  startView: { system: 'Sol', distance: 300, pitch: -20 },
-  interaction: { select: false },
-});
-
-const end = await map.flyTo({ system: 'Achenar', distance: 200 });
-// 'landed', or 'interrupted' where a user input or a second flight cut it short
-```
+<!-- sample: the-camera -->
 
 `bounds` is how much of the space the user may browse. `unrestricted` is the default,
 `auto` is the box that holds every system of the set, and `sphere` is a ball. The bound
@@ -25,13 +14,7 @@ is off leaves the same move open to your own calls.
 
 ## The view in a URL
 
-```ts
-import { decodeView, encodeView } from '@elite-dangerous-almanac/galaxy-map';
-
-const fragment = encodeView(map.getView());
-const read = decodeView(fragment);
-if (read !== null) map.setView(read);
-```
+<!-- sample: the-view-in-a-url -->
 
 `getView`, `setView` and `onViewChange` read and write the view. The three URL calls are
 pure, so you need no map to save a view or to load one.

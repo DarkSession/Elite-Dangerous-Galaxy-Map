@@ -36,6 +36,12 @@
   "include": [
     "packages/*/src",
     "apps/*/src",
+    // The demo's other two page directories. `apps/*/src` names neither, so a sample and
+    // the cycles page would be transpiled by Vite and type checked by nothing. The type
+    // check is what proves that a sample still calls the library the way the library
+    // takes.
+    "apps/demo/examples",
+    "apps/demo/cycles",
     "e2e",
     "tests",
     "*.config.ts",

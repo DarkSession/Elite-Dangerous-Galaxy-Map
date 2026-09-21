@@ -9,6 +9,7 @@
     "build": "pnpm --filter @elite-dangerous-almanac/galaxy-map build",
     "build:demo-site": "pnpm --filter @elite-dangerous-almanac/galaxy-map-demo build:demo-site",
     "build:demo-data": "pnpm --filter @elite-dangerous-almanac/galaxy-map-demo build:demo-data",
+    "build:cycle-data": "pnpm --filter @elite-dangerous-almanac/galaxy-map-demo build:cycle-data",
     "preview": "pnpm --filter @elite-dangerous-almanac/galaxy-map-demo preview",
     "test": "vitest run",
     "test:e2e": "node scripts/e2e.mjs",

@@ -6,7 +6,7 @@
 // looked for, which is why `dist-demo/` is gone.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, test } from 'vitest';
 
@@ -17,6 +17,31 @@ const demoDist = join(root, 'apps', 'demo', 'dist');
 
 /** Where the repository's GitHub Pages site serves from. */
 const BASE_PATH = '/Galaxy-Map/';
+
+/** The demo package, which holds one directory per page beside the demo page itself. */
+const demoPackage = join(root, 'apps', 'demo');
+
+/**
+ * Every page the demo package holds, as the path the build writes it at: the demo page at
+ * the root, one page per sample of `examples/`, and the cycles page.
+ *
+ * The list is read from the source rather than written out, so a new sample is covered by
+ * the readings below with no edit here. `apps/demo/vite.config.ts` builds its input list
+ * the same way, and the reading is that the two agree.
+ */
+function sourcePages(): string[] {
+  const found = ['index.html'];
+  const examples = join(demoPackage, 'examples');
+  for (const name of readdirSync(examples).sort()) {
+    if (existsSync(join(examples, name, 'index.html'))) {
+      found.push(['examples', name, 'index.html'].join('/'));
+    }
+  }
+  if (existsSync(join(demoPackage, 'cycles', 'index.html'))) {
+    found.push(['cycles', 'index.html'].join('/'));
+  }
+  return found;
+}
 
 /** The name of the first record of the demo set. */
 function firstDemoName(): string {
@@ -59,19 +84,46 @@ beforeAll(() => {
 }, 600000);
 
 describe('the demo site build', () => {
+  // The build takes many inputs now: the demo page, the nine samples and the cycles page.
+  // The reading is of the whole set, so a page the configuration drops is named here.
+  test('writes every page of the demo package', () => {
+    const built = demoFiles
+      .filter((path) => path.endsWith('.html'))
+      .map((path) => relative(demoDist, path).split(sep).join('/'))
+      .sort();
+    console.log('the pages of the built site', built);
+    expect(built).toEqual([...sourcePages()].sort());
+    // The nine samples, each one under its own identifier.
+    expect(built.filter((path) => path.startsWith('examples/')).length).toBe(9);
+  });
+
   test('carries the base path in every built asset URL', () => {
-    const pattern = /(?:src|href)="([^"]+)"/g;
-    const urls: string[] = [];
-    let match = pattern.exec(page);
-    while (match !== null) {
-      urls.push(match[1] as string);
-      match = pattern.exec(page);
+    const built: string[] = [];
+    for (const path of demoFiles.filter((name) => name.endsWith('.html'))) {
+      // Every address the page holds, whatever tag carries it. The build rewrites the
+      // address of a script, a stylesheet and a picture, and it leaves the address a
+      // page writes itself, so a link that opens with `/` is caught here too. The
+      // reading covers every built page, so a page the configuration adds is read as
+      // well.
+      const pattern = /(?:src|href)="([^"]+)"/g;
+      const text = readFileSync(path, 'utf8');
+      let match = pattern.exec(text);
+      while (match !== null) {
+        // The favicon is a data URL and not a built asset.
+        const url = match[1] as string;
+        if (!url.startsWith('data:')) built.push(url);
+        match = pattern.exec(text);
+      }
     }
-    console.log('the URLs of the built page', urls);
-    // The favicon is a data URL and not a built asset.
-    const built = urls.filter((url) => !url.startsWith('data:'));
+    console.log('the asset URLs of the built pages', built);
     expect(built.length).toBeGreaterThan(0);
     for (const url of built) expect(url.startsWith(BASE_PATH)).toBe(true);
+  });
+
+  // A link to the demo site reaches the same page after this change as before it.
+  test('keeps the demo page at the root of the output', () => {
+    expect(statSync(join(demoDist, 'index.html')).isFile()).toBe(true);
+    expect(page).toContain('<canvas id="map"></canvas>');
   });
 
   // The two outputs sit inside their own packages and cannot collide, so the old

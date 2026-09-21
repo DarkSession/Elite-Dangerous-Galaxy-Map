@@ -1,24 +1,6 @@
 # Spheres and lines
 
-```ts
-import type { LineInput, SphereInput } from '@elite-dangerous-almanac/galaxy-map';
-
-const zones: SphereInput[] = [
-  { name: 'Permit zone', position: [0, 0, 0], radius: 200, categories: ['Empire'] },
-];
-
-const routes: LineInput[] = [
-  {
-    name: 'Route',
-    points: [{ system: 'Sol' }, [500, 0, -200], { system: 'Achenar' }],
-    width: 2,
-    color: [255, 176, 0],
-  },
-];
-
-map.addSpheres(zones);
-map.addLines(routes);
-```
+<!-- sample: spheres-and-lines -->
 
 A shape is drawn and is never picked: none hovers, none is selected, and `systemAt` reads
 none. A line point is a game coordinate or a system the map resolves when the line is

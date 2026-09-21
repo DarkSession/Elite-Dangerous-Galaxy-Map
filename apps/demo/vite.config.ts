@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
@@ -11,6 +13,31 @@ import { defineConfig } from 'vite';
 const LIBRARY_SRC = fileURLToPath(
   new URL('../../packages/galaxy-map/src/', import.meta.url),
 );
+
+/** This package's own directory, which the page list below is read from. */
+const DEMO_ROOT = fileURLToPath(new URL('.', import.meta.url));
+
+/**
+ * Every page the demo site build takes as an input: the demo page at the base path, one
+ * page for each sample directory of `examples/`, and the cycles page.
+ *
+ * The list is read from the directory rather than written out, so a new sample needs no
+ * edit here. Vite writes each page under its own path, and the base path already
+ * applies, so a sample is published at `<base>examples/<id>/`.
+ */
+function pageInputs(): string[] {
+  const found = [join(DEMO_ROOT, 'index.html')];
+  const examples = join(DEMO_ROOT, 'examples');
+  if (existsSync(examples)) {
+    for (const name of readdirSync(examples).sort()) {
+      const page = join(examples, name, 'index.html');
+      if (existsSync(page)) found.push(page);
+    }
+  }
+  const cycles = join(DEMO_ROOT, 'cycles', 'index.html');
+  if (existsSync(cycles)) found.push(cycles);
+  return found;
+}
 
 export default defineConfig({
   // The demo imports the map by its package name, and the name resolves to the
@@ -53,6 +80,9 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
+    rollupOptions: {
+      input: pageInputs(),
+    },
   },
   assetsInclude: ['**/*.vert', '**/*.frag', '**/*.glsl'],
 });

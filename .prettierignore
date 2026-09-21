@@ -25,6 +25,10 @@ apps/demo/demo-data/notable-systems.json
 apps/demo/demo-data/uia.json
 apps/demo/demo-data/adamastor.json
 apps/demo/demo-data/multifaction-spheres.json
+# The cycle sets of the cycles page. `apps/demo/scripts/build-cycle-sets.mjs` writes 110
+# of them minified, because nobody reads 110 cycles in a diff and the pretty form is
+# about twice the bytes. The entry covers the manifest beside them.
+apps/demo/demo-data/cycles/
 tests/fixtures/guardian-ruins-demo-set.json
 tests/fixtures/guardian-structures-demo-set.json
 tests/fixtures/notable-systems-demo-set.json

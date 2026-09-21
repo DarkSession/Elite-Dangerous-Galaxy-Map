@@ -1,21 +1,6 @@
 # A dataset catalog
 
-```ts
-import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
-
-const map = createGalaxyMap(canvas, {
-  hud: true,
-  dataset: 'ruins',
-  datasets: [
-    {
-      id: 'ruins',
-      label: 'Guardian Ruins',
-      collection: 'Canonn Research Group',
-      load: async () => (await fetch('/ruins.json')).json(),
-    },
-  ],
-});
-```
+<!-- sample: a-dataset-catalog -->
 
 `loadDataset(id)` calls the entry's `load()`, empties the system set and the category
 table, and adds what comes back through the same calls any host uses. A later call wins.

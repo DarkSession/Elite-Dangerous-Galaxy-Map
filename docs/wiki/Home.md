@@ -24,7 +24,9 @@ map owns the canvas, the camera and the frame loop, and it fetches nothing of yo
 
 ## The examples
 
-Each page carries one TypeScript block you can copy.
+Each page carries one TypeScript block you can copy, and a link to the page that block
+runs on. The demo site publishes one such page for each example, at
+`https://elite-dangerous-almanac.github.io/Galaxy-Map/examples/<name>/`.
 
 - [Systems on the map](Systems-on-the-map)
 - [A record with details](A-record-with-details)
@@ -55,3 +57,6 @@ The repository holds the library, the demo site and the tests:
 [Elite-Dangerous-Almanac/Galaxy-Map](https://github.com/Elite-Dangerous-Almanac/Galaxy-Map).
 The demo site is
 [elite-dangerous-almanac.github.io/Galaxy-Map](https://elite-dangerous-almanac.github.io/Galaxy-Map/).
+It holds the demo page, the example pages above and
+[the cycles page](https://elite-dangerous-almanac.github.io/Galaxy-Map/cycles/), which
+draws every cycle of the Thargoid war, one week at a time.

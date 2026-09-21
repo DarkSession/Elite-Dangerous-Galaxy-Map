@@ -421,8 +421,9 @@ export const OVERWATCH_LICENCE =
 /**
  * The category of each state the Thargoid war dump names. One record holds one state, so
  * one system takes one category. The colours run from red through orange to yellow with
- * the danger, and the Titan takes the red. A record whose state the table does not name
- * is dropped, and the conversion drops a row that no record uses.
+ * the danger, and the Titan takes the red. A system the Thargoids left takes blue, which
+ * reads apart from the four colours of the war. A record whose state the table does not
+ * name is dropped, and the conversion drops a row that no record uses.
  */
 export const CATEGORY_OF_STATE = {
   Titan: {
@@ -444,6 +445,11 @@ export const CATEGORY_OF_STATE = {
     name: 'Controlled',
     color: [72, 214, 104],
     description: 'A system a Titan holds.',
+  },
+  Recovery: {
+    name: 'Recovery',
+    color: [72, 160, 255],
+    description: 'A system that recovers after the Thargoids leave.',
   },
 };
 
@@ -469,6 +475,7 @@ function describeState(state, titan) {
   if (state === 'Titan') return `The system holds the maelstrom of the Titan ${titan}.`;
   if (state === 'Invasion') return `The Titan ${titan} invades the system.`;
   if (state === 'Alert') return `The Titan ${titan} threatens the system.`;
+  if (state === 'Recovery') return `The system recovers from the Titan ${titan}.`;
   return `The Titan ${titan} controls the system.`;
 }
 

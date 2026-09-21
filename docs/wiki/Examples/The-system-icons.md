@@ -3,24 +3,7 @@
 A record carries up to 4 `icons`. The map stacks them over the marker, lowest first, and
 draws one arrow under the lowest icon in that icon's colour.
 
-```ts
-import type { SystemIconInput } from '@elite-dangerous-almanac/galaxy-map';
-
-const icons: SystemIconInput[] = [
-  'titan',
-  'mission',
-  { url: '/icons/ruins.svg', color: [255, 154, 60] },
-];
-
-map.addSystems([
-  {
-    name: 'HIP 36823',
-    coords: { x: 570.4, y: 17.5, z: -68.6 },
-    categories: ['Beacon'],
-    icons,
-  },
-]);
-```
+<!-- sample: the-system-icons -->
 
 An entry takes one of two forms. A string names a built-in symbol, which the package
 ships as a vector file of its own. An object names a vector the host serves, with the

@@ -139,4 +139,50 @@ describe('the demo import rule', () => {
     expect(result[0]?.errorCount).toBe(1);
     expect(result[0]?.messages[0]?.ruleId).toBe('no-restricted-imports');
   });
+
+  // The samples and the cycles page are pages of the demo package as much as
+  // `apps/demo/src/` is, and a reader copies a sample's imports into their own project.
+  // The rule therefore covers all three directories, and this case is what proves the
+  // two new ones are covered.
+  test('covers the sample directories and the cycles page', async () => {
+    const eslint = new ESLint();
+    const pages = ['apps/demo/examples/probe/main.ts', 'apps/demo/cycles/main.ts'];
+    const source =
+      "export { createGalaxyMap } from '../../../../packages/galaxy-map/src';\n";
+
+    for (const page of pages) {
+      const result = await eslint.lintText(source, { filePath: page });
+      expect(result[0]?.errorCount, `${page} passes a reach out of the package`).toBe(
+        1,
+      );
+      expect(result[0]?.messages[0]?.ruleId).toBe('no-restricted-imports');
+    }
+  });
+
+  test('fails a dynamic reach out of a sample', async () => {
+    const eslint = new ESLint();
+    const source =
+      'export const load = async (): Promise<unknown> =>\n' +
+      "  await import('../../../../packages/galaxy-map/src/index.ts');\n";
+
+    const result = await eslint.lintText(source, {
+      filePath: 'apps/demo/examples/probe/main.ts',
+    });
+    expect(result[0]?.messages.map((message) => message.ruleId)).toEqual([
+      'no-restricted-syntax',
+      'no-restricted-syntax',
+    ]);
+  });
+
+  test('passes the cycle load the cycles page makes', async () => {
+    const eslint = new ESLint();
+    const source =
+      'export const load = async (id: string): Promise<unknown> =>\n' +
+      '  (await import(`../demo-data/cycles/${id}.json`)).default;\n';
+
+    const result = await eslint.lintText(source, {
+      filePath: 'apps/demo/cycles/main.ts',
+    });
+    expect(result[0]?.messages).toEqual([]);
+  });
 });

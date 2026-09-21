@@ -18,10 +18,15 @@ export declare function arrange(
   pages: WikiPages,
 ): WikiSections;
 
+export declare const SAMPLE_BASE_URL: string;
+
+export declare function sampleRegion(id: string, source: string): string;
+
 export declare function copyProse(
   docsDirectory: string,
   treeDirectory: string,
   pages: WikiPages,
+  samplesDirectory?: string,
 ): string[];
 
 export declare function sidebarText(
@@ -37,4 +42,5 @@ export declare function writeSidebars(
 export declare function buildWiki(options?: {
   docsDirectory?: string;
   outDirectory?: string;
+  samplesDirectory?: string;
 }): string;
