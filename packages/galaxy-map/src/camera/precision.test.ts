@@ -16,7 +16,12 @@
 // distance below 100 light years.
 import { describe, expect, test } from 'vitest';
 import { galaxyModel } from '../galaxy-model/model';
-import { cameraPosition, viewProjectionMatrix } from './projection';
+import {
+  cameraPosition,
+  projectionMatrix,
+  viewMatrix,
+  viewProjectionMatrix,
+} from './projection';
 import { clampCursor, MAX_DISTANCE, MIN_DISTANCE } from './view';
 import type { View } from './view';
 import { mat4 } from 'gl-matrix';
@@ -200,5 +205,172 @@ describe('camera-relative drawing', () => {
 
     expect(naiveError).toBeGreaterThan(precisionLimit(REFERENCE_DISTANCE));
     expect(relativeError(view, 2)).toBeLessThan(naiveError / 10);
+  });
+});
+
+// The volume pass reconstructs the ray of each pixel from the inverse of the view and
+// projection matrix. The emulation below runs that reconstruction in `float32`. The
+// rule the pass uses can then be measured without a GPU.
+//
+// `mat4.create` gives a `Float32Array`. The matrix and its inverse therefore hold
+// `float32` values here exactly as they do on the card. gl-matrix leaves a rounding of
+// about 5e-9 in the first two entries of the inverse's `w` row. The exact answer there
+// is zero.
+//
+// The far point's `w` is the difference of the two large entries of that row. It
+// cancels down to `1 / far plane`. The rounding is then 1 to 3 per cent of it at a
+// corner of the triangle. The interpolated direction reaches 2.1 degrees from the
+// `float64` answer at the pixel below, and 2.6 degrees over a grid of pixels. The near
+// point's `w` is the sum of the same two entries, so the same rounding is 3e-8 relative
+// to it.
+
+/** The view the volume ray scenarios read. It is the view the reader reported. */
+const RAY_VIEW: View = {
+  cursor: [-4.15271, -50.71937, -152.73213],
+  distance: 146.35196,
+  yaw: 19.66992,
+  pitch: 34.56875,
+};
+
+/** The frame the volume ray scenarios read. */
+const RAY_VIEWPORT = { width: 1600, height: 1000 };
+
+/** The pixel the emulation reads. It sits in the band the browser sweeps measure. */
+const RAY_PIXEL = { x: 800, y: 15 };
+
+/** The near planes the sweep reads, in light years. */
+const RAY_NEAR_PLANES = Array.from({ length: 13 }, (_, index) => 1.8 + 0.02 * index);
+
+/**
+ * The corners of the full-screen triangle, in normalised device coordinates. The
+ * vertex shader builds them from `gl_VertexID`, so a corner reaches 3 on each axis.
+ */
+const TRIANGLE: [number, number][] = [
+  [-1, -1],
+  [3, -1],
+  [-1, 3],
+];
+
+/** The pixel's normalised device coordinate, taken at the centre of the pixel. */
+const RAY_NDC: [number, number] = [
+  ((RAY_PIXEL.x + 0.5) / RAY_VIEWPORT.width) * 2 - 1,
+  1 - ((RAY_PIXEL.y + 0.5) / RAY_VIEWPORT.height) * 2,
+];
+
+/** The view and projection matrix of the ray view at one near plane. */
+function rayViewProjection(near: number): mat4 {
+  const matrix = mat4.create();
+  mat4.multiply(
+    matrix,
+    projectionMatrix(RAY_VIEW, RAY_VIEWPORT, near),
+    viewMatrix(RAY_VIEW),
+  );
+  return matrix;
+}
+
+/** The `float32` inverse, as gl-matrix builds it and as the renderer uploads it. */
+function rayInverse32(near: number): mat4 {
+  const inverse = mat4.create();
+  mat4.invert(inverse, rayViewProjection(near));
+  return inverse;
+}
+
+/** The same inverse in `float64`, which is the answer the emulation is measured against. */
+function rayInverse64(near: number): mat4 {
+  const inverse = new Float64Array(16) as unknown as mat4;
+  mat4.invert(inverse, rayViewProjection(near));
+  return inverse;
+}
+
+/** Unprojects one normalised device coordinate, with a rounding after every operation. */
+function unproject32(inverse: mat4, x: number, y: number, z: number): number[] {
+  const point = transform32(inverse, [x, y, z]);
+  const w = point[3] as number;
+  return [
+    round((point[0] as number) / w),
+    round((point[1] as number) / w),
+    round((point[2] as number) / w),
+  ];
+}
+
+/** The same unprojection in `float64`. */
+function unproject64(inverse: mat4, x: number, y: number, z: number): number[] {
+  const point = transform64(inverse, [x, y, z]);
+  const w = point[3] as number;
+  return [(point[0] as number) / w, (point[1] as number) / w, (point[2] as number) / w];
+}
+
+/** The angle between two directions, in degrees. */
+function angleDegrees(first: readonly number[], second: readonly number[]): number {
+  const length = (v: readonly number[]): number =>
+    Math.hypot(v[0] as number, v[1] as number, v[2] as number);
+  const a = first.map((value) => value / length(first));
+  const b = second.map((value) => value / length(second));
+  const cross = [
+    (a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+    (a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+    (a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+  ];
+  const dot =
+    (a[0] as number) * (b[0] as number) +
+    (a[1] as number) * (b[1] as number) +
+    (a[2] as number) * (b[2] as number);
+  return (Math.atan2(length(cross), dot) * 180) / Math.PI;
+}
+
+/**
+ * The reconstruction the volume pass uses: the unprojected near plane point of the
+ * pixel, taken for the fragment. The camera sits at the origin of this frame, so that
+ * point is already the direction of the ray.
+ */
+function nearPointDirection32(inverse: mat4): number[] {
+  return unproject32(inverse, RAY_NDC[0], RAY_NDC[1], -1);
+}
+
+/**
+ * The reconstruction the volume pass used before this change: the far point less the
+ * near point at each corner of the triangle, carried across it as a varying. The
+ * rasteriser mixes the three corner rays by the barycentric weights of the pixel. Every
+ * corner has a clip `w` of 1, so the weights need no perspective correction.
+ */
+function interpolatedDifference32(inverse: mat4): number[] {
+  const rays = TRIANGLE.map(([x, y]) => {
+    const near = unproject32(inverse, x, y, -1);
+    const far = unproject32(inverse, x, y, 1);
+    return [
+      round((far[0] as number) - (near[0] as number)),
+      round((far[1] as number) - (near[1] as number)),
+      round((far[2] as number) - (near[2] as number)),
+    ];
+  });
+  const second = round((RAY_NDC[0] + 1) / 4);
+  const third = round((RAY_NDC[1] + 1) / 4);
+  const first = round(round(1 - second) - third);
+  const weights = [first, second, third];
+  return [0, 1, 2].map((axis) => {
+    let sum = round(weights[0] * ((rays[0] as number[])[axis] as number));
+    sum = round(sum + round(weights[1] * ((rays[1] as number[])[axis] as number)));
+    sum = round(sum + round(weights[2] * ((rays[2] as number[])[axis] as number)));
+    return sum;
+  });
+}
+
+/** The largest angle either reconstruction leaves over the sweep, in degrees. */
+function worstRayAngle(reconstruct: (inverse: mat4) => number[]): number {
+  let worst = 0;
+  for (const near of RAY_NEAR_PLANES) {
+    const exact = unproject64(rayInverse64(near), RAY_NDC[0], RAY_NDC[1], -1);
+    worst = Math.max(worst, angleDegrees(reconstruct(rayInverse32(near)), exact));
+  }
+  return worst;
+}
+
+describe('the volume pass ray', () => {
+  test('holds its direction against the near plane', () => {
+    expect(worstRayAngle(nearPointDirection32)).toBeLessThan(1e-3);
+  });
+
+  test('does not hold its direction as a difference carried across the triangle', () => {
+    expect(worstRayAngle(interpolatedDifference32)).toBeGreaterThan(0.1);
   });
 });

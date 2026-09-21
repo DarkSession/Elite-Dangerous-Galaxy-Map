@@ -449,7 +449,11 @@ of 10 and in front of it below that, so the point the user is looking at would b
 away. With the rule the cursor sits at ten times the near plane at every zoom distance.
 
 No pass reads the depth buffer, so the near plane changes clipping alone and no depth
-resolution figure depends on it.
+resolution figure depends on it. A pass that reconstructs a ray from the inverse of the
+view and projection matrix SHALL do so by a rule that holds its answer as the near plane
+moves; `far-view-rendering` states that rule for the volume march. The near plane still
+sets clipping, so geometry that lies between two near planes is clipped by one and not
+by the other; that is the rule working and not a breach of this one.
 
 #### Scenario: The near plane at each zoom distance
 
@@ -476,6 +480,16 @@ resolution figure depends on it.
   `#c=0,0,0&d=500&p=35&y=0` with the new near plane rule
 - **THEN** each image file is byte-identical to the same view rendered with a fixed near
   plane of 10 light years
+
+#### Scenario: The near plane alone changes no light
+
+- **WHEN** the browser test opens
+  `#c=-4.15271,-50.71937,-152.73213&d=19.4&p=34.56875&y=19.66992`, draws with the volume
+  pass alone on a 1600 x 1000 canvas, and reads the mean luminance of the top 30 rows
+  once for each held near plane from 1.0 to 10.0 light years in steps of 0.1, with the
+  camera left where it is
+- **THEN** every reading is within **0.002** of the first one. Mean luminance is the
+  measure `far-view-rendering` defines
 
 ### Requirement: Touch gestures move, zoom and orbit the map
 
