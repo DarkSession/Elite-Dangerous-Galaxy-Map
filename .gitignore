@@ -22,6 +22,10 @@ packages/galaxy-map/LICENSE.md
 packages/*/*.tgz
 # The directory `tests/main-bundle.test.ts` builds into. It is removed after the run.
 .library-build-*/
+# The wiki tree `pnpm docs:wiki` writes, which the pipeline pushes to the repository's
+# GitHub wiki. It is generated from the source and from `docs/wiki/`, so it is never
+# committed.
+wiki-build/
 *.local
 
 # Vite's dependency pre-bundling cache

@@ -280,6 +280,75 @@ describe('the publish job', () => {
   test('deploys the uploaded artifact', () => {
     expect(publish).toContain('uses: actions/deploy-pages@');
   });
+
+  test('holds no write permission on the contents', () => {
+    // The wiki job below writes the contents. The Pages job must not, and this reading
+    // is what says so after a second write permission entered the file.
+    expect(publish).not.toContain('contents: write');
+  });
+});
+
+// The second publish job. It writes the repository's own wiki, which is a git
+// repository at `<owner>/<repo>.wiki.git`.
+describe('the wiki job', () => {
+  const wiki = jobText('publish-wiki');
+  const publish = jobText('publish');
+
+  test('runs on a push to main alone and needs the check job', () => {
+    expect(wiki).toContain('needs: check');
+    expect(wiki).toContain(
+      "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+    );
+  });
+
+  test('holds the one write permission the wiki needs and no other', () => {
+    const block = /\n\s+permissions:\n((?:\s+\S+: \S+\n)+)/.exec(wiki);
+    expect(block, 'the wiki job names no permissions').not.toBeNull();
+    const pairs = ((block as RegExpExecArray)[1] as string)
+      .trim()
+      .split('\n')
+      .map((line) => line.trim());
+    expect(pairs).toEqual(['contents: write']);
+  });
+
+  test('reads no personal access token', () => {
+    // The workflow's own `GITHUB_TOKEN`, which `github.token` names, writes the wiki of
+    // its own repository. No step reads a secret.
+    expect(wiki).toContain('${{ github.token }}');
+    expect(wiki).not.toContain('secrets.');
+  });
+
+  test('holds a concurrency group of its own', () => {
+    const groupOf = (text: string): string | undefined =>
+      /\n\s+concurrency:\n\s+group: (\S+)/.exec(text)?.[1];
+    const held = groupOf(wiki);
+    expect(held, 'the wiki job names no concurrency group').toBeDefined();
+    // A slow Pages deployment must not hold the wiki back, so the two groups differ.
+    expect(held).not.toBe(groupOf(publish));
+  });
+
+  test('builds the tree with the script a developer runs', () => {
+    expect(runCommands(wiki)).toContain('pnpm docs:wiki');
+    expect(scriptsOf(join(root, 'package.json'))['docs:wiki']).toBe(
+      'node scripts/build-wiki.mjs',
+    );
+  });
+
+  test('empties the clone, and commits only where something changed', () => {
+    // The empty-then-copy is what takes a page the build no longer writes off the wiki.
+    expect(wiki).toContain('! -name .git -exec rm -rf {} +');
+    expect(wiki).toContain('cp -R wiki-build/. wiki-clone/');
+    expect(wiki).toContain('git add -A');
+    expect(wiki).toMatch(/if git diff --cached --quiet; then\n(?:.*\n)*?\s+exit 0/);
+  });
+
+  test('reports a wiki that was never started', () => {
+    // A wiki with no page has no git repository, and no step of this workflow can make
+    // one. The message names the setting a person turns on.
+    expect(wiki).toContain('GIT_TERMINAL_PROMPT');
+    expect(wiki).toMatch(/::error::the wiki of \$REPOSITORY has no git repository/);
+    expect(wiki).toContain('Settings, Features');
+  });
 });
 
 // The publish workflow. It is the one that cannot be undone: an npm version is

@@ -2,7 +2,9 @@
 #
 # The check job runs the same checks a developer runs, in the same order, on every push
 # to `main` and on every pull request that targets `main`. The publish job then puts the
-# demo site on GitHub Pages. It runs from `main` alone.
+# demo site on GitHub Pages, and the publish-wiki job puts the API reference on the
+# repository's wiki. Both run from `main` alone, and each one holds its own write
+# permission and its own concurrency group.
 #
 # The workflow does not run the Playwright suite. That suite reads the renderer string
 # through `WEBGL_debug_renderer_info` and fails a run that falls back to SwiftShader or
@@ -24,8 +26,8 @@ on:
   pull_request:
     branches: [main]
 
-# The check job reads the repository and nothing more. The publish job names the two
-# write permissions its own deployment needs.
+# The check job reads the repository and nothing more. Each publish job names the write
+# permissions its own publish needs, and neither holds the other's.
 permissions:
   contents: read
 
@@ -63,6 +65,9 @@ jobs:
       - name: Check the types
         run: pnpm exec tsc --noEmit
 
+      # The unit suite builds the wiki tree, because `tests/wiki-pages.test.ts` reads it,
+      # so a doc build that breaks fails the pull request here. The job therefore runs
+      # no wiki step of its own.
       - name: Run the unit tests
         run: pnpm test
 
@@ -136,3 +141,79 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  publish-wiki:
+    name: Publish the API reference to the repository wiki
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # A wiki is a git repository at `<owner>/<repo>.wiki.git`, and `contents: write` is
+    # the permission that writes it. It sits on this job and not on the workflow, so the
+    # check job and the Pages job keep read. The job reads no personal access token: the
+    # workflow's own `GITHUB_TOKEN` writes the wiki of its own repository.
+    permissions:
+      contents: write
+    # A group of its own. The Pages job holds `github-pages-publish`, so a slow
+    # deployment there does not hold the wiki back, and two pushes in a row do not race.
+    concurrency:
+      group: github-wiki-publish
+      cancel-in-progress: false
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The same script a developer runs. It writes `wiki-build/` at the workspace root.
+      - name: Build the wiki
+        run: pnpm docs:wiki
+
+      # A wiki that was never started has no git repository, and no step here can make
+      # one. The clone then fails, and the message names the setting a person turns on.
+      # `GIT_TERMINAL_PROMPT=0` keeps git from asking for a name and hanging the job.
+      - name: Clone the wiki
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+          REPOSITORY: ${{ github.repository }}
+          WIKI_TOKEN: ${{ github.token }}
+        run: |
+          if ! git clone --depth 1 \
+            "https://x-access-token:$WIKI_TOKEN@github.com/$REPOSITORY.wiki.git" \
+            wiki-clone; then
+            echo "::error::the wiki of $REPOSITORY has no git repository to clone. A person turns Wikis on in Settings, Features, and saves one page, once. No step of this workflow can do it."
+            exit 1
+          fi
+
+      # Empty the clone, then copy. This is what removes a page the build no longer
+      # writes; `git add -A` below records the removal.
+      - name: Copy the built tree
+        run: |
+          find wiki-clone -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R wiki-build/. wiki-clone/
+
+      # A publish that changes nothing writes no commit, so the wiki history holds one
+      # entry per real change.
+      - name: Push the wiki where it changed
+        working-directory: wiki-clone
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'the wiki already holds this tree, so the job adds no commit'
+            exit 0
+          fi
+          git commit -m "Build the wiki from $COMMIT"
+          git push

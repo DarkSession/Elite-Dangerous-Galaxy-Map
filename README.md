@@ -8,9 +8,10 @@ star systems as markers, the codex region boundaries, spheres and lines, an opti
 of nebulae and an optional HUD. You add the data and read what the user picks. The map
 owns the canvas, the camera and the frame loop, and it fetches nothing of yours.
 
-The demo site is <https://elite-dangerous-almanac.github.io/Galaxy-Map/>. This repository
-holds the library, that site and the tests. The published package carries its own README:
-[packages/galaxy-map/README.md](packages/galaxy-map/README.md).
+The demo site is <https://elite-dangerous-almanac.github.io/Galaxy-Map/> and the API
+reference is on the wiki: <https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/wiki>.
+This repository holds the library, that site and the tests. The published package carries
+its own README: [packages/galaxy-map/README.md](packages/galaxy-map/README.md).
 
 ## Screenshots
 
@@ -263,6 +264,7 @@ pnpm exec playwright install chromium
 | `pnpm test`            | Runs the Vitest unit tests                                                |
 | `pnpm test:package`    | Reads what `npm pack` would ship and fails on a file that does not belong |
 | `pnpm test:e2e`        | Builds, serves and runs the Playwright browser tests                      |
+| `pnpm docs:wiki`       | Builds the wiki tree into `wiki-build/`                                   |
 | `pnpm audit`           | Fails on a known high or critical advisory                                |
 | `pnpm lint`            | Runs ESLint                                                               |
 | `pnpm format`          | Runs Prettier over the repository                                         |
@@ -278,6 +280,25 @@ open a pull request, and before you dispatch a release.
 [AGENTS.md](AGENTS.md) holds the layout, the import rules and the working agreements.
 [docs/galaxy-density-model.md](docs/galaxy-density-model.md) gives the formulas the
 galaxy model implements.
+
+## The wiki
+
+The API reference is on the repository's wiki:
+<https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/wiki>. It holds one page for every
+member the package exports, and the prose pages beside it.
+
+**The wiki is a mirror, and a machine writes it.** `pnpm docs:wiki` builds the whole tree
+into the ignored `wiki-build/`, from the TypeScript source and from
+[docs/wiki/](docs/wiki/). The `publish-wiki` job of
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same script on a push to
+`main` and pushes the result. An edit made in the wiki interface is overwritten by the
+next push, so change `docs/wiki/` instead. A push that changes nothing writes no commit.
+
+**One setting lives outside the repository**, as the npm publish's do. A wiki that was
+never started has no git repository to clone, and no step of the pipeline can make one. A
+person turns Wikis on in the repository settings, under Features, and saves one page,
+once. This repository's wiki is on. The job fails with a message that names the setting
+where it is not.
 
 ## The release
 

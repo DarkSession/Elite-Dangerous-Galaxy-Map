@@ -175,11 +175,19 @@ entries colon-free or write them as a `|` block, and check with
 - Run the dev server as `pnpm dev --host 0.0.0.0` so VS Code's port forwarding reaches
   it. `apps/demo/vite.config.ts` already sets `server.host: true`. Five root scripts
   delegate with `pnpm --filter` — `dev`, `build`, `build:demo-site`, `build:demo-data`
-  and `preview` — and an argument crosses both hops. The other six run at the root:
-  `test`, `test:e2e`, `test:package`, `audit`, `lint` and `format`. `tests/` and `e2e/`
-  belong to no package, so a delegated `pnpm test` would drop every root test file.
+  and `preview` — and an argument crosses both hops. The other seven run at the root:
+  `test`, `test:e2e`, `test:package`, `audit`, `lint`, `format` and `docs:wiki`.
+  `tests/` and `e2e/` belong to no package, so a delegated `pnpm test` would drop every
+  root test file.
 - The two builds write inside their own packages: `pnpm build` writes
   `packages/galaxy-map/dist/` and `pnpm build:demo-site` writes `apps/demo/dist/`.
+- The API reference is the repository's GitHub wiki,
+  <https://github.com/Elite-Dangerous-Almanac/Galaxy-Map/wiki>. `pnpm docs:wiki` builds
+  the whole tree into the ignored `wiki-build/`, from the TypeScript source and from
+  `docs/wiki/`, and the `publish-wiki` job of `.github/workflows/ci.yml` pushes it on a
+  push to `main`. The wiki is a mirror: change `docs/wiki/`, not the wiki. The wiki
+  setting itself lives outside the repository, as the npm publish's settings do, and no
+  step of the pipeline can turn it on.
 - Commit only when asked. The default branch is `main`.
 - Prettier and ESLint own formatting; do not hand-format against them, and leave GLSL
   files alone (format-on-save is off for them by design).

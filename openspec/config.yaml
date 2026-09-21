@@ -27,8 +27,9 @@ context: |
   - Each build writes inside its own package. pnpm build writes
     packages/galaxy-map/dist/ and pnpm build:demo-site writes apps/demo/dist/. Five root
     scripts delegate with pnpm --filter, which are dev, build, build:demo-site,
-    build:demo-data and preview. The six that run at the root are test, test:e2e,
-    test:package, audit, lint and format, because tests/ and e2e/ belong to no package.
+    build:demo-data and preview. The seven that run at the root are test, test:e2e,
+    test:package, audit, lint, format and docs:wiki, because tests/ and e2e/ belong to
+    no package.
   - The demo imports the library by its package name, never by a relative path. An
     ESLint rule fails the lint on a reach.
 
