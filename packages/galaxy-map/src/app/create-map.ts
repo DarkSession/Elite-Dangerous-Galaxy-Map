@@ -161,7 +161,7 @@ export interface GalaxyMapOptions {
   readonly grid?: boolean;
   /**
    * True starts the map with the marker name labels on. The labels are off unless the
-   * options ask for them, because a set of 10,000 systems opens on a screen of labels
+   * options ask for them, because a set of 50,000 systems opens on a screen of labels
    * otherwise. A value that is not a boolean takes the default.
    */
   readonly systemNames?: boolean;
@@ -917,7 +917,7 @@ export function createGalaxyMap(
   // `id64` and the name as the record wrote it, and a line point compares the name
   // without case, so a miss falls to a folded name table. The table is built once per
   // change of the set and not once per point, because a full line set holds 65,536
-  // points and a sweep of 10,000 systems for each one would break the read budget.
+  // points and a sweep of 50,000 systems for each one would break the read budget.
   let foldedNames: Map<string, number> | null = null;
   let foldedVersion = -1;
   const shapes: ShapeSet = createShapeSet(

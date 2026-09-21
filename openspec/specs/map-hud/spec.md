@@ -320,10 +320,16 @@ changed. The table holds at most 256 categories, so the panel holds at most 256 
 
 The pass that counts the matches SHALL run when the filter text changes and SHALL NOT run
 per frame. It SHALL read each thing of the shown tab **once per category that thing names**,
-because it runs the row filter per row: 10,000 systems over 8 categories with 4 names each
-is **40,000** reads, and 5,120 shapes over the same table is 20,480. Each read is one
-case-insensitive compare against a filter of a few characters. The pass SHALL cost less
-than **2 milliseconds** on the main thread. The box gives its text to the filter at most
+because it runs the row filter per row: **50,000** systems over 8 categories with 4 names
+each is **200,000** reads, and 5,120 shapes over the same table is 20,480. Each read is one
+byte of a match flag, which the pass writes once per change of the filter text. The pass SHALL cost less
+than **2 milliseconds** on the main thread.
+
+**The budget does not move with the set bound.** The count pass read **1 ms** with 10,000
+systems over 8 categories on 2026-09-21 (`e2e/count-cost.spec.ts`, "the count pass holds its
+budget"), against this 2 ms budget. Five times the reads does not fit it. Where the reading fails, the
+implementation SHALL make the pass cheaper, or the set bound SHALL land lower, which the
+requirement "The set holds up to 50,000 systems" states. The box gives its text to the filter at most
 once per 150 ms, so the pass runs at most that often.
 
 #### Scenario: A row toggles its category
@@ -451,7 +457,7 @@ once per 150 ms, so the pass runs at most that often.
 
 #### Scenario: The count pass holds its budget
 
-- **WHEN** the browser test adds 10,000 systems over 8 categories, each naming 4 of them,
+- **WHEN** the browser test adds 50,000 systems over 8 categories, each naming 4 of them,
   types one character in the box, waits 300 ms and reads the measurement the page exposes
   for the count pass
 - **THEN** the reading is under 2 milliseconds
@@ -584,7 +590,7 @@ order of name.
 **The row cap is shared over the open lists.** The lists together SHALL show at most
 **200** rows, and each open list SHALL show at most `floor(200 / open)` rows, where `open`
 is the count of open lists. A list that was cut SHALL say so, with the number shown and the
-number held. The cap is what keeps the DOM bounded: one category may hold all 10,000 systems
+number held. The cap is what keeps the DOM bounded: one category may hold all 50,000 systems
 of a full set, or all 4,096 lines of a full shape set, and a search may open every category
 at once.
 
@@ -1638,8 +1644,17 @@ rewrite the view-driven readouts at most 10 times a second.
 The HUD's cost is a DOM write and the layout and paint that follow it, which no timer in
 the render loop can see. The two readings that measure it are therefore the count of DOM
 writes in a still frame, which SHALL be 0, and the interval between animation frames, which
-`system-selection` defines. With the HUD on, a set of 10,000 systems, one category expanded
-and a system selected, at 1920x1080, the mean interval SHALL stay at or below **18 ms**.
+`system-selection` defines. With the HUD on, **a full set of 50,000 systems**, one category
+expanded and a system selected, at 1920x1080, the mean interval SHALL stay at or below
+**18 ms**.
+
+**The budget does not move with the set bound.** `system-selection`, `map-shapes` and this
+requirement read the same interval at the same set, so the three name one number. The HUD's
+own cost does not follow the set: it writes at most 200 system rows whatever the set holds,
+and the interval it shares is the render loop's. What follows the set is the frame the HUD
+sits on, which the requirements of `real-systems` and `system-selection` bound. Where the
+reading fails, the implementation SHALL make the frame cheaper, or the set bound SHALL land
+lower. It SHALL NOT raise this number.
 
 The HUD SHALL hold at most 256 category rows, 200 system or shape rows, 8 thumbnails, 120
 dataset rows and one information panel, so its DOM node count does not follow the size of
@@ -1660,7 +1675,7 @@ geometry.
 
 #### Scenario: The page keeps its frame rate with the HUD on
 
-- **WHEN** the browser test adds 10,000 systems, turns the HUD on, expands a category,
+- **WHEN** the browser test adds 50,000 systems, turns the HUD on, expands a category,
   selects a system, draws 120 frames at 1920x1080 and reads the animation frame interval
   statistics
 - **THEN** the mean interval is 18 ms or less
@@ -1673,7 +1688,7 @@ geometry.
 
 #### Scenario: The HUD's node count does not follow the set
 
-- **WHEN** the browser test adds 10,000 systems in one category, expands it, and counts the
+- **WHEN** the browser test adds 50,000 systems in one category, expands it, and counts the
   elements under the HUD root
 - **THEN** the count is under 600
 
@@ -1707,3 +1722,4 @@ geometry.
   under the HUD root, opens the dataset dialog, counts again, closes it and counts once
   more
 - **THEN** the second count is under 600 more than the first, and the third is the first
+

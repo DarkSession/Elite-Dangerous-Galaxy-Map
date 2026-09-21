@@ -232,7 +232,7 @@ every fragment is empty would cost a full-screen pass and would make the three p
 disagree.
 
 The count does not follow the data. The galaxy holds about 400 billion systems and the
-host may add 10,000 of them; the grid draws the same call either way. The levels are
+host may add 50,000 of them; the grid draws the same call either way. The levels are
 worked out for each fragment, so no line is a vertex and no buffer holds a line.
 
 The grid SHALL be drawn camera-relative, by the rule of `far-view-rendering`. The plane
@@ -907,7 +907,7 @@ The placement SHALL hold to these bounds:
 - The candidates SHALL be the crossings within **2** label spacings of the cursor on each
   axis, which is 25 crossings, so the sweep projects at most 25 points. The work of one frame
   is therefore fixed: it follows the label level and not the size of the host's data set,
-  which may hold 10,000 systems.
+  which may hold 50,000 systems.
 - A candidate SHALL be dropped for the viewport **only when no part of its own label is on
   the screen**, which is when the screen bounding box of its plane quad lies wholly outside
   the viewport. A candidate SHALL also be dropped when it lies behind the near plane, or when

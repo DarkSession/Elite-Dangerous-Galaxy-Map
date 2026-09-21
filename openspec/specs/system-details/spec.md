@@ -136,7 +136,7 @@ link rule.
 
 The parse SHALL be linear in the length of the text and SHALL run once per description
 drawn. The panel draws one description at a time, for the selected system alone, so a set
-of 10,000 systems asks for at most one parse per selection. No parse SHALL run in a frame
+of 50,000 systems asks for at most one parse per selection. No parse SHALL run in a frame
 the user did not open a panel in.
 
 A description of **50,000 characters** SHALL parse in **50 ms** or less. The bound is

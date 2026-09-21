@@ -108,7 +108,7 @@ export function createIconTextures(
   let texture: WebGLTexture | null = null;
   let disposed = false;
   // The cap is reported once and not once per URL. A host past 64 vectors reads the
-  // rule from one message, and a set of 10,000 records cannot fill the console.
+  // rule from one message, and a full set of records cannot fill the console.
   let cappedWarned = false;
 
   /** Allocates the array at the side in force. The layers start empty. */

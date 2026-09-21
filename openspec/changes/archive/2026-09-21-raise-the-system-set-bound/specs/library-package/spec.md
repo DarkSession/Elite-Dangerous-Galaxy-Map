@@ -1,0 +1,372 @@
+## MODIFIED Requirements
+
+### Requirement: The library build emits a package and no page
+
+**The repository is a pnpm workspace.** The library is the package
+**`packages/galaxy-map/`** and the demo site is the private package **`apps/demo/`**. Each
+holds its own `package.json` and its own Vite configuration. The root `package.json` is
+private, publishes nothing, and carries the scripts a developer runs.
+
+**How every spec's paths are read after the move.** This capability states the rule once,
+and no other spec is rewritten for the move.
+
+| A spec writes | It names |
+| ------------- | -------- |
+| `src/...` | a file of the library package, at `packages/galaxy-map/src/...` |
+| `src/app/main.ts`, `src/app/multifaction*.ts` | a file of the demo app, at `apps/demo/src/...` |
+| `demo-data/...` | `apps/demo/demo-data/...` |
+| `public/...` | `apps/demo/public/...` |
+| `index.html` | `apps/demo/index.html` |
+| `dist/` as the library build | `packages/galaxy-map/dist/` |
+| `dist-demo/` | `apps/demo/dist/` |
+| `THIRD_PARTY_NOTICES.md` | the file that carries that source, which is `packages/galaxy-map/THIRD_PARTY_NOTICES.md` for a source the package ships and the root file for every other one |
+
+Specs written before the move are read through this table and are not rewritten for it.
+The exceptions are a scenario that **asserts on** a moved path rather than mentioning it,
+and the requirement that reads the notices as one file: `real-systems` holds one such
+scenario and `galactic-regions` holds that requirement, and this change carries a delta
+for each.
+
+The library build SHALL emit **three** ES module entry points: the main one, `./nebulae`
+which `make-nebulae-optional` adds, and `./testing`.
+
+**`./testing` is not the supported surface.** It exports `galaxyMapGlobal`,
+`GalaxyMapGlobal` and `TestView`: the object `src/render/context.ts` writes the unmasked
+renderer string and the error text into, and which the browser tests read. It carries no
+compatibility promise and the main entry point SHALL NOT re-export it. It is an entry
+point rather than a demo module because `src/render/context.ts` writes it, and that write
+is what makes a software-renderer fallback fail the browser suite.
+
+`pnpm build` SHALL run the TypeScript check and then build the library. It SHALL write to
+**`packages/galaxy-map/dist/`**. The output SHALL hold the **three ES module entry points**
+named above, a type declaration for each, and the worker and asset chunks the library
+loads at run time. It SHALL hold no HTML file, no demo page module and no demo data.
+
+**It SHALL copy no file of `public/`.** Vite copies the public directory into the output by
+default, and `public/` holds the demo site's pictures: the two demo thumbnails and
+`EDLoader1.svg`, which ED Assets states no licence on. Serving that file on the owner's own
+demo site is the owner's decision; putting it inside a package another project installs is a
+different act, and the library needs none of the three files. The library configuration
+SHALL therefore turn the copy off.
+
+The two builds SHALL write inside their own packages: the library to
+`packages/galaxy-map/dist/` and the demo site to `apps/demo/dist/`. Neither can land where
+the other is looked for, so the check job may run them in either order and the Pages job
+uploads one directory that no other build writes. The single-package layout needed a
+`dist-demo/` for this reason; the workspace does not.
+
+**The main entry point** SHALL export `createGalaxyMap`, the three view calls `encodeView`,
+`decodeView` and `decodeGrid`, **`createFragmentWriter`** with its types
+**`FragmentWriter`** and **`FragmentWriterOptions`**, **`MAX_SYSTEMS`**, and the types the
+public surface names:
+`GalaxyMapOptions`, `GalaxyMap`, `MapView`, `Category`, `RealSystem`, `SystemImage`,
+`CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
+`HudHandle`, `AddReport`, `CategoryReport`, `Reject`, `CategoryReject`, the four
+dataset types the catalog names: `DatasetEntry`, `DatasetContent`, `DatasetInfo` and
+`DatasetLoadResult`, the **nine** shape types `map-shapes` names: `SphereInput`,
+`LineInput`, `LinePoint`, `Sphere`, `Line`, `ShapeReport`, `ShapeReject`, `ShapeInfo` and
+`ShapeKind`, the six
+camera types: `StartView`, `FlyToTarget`, `FlyToOptions`,
+`FlightOutcome`, `BrowseBounds` and `InteractionSwitches`, and **`NebulaSource`**, which
+`make-nebulae-optional` names. A host writes
+the catalog itself, so it needs `DatasetEntry` in a
+type position; a list that left the four out would make the `datasets` option unwritable
+in typed code. The same holds for `SphereInput` and `LineInput`, which a host needs to
+write the argument of `addSpheres` and `addLines`, and for the six camera types, which a
+host needs to write `startView`, `bounds`, `interaction`, the argument of `flyTo` and the
+parameter of an `onFlightEnd` listener. It
+SHALL NOT export the `debug` hook type as part of the supported surface.
+
+**`MAX_SYSTEMS` is the one exported value that is not a function.** `real-systems` states
+the bound, and a host that builds a set has to split it at that number before it calls
+`addSystems`, or take an `over-capacity` reject it could have read. A host that copies the
+number instead keeps a second bound that the next change to this one makes wrong. The
+number is already in the built JavaScript, so the export adds no code and adds one name.
+
+#### Scenario: The bound is readable from the built package
+
+- **WHEN** the package test imports the built package and reads `MAX_SYSTEMS`
+- **THEN** the reading is a number, and it is the number `real-systems` states as the set
+  bound
+
+**The two shape category members add no type.** `setShapeCategoryVisible(name, visible)`
+and `isShapeCategoryVisible(name)` take a string and a boolean, so the declaration carries
+them on `GalaxyMap` and the export list does not move.
+
+**`ShapeInfo` and `ShapeKind` join the list** because `getShapeInfo(kind, index)` is a
+handle member, which `map-shapes` states. A host that reads a shape needs the return type
+in a type position, and it cannot name the `kind` argument without `ShapeKind`. The HUD
+reads a shape row through the same two types and through no other path, which is what keeps
+the HUD boundary rule that `AGENTS.md` holds.
+
+**`RegionMode` is gone from the list.** The region overlay took three modes and now takes
+one switch, which `galactic-regions` states, so the type it named no longer exists.
+
+**The fragment writer joins the list** because the demo page reaches it today by a deep
+import, and the move gives it no such reach. It is already written as a host helper: it
+takes a `write` callback so that the library never touches `window.location`, which is
+what the `real-systems` lint rule requires of every library module. Its `view` parameter
+SHALL take `MapView` rather than the internal `View`.
+
+**The three view calls SHALL name `MapView` too.** `encodeView(view: View)` and
+`decodeView(): View` name `src/camera/view.ts`'s `View`, which the entry point does not
+export, so the built declaration today returns a type a host cannot name. `View` and
+`MapView` are structurally identical, so the change is to the signatures alone and no
+caller breaks. The declaration then carries **one** view type rather than two, and the
+package stops publishing a reference to an unexported name. This is a defect the tree
+already has; it is fixed here because a published declaration is what this change is for.
+
+**`NebulaSource` joins the list** because `nebulae` is an option a host writes. Its value
+is the single export of the second entry point, and a host that names the option in a
+typed configuration object needs the type. The members of `NebulaSource` are not part of
+the supported surface: a host passes the value it imported and writes no source of its
+own.
+
+**The second entry point** SHALL be the nebula source, reached at the subpath
+**`./nebulae`**. It SHALL export one value and nothing else. It SHALL be a chunk of its
+own, and the main entry chunk SHALL NOT import it, at load or on demand. `nebulae` states
+what it carries.
+
+**The three nebula members add no type.** `hasNebulae()`, `areNebulaeVisible()` and
+`setNebulaeVisible(on)` take and give a boolean, so the declaration carries them on
+`GalaxyMap` and the export list does not move for them.
+
+**The package stays at version 0.6.0.** This change moves no file a host imports and
+changes no call. It renames the package, which is not a version step: nothing was
+published under the old name. The publish workflow reads `major.minor` from
+`package.json` and picks one above the highest patch published on that line. The registry
+holds no version of this name, so the first release is `0.6.0`.
+
+The surface keeps the breaks 0.3.0 and 0.4.0 carried. `Sphere.color` and `Line.color` are
+optional, because a shape that names a category takes that category's colour, which
+`map-shapes` states. A sphere washes the markers inside it and behind it rather than every
+marker it covers. `setCategoryVisible` moves a category's markers alone, and
+`setShapeCategoryVisible` moves its shapes.
+
+**The package's published identity.** `packages/galaxy-map/package.json` SHALL name the
+package **`@elite-dangerous-almanac/galaxy-map`**. It SHALL carry a one-line
+`description`, an `author`, a `repository` that names this repository, a `homepage`, a
+`bugs` address and a `keywords` list. It SHALL carry
+`"publishConfig": { "access": "public" }`, because a scoped package is private by default
+and a first publish without it fails. It SHALL NOT be `private`.
+
+`package.json` SHALL name **all three** entry points in `exports` — the main one,
+`./nebulae` and `./testing` — SHALL name the main one in `types`, and SHALL name in
+`files` what the tarball carries. A subpath left out of `exports` does not resolve for a
+host at all.
+
+**`dependencies` SHALL hold what a host installs, and nothing else.** The library build
+marks `gl-matrix` and `@elite-dangerous-almanac/core` external, so those two SHALL be
+`dependencies`. The **two** `@fontsource` packages — `chakra-petch` and
+`ibm-plex-mono`, from which `src/hud/styles.ts` imports **three** `.woff2` files — are
+read at build time and emitted into the output as font files, so they SHALL be
+`devDependencies`. A host that installs the package SHALL therefore pull two packages,
+not four.
+
+`package.json` SHALL carry **`"sideEffects": false`**, so a host's bundler may drop a
+module the host does not reach. The claim SHALL be true: no module of the library SHALL
+import a stylesheet or rely on being evaluated for its effect. The library injects its
+HUD style from a module the HUD calls, and imports its fonts as URLs, so no module needs
+evaluating for its effect today.
+
+The library SHALL NOT read `window.location`, which `real-systems` already holds with a
+lint rule, and SHALL NOT read an element by id.
+
+The HUD SHALL stay a chunk of its own, loaded on demand, so a host that does not ask for
+the HUD downloads none of it.
+
+**The entry chunk bound.** The bound sits in `tests/main-bundle.test.ts` as
+`ENTRY_CHUNK_LIMIT`. It is a guard against one fault: a main-thread import of the region
+cell lookup adds about 199 KiB and takes the chunk over 370,000 bytes.
+
+**The implementation SHALL read the built size and write it here**, as the rule this
+capability already holds says. The reading history, up to the change before this one, is
+236,815, then 252,975, then 253,520, then **266,996** when `add-nebulae` put the nebula
+pass, the record set and a shader pair into the chunk, which is when the bound moved from
+254,000 to **270,000**. `make-nebulae-optional` then took the nebula code back out of the
+chunk, into the second entry point, and wrote its own reading and its own lower bound into
+this requirement. Those two figures are the current state; every figure named above them
+is history.
+
+This change moves the file the test builds from and the directory the test reads, so the
+test's paths change and its bound does not. It **does** move the reading, for two reasons:
+it exports the fragment writer from the entry point, and that function is tree-shaken out of
+the entry chunk today, so it enters; and it adds a third entry point that also reaches
+`src/render/global.ts`, which the bundler may re-partition.
+
+**The readings this change leaves are 245,833 bytes for the entry chunk alone and
+261,172 bytes for the entry chunk and the chunks it loads with**, against the bound of
+**260,000**, which `make-nebulae-optional` set and this change carries forward. The bound
+reads `index.js` alone, so the pair above it is a reading and not a failure. The entry
+chunk keeps 14,167 bytes of room under the bound.
+
+The reading before this change was 245,616 bytes for the entry chunk and 260,724 for the
+pair, so the entry chunk grew by **217 bytes** and the pair by 448. The fragment writer
+and `FRAGMENT_THROTTLE_MS` are that size, which is the first of the two causes above.
+The third entry point moved no module out of the entry chunk: `src/render/global.ts`
+stays in a chunk the entry loads with, as it was.
+
+The bound still catches the one fault it is for at any figure in this range, because the
+region cell table is 199 KiB.
+
+**The HUD chunk has a bound of its own**, `HUD_CHUNK_LIMIT` in the same file. It stays
+at **70,000**, which `map-hud` set. **The reading this change leaves is 62,299 bytes**,
+against 62,293 before it, so 7,701 bytes of room remain. **No HUD source file changed in
+this change**, so the six bytes are a difference in the emitted chunk and not in the
+code. A move of this bound would be for the HUD pulling in a data layer, and the region
+cell table alone is 199 KiB, which no room under 70,000 absorbs.
+
+#### Scenario: The library build carries no page and no demo data
+
+- **WHEN** a test runs the library build into a temporary directory and reads every file
+  it emitted
+- **THEN** no file ends in `.html`, no file holds the text of a demo system name, no file
+  holds the demo page's `galaxy-map-ready` event name, and no file of `public/` is there:
+  neither `EDLoader1.svg` nor either demo thumbnail
+
+#### Scenario: The built module loads and creates a map
+
+- **WHEN** a test imports the built ES module by its path and reads the exported names
+- **THEN** `createGalaxyMap` is a function, and the module imports with no error under
+  Node with no DOM
+
+#### Scenario: The second entry point exports the source alone
+
+- **WHEN** a test imports the built `./nebulae` entry point and reads its exported names
+- **THEN** it holds exactly one export, and the main entry chunk names that chunk in no
+  static and no dynamic import
+
+#### Scenario: The declaration names the public surface
+
+- **WHEN** a test compiles a file that imports every type the requirement lists from the
+  built declaration and uses each one in a type position
+- **THEN** the compile is clean, and a file that imports `GalaxyMapDebug` from it fails to
+  compile
+
+#### Scenario: The entry point exports the fragment writer
+
+- **WHEN** a test compiles a host module that imports `createFragmentWriter`,
+  `FragmentWriter` and `FragmentWriterOptions` from the built main declaration, and calls
+  the writer with a `MapView` and a `write` callback
+- **THEN** the compile is clean, and no deep import of `app/url-view` appears in it
+
+#### Scenario: The testing entry point carries the probe object
+
+- **WHEN** a test imports `galaxyMapGlobal` from the built `./testing` entry point and
+  calls it with a stub window
+- **THEN** it returns the object with `renderer`, `ready` and `error`, and the same call
+  against the **main** entry point fails to resolve
+
+#### Scenario: The demo page reaches no library internal
+
+- **WHEN** a test reads every module under `apps/demo/src/` and lists its imports
+- **THEN** every import of the library is by the package name or one of its subpaths, and
+  no import is a relative path that leaves `apps/demo/`
+
+#### Scenario: The nebula option is writable in typed code
+
+- **WHEN** a test type-checks a host module that imports the source from the built
+  `./nebulae` declaration, imports `NebulaSource` from the main declaration, and writes
+  `createGalaxyMap(canvas, { nebulae: source })`
+- **THEN** the check passes with no error
+
+#### Scenario: The entry chunk stays under the bound
+
+- **WHEN** a test runs the library build and reads the size of the entry chunk
+- **THEN** the size is under the bound this requirement records, and the region cell
+  lookup is in **no entry chunk** and in **no chunk the entry chunk imports at load**.
+
+  **How many chunks carry it follows the build, and the scenario SHALL NOT assert a fixed
+  count.** The library's `vite.config.ts` marks `@elite-dangerous-almanac/core` and its
+  subpaths
+  **external**, so a host holds one copy of the package. `regionNameAtExact` imports the
+  lookup by a bare specifier, and in the library build that specifier stays a bare specifier
+  in the output: no chunk of `dist/` carries the table except the region worker's, which
+  bundles it because the worker build sets `rollupOptions: { external: [] }`.
+
+  A build that **bundles** the package instead carries it in two chunks, the worker's and
+  one lazily loaded chunk that `regionNameAtExact` fetches on its first call. Both shapes
+  hold the two rules above, which are what the bound is for, and neither is a fault.
+
+  The rule was that the lookup sat in the region worker chunk alone. The handle now answers
+  an exact region for one plane point, which the information panel of `map-hud` states, and
+  that answer needs the 199 KiB cell table on the main thread. A dynamic import keeps it out
+  of the entry chunk, which is what the bound is for: a host that never asks for an exact
+  region never fetches it, and the entry chunk is the same size it was.
+
+#### Scenario: The entry chunk holds no nebula code
+
+- **WHEN** a test runs the library build and reads the entry chunk and every chunk the
+  entry chunk imports at load
+- **THEN** none of them holds the nebula shader text, the record file name, the volume index
+  name or any volume asset name
+
+#### Scenario: The entry point exports the camera surface
+
+- **WHEN** a test imports the built entry point and reads its named exports
+- **THEN** `createGalaxyMap`, `encodeView`, `decodeView` and `decodeGrid` are all present
+
+#### Scenario: The camera types are declared
+
+- **WHEN** a test type-checks a host module that writes a `startView`, a `bounds`, an
+  `interaction` and a `flyTo` target against the built type declaration
+- **THEN** the check passes with no error
+
+#### Scenario: The declaration names the two shape category members
+
+- **WHEN** a test type-checks a host module that calls `setShapeCategoryVisible('A', false)`
+  and reads `isShapeCategoryVisible('A')` into a boolean, against the built type declaration
+- **THEN** the check passes with no error
+
+#### Scenario: The declaration names the three nebula members
+
+- **WHEN** a test type-checks a host module that calls `setNebulaeVisible(false)` and reads
+  `areNebulaeVisible()` and `hasNebulae()` into booleans, against the built type
+  declaration
+- **THEN** the check passes with no error
+
+#### Scenario: The shape types are declared
+
+- **WHEN** a test type-checks a host module that reads `getShapeInfo('sphere', 0)` into a
+  `ShapeInfo` and writes a `ShapeKind` against the built type declaration
+- **THEN** the check passes with no error
+
+#### Scenario: The package declares no side effect
+
+- **WHEN** a test reads `sideEffects` from `package.json`, and searches every source file
+  of `src/` for an import of a `.css` file
+- **THEN** `sideEffects` is `false` and the search finds none
+
+#### Scenario: The package names its published identity
+
+- **WHEN** a test reads `packages/galaxy-map/package.json`
+- **THEN** `name` is `@elite-dangerous-almanac/galaxy-map`, `private` is absent,
+  `publishConfig.access` is `public`, and `description`, `author`, `license`,
+  `repository`, `homepage`, `bugs` and `keywords` are all present and not empty
+
+#### Scenario: A host installs two packages
+
+- **WHEN** a test reads `dependencies` and `devDependencies` of the library package
+- **THEN** `dependencies` holds `gl-matrix` and `@elite-dangerous-almanac/core` and
+  nothing else, and each `@fontsource` package is in `devDependencies`
+
+#### Scenario: The package names its version
+
+- **WHEN** a test reads `version` from `package.json`
+- **THEN** it is `0.6.0`
+
+#### Scenario: The declaration names the panel types
+
+- **WHEN** a test compiles a file that imports `SystemDetails`, `SystemDetailValue`,
+  `HudInfoFields`, `HudMapOption` and `HudAction` from the built declaration, writes a
+  `details` loader whose `SystemDetails` carries a `values` entry and an `actions` entry,
+  and writes an `infoFields` object and a `lockedOptions` array
+- **THEN** the compile is clean
+
+#### Scenario: The HUD chunk stays under its bound
+
+- **WHEN** the bundle test reads the built HUD chunk, which carries the Markdown parser,
+  the details reader and the new panel code
+- **THEN** its size is under the HUD bound this requirement states, and the requirement
+  holds the reading the build gave
+

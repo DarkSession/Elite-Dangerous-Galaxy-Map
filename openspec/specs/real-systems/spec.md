@@ -122,8 +122,8 @@ fragment" of `map-navigation` is then the page's to meet, and it is unchanged.
 readers, the frame measurement, the counts and the program probe.
 
 `getSystem` and `getCategory` read the set one entry at a time and return a copy. The set
-holds at most 10,000 systems, so a host that lists them walks the indices, and the handle
-never builds an array of 10,000 records for one call.
+holds at most 50,000 systems, so a host that lists them walks the indices, and the handle
+never builds an array of 50,000 records for one call.
 
 `debug` SHALL carry `setCloseFade(value)`, which holds the close fade of
 `close-view-stars` at the given number from 0 to 1, and `setCloseFade(null)`, which gives
@@ -638,28 +638,82 @@ in it.
 
 #### Scenario: A full set still takes a replacement
 
-- **WHEN** a unit test fills the set to 10,000 systems, then adds one record whose
+- **WHEN** a unit test fills the set to 50,000 systems, then adds one record whose
   `id64` is already in the set at a new position, and one record with a new `id64`
 - **THEN** the first is reported under `replaced` and holds the new position, the second
-  is rejected as `over-capacity`, and the count stays 10,000
+  is rejected as `over-capacity`, and the count stays 50,000
 
-### Requirement: The set holds up to 10,000 systems
+### Requirement: The set holds up to 50,000 systems
 
-The set SHALL hold at most 10,000 systems. `addSystems` SHALL accept records up to that
-bound and SHALL reject every record that would grow the set past it with the reason
+The set SHALL hold at most **50,000** systems. `addSystems` SHALL accept records up to
+that bound and SHALL reject every record that would grow the set past it with the reason
 `over-capacity`. `clearSystems` SHALL empty the set, and the next call SHALL then accept
-10,000 records again.
+50,000 records again.
 
 `clearSystemsAndCategories`, which the requirement "A category carries a name, a colour
 and a description" defines, SHALL free both bounds: after it the next calls SHALL accept
-256 categories and 10,000 records.
+256 categories and 50,000 records.
+
+**The bound SHALL be the number the measurements hold.** 50,000 is the number the readings
+of this change landed on, from a proposal of 100,000. It is five times the bound it replaces,
+and it holds the largest measured Canonn source, 71,142 systems, in two entries instead of
+eight. Six budgets are read at a full set: the frame budget and the close zoom of this
+spec, the pick and the selection work of `system-selection`, the switch of
+`dataset-catalog`, the filter pass of `map-hud`, the star suppression index of
+`close-view-stars` and the icon draw of `system-icons`. Where one of them fails at 50,000,
+the implementation SHALL make that work cheaper, or SHALL lower the bound to the highest
+round number that holds every reading. It SHALL NOT raise a budget to keep the number.
+
+**The bound SHALL NOT land under 20,000.** Under that number the change buys the page it
+exists for nothing that the splitting rule of `publish-the-canonn-data-page` does not
+already give.
+
+**The set SHALL NOT allocate the whole bound up front.** Every record buffer is allocated
+at the bound today, when the map is built and before a record arrives. That is about 320 KB
+in the set and about 320 KB in the marker pass, on the CPU and again on the card. At the new
+bound it is about 2.6 MB in the set and about 1.6 MB in the marker pass, which every host would pay to draw ten records. The set
+and the marker pass SHALL size their buffers to the records they hold, and SHALL grow them
+as records arrive. A map that holds no record SHALL hold no record buffer.
+
+**A reader SHALL NOT hold a buffer over a growth.** `positions`, `categoryIndices`,
+`markerFlags` and `iconIndices` are members a reader takes each frame, and each one is a
+getter that returns a `subarray` of the store. Growth replaces the store behind the
+subarray, so the members SHALL always cut the store the set holds now, and `version` SHALL
+rise where the set grows.
+
+**The growth is read through the store, not through the member.** The members already
+report the records the set holds: `positions.length` is `count * 3` today, whatever the
+store behind it. The allocation is `positions.buffer.byteLength`, which is 240,000 bytes on
+an empty set today and SHALL be 0 after this change. That is the number the scenarios below
+read, and the number a test of this requirement can fail on.
 
 #### Scenario: The bound rejects the excess
 
-- **WHEN** a unit test adds 9,998 systems, then adds 5 more with new identities, then
-  calls `clearSystems` and adds 10,000
+- **WHEN** a unit test adds 49,998 systems, then adds 5 more with new identities, then
+  calls `clearSystems` and adds 50,000
 - **THEN** the second call reports `added` 2 and 3 entries of `over-capacity`, and the
-  third call reports `added` 10,000 and no rejection
+  third call reports `added` 50,000 and no rejection
+
+#### Scenario: A small set holds a small store
+
+- **WHEN** a unit test builds a set, reads `positions.buffer.byteLength`, adds 10 records
+  and reads it again
+- **THEN** the first reading is 0, and the second is the block the implementation grows by,
+  which is under 1 percent of the whole bound
+
+#### Scenario: A grown set reports the store it holds now
+
+- **WHEN** a unit test adds 10 records, reads `positions.buffer.byteLength`, adds 25,000
+  more and reads `positions` again
+- **THEN** the store is larger than it was, `positions` holds the position of the first
+  record unchanged at index 0, and `version` is higher than it was
+
+#### Scenario: The marker pass sizes its buffers to the set
+
+- **WHEN** a unit test builds the marker pass over a stub context with an empty set, counts
+  the bytes the pass gave to `bufferData`, adds 10 records, draws a frame and counts again
+- **THEN** the first count is 0, the second is the block the pass grows by, and the pass
+  wrote the colours and the style ranges again after the growth
 
 ### Requirement: The set holds positions in float64
 
@@ -1028,54 +1082,63 @@ SHALL draw nothing.
 
 ### Requirement: Frame budget with a full set
 
-At 1920x1080 on the dev container's GPU, with 10,000 systems in the set, the mean render
-time over 300 consecutive frames SHALL stay under 16.7 ms at zoom distances of 10, 500,
-4,000, 20,000 and 120,000 light years, with the cursor at Sol and at the galactic centre.
+At 1920x1080 on the dev container's GPU, with **50,000** systems in the set, the mean
+render time over 300 consecutive frames SHALL stay under 16.7 ms at zoom distances of 10,
+500, 4,000, 20,000 and 120,000 light years, with the cursor at Sol and at the galactic
+centre.
+
+**A full set is now five times the set this budget was written for.** The readings at 10,000
+stand and are not repeated here: they were taken, they passed, and a smaller set cannot
+cost more than a larger one in this pass. The readings this requirement asks for are the
+ones at the new bound.
 
 The 10 light year view is the closest zoom. It is the most costly of the five for the
 marker pass, because at that zoom a marker at the cursor is at its 40 CSS pixel glow cap
 and every marker inside its category's range fills the sprite the size curve gives it, so
 the pass writes the largest number of fragments it ever writes.
 
-The cap moves from 30 to 40 CSS pixels with this change, which is 1.78 times the fragments
-of the worst case the budget held before. That is the reading this requirement exists to
-take again.
+The pass rebases every position in the set each frame. At the new bound that is 150,000
+`float64` subtractions and one buffer write of 0.6 MB, five times the work the budget was
+written against. The measurement SHALL use the same function the far view's frame budget
+uses, so it holds that CPU work and the GPU work together.
 
-The pass rebases 10,000 positions every frame, which is 30,000 `float64` subtractions and
-one buffer write of 120 KB. The measurement SHALL use the same function the far view's
-frame budget uses, so it holds that CPU work and the GPU work together.
+**The measurement decides the bound.** 10,000 forced 40 CSS pixel glow markers within 10
+light years of Sol drew in a mean of 1.617 ms against this 16.7 ms budget, which is the
+reading the close cap was chosen on. Five times that work sits at about 8.1 ms, which is half the
+budget. The reading at the bound this spec states is 2.101 ms. The implementation SHALL
+take the readings first and SHALL make the work cheaper or lower the bound, rather than
+raise the budget.
 
-#### Scenario: Eight views under budget with 10,000 systems
+#### Scenario: Eight views under budget with a full set
 
-- **WHEN** the browser test adds 10,000 systems spread over the model bounds, sets each
+- **WHEN** the browser test adds 50,000 systems spread over the model bounds, sets each
   of the eight views at 500, 4,000, 20,000 and 120,000 light years, and calls the
   measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms
 
-#### Scenario: The closest zoom is under budget with 10,000 systems
+#### Scenario: The closest zoom is under budget with a full set
 
-- **WHEN** the browser test adds 10,000 systems spread over the model bounds, sets the two
+- **WHEN** the browser test adds 50,000 systems spread over the model bounds, sets the two
   views at 10 light years, one with the cursor at Sol and one at the galactic centre, and
   calls the measurement function for 300 frames
 - **THEN** each returned mean is under 16.7 ms
 
 #### Scenario: The closest zoom is under budget with every marker in range
 
-- **WHEN** the browser test adds 10,000 systems of one category whose `maxDrawRange` is
+- **WHEN** the browser test adds 50,000 systems of one category whose `maxDrawRange` is
   300,000 light years, all within 10 light years of Sol, sets the view at 10 light years
   with the cursor at Sol, and calls the measurement function for 300 frames
 - **THEN** the returned mean is under 16.7 ms. The camera sits 10 light years from the
   cursor and the set lies inside a ball of 10 light years, so a range runs from 0 to 20 and
   a sprite runs from the 40 CSS pixel cap down to 35.7. Part of the set falls outside the
   frustum at that zoom, so this scenario measures the largest sprites and not the largest
-  number of them. The other half, all 10,000 sprites forced to the cap together, which
-  writes 16 million fragments over a frame of 2 million pixels, was measured once before
-  the curve was written, to decide whether the cap of 16 could stand: 10,000 forced 40
-  CSS pixel glow markers within 10 light years of Sol at 1920 by 1080 drew in a mean of
-  1.617 ms against the 16.7 ms budget, so the close cap stayed at 16. No test holds that
-  reading; this scenario is its record. The old rule reached its 30 CSS pixel cap at a
-  range of about 1,560 light years, so the old worst case put the systems within 10,000
-  light years of Sol
+  number of them. The other half, every sprite forced to the cap together, was measured once
+  at the old bound before the curve was written, to decide whether the cap of 16 could
+  stand: 10,000 forced 40 CSS pixel glow markers within 10 light years of Sol at 1920 by
+  1080, which writes 16 million fragments over a frame of 2 million pixels, drew in a mean
+  of 1.617 ms against the 16.7 ms budget, so the close cap stayed at 16. No test holds that
+  reading; this scenario is its record. This scenario now runs at five times that set, so it
+  is the reading that says whether the new bound stands
 
 ### Requirement: A marker draws in one of two styles
 
@@ -1341,7 +1404,7 @@ cuts markers reports fewer than the set holds.
 
 #### Scenario: The cull holds the frame budget with a full set
 
-- **WHEN** the browser test adds 10,000 systems, resets the frame statistics, draws 60
+- **WHEN** the browser test adds 50,000 systems, resets the frame statistics, draws 60
   frames at 1920x1080 at the default view, where the new rule cuts nothing, and reads the
   statistics
 - **THEN** the mean frame time holds the bound the requirement "Frame budget with a full
@@ -1377,9 +1440,14 @@ throw. `isCategoryVisible` SHALL return `false` for such a name.
 The sweep that rebuilds which markers draw SHALL run when the set, the category table, the
 visibility or the filter changes, and SHALL NOT run per frame. It SHALL read each
 system's categories once, and it SHALL write the drawn category in that same read. With
-10,000 systems each naming 4 categories, and every category turned off in one call, the
+**50,000** systems each naming 4 categories, and every category turned off in one call, the
 sweep SHALL cost less than **2 milliseconds** on the main thread, and the page SHALL expose
 the reading so a test can read it.
+
+The sweep read 0.1 to 0.5 ms with 10,000 systems over 8 categories on 2026-09-21
+(`e2e/systems.spec.ts`, "the sweep holds its budget"), so five times the set sits at 0.5 to
+2.5 ms against this 2 ms budget. Where the reading fails, the implementation SHALL make the
+sweep cheaper, or SHALL lower the set bound. It SHALL NOT raise this budget.
 
 A category replaced under the same name SHALL keep the visibility it had, because the
 replacement changes the table entry and not what the user chose to look at.
@@ -1454,7 +1522,7 @@ the system positions.
 
 #### Scenario: The sweep holds its budget
 
-- **WHEN** the browser test adds 10,000 systems over 8 categories, each system naming 4 of
+- **WHEN** the browser test adds 50,000 systems over 8 categories, each system naming 4 of
   them, then calls `setCategoryVisible` with `false` for every category in turn and reads
   the sweep time
 - **THEN** no sweep took more than 2 milliseconds
@@ -1482,7 +1550,7 @@ case. The comparison SHALL fold case with the same rule in every browser, which 
 case fold of both strings. A marker the filter drops SHALL NOT be picked.
 
 `setNameFilter` SHALL walk the set once and SHALL NOT rebuild the scene data. The set
-holds at most 10,000 names, so one call is one pass over at most 10,000 strings. The HUD
+holds at most 50,000 names, so one call is one pass over at most 50,000 strings. The HUD
 calls it at most once per 150 ms while the user types, which `map-hud` states.
 
 `clearSystems` SHALL NOT clear the filter, because the filter is what the user asked to

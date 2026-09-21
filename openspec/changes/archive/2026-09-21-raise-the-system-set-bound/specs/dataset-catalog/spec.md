@@ -1,0 +1,178 @@
+## MODIFIED Requirements
+
+### Requirement: The handle loads one dataset at a time
+
+The handle SHALL carry these members:
+
+| Member                    | What it does                                                    |
+| ------------------------- | --------------------------------------------------------------- |
+| `getDatasets()`           | The catalog, without the `load` functions                        |
+| `getLoadedDataset()`      | The entry now on the map, or null                                |
+| `loadDataset(id)`         | Loads one entry and returns a promise of its report              |
+| `onDatasetChange(fn)`     | Calls `fn` after the loaded dataset changes, returns unsubscribe |
+
+`loadDataset(id)` SHALL call that entry's `load()`, then
+`clearSystemsAndCategories()`, then `addCategories` and `addSystems` with what came back,
+in that order, so a failed load leaves the map with the set it already had.
+
+It SHALL then apply the entry's `bounds` and its `view`, in that order, and SHALL do both
+**before** it calls the `onDatasetChange` listeners. A listener that adds the shapes of the
+entry therefore sees the bounds the entry asked for. It SHALL return a promise of
+`{ categories, systems }`, the two reports the reader gives.
+
+`loadDataset` SHALL clear the selection and SHALL clear the name filter, because both name
+records of the set being replaced.
+
+**The view moves only where the entry asks.** An entry that names no `view` SHALL leave the
+view where it is, which is what every load did before: a host that wants to fly to the new
+set does it when the promise settles. An entry that names one SHALL take it in the next
+frame, without a flight, as the `startView` option does.
+
+**A deep link wins at start.** On the **start** load an entry's `view` SHALL apply only
+where the options name no `startView`. On every later `loadDataset` the entry's `view`
+SHALL apply. Without this rule a host that opens the map at a camera the URL named would
+have that camera overwritten when the start load settled, which happens after the page has
+already drawn.
+
+A call naming an id the catalog does not hold SHALL reject with an error and SHALL change
+nothing.
+
+When `load()` throws or its promise rejects, `loadDataset` SHALL reject with that error,
+SHALL leave the loaded dataset, the system set, the bounds and the view as they were, and
+SHALL NOT stop the frame loop.
+
+When a second `loadDataset` starts while a first is still loading, the second SHALL win:
+the first SHALL NOT write the set, the bounds or the view when it settles, and its promise
+SHALL reject with a cancelled error. Without this the slower of two clicks decides what the
+map shows.
+
+When the options carry `datasets`, the map SHALL load one at start: the entry named by
+`dataset`, or the first entry when `dataset` names none or names an id the catalog does
+not hold.
+
+`ready` SHALL settle after the first frame **and** after the start load settles, whichever
+is later, and SHALL settle whether or not that load succeeded, so a failed dataset still
+leaves a drawing map. Without the second half a host that waits for `ready` and then reads
+`systemCount` races the load. `library-package` holds that the browser suite clears the set
+after `ready`, and about 188 of its tests depend on that clear reaching a set that is
+already there.
+
+The set the library loads SHALL hold at most 50,000 systems and 256 categories, which
+`real-systems` already bounds. A `load()` that returns more SHALL be rejected by the same
+reader with the same `over-capacity` reason.
+
+**What a switch costs.** The library's own part of a switch is the clear, the two reads and
+the two settings, which it does on the main thread. With a full set of 50,000 systems and
+256 categories that part SHALL take under **40 milliseconds**, which is between two and
+three dropped frames. The budget does not move with the bound: the clear and the two reads
+walk the set, so five times the records is five times that walk, and 40 ms is what a user
+accepts for a switch they asked for. Where the reading fails, the implementation SHALL make
+the walk cheaper, or SHALL lower the set bound. The `load()` itself is the host's, and it may take as long as its
+network does; the frame loop SHALL keep drawing throughout, because the library waits on
+the promise and does not block. The dataset field shows that a load is running, so the user
+sees why the map has not changed yet.
+
+#### Scenario: Loading replaces the set
+
+- **WHEN** a browser test builds a map with two entries, waits for `ready`, reads
+  `systemCount` and `getLoadedDataset()`, calls `loadDataset` with the second id, awaits it
+  and reads both again
+- **THEN** the first reading is the first entry's system count and its id, and the second
+  reading is the second entry's count and its id
+
+#### Scenario: The start load reads the named entry
+
+- **WHEN** a browser test builds a map with three entries and `dataset` naming the third,
+  waits for `ready` and reads `getLoadedDataset()`
+- **THEN** the reading is the third entry
+
+#### Scenario: An entry's bounds take effect on its load
+
+- **WHEN** a browser test builds a map with two entries, the first naming
+  `bounds: { mode: 'auto' }` and the second naming none, and options naming
+  `bounds: { mode: 'unrestricted' }`, waits for `ready`, reads `getBounds()`, loads the
+  second and reads it again
+- **THEN** the first reading is the `auto` mode and the second is `unrestricted`
+
+#### Scenario: A restricted set holds the camera
+
+- **WHEN** the browser test loads an entry naming `bounds: { mode: 'auto' }` whose systems
+  all lie within 200 light years of (0, 0, 0), then calls `setView` with a cursor 30,000
+  light years away and a distance of 100,000, draws a frame and reads `getView()`
+- **THEN** the cursor lies inside the set's box grown by 1,000 light years on each axis,
+  and the distance is at or under the far zoom limit of that box
+
+#### Scenario: `fit` frames the set
+
+- **WHEN** a browser test loads an entry naming `view: { fit: 'systems' }` whose systems
+  span a box from (-100, -50, -100) to (100, 50, 100), and reads `getView()`
+- **THEN** the cursor is (0, 0, 0) and the distance is twice half the diagonal of that box,
+  within the tolerance `map-navigation` states for that value in doubles
+
+#### Scenario: A named field wins over `fit`
+
+- **WHEN** the same test loads an entry naming `view: { fit: 'systems', pitch: 60 }`
+- **THEN** the cursor and the distance are the ones `fit` worked out and the pitch is 60
+
+#### Scenario: A deep link beats the entry at start
+
+- **WHEN** a browser test builds a map naming `startView` with a cursor of (500, 0, 500)
+  and a first entry naming `view: { fit: 'systems' }`, waits for `ready` and reads
+  `getView()`, then calls `loadDataset` with that same entry's id and reads it again
+- **THEN** the first reading is the `startView` cursor and the second is the cursor `fit`
+  worked out
+
+#### Scenario: An entry with no view leaves the camera
+
+- **WHEN** a browser test reads `getView()`, loads an entry that names no `view`, and reads
+  it again
+- **THEN** the two readings are the same
+
+#### Scenario: The bounds reach a listener
+
+- **WHEN** a browser test registers an `onDatasetChange` listener that reads `getBounds()`,
+  then loads an entry naming `bounds: { mode: 'auto' }`
+- **THEN** the listener read the `auto` mode
+
+#### Scenario: The next load replaces a host's own setBounds
+
+- **WHEN** a browser test builds a map whose options name an `unrestricted` bounds, calls
+  `setBounds` with a `sphere`, then loads an entry that names no `bounds` and reads
+  `getBounds()`
+- **THEN** the reading is `unrestricted`, which is the option and not the sphere
+
+#### Scenario: A failed load leaves the map as it was
+
+- **WHEN** a browser test loads the first entry, then calls `loadDataset` for an entry
+  whose `load` rejects, catches the rejection, and reads `systemCount`,
+  `getLoadedDataset()`, `getBounds()` and the view
+- **THEN** the promise rejected, the count, the loaded entry, the bounds and the view are
+  the first entry's, and the map draws 10 more frames
+
+#### Scenario: The later load wins
+
+- **WHEN** a browser test calls `loadDataset` for an entry whose `load` settles after 300
+  ms and names a `bounds`, then at once calls it for an entry whose `load` settles at once
+  and names none, awaits both and reads `getLoadedDataset()`, `systemCount` and
+  `getBounds()` after 500 ms
+- **THEN** the second promise resolved, the first rejected as cancelled, and every reading
+  is the second entry's throughout
+
+#### Scenario: Loading clears the selection and the filter
+
+- **WHEN** a browser test selects a system, sets the name filter to `sol`, loads another
+  dataset, and reads `getSelection()` and `getNameFilter()`
+- **THEN** both are empty
+
+#### Scenario: A full set switches inside the budget
+
+- **WHEN** a browser test loads a set of 50,000 systems and 256 categories, then calls
+  `loadDataset` for a second set of the same size whose `load` returns at once and which
+  names a `bounds` and a `view`, and measures the main thread from the call until the
+  promise settles
+- **THEN** the measurement is under 40 milliseconds and the frame loop drew throughout
+
+#### Scenario: An unknown id changes nothing
+
+- **WHEN** a unit test calls `loadDataset('nothing')` and reads `getLoadedDataset()`
+- **THEN** the promise rejected and the reading is unchanged

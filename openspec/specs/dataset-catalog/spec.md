@@ -155,14 +155,17 @@ leaves a drawing map. Without the second half a host that waits for `ready` and 
 after `ready`, and about 188 of its tests depend on that clear reaching a set that is
 already there.
 
-The set the library loads SHALL hold at most 10,000 systems and 256 categories, which
+The set the library loads SHALL hold at most 50,000 systems and 256 categories, which
 `real-systems` already bounds. A `load()` that returns more SHALL be rejected by the same
 reader with the same `over-capacity` reason.
 
 **What a switch costs.** The library's own part of a switch is the clear, the two reads and
-the two settings, which it does on the main thread. With a full set of 10,000 systems and
+the two settings, which it does on the main thread. With a full set of 50,000 systems and
 256 categories that part SHALL take under **40 milliseconds**, which is between two and
-three dropped frames. The `load()` itself is the host's, and it may take as long as its
+three dropped frames. The budget does not move with the bound: the clear and the two reads
+walk the set, so five times the records is five times that walk, and 40 ms is what a user
+accepts for a switch they asked for. Where the reading fails, the implementation SHALL make
+the walk cheaper, or SHALL lower the set bound. The `load()` itself is the host's, and it may take as long as its
 network does; the frame loop SHALL keep drawing throughout, because the library waits on
 the promise and does not block. The dataset field shows that a load is running, so the user
 sees why the map has not changed yet.
@@ -261,7 +264,7 @@ sees why the map has not changed yet.
 
 #### Scenario: A full set switches inside the budget
 
-- **WHEN** a browser test loads a set of 10,000 systems and 256 categories, then calls
+- **WHEN** a browser test loads a set of 50,000 systems and 256 categories, then calls
   `loadDataset` for a second set of the same size whose `load` returns at once and which
   names a `bounds` and a `view`, and measures the main thread from the call until the
   promise settles
@@ -429,7 +432,7 @@ not.
 The dump read on **2026-09-17** gives **4,231 systems**: 3,683 for Canonn, of which 1,864
 controlled and 1,819 present, and 1,254 for Canonn Deep Space Research, of which 310
 controlled and 944 present. **706** of the 4,231 name more than one category, and every one
-lies inside the model bounds. The set is well under the 10,000 systems `real-systems`
+lies inside the model bounds. The set is well under the 50,000 systems `real-systems`
 holds. These numbers describe that dump and no other: a later dump gives other numbers, so
 no test SHALL assert them against the live file.
 
@@ -448,7 +451,7 @@ entry's label, which `dataset-catalog` already states. The page SHALL NOT stop t
 loop and SHALL NOT leave a half-written set.
 
 **The budget.** The frame loop SHALL keep drawing while the fetch and the read run: with
-the HUD on and a set of 10,000 systems at 1920x1080, the read SHALL NOT cost the map a
+the HUD on and a set of 50,000 systems at 1920x1080, the read SHALL NOT cost the map a
 frame. The time the fetch itself takes is the network's and is the host's to bear, which
 `dataset-catalog` already states.
 

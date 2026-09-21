@@ -270,6 +270,14 @@ because the frame budget requirement forbids a wait for the card in the normal l
 
 The page SHALL expose the number of stars the last frame suppressed.
 
+**The bound of the set moves under these two readings.** The index is built over the whole
+set and is built again on a set version change, so it is linear in the record count. A zoom
+that crosses a base class boundary was measured with 10,000 systems at a worst frame of
+13 ms against the 50 ms bound on 2026-09-21. Five times the set fits that bound: the same
+reading is 33.1 ms at the bound this change lands. Where the reading fails, the implementation SHALL make
+the build cheaper, or SHALL build it in parts over frames, or the set bound SHALL land
+lower. Neither bound SHALL be raised.
+
 #### Scenario: A star inside the radius goes and one outside stays
 
 - **WHEN** a unit test reads the stars of a 20 light year boxel, places one real system
@@ -292,7 +300,7 @@ The page SHALL expose the number of stars the last frame suppressed.
 
 #### Scenario: A camera move computes only the boxels the move brought in
 
-- **WHEN** a unit test adds 10,000 systems spread evenly over the base class block,
+- **WHEN** a unit test adds 50,000 systems spread evenly over the base class block,
   builds the suppressed sets of a drawn set, then moves the camera by one base boxel on
   one axis, builds again, and counts the boxels the second build computed a set for
 - **THEN** the first build computes 512 base class boxels and the second computes at most
@@ -300,7 +308,7 @@ The page SHALL expose the number of stars the last frame suppressed.
 
 #### Scenario: A camera move stays inside the frame budget
 
-- **WHEN** the browser test adds 10,000 systems within 600 light years of the camera at
+- **WHEN** the browser test adds 50,000 systems within 600 light years of the camera at
   `#c=0,0,0&d=1000&p=35&y=0`, resets `frameStats`, pans the camera 200 light years at a
   fixed zoom distance, and reads `frameStats`
 - **THEN** the worst time is under 20 ms
@@ -314,7 +322,7 @@ The page SHALL expose the number of stars the last frame suppressed.
 
 #### Scenario: A base class change costs one slow frame at most
 
-- **WHEN** the browser test adds 10,000 systems within 600 light years of the camera,
+- **WHEN** the browser test adds 50,000 systems within 600 light years of the camera,
   resets `frameStats`, zooms from 500 to 3,000 light years of zoom distance, which
   crosses the base class boundaries at 640, at 1,280 and at 2,560, and reads
   `frameStats`

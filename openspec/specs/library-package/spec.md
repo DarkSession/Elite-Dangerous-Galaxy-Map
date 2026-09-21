@@ -65,8 +65,8 @@ uploads one directory that no other build writes. The single-package layout need
 
 **The main entry point** SHALL export `createGalaxyMap`, the three view calls `encodeView`,
 `decodeView` and `decodeGrid`, **`createFragmentWriter`** with its types
-**`FragmentWriter`** and **`FragmentWriterOptions`**, and the types the public surface
-names:
+**`FragmentWriter`** and **`FragmentWriterOptions`**, **`MAX_SYSTEMS`**, and the types the
+public surface names:
 `GalaxyMapOptions`, `GalaxyMap`, `MapView`, `Category`, `RealSystem`, `SystemImage`,
 `CategoryInput`, `SystemRecordInput`, `HudOptions`, `HudAction`,
 `HudHandle`, `AddReport`, `CategoryReport`, `Reject`, `CategoryReject`, the four
@@ -84,6 +84,18 @@ write the argument of `addSpheres` and `addLines`, and for the six camera types,
 host needs to write `startView`, `bounds`, `interaction`, the argument of `flyTo` and the
 parameter of an `onFlightEnd` listener. It
 SHALL NOT export the `debug` hook type as part of the supported surface.
+
+**`MAX_SYSTEMS` is the one exported value that is not a function.** `real-systems` states
+the bound, and a host that builds a set has to split it at that number before it calls
+`addSystems`, or take an `over-capacity` reject it could have read. A host that copies the
+number instead keeps a second bound that the next change to this one makes wrong. The
+number is already in the built JavaScript, so the export adds no code and adds one name.
+
+#### Scenario: The bound is readable from the built package
+
+- **WHEN** the package test imports the built package and reads `MAX_SYSTEMS`
+- **THEN** the reading is a number, and it is the number `real-systems` states as the set
+  bound
 
 **The two shape category members add no type.** `setShapeCategoryVisible(name, visible)`
 and `isShapeCategoryVisible(name)` take a string and a boolean, so the declaration carries

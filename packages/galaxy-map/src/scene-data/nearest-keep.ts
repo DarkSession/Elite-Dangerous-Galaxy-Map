@@ -2,7 +2,7 @@
 //
 // Two passes keep a nearest list every frame: the marker overlay keeps the 66 markers
 // nearest the camera, and the icon pass keeps the 32 nearest stacks. The candidate list
-// can hold 10,000 entries either way, so a sort of the whole list is what this replaces:
+// can hold 50,000 entries either way, so a sort of the whole list is what this replaces:
 // a candidate no nearer than the worst kept one is refused in one comparison, and one
 // that is nearer moves at most as many entries as the keeper holds.
 //

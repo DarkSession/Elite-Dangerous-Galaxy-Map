@@ -820,7 +820,7 @@ reason, and it has more room than it had: the two blur passes are gone.
 
 The ribbon draw is the whole boundary set whatever the zoom, and the composite is a
 full-screen pass whose cost follows the drawing buffer. Neither reads a star system, so the
-cost is the same for a set of none and a set of 10,000, and it does not follow the 400
+cost is the same for a set of none and a set of 50,000, and it does not follow the 400
 billion systems of the galaxy.
 
 `debug` SHALL carry `regionCoverageSize()`, which returns the width and the height of the

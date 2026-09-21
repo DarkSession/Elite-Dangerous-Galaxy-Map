@@ -118,10 +118,10 @@ describe('the page set', () => {
     expect(inSections).toEqual(supported);
   });
 
-  test('reads 5 values and 44 types from the main entry point', () => {
+  test('reads 6 values and 44 types from the main entry point', () => {
     // A guard on the reader above. An `exportsOf` that read nothing would make the case
     // above pass on two empty lists.
-    expect(mainExports.length).toBe(49);
+    expect(mainExports.length).toBe(50);
     expect(nebulaExports).toEqual(['nebulae']);
   });
 

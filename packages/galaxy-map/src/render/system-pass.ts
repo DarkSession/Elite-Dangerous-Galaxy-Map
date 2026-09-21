@@ -10,6 +10,7 @@ import {
   DEFAULT_MARKER_COLOR,
   DEFAULT_MARKER_STYLE,
   DEFAULT_MAX_DRAW_RANGE_LY,
+  FIRST_RECORD_BLOCK,
   MAX_SYSTEMS,
 } from '../scene-data/real-systems';
 import type { MarkerStyle, RealSystemSet } from '../scene-data/real-systems';
@@ -355,9 +356,13 @@ export function createSystemPass(
     throw new Error('The context gave no buffer for the markers.');
   }
 
-  const offsets = new Float32Array(MAX_SYSTEMS * 3);
-  const colors = new Float32Array(MAX_SYSTEMS * 3);
-  const styleRanges = new Float32Array(MAX_SYSTEMS * 2);
+  // The three buffers follow the records the set holds. Each one starts empty and grows
+  // by the same block rule the set uses, so a map that draws no record gives 0 bytes to
+  // the card.
+  let capacity = 0;
+  let offsets = new Float32Array(0);
+  let colors = new Float32Array(0);
+  let styleRanges = new Float32Array(0);
   // -1 is no version, so the first frame with a system in the set builds the colours.
   let colorVersion = -1;
   let categoryVersion = -1;
@@ -391,6 +396,36 @@ export function createSystemPass(
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   let calls = 0;
+
+  /**
+   * Makes room for `needed` records in the three buffers and on the card. A `bufferData`
+   * call with a new length orphans the store the card holds, so the colours and the
+   * style ranges have to be written again after a growth: the pass forgets the two
+   * versions here, and the block that writes them runs before the rebase of the same
+   * frame.
+   */
+  const grow = (needed: number): void => {
+    if (needed <= capacity) return;
+    let next = capacity === 0 ? FIRST_RECORD_BLOCK : capacity;
+    while (next < needed) next *= 2;
+    if (next > MAX_SYSTEMS) next = MAX_SYSTEMS;
+    capacity = next;
+
+    offsets = new Float32Array(next * 3);
+    colors = new Float32Array(next * 3);
+    styleRanges = new Float32Array(next * 2);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, offsets.byteLength, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, colors.byteLength, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, styleRangeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, styleRanges.byteLength, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    colorVersion = -1;
+    categoryVersion = -1;
+  };
 
   /**
    * Writes the uniforms one of the two programs takes. Both draws read the same buffer
@@ -440,6 +475,7 @@ export function createSystemPass(
       calls = 0;
       const count = frame.set.count;
       if (count === 0) return 0;
+      grow(count);
 
       // The colours, the styles and the ranges follow the set and the category table
       // alone, so a frame that changes neither writes none of them. The styles and the

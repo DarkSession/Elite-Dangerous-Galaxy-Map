@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { channels, openMap } from './helpers';
+import { channels, FULL_SET, openMap } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -377,19 +377,24 @@ test.describe('the pick', () => {
     const cursor: [number, number, number] = [0, 0, 0];
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
     await addCategory(page, 'Alpha');
-    const added = await page.evaluate(() => {
+    const added = await page.evaluate((total: number) => {
+      // A square grid of the whole set, at 20 light years a step. The side follows the
+      // count, so the grid is 4,480 light years across at a full set. That is well
+      // inside the 120,000 light year default draw range, so every system of the set is
+      // a candidate and the sweep reads all of them.
+      const side = Math.ceil(Math.sqrt(total));
       const records: SystemRecordInput[] = [];
-      for (let index = 0; index < 10000; index += 1) {
-        const column = index % 100;
-        const row = Math.floor(index / 100);
+      for (let index = 0; index < total; index += 1) {
+        const column = index % side;
+        const row = Math.floor(index / side);
         records.push({
           name: `S${index}`,
-          coords: { x: (column - 50) * 20, y: (row - 50) * 20, z: 0 },
+          coords: { x: (column - side / 2) * 20, y: (row - side / 2) * 20, z: 0 },
           categories: ['Alpha'],
         });
       }
       return window.galaxyMap?.addSystems(records).added ?? -1;
-    });
+    }, FULL_SET);
     await setView(page, cursor, 4000);
 
     const mean = await page.evaluate(() => {
@@ -405,8 +410,63 @@ test.describe('the pick', () => {
     });
     console.log('the pick over a full set', { added, mean });
 
-    expect(added).toBe(10000);
+    expect(added).toBe(FULL_SET);
     expect(mean).toBeLessThanOrEqual(1);
+  });
+
+  test('holds its time bound with the set out of range', async ({ page }) => {
+    const cursor: [number, number, number] = [0, 0, 0];
+    await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
+    // The category draws 100 light years, and the whole set sits 5,000 light years from
+    // the cursor, so no marker draws and the pick returns null on every call. The sweep
+    // still reads every record, so the reading is the cost of the range test alone.
+    await page.evaluate((color) => {
+      window.galaxyMap?.addCategories([{ name: 'Far', color, maxDrawRange: 100 }]);
+    }, CORE);
+    const added = await page.evaluate((total: number) => {
+      const side = Math.ceil(Math.sqrt(total));
+      const records: SystemRecordInput[] = [];
+      for (let index = 0; index < total; index += 1) {
+        const column = index % side;
+        const row = Math.floor(index / side);
+        records.push({
+          name: `S${index}`,
+          coords: {
+            x: 5000 + (column - side / 2) * 20,
+            y: (row - side / 2) * 20,
+            z: 0,
+          },
+          categories: ['Far'],
+        });
+      }
+      return window.galaxyMap?.addSystems(records).added ?? -1;
+    }, FULL_SET);
+    await setView(page, cursor, 4000);
+
+    const reading = await page.evaluate(() => {
+      const map = window.galaxyMap;
+      if (map === undefined) return { mean: -1, drawn: -1, hits: -1 };
+      // A warm-up call keeps the compiler's first pass out of the reading.
+      map.systemAt(640, 360);
+      let hits = 0;
+      const start = performance.now();
+      for (let index = 0; index < 200; index += 1) {
+        if (map.systemAt(320 + (index % 640), 180 + (index % 360)) !== null) {
+          hits += 1;
+        }
+      }
+      return {
+        mean: (performance.now() - start) / 200,
+        drawn: map.debug.systemMarkerCount(),
+        hits,
+      };
+    });
+    console.log('the pick over a set out of range', { added, reading });
+
+    expect(added).toBe(FULL_SET);
+    expect(reading.drawn).toBe(0);
+    expect(reading.hits).toBe(0);
+    expect(reading.mean).toBeLessThanOrEqual(1);
   });
 });
 
@@ -1304,22 +1364,41 @@ test.describe('the overlay marks', () => {
   test('the name label count is capped at a full set', async ({ page }) => {
     await openMap(page, '#c=0,0,0&d=4000&p=35&y=0');
     await addCategory(page, 'Alpha');
-    const added = await page.evaluate(() => {
+    const added = await page.evaluate((total: number) => {
       const records: SystemRecordInput[] = [];
-      // The grid is 192 light years wide, which is about 30 CSS pixels at this view, so
-      // the labels of the nearest systems do not all fall on each other and the count
-      // reaches the cap rather than the overlap rule.
-      for (let index = 0; index < 10000; index += 1) {
-        const column = index % 100;
-        const row = Math.floor(index / 100);
+      // The step is 352 light years, which is about 55 CSS pixels at this view. A name
+      // label box is under 40 by 20, so the labels of the systems nearest the cursor
+      // fall on each other no more and the count reaches the cap.
+      //
+      // The step is read and not derived. A sweep of the step at this view gave 34
+      // labels at 192 and at 224, 48 at 256, 60 at 288, and 64 at 320 and above. 320 is
+      // the smallest step that reaches the cap, and 352 holds it with one step of
+      // margin. Above 384 the plane leaves the model bounds and the reader rejects part
+      // of the set, so 352 is also the widest step that still lands 50,000 records.
+      //
+      // The set stays one plane and the side follows the count, so the step by the
+      // cursor holds at every set size. At a full set the plane is about 79,000 light
+      // years across and most of it is past the edge of the frame. That is what the
+      // test is about: the label pass reads the whole set to find the 66 nearest the
+      // cursor, and those come from the middle of the plane, where the step is the one
+      // above. A cube of the same step would stack systems behind each other on the
+      // screen, and far fewer labels would then reach the frame.
+      const side = Math.ceil(Math.sqrt(total));
+      for (let index = 0; index < total; index += 1) {
+        const column = index % side;
+        const row = Math.floor(index / side);
         records.push({
           name: `S${index}`,
-          coords: { x: (column - 50) * 192, y: (row - 50) * 192, z: 0 },
+          coords: {
+            x: (column - side / 2) * 352,
+            y: (row - side / 2) * 352,
+            z: 0,
+          },
           categories: ['Alpha'],
         });
       }
       return window.galaxyMap?.addSystems(records).added ?? -1;
-    });
+    }, FULL_SET);
     await setView(page, [0, 0, 0], 4000);
     await page.evaluate(() => {
       window.galaxyMap?.setSystemNamesVisible(true);
@@ -1329,9 +1408,10 @@ test.describe('the overlay marks', () => {
     const labels = (await markCounts(page)).labels;
     console.log('the capped label count', { added, labels });
 
-    expect(added).toBe(10000);
-    expect(labels).toBeLessThanOrEqual(64);
-    expect(labels).toBeGreaterThan(0);
+    expect(added).toBe(FULL_SET);
+    // The count reads the cap itself, so a break of the cap fails the test. The
+    // scenario asks for 64 or fewer, and this reading is the cap.
+    expect(labels).toBe(64);
   });
 
   /**
