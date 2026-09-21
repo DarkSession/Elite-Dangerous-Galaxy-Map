@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { openMap } from './helpers';
+import { FULL_SET, openMap } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 import type {
   LineInput,
@@ -4137,16 +4137,16 @@ test.describe('the HUD budget', () => {
   test('the node count does not follow the set', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha']);
-    const added = await page.evaluate(() => {
+    const added = await page.evaluate((total: number) => {
       const records: SystemRecordInput[] = [];
       let state = 4711;
       const unit = (): number => {
         state = (state * 1103515245 + 12345) & 0x7fffffff;
         return state / 0x7fffffff;
       };
-      for (let index = 0; index < 10000; index += 1) {
+      for (let index = 0; index < total; index += 1) {
         records.push({
-          name: `S${String(index).padStart(5, '0')}`,
+          name: `S${String(index).padStart(6, '0')}`,
           coords: {
             x: -49985 + unit() * 100000,
             y: -40985 + unit() * 81910,
@@ -4156,8 +4156,8 @@ test.describe('the HUD budget', () => {
         });
       }
       return window.__hudMap?.addSystems(records).added ?? -1;
-    });
-    expect(added).toBe(10000);
+    }, FULL_SET);
+    expect(added).toBe(FULL_SET);
 
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
     await categoryRow(page, 'Alpha').click();
@@ -4166,7 +4166,7 @@ test.describe('the HUD budget', () => {
     const nodes = await page.evaluate(
       () => document.querySelectorAll('#hud-wrap .gm-hud *').length,
     );
-    console.log('the HUD element count with 10,000 systems', nodes);
+    console.log('the HUD element count with a full set', nodes);
 
     expect(nodes).toBeLessThan(600);
   });

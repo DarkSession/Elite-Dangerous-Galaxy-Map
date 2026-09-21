@@ -44,6 +44,9 @@ export type { InteractionSwitches } from './camera/controls';
 // value is the single export of the `./nebulae` subpath, and its members are not part of
 // the supported surface: a host passes the value it imported.
 export type { NebulaSource } from './render/nebula-slot';
+// The record bound of the set. A host reads it to say how many records it may give, and
+// to cut a larger source before it calls `addSystems`.
+export { MAX_SYSTEMS } from './scene-data/real-systems';
 export type {
   AddReport,
   CategoryInput,

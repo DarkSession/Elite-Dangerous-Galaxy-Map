@@ -451,6 +451,55 @@ describe('the two styles', () => {
   });
 });
 
+describe('the marker pass buffers', () => {
+  test('give the card nothing before the first record and a block after it', () => {
+    const context = fakeContext();
+    const set = createSystemSet();
+    set.addCategories([{ name: 'Alpha', color: [1, 2, 3] }]);
+
+    const pass = createSystemPass(context.gl, fakeProgram(), fakeProgram());
+    const atBuild = context
+      .of('bufferData')
+      .reduce((total, call) => total + (call.args[1] as number), 0);
+
+    const records: SystemRecordInput[] = [];
+    for (let index = 0; index < 10; index += 1) {
+      records.push(record(`S${index}`, [index * 5, 0, 0], 'Alpha'));
+    }
+    expect(set.addSystems(records).added).toBe(10);
+
+    const before = context.calls.length;
+    pass.draw({
+      viewProjection: new Float32Array(16),
+      camera: [0, 0, 0],
+      cursorOffset: [0, 0, 0],
+      pixelRatio: 1,
+      set,
+      range: null,
+    });
+
+    const grown = context
+      .of('bufferData')
+      .reduce((total, call) => total + (call.args[1] as number), 0);
+
+    expect(atBuild).toBe(0);
+    // The block holds 64 records: three offsets and three colours of 4 bytes each, and
+    // two style range values of 4 bytes.
+    expect(grown).toBe(64 * (3 * 4 + 3 * 4 + 2 * 4));
+
+    // The growth orphans the store, so the colours and the style ranges go to the card
+    // again in the same frame, after the `bufferData` calls that grew it.
+    const frame = context.calls.slice(before);
+    const lastGrow = frame.map((call) => call.name).lastIndexOf('bufferData');
+    const writes = frame.filter((call) => call.name === 'bufferSubData');
+    expect(lastGrow).toBeGreaterThanOrEqual(0);
+    expect(writes).toHaveLength(3);
+    expect(frame.findIndex((call) => call.name === 'bufferSubData')).toBeGreaterThan(
+      lastGrow,
+    );
+  });
+});
+
 /** A set of one system in one category, which every range test below draws. */
 function oneSystemSet(): ReturnType<typeof createSystemSet> {
   const set = createSystemSet();

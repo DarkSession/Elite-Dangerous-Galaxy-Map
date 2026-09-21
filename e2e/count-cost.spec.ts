@@ -5,7 +5,7 @@
 // reading the budget states. Every other test of the HUD is in `e2e/hud.spec.ts`, which
 // runs in the parallel pass.
 import { expect, test } from '@playwright/test';
-import { openMap } from './helpers';
+import { FULL_SET, openMap } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -45,23 +45,26 @@ test('the count pass holds its budget', async ({ page }) => {
     );
   }, CORE);
 
-  const added = await page.evaluate((list) => {
-    const records: SystemRecordInput[] = [];
-    for (let index = 0; index < 10_000; index += 1) {
-      records.push({
-        name: `S${index}`,
-        coords: { x: index * 0.01, y: 0, z: 100 },
-        categories: [
-          list[index % 8] as string,
-          list[(index + 1) % 8] as string,
-          list[(index + 2) % 8] as string,
-          list[(index + 3) % 8] as string,
-        ],
-      });
-    }
-    return window.__hudMap?.addSystems(records).added ?? -1;
-  }, NAMES);
-  expect(added).toBe(10_000);
+  const added = await page.evaluate(
+    (value) => {
+      const records: SystemRecordInput[] = [];
+      for (let index = 0; index < value.total; index += 1) {
+        records.push({
+          name: `S${index}`,
+          coords: { x: index * 0.01, y: 0, z: 100 },
+          categories: [
+            value.names[index % 8] as string,
+            value.names[(index + 1) % 8] as string,
+            value.names[(index + 2) % 8] as string,
+            value.names[(index + 3) % 8] as string,
+          ],
+        });
+      }
+      return window.__hudMap?.addSystems(records).added ?? -1;
+    },
+    { names: NAMES, total: FULL_SET },
+  );
+  expect(added).toBe(FULL_SET);
 
   const hud = page.locator('#hud-wrap .gm-hud');
   await expect(hud.locator('.gm-hud__category-row[data-name="A"]')).toBeVisible();

@@ -7,7 +7,7 @@ import {
   starOffsets,
   starSpreadValue,
 } from '../packages/galaxy-map/src/scene-data/boxel';
-import { meanLuminanceFrame, openMap, settleLabels } from './helpers';
+import { FULL_SET, meanLuminanceFrame, openMap, settleLabels } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -718,7 +718,7 @@ test('a camera move stays inside the frame budget', async ({ page }) => {
   // The view sits at 1,000 light years, so the base class is 2 and a base boxel at Sol
   // places 243 stars rather than 30. The sweep then tests eight times as many stars.
   await openMap(page, '#c=0,0,0&d=1000&p=35&y=0');
-  await addSystemsAround(page, cameraOf([0, 0, 0], 1000), 10000, 600);
+  await addSystemsAround(page, cameraOf([0, 0, 0], 1000), FULL_SET, 600);
 
   const stats = await page.evaluate(async () => {
     const map = window.galaxyMap;
@@ -744,7 +744,7 @@ test('a base class change costs one slow frame at most', async ({ page }) => {
   // the reachable range now that the zoom goes to 10, but the field does not cross it.
   // The sweep crosses 640, 1,280 and 2,560.
   await openMap(page, '#c=0,0,0&d=500&p=35&y=0');
-  await addSystemsAround(page, cameraOf([0, 0, 0], 500), 10000, 600);
+  await addSystemsAround(page, cameraOf([0, 0, 0], 500), FULL_SET, 600);
 
   const stats = await page.evaluate(async () => {
     const map = window.galaxyMap;

@@ -11,6 +11,7 @@ import type { Locator, Page } from '@playwright/test';
 import {
   dumpFaction,
   dumpSystem,
+  FULL_SET,
   openMap,
   serveFactionsDump,
   FACTIONS_DUMP_URL,
@@ -150,9 +151,12 @@ async function openDatasets(page: Page, build: MapBuild): Promise<void> {
         return { categories: categories as unknown[], systems };
       }
       for (let index = 0; index < (entry.systems ?? 0); index += 1) {
+        // The line wraps every 10,000 records and steps along `z`. A straight ramp of
+        // the index leaves the model bounds at a full set, and the reader would then
+        // reject most of the records as `out-of-bounds`.
         systems.push({
           name: `${entry.id}-${index}`,
-          coords: { x: index, y: 0, z: index * 2 },
+          coords: { x: (index % 10000) - 5000, y: 0, z: ((index / 10000) | 0) * 20 },
           categories: [
             (categories[index % categories.length] as { name: string }).name,
           ],
@@ -374,15 +378,15 @@ test('an unknown id rejects and changes nothing', async ({ page }) => {
   expect(after).toMatchObject({ systems: 2, loaded: 'only' });
 });
 
-test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
+test('a full set of 50,000 systems switches inside the 40 ms budget', async ({
   page,
 }) => {
   await openDatasets(page, {
     entries: [
-      { id: 'full-a', systems: 10000, categories: 256 },
+      { id: 'full-a', systems: FULL_SET, categories: 256 },
       {
         id: 'full-b',
-        systems: 10000,
+        systems: FULL_SET,
         categories: 256,
         bounds: { mode: 'auto' },
         view: { fit: 'systems' },
@@ -392,7 +396,7 @@ test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
   });
 
   const before = await reading(page);
-  expect(before).toMatchObject({ systems: 10000, categories: 256 });
+  expect(before).toMatchObject({ systems: FULL_SET, categories: 256 });
 
   const measure = await page.evaluate(async () => {
     const map = window.__datasetMap;
@@ -404,7 +408,7 @@ test('a full set of 10,000 systems switches inside the 40 ms budget', async ({
   const frame = await drawFrames(page, 10);
   console.log('the switch took', measure, 'ms, and the map holds', after);
 
-  expect(after).toMatchObject({ systems: 10000, categories: 256, loaded: 'full-b' });
+  expect(after).toMatchObject({ systems: FULL_SET, categories: 256, loaded: 'full-b' });
   // The two new steps of the load are inside the measurement.
   expect(await readBounds(page)).toEqual({ mode: 'auto' });
   expect(measure).toBeLessThan(40);

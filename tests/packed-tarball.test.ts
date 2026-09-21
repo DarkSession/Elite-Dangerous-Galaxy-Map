@@ -27,11 +27,12 @@
 // `.library-build-`, which `.gitignore`, `.prettierignore` and the ESLint ignores all
 // match at any depth.
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { BUILT_IN_ICONS } from '../packages/galaxy-map/src/scene-data/marker-icons';
+import { MAX_SYSTEMS } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const libraryRoot = join(root, 'packages', 'galaxy-map');
@@ -75,6 +76,9 @@ beforeAll(() => {
       );
     },
   });
+  // The copy leaves `node_modules/` behind, so a link stands in for it. The built module
+  // imports `gl-matrix` by its bare name, and the case below loads that module.
+  symlinkSync(join(libraryRoot, 'node_modules'), join(packDir, 'node_modules'), 'dir');
   execFileSync(
     'pnpm',
     [
@@ -132,6 +136,17 @@ describe('the packed tarball', () => {
     expect(packed).toContain('dist/types/index.d.ts');
     expect(packed).toContain('dist/nebulae.js');
     expect(packed).toContain('dist/testing.js');
+  });
+
+  // The one exported value that is not a function. A host reads the bound to split a
+  // larger source before it calls `addSystems`, so the number has to reach the host
+  // through the built package and not through the source alone.
+  test('gives the record bound as a number', async () => {
+    const built = (await import(
+      pathToFileURL(join(packDir, 'dist', 'index.js')).href
+    )) as Record<string, unknown>;
+    expect(typeof built['MAX_SYSTEMS']).toBe('number');
+    expect(built['MAX_SYSTEMS']).toBe(MAX_SYSTEMS);
   });
 
   // The 16 built-in marker vectors. They are files of the build and not chunk text, so

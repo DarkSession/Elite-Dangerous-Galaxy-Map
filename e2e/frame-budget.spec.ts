@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { dumpFaction, dumpSystem, openMap, serveFactionsDump } from './helpers';
+import {
+  dumpFaction,
+  dumpSystem,
+  FULL_SET,
+  openMap,
+  serveFactionsDump,
+} from './helpers';
 import { TRACED_CORNER } from './region-views';
 import { DEFAULT_NEBULA_OCCLUSION } from '../packages/galaxy-map/src/render/nebula-slot';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
@@ -133,35 +139,45 @@ test('the closest zoom is under budget', async ({ page }) => {
 const SYSTEM_DISTANCES = [500, 4000, 20000, 120000];
 
 /**
- * Adds 10,000 systems of one category, spread over the model bounds. A fixed generator
- * makes the same set on every run.
+ * Adds `count` systems of one category, spread over the model bounds. A fixed generator
+ * makes the same set on every run. The count is a full set unless a test names another,
+ * because a test whose subject is the set reads the bound.
  */
-async function addSpreadSystems(page: Page, withIcons = false): Promise<number> {
-  return page.evaluate((icons: boolean) => {
-    const map = window.galaxyMap;
-    if (map === undefined) return -1;
-    map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
-    let state = 4711;
-    const unit = (): number => {
-      state = (state * 1103515245 + 12345) & 0x7fffffff;
-      return state / 0x7fffffff;
-    };
-    const records: SystemRecordInput[] = [];
-    for (let index = 0; index < 10000; index += 1) {
-      records.push({
-        name: `S${index}`,
-        coords: {
-          x: -49985 + unit() * 100000,
-          y: -40985 + unit() * 81910,
-          z: -24105 + unit() * 100000,
-        },
-        categories: ['Empire'],
-        ...(icons ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] } : {}),
-      } as SystemRecordInput);
-    }
-    map.addSystems(records);
-    return map.systemCount();
-  }, withIcons);
+async function addSpreadSystems(
+  page: Page,
+  withIcons = false,
+  count = FULL_SET,
+): Promise<number> {
+  return page.evaluate(
+    (options: { icons: boolean; count: number }) => {
+      const map = window.galaxyMap;
+      if (map === undefined) return -1;
+      map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+      let state = 4711;
+      const unit = (): number => {
+        state = (state * 1103515245 + 12345) & 0x7fffffff;
+        return state / 0x7fffffff;
+      };
+      const records: SystemRecordInput[] = [];
+      for (let index = 0; index < options.count; index += 1) {
+        records.push({
+          name: `S${index}`,
+          coords: {
+            x: -49985 + unit() * 100000,
+            y: -40985 + unit() * 81910,
+            z: -24105 + unit() * 100000,
+          },
+          categories: ['Empire'],
+          ...(options.icons
+            ? { icons: ['titan', 'mission', 'waypoint', 'bookmark'] }
+            : {}),
+        } as SystemRecordInput);
+      }
+      map.addSystems(records);
+      return map.systemCount();
+    },
+    { icons: withIcons, count },
+  );
 }
 
 /** Measures the mean frame time of one view over 300 frames. */
@@ -184,16 +200,16 @@ async function measureView(
   );
 }
 
-test('eight views stay under budget with 10,000 systems', async ({ page }) => {
+test('eight views stay under budget with 50,000 systems', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   for (const cursor of [SOL, GALACTIC_CENTRE]) {
     for (const distance of SYSTEM_DISTANCES) {
       const mean = await measureView(page, cursor, distance);
       console.log(
-        `10,000 systems, cursor ${cursor.join(',')} distance ${distance}: ` +
+        `${FULL_SET} systems, cursor ${cursor.join(',')} distance ${distance}: ` +
           `${mean.toFixed(3)} ms`,
       );
       expect(mean).toBeGreaterThan(0);
@@ -210,42 +226,43 @@ test('eight views stay under budget with 10,000 systems', async ({ page }) => {
 test('the default view holds the budget with every marker drawn', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   const mean = await measureView(page, SOL, 60000);
   const drawn = await page.evaluate(
     () => window.galaxyMap?.debug.systemMarkerCount() ?? -1,
   );
   console.log(
-    `10,000 systems at the default view: ${mean.toFixed(3)} ms, ${drawn} markers drawn`,
+    `${FULL_SET} systems at the default view: ${mean.toFixed(3)} ms, ${drawn} markers drawn`,
   );
 
   expect(mean).toBeGreaterThan(0);
   expect(mean).toBeLessThan(BUDGET_MS);
-  // Every marker of the set draws. Under the camera rule this view drew 8,322 of 10,000.
-  expect(drawn).toBe(10000);
+  // Every marker of the set draws. Under the camera rule this view drew 8,322 of 10,000
+  // markers, which is the reading the cull rule was written on.
+  expect(drawn).toBe(FULL_SET);
 });
 
 // The 10 light year view is the most costly of the five for the marker pass: the disc
 // is at its 16 CSS pixel cap there and the glow sprite is 2.5 times that, so every
 // marker inside its category's range fills the 40 CSS pixel cap and the pass writes the
 // largest number of fragments it ever writes.
-test('the closest zoom is under budget with 10,000 systems', async ({ page }) => {
+test('the closest zoom is under budget with 50,000 systems', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   for (const cursor of [SOL, GALACTIC_CENTRE]) {
     const mean = await measureView(page, cursor, 10);
     console.log(
-      `10,000 systems, cursor ${cursor.join(',')} distance 10: ${mean.toFixed(3)} ms`,
+      `${FULL_SET} systems, cursor ${cursor.join(',')} distance 10: ${mean.toFixed(3)} ms`,
     );
     expect(mean).toBeGreaterThan(0);
     expect(mean).toBeLessThan(BUDGET_MS);
   }
 });
 
-// The worst case the marker pass draws: every one of the 10,000 markers is inside its
+// The worst case the marker pass draws: every one of the markers is inside its
 // category's draw range, and every glow sprite is at or near its 40 CSS pixel cap. The
 // systems sit within 10 light years of Sol and the camera is 10 light years out, so the
 // range of a marker runs from 0 to 20 light years. The size curve reads 16 CSS pixels at
@@ -256,7 +273,7 @@ test('the closest zoom is under budget with every marker in range', async ({
   test.setTimeout(180000);
   await openMap(page);
 
-  const count = await page.evaluate(() => {
+  const count = await page.evaluate((total: number) => {
     const map = window.galaxyMap;
     if (map === undefined) return -1;
     map.addCategories([{ name: 'Near', color: [153, 230, 255], maxDrawRange: 300000 }]);
@@ -266,9 +283,9 @@ test('the closest zoom is under budget with every marker in range', async ({
       return state / 0x7fffffff;
     };
     const records: SystemRecordInput[] = [];
-    for (let index = 0; index < 10000; index += 1) {
+    for (let index = 0; index < total; index += 1) {
       // Every system sits inside a ball of 10 light years around Sol, so no marker is
-      // cut by the range, all 10,000 draw and each one is close enough for the size
+      // cut by the range, every marker draws and each one is close enough for the size
       // curve to give it the largest sprite. The cube root spreads them evenly through
       // the ball rather than around its centre.
       const radius = 10 * Math.cbrt(unit());
@@ -287,18 +304,18 @@ test('the closest zoom is under budget with every marker in range', async ({
     }
     map.addSystems(records);
     return map.systemCount();
-  });
-  expect(count).toBe(10000);
+  }, FULL_SET);
+  expect(count).toBe(FULL_SET);
 
   const mean = await measureView(page, SOL, 10);
   const drawn = await page.evaluate(
     () => window.__galaxyMap?.systemMarkerCount?.() ?? -1,
   );
   console.log(
-    `10,000 markers in range, cursor 0,0,0 distance 10: ${mean.toFixed(3)} ms, ` +
+    `${FULL_SET} markers in range, cursor 0,0,0 distance 10: ${mean.toFixed(3)} ms, ` +
       `${drawn} drawn`,
   );
-  expect(drawn).toBe(10000);
+  expect(drawn).toBe(FULL_SET);
   expect(mean).toBeGreaterThan(0);
   expect(mean).toBeLessThan(BUDGET_MS);
 });
@@ -451,7 +468,7 @@ test('the map paces its animation frames to the display', async ({ page }) => {
 test('the selection work stays inside its budget', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   // The cursor goes on one system, so its marker draws at the middle of the screen and
   // the pointer below hovers it.
@@ -499,7 +516,7 @@ test('the selection work stays inside its budget', async ({ page }) => {
 test('the icon placement holds the frame interval budget', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page, true)).toBe(10000);
+  expect(await addSpreadSystems(page, true)).toBe(FULL_SET);
 
   const position = await page.evaluate(() => {
     const map = window.galaxyMap;
@@ -559,7 +576,7 @@ test('the icon placement holds the frame interval budget', async ({ page }) => {
 test('a full set of icons holds the draw budget', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page, true)).toBe(10000);
+  expect(await addSpreadSystems(page, true)).toBe(FULL_SET);
 
   const cursor = await page.evaluate(() => {
     const map = window.galaxyMap;
@@ -581,7 +598,7 @@ test('a full set of icons holds the draw budget', async ({ page }) => {
     const mean = await measureView(page, cursor as [number, number, number], distance);
     const held = await placed();
     console.log(
-      `10,000 systems with 4 icons each at ${distance}: ${mean.toFixed(3)} ms, ` +
+      `${FULL_SET} systems with 4 icons each at ${distance}: ${mean.toFixed(3)} ms, ` +
         `${held} placements`,
     );
 
@@ -594,7 +611,7 @@ test('a full set of icons holds the draw budget', async ({ page }) => {
 test('the frame interval holds with the selection work running', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   await page.evaluate(() => {
     const map = window.galaxyMap;
@@ -607,7 +624,7 @@ test('the frame interval holds with the selection work running', async ({ page }
   await waitFrames(page, 5);
 
   const stats = await intervalOver120Frames(page);
-  console.log('the interval with 10,000 systems and the pick', stats);
+  console.log('the interval with a full set and the pick', stats);
 
   expect(stats.frames).toBeGreaterThanOrEqual(110);
   expect(stats.draws).toBeGreaterThanOrEqual(110);
@@ -617,7 +634,7 @@ test('the frame interval holds with the selection work running', async ({ page }
 test('the frame interval holds with the HUD on', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page, '', { hud: true });
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
 
   // The demo page builds the HUD, so the panels below are the page's own.
   await expect(page.locator('.gm-hud__category-row[data-name="Empire"]')).toBeVisible();
@@ -677,7 +694,9 @@ test('the grid draws inside its budget', async ({ page }) => {
 test('the grid labels hold the frame rate', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  // The count stays at 10,000 and does not follow the bound. The subject is the label
+  // sweep and the set is the backdrop, and the scenario names 10,000 systems.
+  expect(await addSpreadSystems(page, false, 10000)).toBe(10000);
 
   await page.evaluate(() => {
     const map = window.galaxyMap;
@@ -753,7 +772,9 @@ test('reading the background back does not stall the frame', async ({ page }) =>
 test('the selection flight holds the frame rate', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page);
-  expect(await addSpreadSystems(page)).toBe(10000);
+  // The count stays at 10,000 and does not follow the bound. The subject is the flight
+  // and the set is the backdrop, and the scenario names 10,000 systems.
+  expect(await addSpreadSystems(page, false, 10000)).toBe(10000);
 
   await page.evaluate(() => {
     window.galaxyMap?.setView({
@@ -870,7 +891,7 @@ test('a full shape set is read inside its budget', async ({ page }) => {
 test('a full shape set holds the frame rate', async ({ page }) => {
   test.setTimeout(180000);
   await openMap(page, '', { hud: true });
-  expect(await addSpreadSystems(page)).toBe(10000);
+  expect(await addSpreadSystems(page)).toBe(FULL_SET);
   const added = await addFullShapeSet(page);
   expect(added.spheres).toBe(1024);
   expect(added.lines).toBe(4096);

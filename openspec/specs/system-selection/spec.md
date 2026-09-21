@@ -536,7 +536,7 @@ is on, every drawn marker SHALL be a label candidate.
 **The host sets the state the map starts in.** `GalaxyMapOptions` SHALL carry
 `systemNames`. True starts the map with the labels on, and the switch SHALL be **off**
 when the options leave it out, when it is false, and when it holds a value that is not a
-boolean. Off stays the default because a set of 10,000 systems opens on a screen of
+boolean. Off stays the default because a set of 50,000 systems opens on a screen of
 labels otherwise, and the other three map options already carry a default of their own.
 
 **A name label SHALL carry a stroke and SHALL NOT carry a blurred shadow.** The stroke
@@ -586,13 +586,13 @@ The placement SHALL hold to these bounds:
 
   **The sweep SHALL not run while the name switch is off.** The only labels of such a frame
   are the hover label and the selection label, both pinned, and the rule above never hides a
-  pinned label. A sweep of 10,000 candidates for a reader that cannot use the answer is work
+  pinned label. A sweep of 50,000 candidates for a reader that cannot use the answer is work
   the frame does not owe.
 
   **66 and not 64**, because the label pass now skips the hovered and the selected index as
   it walks the keeper, where the sweep once left them out before they reached it. Two more
   entries hold the label count where it was in a frame that carries both. A sort of the whole candidate list is what
-  that bound rules out in practice: the list can hold 10,000 entries.
+  that bound rules out in practice: the list can hold 50,000 entries.
 - A candidate whose label box overlaps a box already placed SHALL be skipped, by the same
   box test the region labels use.
 - At most **64** name labels, plus the hover label and the selection label, SHALL be in
@@ -617,9 +617,10 @@ The placement SHALL hold to these bounds:
 
 #### Scenario: The label count is capped at a full set
 
-- **WHEN** the browser test adds 10,000 systems inside the frame, turns the switch on,
-  draws a frame and counts the name labels
-- **THEN** the count is 64 or fewer
+- **WHEN** the browser test adds 50,000 systems as a plane that reaches past the frame,
+  turns the switch on, draws a frame and counts the name labels
+- **THEN** the label pass reads the whole set to find the 66 nearest the cursor, and the
+  count is 64, which is the cap
 
 #### Scenario: Two labels do not overlap
 

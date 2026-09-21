@@ -11,7 +11,7 @@
 // offsets below are exact numbers rather than a reading of the size.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap, readRect } from './helpers';
+import { FULL_SET, openMap, readRect } from './helpers';
 import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/real-systems';
 import type { IconPlacement } from '../packages/galaxy-map/src/render/icon-pass';
 
@@ -1028,7 +1028,7 @@ test.describe('the bounds of the placement', () => {
     test.setTimeout(120000);
     await openMap(page, `#c=0,0,0&d=1000&p=${PITCH}&y=0`);
     await addCategory(page);
-    const added = await page.evaluate(() => {
+    const added = await page.evaluate((total: number) => {
       const map = window.galaxyMap;
       if (map === undefined) return -1;
       let state = 4711;
@@ -1037,7 +1037,7 @@ test.describe('the bounds of the placement', () => {
         return state / 0x7fffffff;
       };
       const records: SystemRecordInput[] = [];
-      for (let index = 0; index < 10000; index += 1) {
+      for (let index = 0; index < total; index += 1) {
         records.push({
           name: `S${index}`,
           coords: {
@@ -1050,7 +1050,7 @@ test.describe('the bounds of the placement', () => {
         } as SystemRecordInput);
       }
       return map.addSystems(records).added;
-    });
+    }, FULL_SET);
     await setView(page, [0, 0, 0], 1000);
     await settleIcons(page, 128);
 
@@ -1063,13 +1063,13 @@ test.describe('the bounds of the placement', () => {
       arrows: document.querySelectorAll('.gm-system-arrow').length,
       layers: document.querySelectorAll('.gm-system-stacks').length,
     }));
-    console.log('the bounds at 10,000 systems with 4 icons each', {
+    console.log('the bounds at a full set with 4 icons each', {
       held,
       calls,
       elements,
     });
 
-    expect(added).toBe(10000);
+    expect(added).toBe(FULL_SET);
     expect(held.arrows).toBeGreaterThan(0);
     expect(held.arrows).toBeLessThanOrEqual(32);
     expect(held.icons).toBeLessThanOrEqual(128);

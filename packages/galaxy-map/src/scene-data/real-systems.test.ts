@@ -6,6 +6,7 @@ import {
   DEFAULT_MARKER_COLOR,
   DEFAULT_MARKER_STYLE,
   DEFAULT_MAX_DRAW_RANGE_LY,
+  FIRST_RECORD_BLOCK,
   MAX_CATEGORIES,
   MAX_SYSTEMS,
   MODEL_BOUNDS,
@@ -532,6 +533,84 @@ describe('the set', () => {
     expect(Array.from(set.categoryIndices)).toEqual([1, 0]);
   });
 
+  test('holds no record buffer before the first record', () => {
+    // The reading is the store behind the member and not the member: `positions.length`
+    // is `count * 3` at every allocation.
+    const set = createSystemSet();
+    expect(set.positions.buffer.byteLength).toBe(0);
+    expect(set.categoryIndices.buffer.byteLength).toBe(0);
+    expect(set.markerFlags.buffer.byteLength).toBe(0);
+  });
+
+  test('grows a small set to a block and not to the bound', () => {
+    const set = setWith('A');
+    set.addSystems(
+      Array.from({ length: 10 }, (_ignored, index) => record(`s${index}`, 'A')),
+    );
+
+    const bytes = set.positions.buffer.byteLength;
+    expect(bytes).toBe(FIRST_RECORD_BLOCK * 3 * 8);
+    // Under 1 percent of the store a set at the bound holds.
+    expect(bytes).toBeLessThan(MAX_SYSTEMS * 3 * 8 * 0.01);
+  });
+
+  test('keeps the first record over a growth', () => {
+    const set = setWith('A');
+    set.addSystems(
+      Array.from({ length: 10 }, (_ignored, index) => ({
+        ...record(`s${index}`, 'A', [index + 1, 0, 0]),
+        id64: index + 1,
+      })),
+    );
+    const firstBytes = set.positions.buffer.byteLength;
+    const firstVersion = set.version;
+
+    // Half the bound again, which is 25,010 records at a bound of 50,000. The count
+    // follows the constant, so it stays true at whatever number the bound lands on.
+    const more = Math.floor(MAX_SYSTEMS / 2);
+    set.addSystems(
+      Array.from({ length: more }, (_ignored, index) => ({
+        ...record(`t${index}`, 'A'),
+        id64: 1000000 + index,
+      })),
+    );
+
+    expect(set.count).toBe(10 + more);
+    expect(set.positions.buffer.byteLength).toBeGreaterThan(firstBytes);
+    expect(Array.from(set.positions.subarray(0, 3))).toEqual([1, 0, 0]);
+    expect(set.version).toBeGreaterThan(firstVersion);
+  });
+
+  test('holds the category rows over many replacements of one record', () => {
+    const set = setWith('A', 'B', 'C');
+    const write = (...categories: string[]): void => {
+      set.addSystems([
+        { name: 'One', coords: { x: 0, y: 0, z: 0 }, categories, id64: 1 },
+      ]);
+    };
+
+    write('A', 'B', 'C');
+    const firstRows = set.categoryRowCount;
+    for (let step = 0; step < 100; step += 1) {
+      write('B');
+      write('A', 'B', 'C');
+    }
+
+    // The record keeps the run it has while the new count fits in it, so 200 more
+    // replacements add no row. A write that appends a run per change of the count
+    // would read 403 rows here.
+    expect(firstRows).toBe(3);
+    expect(set.categoryRowCount).toBe(3);
+    // The run still holds the rows of the record: the marker draws through 'B' while
+    // 'A' is off.
+    expect(set.count).toBe(1);
+    set.setCategoryVisible('A', false);
+    expect(set.drawsMarker(0)).toBe(true);
+    set.setCategoryVisible('B', false);
+    set.setCategoryVisible('C', false);
+    expect(set.drawsMarker(0)).toBe(false);
+  });
+
   test('raises the version on an add, a replace and a clear', () => {
     const set = setWith('A');
     const start = set.version;
@@ -583,7 +662,7 @@ describe('the set', () => {
     expect(afterClear).toBeGreaterThan(afterAdd);
   });
 
-  test('adds 10,000 records and replaces them in under 50 ms each', TIMED_TEST, () => {
+  test('adds 50,000 records and replaces them in under 250 ms each', TIMED_TEST, () => {
     const set = setWith('A');
     const records = Array.from({ length: MAX_SYSTEMS }, (_ignored, index) => ({
       ...record(`s${index}`, 'A', [index * 0.001, 0, 0]),
@@ -602,8 +681,18 @@ describe('the set', () => {
     expect(second.replaced).toBe(MAX_SYSTEMS);
     expect(set.count).toBe(MAX_SYSTEMS);
     console.log('addSystems ms', { firstMs, secondMs });
-    expect(firstMs).toBeLessThan(50);
-    expect(secondMs).toBeLessThan(50);
+    // The budget follows the bound, because the pass is linear in the records: it reads
+    // one record, writes one slot and sets one map entry, and no step of it reads the
+    // set. The allowance per record is the one the 10,000-record bound held, which is
+    // 50 ms for 10,000 records, so `MAX_SYSTEMS` records get 250 ms. The bound raise
+    // therefore weakens nothing: the same code that passed at 10,000 passes here.
+    //
+    // The first pass also grows the record buffers, so it reads higher than the second
+    // one. Both are held to the same number. The two passes read 29.0 ms and 17.5 ms over
+    // 50,000 records on the machine this project measures on.
+    const budgetMs = (MAX_SYSTEMS / 10000) * 50;
+    expect(firstMs).toBeLessThan(budgetMs);
+    expect(secondMs).toBeLessThan(budgetMs);
   });
 });
 
@@ -928,7 +1017,7 @@ describe('the category switch', () => {
     expect(set.categoryIndices[0]).toBe(set.categoryIndex('B'));
   });
 
-  test('sweeps 10,000 systems of 4 categories in under 2 ms', TIMED_TEST, () => {
+  test('sweeps 50,000 systems of 4 categories in under 2 ms', TIMED_TEST, () => {
     const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
     const set = setWith(...names);
     const records = Array.from(
@@ -974,11 +1063,16 @@ describe('the category switch', () => {
     // `e2e/systems.spec.ts` holds every one of its eight readings to the budget on the
     // machine this project measures on.
     //
+    // The bound holds at five times the records, so it is not raised here. The sweep
+    // reads the rows of a record out of typed arrays, which is the pass this change made
+    // cheaper. It gave a middle reading of 0.39 ms over 50,000 records on the machine
+    // this project measures on, where it gave 0.36 ms over 10,000 records before.
+    //
     // The pipeline gets a wider bound, because a GitHub runner measures itself and not
-    // this code. The same sweep gave a middle reading of 0.36 ms on the machine this
-    // project measures on and 0.94, 1.47, 1.99 and 2.38 ms on four runs of the pipeline.
-    // One run passed the 2 ms bound by 8 microseconds and the next one failed it. The
-    // budget the requirement states is 2 ms, so that is the bound this project measures
+    // this code. The same sweep gave 0.94, 1.47, 1.99 and 2.38 ms on four runs of the
+    // pipeline at 10,000 records. One run passed the 2 ms bound by 8 microseconds and
+    // the next one failed it. The budget the requirement states is 2 ms, so that is the
+    // bound this project measures
     // against. The pipeline holds 8 ms, which is more than three times the slowest
     // reading a runner has given, and which still fails a sweep that gets an order of
     // magnitude slower.
@@ -1055,6 +1149,32 @@ describe('the icon index list', () => {
     expect(set.iconIndexCount).toBe(0);
     expect(set.iconSystemCount).toBe(0);
     expect(Array.from(set.iconIndices)).toEqual([]);
+  });
+
+  test('reads nothing over a full set that names no icon', () => {
+    // The two-record case above states the rule. This one states it at the bound, which
+    // is what the requirement asks: the per-frame placement work follows the records
+    // that carry icons and not the records the set holds.
+    const set = setWith('A');
+    set.addSystems(
+      Array.from({ length: MAX_SYSTEMS }, (_ignored, index) =>
+        record(`s${index}`, 'A', [index * 0.001, 0, 0]),
+      ),
+    );
+
+    expect(set.count).toBe(MAX_SYSTEMS);
+    expect(set.iconIndexCount).toBe(0);
+    expect(set.iconSystemCount).toBe(0);
+    expect(Array.from(set.iconIndices)).toEqual([]);
+
+    // One record with an icon turns the list back on, and the list holds that one
+    // record and no other.
+    set.addSystems(
+      asRecords([{ ...record('s5', 'A', [0.005, 0, 0]), icons: ['titan'] }]),
+    );
+
+    expect(set.iconIndexCount).toBe(1);
+    expect(Array.from(set.iconIndices)).toEqual([5]);
   });
 
   test('names the index of each record that holds an icon', () => {

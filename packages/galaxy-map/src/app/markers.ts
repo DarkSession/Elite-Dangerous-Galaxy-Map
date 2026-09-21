@@ -15,7 +15,7 @@ import {
 } from '../scene-data/nearest-keep';
 import type { NearestKeep } from '../scene-data/nearest-keep';
 import { markerCssSize } from '../scene-data/marker-size';
-import { DEFAULT_MAX_DRAW_RANGE_LY } from '../scene-data/real-systems';
+
 import type { RealSystemSet } from '../scene-data/real-systems';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
@@ -262,7 +262,10 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
       const count = set.count;
       const positions = set.positions;
       const flags = set.markerFlags;
-      const categoryIndices = set.categoryIndices;
+      // The draw range of the category each system draws through, which the set keeps as
+      // a typed array. The sweep read the category row of every system before, which was
+      // a table lookup and a property read per system.
+      const ranges = set.drawRanges;
       const camera = cameraPosition(view);
       const matrix = viewProjectionMatrix(view, viewport);
       const near = nearPlane(view.distance);
@@ -292,9 +295,7 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         const y = (positions[base + 1] as number) - camera[1];
         // The renderer's world frame runs its third axis the other way to the game's.
         const z = camera[2] - (positions[base + 2] as number);
-        const category = set.category(categoryIndices[index] as number);
-        const limit =
-          category === null ? DEFAULT_MAX_DRAW_RANGE_LY : category.maxDrawRange;
+        const limit = ranges[index] as number;
         const cx = x - cursorOffset[0];
         const cy = y - cursorOffset[1];
         const cz = z - cursorOffset[2];
@@ -328,17 +329,39 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
       // the keeper and the hover label is placed first.
       resetNearest(keep);
       if (namesOn && count > 0) {
+        // The sweep walks the whole set, so it holds no place object and calls nothing
+        // per system: `placeOf` above builds a place, which is the right shape for the
+        // three single reads and the wrong one for a walk of 50,000 records.
+        //
         // A candidate outside the viewport is dropped before any other work, so the
-        // nearest-66 rule reads only what the frame can show.
+        // nearest-66 rule reads only what the frame can show, and the square root of the
+        // camera range runs after that drop.
+        const offsetX = cursorOffset[0];
+        const offsetY = cursorOffset[1];
+        const offsetZ = cursorOffset[2];
         for (let index = 0; index < count; index += 1) {
-          const spot = placeOf(index);
-          if (spot === null) continue;
-          if (spot.x < 0 || spot.y < 0) continue;
-          if (spot.x > viewport.width || spot.y > viewport.height) continue;
+          if (flags[index] !== 1) continue;
+          const base = index * 3;
+          const x = (positions[base] as number) - camera[0];
+          const y = (positions[base + 1] as number) - camera[1];
+          const z = camera[2] - (positions[base + 2] as number);
+          const limit = ranges[index] as number;
+          const cx = x - offsetX;
+          const cy = y - offsetY;
+          const cz = z - offsetZ;
+          if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
+          const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+          if (clipW <= near) continue;
+          const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
+          const spotX = (clipX / clipW + 1) * halfWidth;
+          if (spotX < 0 || spotX > viewport.width) continue;
+          const clipY = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
+          const spotY = (1 - clipY / clipW) * halfHeight;
+          if (spotY < 0 || spotY > viewport.height) continue;
           // Every drawn marker is offered, the hovered one and the selected one as well:
           // the label pass skips those two indices as it walks the keeper, and the
           // occlusion test needs every marker that can hide a label.
-          offerNearest(keep, index, rangeOf(index));
+          offerNearest(keep, index, Math.sqrt(x * x + y * y + z * z));
         }
       }
 

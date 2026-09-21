@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { DEFAULT_MAX_DRAW_RANGE_LY } from '../scene-data/real-systems';
 import type { RealSystem, RealSystemSet } from '../scene-data/real-systems';
 import type { View } from '../camera/view';
 import {
@@ -176,6 +177,7 @@ function fakeSet(systems: readonly RealSystem[]): RealSystemSet {
     positions,
     markerFlags: new Uint8Array(systems.length).fill(1),
     categoryIndices: new Uint16Array(systems.length),
+    drawRanges: new Float32Array(systems.length).fill(DEFAULT_MAX_DRAW_RANGE_LY),
     category: () => null,
     system: (index: number): RealSystem | null => systems[index] ?? null,
   };

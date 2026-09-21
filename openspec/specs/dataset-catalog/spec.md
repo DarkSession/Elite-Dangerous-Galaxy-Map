@@ -429,7 +429,7 @@ not.
 The dump read on **2026-09-17** gives **4,231 systems**: 3,683 for Canonn, of which 1,864
 controlled and 1,819 present, and 1,254 for Canonn Deep Space Research, of which 310
 controlled and 944 present. **706** of the 4,231 name more than one category, and every one
-lies inside the model bounds. The set is well under the 10,000 systems `real-systems`
+lies inside the model bounds. The set is well under the 50,000 systems `real-systems`
 holds. These numbers describe that dump and no other: a later dump gives other numbers, so
 no test SHALL assert them against the live file.
 
@@ -448,7 +448,7 @@ entry's label, which `dataset-catalog` already states. The page SHALL NOT stop t
 loop and SHALL NOT leave a half-written set.
 
 **The budget.** The frame loop SHALL keep drawing while the fetch and the read run: with
-the HUD on and a set of 10,000 systems at 1920x1080, the read SHALL NOT cost the map a
+the HUD on and a set of 50,000 systems at 1920x1080, the read SHALL NOT cost the map a
 frame. The time the fetch itself takes is the network's and is the host's to bear, which
 `dataset-catalog` already states.
 

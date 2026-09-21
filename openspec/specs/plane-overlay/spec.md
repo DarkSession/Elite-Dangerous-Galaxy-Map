@@ -98,7 +98,7 @@ host SHALL carry none.
 
 **The cost of one placement is fixed.** It is four projections, one 8 by 8 solve for the
 homography and one style write. It does not follow the host's data set, which may hold
-10,000 systems, and it does not follow the 400 billion systems of the galaxy. A frame that
+50,000 systems, and it does not follow the 400 billion systems of the galaxy. A frame that
 places 8 coordinate labels and 1 cursor marker therefore does 36 projections and 9 solves.
 
 **A placement SHALL write a style property only when it differs** from the one the element

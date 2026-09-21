@@ -8,8 +8,18 @@ import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' }
 import type { Range } from '../galaxy-model/types';
 import type { SystemBox } from '../camera/view';
 
-/** The largest number of systems the set holds. */
-export const MAX_SYSTEMS = 10000;
+/**
+ * The largest number of systems the set holds. The set allocates no record buffer for the
+ * bound: it grows the buffers with the records, so a host pays for the records it gives.
+ */
+export const MAX_SYSTEMS = 50000;
+
+/**
+ * How many records the first block of each record buffer holds. The set allocates no
+ * record buffer before the first record and doubles the block when the next record does
+ * not fit, so a host pays for the records it holds and not for the bound.
+ */
+export const FIRST_RECORD_BLOCK = 64;
 
 /** The largest number of categories the table holds. */
 export const MAX_CATEGORIES = 256;
@@ -327,10 +337,23 @@ export interface RealSystemSet {
    */
   readonly markerFlags: Uint8Array;
   /**
+   * The draw range of the category each system draws through, in light years, in the
+   * same order. It is 0 where the marker does not draw. The pick reads it instead of
+   * the category row of every system, so the sweep costs one typed array read per
+   * system and no table lookup.
+   */
+  readonly drawRanges: Float32Array;
+  /**
    * How long the last rebuild of the flags took, in milliseconds. A browser test reads
    * it through the handle to hold the sweep to its budget.
    */
   readonly lastSweepMs: number;
+  /**
+   * How many category rows the flat store holds. A unit case reads it to hold the store
+   * to the records, because a replacement must write over the run of the record and not
+   * append a second one.
+   */
+  readonly categoryRowCount: number;
   /**
    * The smallest axis-aligned box that holds every system the set has been given, in game
    * coordinates. The `auto` browsable bound reads it.
@@ -525,29 +548,34 @@ export function createSystemSet(): RealSystemSet {
   let categoryVersion = 0;
   let categoryTableVersion = 0;
 
-  const positions = new Float64Array(MAX_SYSTEMS * 3);
-  const categoryIndices = new Uint16Array(MAX_SYSTEMS);
+  // The record buffers. Each one starts empty and grows when the next record does not
+  // fit, so a map that holds no record holds no record buffer. A reader must not hold
+  // one over a growth: the public getters cut the store the set holds now, and `version`
+  // rises where the set grows.
+  let capacity = 0;
+  let positions = new Float64Array(0);
+  let categoryIndices = new Uint16Array(0);
   const systems: RealSystem[] = [];
   // The running box of every system the set has been given. `boxEmpty` is the flag, so a
   // reader never meets the numbers the box holds before the first record.
   let boxEmpty = true;
   const boxMin: [number, number, number] = [0, 0, 0];
   const boxMax: [number, number, number] = [0, 0, 0];
-  // The identity of each system, so a call of 10,000 records costs 10,000 map lookups
+  // The identity of each system, so a call of 50,000 records costs 50,000 map lookups
   // rather than a scan of the set for each record.
   const slotOf = new Map<string, number>();
   let version = 0;
   // The slots whose record named at least one icon, and a flag per slot so a
   // replacement writes no second entry. The renderer walks this list and not the set,
-  // so the per-frame stack work follows the records that carry icons and not the 10,000
+  // so the per-frame stack work follows the records that carry icons and not the 50,000
   // the set can hold.
   //
   // The list rises with a record that carries an icon and empties only where the set
   // does, so it reads high and never low. A record that replaces one with icons by one
   // without leaves its index in the list: the reader takes the icons of each entry, so
   // a stale entry costs one read and draws nothing.
-  const iconIndices = new Int32Array(MAX_SYSTEMS);
-  const iconFlags = new Uint8Array(MAX_SYSTEMS);
+  let iconIndices = new Int32Array(0);
+  let iconFlags = new Uint8Array(0);
   let iconIndexCount = 0;
 
   /** Puts a slot in the icon list, once. */
@@ -570,12 +598,91 @@ export function createSystemSet(): RealSystemSet {
   // One byte per system: 1 when its marker draws. The flags follow the set, the
   // category table and the filter, and the visibility and the filter both raise
   // `categoryVersion`, so one pair of version numbers says when to build them again.
-  const markerFlags = new Uint8Array(MAX_SYSTEMS);
+  let markerFlags = new Uint8Array(0);
+  // The draw range of the drawn category of each system, and 0 where no marker draws.
+  // The pick reads it rather than the category row of every system.
+  let drawRanges = new Float32Array(0);
+  // The categories each record names, as table rows, in one flat run per record. The
+  // sweep reads the rows of a record out of typed arrays: a name lookup per category
+  // per record is what the sweep cost before, and it is what the bound could not hold.
+  //
+  // A record's names resolve to rows when the record arrives, and a row never moves: a
+  // replacement under the same name keeps its index, and only the paired clear empties
+  // the table. So the rows of a record hold until the record is written again.
+  let catStart = new Int32Array(0);
+  let catCount = new Uint16Array(0);
+  let catRows = new Uint16Array(0);
+  // How many rows the run of each record holds, which is the largest count the record
+  // has carried. A replacement writes over the run while its count fits, so a record
+  // that is written again and again adds no row to the flat store.
+  let catRoom = new Uint16Array(0);
+  let catRowCount = 0;
+  // One entry per table row: 1 while the row is on, and the row's draw range. The sweep
+  // reads both by row, so it makes no lookup by name. Row 0 carries the library defaults
+  // while the table is empty, which is the row an uncategorised set draws through.
+  const rowVisible = new Uint8Array(MAX_CATEGORIES);
+  const rowRange = new Float64Array(MAX_CATEGORIES);
+  rowVisible.fill(1);
+  rowRange.fill(DEFAULT_MAX_DRAW_RANGE_LY);
   let flagsVersion = -1;
   let flagsCategoryVersion = -1;
   // How long the last rebuild of the flags took. The sweep runs on a change and not on
-  // a frame, and the spec holds it under 2 milliseconds for 10,000 systems.
+  // a frame, and the spec holds it under 2 milliseconds for 50,000 systems.
   let lastSweepMs = 0;
+
+  /**
+   * Makes room for `needed` records. It allocates the first block on the first record
+   * and doubles the block after that, so the copies are logarithmic in the record count.
+   * Growth replaces every record buffer, so `version` rises here: a reader that caches by
+   * version then sees that the store behind the members moved.
+   */
+  const grow = (needed: number): void => {
+    if (needed <= capacity) return;
+    let next = capacity === 0 ? FIRST_RECORD_BLOCK : capacity;
+    while (next < needed) next *= 2;
+    if (next > MAX_SYSTEMS) next = MAX_SYSTEMS;
+
+    const nextPositions = new Float64Array(next * 3);
+    nextPositions.set(positions);
+    positions = nextPositions;
+    const nextCategoryIndices = new Uint16Array(next);
+    nextCategoryIndices.set(categoryIndices);
+    categoryIndices = nextCategoryIndices;
+    const nextIconIndices = new Int32Array(next);
+    nextIconIndices.set(iconIndices);
+    iconIndices = nextIconIndices;
+    const nextIconFlags = new Uint8Array(next);
+    nextIconFlags.set(iconFlags);
+    iconFlags = nextIconFlags;
+    const nextMarkerFlags = new Uint8Array(next);
+    nextMarkerFlags.set(markerFlags);
+    markerFlags = nextMarkerFlags;
+    const nextDrawRanges = new Float32Array(next);
+    nextDrawRanges.set(drawRanges);
+    drawRanges = nextDrawRanges;
+    const nextCatStart = new Int32Array(next);
+    nextCatStart.set(catStart);
+    catStart = nextCatStart;
+    const nextCatCount = new Uint16Array(next);
+    nextCatCount.set(catCount);
+    catCount = nextCatCount;
+    const nextCatRoom = new Uint16Array(next);
+    nextCatRoom.set(catRoom);
+    catRoom = nextCatRoom;
+
+    capacity = next;
+    version += 1;
+  };
+
+  /** Makes room for `needed` category rows in the flat run, by the same block rule. */
+  const growRows = (needed: number): void => {
+    if (needed <= catRows.length) return;
+    let next = catRows.length === 0 ? FIRST_RECORD_BLOCK : catRows.length;
+    while (next < needed) next *= 2;
+    const nextRows = new Uint16Array(next);
+    nextRows.set(catRows);
+    catRows = nextRows;
+  };
 
   /**
    * The table index of the first category a record names. A record that names none takes
@@ -598,33 +705,43 @@ export function createSystemSet(): RealSystemSet {
    * A system that names no category always draws, and it takes the internal row: no
    * switch reaches it.
    */
-  const firstCategoryOn = (system: RealSystem): number => {
-    const names = system.categories;
-    if (names.length === 0) return UNCATEGORISED_INDEX;
-    for (let index = 0; index < names.length; index += 1) {
-      const name = names[index] as string;
-      if (categoryVisible.get(name) !== false) return categoryOf.get(name) ?? 0;
+  const firstCategoryOn = (slot: number): number => {
+    const count = catCount[slot] as number;
+    if (count === 0) return UNCATEGORISED_INDEX;
+    const start = catStart[slot] as number;
+    for (let step = 0; step < count; step += 1) {
+      const row = catRows[start + step] as number;
+      if (rowVisible[row] === 1) return row;
     }
     return -1;
   };
 
-  // One sweep writes both arrays. The drawn category comes out of the same read of the
-  // system's categories that says whether the marker draws at all, so the sweep costs
-  // one walk and the two readings never disagree.
+  // One sweep writes the three arrays. The drawn category comes out of the same read of
+  // the system's rows that says whether the marker draws at all, so the sweep costs one
+  // walk and the readings never disagree.
+  //
+  // The walk reads typed arrays alone: the rows of the record, the visibility of a row
+  // and the range of a row. The folded name is read only under a filter.
   const refreshFlags = (): void => {
     if (flagsVersion === version && flagsCategoryVersion === categoryVersion) return;
     const startMs = performance.now();
+    const filtering = nameFilterFold.length > 0;
     for (let index = 0; index < systems.length; index += 1) {
-      const system = systems[index] as RealSystem;
-      const drawn = firstCategoryOn(system);
+      const drawn = firstCategoryOn(index);
       const kept =
-        nameFilterFold.length === 0 ||
-        system.name.toLowerCase().includes(nameFilterFold);
-      markerFlags[index] = drawn >= 0 && kept ? 1 : 0;
+        !filtering ||
+        (systems[index] as RealSystem).name.toLowerCase().includes(nameFilterFold);
+      const draws = drawn >= 0 && kept;
+      markerFlags[index] = draws ? 1 : 0;
       // A system with every category off draws no marker, so the index it holds never
       // reaches the frame. It keeps the index of the first category it names, which is
       // always a row of the table, so no reader of the array meets an unreadable index.
-      categoryIndices[index] = drawn >= 0 ? drawn : indexOfFirst(system.categories);
+      const row =
+        drawn >= 0
+          ? drawn
+          : ((catRows[catStart[index] as number] as number) ?? UNCATEGORISED_INDEX);
+      categoryIndices[index] = row;
+      drawRanges[index] = draws ? (rowRange[row] as number) : 0;
     }
     flagsVersion = version;
     flagsCategoryVersion = categoryVersion;
@@ -651,7 +768,25 @@ export function createSystemSet(): RealSystemSet {
   };
 
   const writeSystem = (slot: number, system: RealSystem): void => {
+    grow(slot + 1);
     systems[slot] = system;
+    // The record's categories go in as table rows, once. A replacement writes over the
+    // run it had while the run is long enough, so a call that replaces the whole set
+    // adds no row to the flat run. The run of a record grows to the largest count the
+    // record has carried and stops there, which is at most `MAX_CATEGORIES`.
+    const names = system.categories;
+    if (names.length > (catRoom[slot] as number)) {
+      growRows(catRowCount + names.length);
+      catStart[slot] = catRowCount;
+      catRowCount += names.length;
+      catRoom[slot] = names.length;
+    }
+    catCount[slot] = names.length;
+    const start = catStart[slot] as number;
+    for (let step = 0; step < names.length; step += 1) {
+      catRows[start + step] =
+        categoryOf.get(names[step] as string) ?? UNCATEGORISED_INDEX;
+    }
     widenBox(system.position);
     positions[slot * 3] = system.position[0];
     positions[slot * 3 + 1] = system.position[1];
@@ -718,10 +853,17 @@ export function createSystemSet(): RealSystemSet {
             : { name, color, markerStyle, maxDrawRange };
 
         if (existing === undefined) {
+          // The row tables the sweep reads follow the table itself. A row is on unless
+          // the user already turned that name off, which a replacement keeps.
+          rowVisible[categories.length] = categoryVisible.get(name) === false ? 0 : 1;
+          rowRange[categories.length] = maxDrawRange;
           categoryOf.set(name, categories.length);
           categories.push(category);
           added += 1;
         } else {
+          // A category replaced under the same name keeps its row and may name another
+          // range, which changes the range of every record that names it.
+          rowRange[existing] = maxDrawRange;
           // The replacement keeps the index, because the set holds one category index
           // per system and an index that moved would recolour another category.
           categories[existing] = category;
@@ -867,6 +1009,9 @@ export function createSystemSet(): RealSystemSet {
 
     clearSystems(): void {
       systems.length = 0;
+      catRowCount = 0;
+      catCount.fill(0);
+      catRoom.fill(0);
       slotOf.clear();
       iconIndexCount = 0;
       iconFlags.fill(0);
@@ -877,6 +1022,9 @@ export function createSystemSet(): RealSystemSet {
 
     clearSystemsAndCategories(): void {
       systems.length = 0;
+      catRowCount = 0;
+      catCount.fill(0);
+      catRoom.fill(0);
       slotOf.clear();
       iconIndexCount = 0;
       iconFlags.fill(0);
@@ -885,6 +1033,8 @@ export function createSystemSet(): RealSystemSet {
       categories.length = 0;
       categoryOf.clear();
       categoryVisible.clear();
+      rowVisible.fill(1);
+      rowRange.fill(DEFAULT_MAX_DRAW_RANGE_LY);
       version += 1;
       categoryVersion += 1;
       categoryTableVersion += 1;
@@ -932,8 +1082,15 @@ export function createSystemSet(): RealSystemSet {
       refreshFlags();
       return markerFlags.subarray(0, systems.length);
     },
+    get drawRanges(): Float32Array {
+      refreshFlags();
+      return drawRanges.subarray(0, systems.length);
+    },
     get lastSweepMs(): number {
       return lastSweepMs;
+    },
+    get categoryRowCount(): number {
+      return catRowCount;
     },
     drawsMarker(index: number): boolean {
       if (index < 0 || index >= systems.length) return false;
@@ -946,6 +1103,7 @@ export function createSystemSet(): RealSystemSet {
       if (!categoryOf.has(name)) return;
       if ((categoryVisible.get(name) !== false) === visible) return;
       categoryVisible.set(name, visible);
+      rowVisible[categoryOf.get(name) as number] = visible ? 1 : 0;
       categoryVersion += 1;
     },
     isCategoryVisible(name: string): boolean {

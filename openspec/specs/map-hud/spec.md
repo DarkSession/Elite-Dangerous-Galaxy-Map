@@ -584,7 +584,7 @@ order of name.
 **The row cap is shared over the open lists.** The lists together SHALL show at most
 **200** rows, and each open list SHALL show at most `floor(200 / open)` rows, where `open`
 is the count of open lists. A list that was cut SHALL say so, with the number shown and the
-number held. The cap is what keeps the DOM bounded: one category may hold all 10,000 systems
+number held. The cap is what keeps the DOM bounded: one category may hold all 50,000 systems
 of a full set, or all 4,096 lines of a full shape set, and a search may open every category
 at once.
 

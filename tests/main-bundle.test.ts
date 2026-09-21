@@ -1059,14 +1059,17 @@ describe('the library build', () => {
       pathToFileURL(entry).href
     )) as Record<string, unknown>;
     expect(typeof library['createGalaxyMap']).toBe('function');
-    // The barrel exports five values and the rest are types, which carry no run-time name.
+    // The barrel exports six values and the rest are types, which carry no run-time name.
     expect(Object.keys(library).sort()).toEqual([
+      'MAX_SYSTEMS',
       'createFragmentWriter',
       'createGalaxyMap',
       'decodeGrid',
       'decodeView',
       'encodeView',
     ]);
+    // The record bound reaches the host as a number, not as a type.
+    expect(library['MAX_SYSTEMS']).toBe(50000);
     // The three view calls are pure, so the test reads one through the built module.
     const encode = library['encodeView'] as (view: unknown) => string;
     expect(encode({ cursor: [1, 2, 3], distance: 400, yaw: 10, pitch: 20 })).toBe(

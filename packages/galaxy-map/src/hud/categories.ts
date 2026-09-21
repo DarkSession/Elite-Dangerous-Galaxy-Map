@@ -50,6 +50,8 @@ interface Flight {
 /** What the panel keeps about one system or one shape, so it reads the map once. */
 interface Entry {
   readonly name: string;
+  /** Where the thing sits in the flat read order, which the match flags are held by. */
+  readonly flat: number;
   readonly identity: string;
   /** The flight of a shape row, and null for a system row. */
   readonly flight: Flight | null;
@@ -219,6 +221,19 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
 
   const groups: Group[] = [];
   const byCategory = new Map<string, Entry[]>();
+  // Where each category's things sit in the flat read order, in the same order as the
+  // entries above. The count pass walks this array and reads a match flag by index, so
+  // it loads no object and searches no string. That is the pass the set bound is read
+  // against.
+  const flatByCategory = new Map<string, Int32Array>();
+  const flatCountOf = new Map<string, number>();
+  // The folded name of every thing of the shown tab, in the flat read order, and one
+  // byte per thing that says whether the filter keeps it.
+  let allFolds: string[] = [];
+  let matchFlags = new Uint8Array(0);
+  // The filter text the flags were built for, so a second read of the same text builds
+  // them once.
+  let matchText: string | null = null;
   // The categories whose lists are open, one set per tab, so a tab the user comes back
   // to reads as they left it. The set is state and not a reading of the filter text: a
   // change of the text writes it, a click on a row writes it, and a rebuild of the panel
@@ -366,6 +381,16 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     const held = byCategory.get(name);
     if (held === undefined) byCategory.set(name, [entry]);
     else held.push(entry);
+    const used = flatCountOf.get(name) ?? 0;
+    let flats = flatByCategory.get(name);
+    if (flats === undefined || used === flats.length) {
+      const next = new Int32Array(flats === undefined ? 64 : flats.length * 2);
+      if (flats !== undefined) next.set(flats);
+      flats = next;
+      flatByCategory.set(name, next);
+    }
+    flats[used] = entry.flat;
+    flatCountOf.set(name, used + 1);
   }
 
   /** Reads every system once, so the counts and the lists need no second sweep. */
@@ -374,11 +399,14 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     for (let index = 0; index < count; index += 1) {
       const system = map.getSystem(index);
       if (system === null) continue;
+      const fold = system.name.toLowerCase();
       const entry: Entry = {
         name: system.name,
+        flat: allFolds.length,
         identity: system.id64 ?? system.name,
         flight: null,
       };
+      allFolds.push(fold);
       // The system goes in every category it names. The row's dot brings the system
       // back through any of them, so the row's count and its list say so.
       for (const name of system.categories) addEntry(name, entry);
@@ -394,11 +422,15 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     for (let index = 0; index < count; index += 1) {
       const info = map.getShapeInfo(kind, index);
       if (info === null) continue;
+      const label = shapeLabel(kind, index, info.name);
+      const fold = label.toLowerCase();
       const entry: Entry = {
-        name: shapeLabel(kind, index, info.name),
+        name: label,
+        flat: allFolds.length,
         identity: `${kind} ${index}`,
         flight: { centre: info.centre, reach: info.reach },
       };
+      allFolds.push(fold);
       for (const name of info.categories) addEntry(name, entry);
       addEntry(FLAT_KEY, entry);
     }
@@ -407,6 +439,11 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   /** Reads the things of the shown tab. */
   function readEntries(): void {
     byCategory.clear();
+    flatByCategory.clear();
+    flatCountOf.clear();
+    allFolds = [];
+    matchFlags = new Uint8Array(0);
+    matchText = null;
     if (tab === 'systems') {
       readSystems();
       return;
@@ -416,17 +453,37 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   }
 
   /**
+   * Writes one byte per thing of the shown tab: 1 while the filter keeps it. The search
+   * of a folded name runs once per thing here, and the count pass below then reads a
+   * byte per thing per category it names.
+   */
+  function refreshMatches(text: string): void {
+    if (matchText === text) return;
+    if (matchFlags.length !== allFolds.length) {
+      matchFlags = new Uint8Array(allFolds.length);
+    }
+    for (let index = 0; index < allFolds.length; index += 1) {
+      matchFlags[index] = (allFolds[index] as string).includes(text) ? 1 : 0;
+    }
+    matchText = text;
+  }
+
+  /**
    * How many things of one category the filter keeps. It is the count pass, and it does
-   * no sort: the panel reads each thing once per category it names, which is 40,000
-   * reads at 10,000 systems over 8 categories with 4 names each.
+   * no sort: the panel reads each thing once per category it names, which is 200,000
+   * reads at 50,000 systems over 8 categories with 4 names each. Each read is one byte
+   * of the match flags, which `refreshMatches` writes once per filter change.
    */
   function matchCount(name: string): number {
-    const held = byCategory.get(name) ?? [];
+    const held = flatByCategory.get(name);
+    const count = flatCountOf.get(name) ?? 0;
     const text = filterText().toLowerCase();
-    if (text === '') return held.length;
+    if (text === '' || held === undefined) return count;
+    refreshMatches(text);
+    const flags = matchFlags;
     let kept = 0;
-    for (const entry of held) {
-      if (entry.name.toLowerCase().includes(text)) kept += 1;
+    for (let index = 0; index < count; index += 1) {
+      kept += flags[held[index] as number] as number;
     }
     return kept;
   }
@@ -437,10 +494,9 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
     // The text is not trimmed, because the map compares the filter text as the host
     // gave it. A trim here would show a row whose marker the map does not draw.
     const text = filterText().toLowerCase();
+    if (text !== '') refreshMatches(text);
     const kept =
-      text === ''
-        ? held.slice()
-        : held.filter((entry) => entry.name.toLowerCase().includes(text));
+      text === '' ? held.slice() : held.filter((entry) => matchFlags[entry.flat] === 1);
     kept.sort((left, right) => left.name.localeCompare(right.name));
     return kept;
   }
@@ -544,6 +600,7 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
   function writeCounts(): void {
     const startMs = performance.now();
     const filtering = filterText() !== '';
+    if (filtering) refreshMatches(filterText().toLowerCase());
     for (const group of groups) {
       const total = (byCategory.get(group.name) ?? []).length;
       const text = filtering

@@ -8,7 +8,7 @@ import {
   starPosition,
 } from './boxel';
 import type { BoxelIndex, DrawnBoxel } from './boxel';
-import { createSystemSet, SUPPRESSION_RADIUS_LY } from './real-systems';
+import { createSystemSet, MAX_SYSTEMS, SUPPRESSION_RADIUS_LY } from './real-systems';
 import type { RealSystemSet } from './real-systems';
 import {
   buildSuppressionIndex,
@@ -208,9 +208,10 @@ describe('the sweep over a drawn set', () => {
     );
     expect(block.length).toBe(512);
 
-    // 10,000 systems spread evenly over the base class block and 2 base boxels past
-    // it on each side, so every boxel the move brings in holds one too and a boxel the
-    // sweep skips is a boxel it kept rather than one with nothing in it.
+    // A full set spread evenly over the base class block and 2 base boxels past it on
+    // each side, so every boxel the move brings in holds records too and a boxel the
+    // sweep skips is a boxel it kept rather than one with nothing in it. The side of the
+    // grid follows the bound, so the spread holds at every set size.
     const corner = boxelOrigin(block[0]?.index as BoxelIndex, base);
     const span = 12 * edge;
     const low = [
@@ -218,12 +219,17 @@ describe('the sweep over a drawn set', () => {
       (corner[1] as number) - 2 * edge,
       (corner[2] as number) - 2 * edge,
     ];
+    const side = Math.ceil(Math.cbrt(MAX_SYSTEMS));
+    const step = span / side;
     const systems = setOf(
-      Array.from({ length: 10000 }, (_ignored, slot): [number, number, number] => [
-        (low[0] as number) + ((slot % 25) + 0.5) * (span / 25),
-        (low[1] as number) + ((((slot / 25) | 0) % 20) + 0.5) * (span / 20),
-        (low[2] as number) + ((((slot / 500) | 0) % 20) + 0.5) * (span / 20),
-      ]),
+      Array.from(
+        { length: MAX_SYSTEMS },
+        (_ignored, slot): [number, number, number] => [
+          (low[0] as number) + ((slot % side) + 0.5) * step,
+          (low[1] as number) + ((((slot / side) | 0) % side) + 0.5) * step,
+          (low[2] as number) + ((((slot / (side * side)) | 0) % side) + 0.5) * step,
+        ],
+      ),
     );
 
     const suppression = createStarSuppression(systems);

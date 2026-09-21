@@ -2,6 +2,18 @@ import { gzipSync } from 'node:zlib';
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+/**
+ * How many records a full-set test builds, which is the record bound of the set. A test
+ * that passes it into `page.evaluate` passes it as an argument, because the page cannot
+ * read a variable of the test file.
+ *
+ * The number is written here and not imported from `MAX_SYSTEMS`. The module that holds
+ * that constant imports the marker vectors, and the Playwright runner reads a `.svg`
+ * import as an unknown file extension and fails the whole run. `tests/browser-suite.test.ts`
+ * reads this file as text and fails when the two numbers differ.
+ */
+export const FULL_SET = 50000;
+
 /** The event the page sends once it has drawn the scene data for the first time. */
 export const READY_EVENT = 'galaxy-map-ready';
 

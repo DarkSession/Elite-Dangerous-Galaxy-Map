@@ -9,10 +9,23 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { MAX_SYSTEMS } from '../packages/galaxy-map/src/scene-data/real-systems';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const config = readFileSync(join(root, 'playwright.config.ts'), 'utf8');
 const script = readFileSync(join(root, 'scripts', 'e2e.mjs'), 'utf8');
+const helpers = readFileSync(join(root, 'e2e', 'helpers.ts'), 'utf8');
+
+describe('the full-set constant of the browser suite', () => {
+  // `e2e/helpers.ts` writes the number instead of importing it, because the module that
+  // holds `MAX_SYSTEMS` imports the marker vectors and the Playwright runner cannot read
+  // a `.svg` import. This case is what holds the two together.
+  test('is the record bound of the set', () => {
+    const found = /export const FULL_SET = (\d+);/.exec(helpers);
+    expect(found, 'e2e/helpers.ts declares no FULL_SET').not.toBeNull();
+    expect(Number((found as RegExpExecArray)[1])).toBe(MAX_SYSTEMS);
+  });
+});
 
 /** The block of one project of the configuration, from its name to the next one. */
 function projectText(name: string): string {

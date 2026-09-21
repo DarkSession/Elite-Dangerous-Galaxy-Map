@@ -122,8 +122,8 @@ fragment" of `map-navigation` is then the page's to meet, and it is unchanged.
 readers, the frame measurement, the counts and the program probe.
 
 `getSystem` and `getCategory` read the set one entry at a time and return a copy. The set
-holds at most 10,000 systems, so a host that lists them walks the indices, and the handle
-never builds an array of 10,000 records for one call.
+holds at most 50,000 systems, so a host that lists them walks the indices, and the handle
+never builds an array of 50,000 records for one call.
 
 `debug` SHALL carry `setCloseFade(value)`, which holds the close fade of
 `close-view-stars` at the given number from 0 to 1, and `setCloseFade(null)`, which gives
@@ -638,10 +638,10 @@ in it.
 
 #### Scenario: A full set still takes a replacement
 
-- **WHEN** a unit test fills the set to 10,000 systems, then adds one record whose
+- **WHEN** a unit test fills the set to 50,000 systems, then adds one record whose
   `id64` is already in the set at a new position, and one record with a new `id64`
 - **THEN** the first is reported under `replaced` and holds the new position, the second
-  is rejected as `over-capacity`, and the count stays 10,000
+  is rejected as `over-capacity`, and the count stays 50,000
 
 ### Requirement: The set holds up to 10,000 systems
 
@@ -1341,7 +1341,7 @@ cuts markers reports fewer than the set holds.
 
 #### Scenario: The cull holds the frame budget with a full set
 
-- **WHEN** the browser test adds 10,000 systems, resets the frame statistics, draws 60
+- **WHEN** the browser test adds 50,000 systems, resets the frame statistics, draws 60
   frames at 1920x1080 at the default view, where the new rule cuts nothing, and reads the
   statistics
 - **THEN** the mean frame time holds the bound the requirement "Frame budget with a full
@@ -1482,7 +1482,7 @@ case. The comparison SHALL fold case with the same rule in every browser, which 
 case fold of both strings. A marker the filter drops SHALL NOT be picked.
 
 `setNameFilter` SHALL walk the set once and SHALL NOT rebuild the scene data. The set
-holds at most 10,000 names, so one call is one pass over at most 10,000 strings. The HUD
+holds at most 50,000 names, so one call is one pass over at most 50,000 strings. The HUD
 calls it at most once per 150 ms while the user types, which `map-hud` states.
 
 `clearSystems` SHALL NOT clear the filter, because the filter is what the user asked to

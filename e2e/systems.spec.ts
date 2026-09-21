@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { openMap, startState, waitForReady } from './helpers';
+import { FULL_SET, openMap, startState, waitForReady } from './helpers';
 import { putMarkerAlpha } from '../packages/galaxy-map/src/render/shader-include';
 import type {
   CategoryInput,
@@ -1834,23 +1834,26 @@ test.describe('the category switch and the name filter', () => {
       page,
       names.map((name) => ({ name, color: CORE, maxDrawRange: 120000 })),
     );
-    const added = await page.evaluate((value) => {
-      const records = [];
-      for (let index = 0; index < 10000; index += 1) {
-        records.push({
-          name: `S${index}`,
-          coords: { x: index * 0.001, y: 0, z: 0 },
-          categories: [
-            value[index % 8] as string,
-            value[(index + 1) % 8] as string,
-            value[(index + 2) % 8] as string,
-            value[(index + 3) % 8] as string,
-          ],
-        });
-      }
-      return window.galaxyMap?.addSystems(records).added ?? -1;
-    }, names);
-    expect(added).toBe(10000);
+    const added = await page.evaluate(
+      (value) => {
+        const records = [];
+        for (let index = 0; index < value.total; index += 1) {
+          records.push({
+            name: `S${index}`,
+            coords: { x: index * 0.001, y: 0, z: 0 },
+            categories: [
+              value.names[index % 8] as string,
+              value.names[(index + 1) % 8] as string,
+              value.names[(index + 2) % 8] as string,
+              value.names[(index + 3) % 8] as string,
+            ],
+          });
+        }
+        return window.galaxyMap?.addSystems(records).added ?? -1;
+      },
+      { names, total: FULL_SET },
+    );
+    expect(added).toBe(FULL_SET);
 
     // Every category goes off in turn, and each sweep is read after the frame that
     // asked for it.
@@ -1872,7 +1875,7 @@ test.describe('the category switch and the name filter', () => {
     expect(count).toBe(0);
     for (const reading of readings) {
       // The lower bound is 0 and not more than 0. Chromium gives `performance.now()` in
-      // steps of 0.1 milliseconds, and a sweep of 10,000 systems runs in about 0.1, so a
+      // steps of 0.1 milliseconds, and a sweep of a full set runs in about 1, so a
       // reading of exactly 0 is a fast sweep and not a missing one. The budget the
       // requirement states is the upper bound.
       expect(reading).toBeGreaterThanOrEqual(0);

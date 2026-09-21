@@ -73,8 +73,12 @@ function exportedNames(text: string): string[] {
   return names;
 }
 
-/** The calls the barrel exports as values, which the requirement names. */
+/**
+ * The values the barrel exports, which the requirement names: the five calls and the
+ * record bound of the set.
+ */
 const PUBLIC_CALLS = [
+  'MAX_SYSTEMS',
   'createFragmentWriter',
   'createGalaxyMap',
   'decodeGrid',
@@ -83,8 +87,9 @@ const PUBLIC_CALLS = [
 ];
 
 describe('the library entry point', () => {
-  test('exports the five calls and no other value', () => {
+  test('exports the five calls and the record bound, and no other value', () => {
     expect(Object.keys(library).sort()).toEqual([...PUBLIC_CALLS].sort());
+    expect(library.MAX_SYSTEMS).toBe(50000);
     expect(typeof library.createGalaxyMap).toBe('function');
     expect(typeof library.encodeView).toBe('function');
     expect(typeof library.decodeView).toBe('function');
