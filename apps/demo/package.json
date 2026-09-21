@@ -8,6 +8,7 @@
     "dev": "vite",
     "build:demo-site": "vite build",
     "build:demo-data": "node scripts/build-demo-systems.mjs",
+    "build:cycle-data": "node scripts/build-cycle-sets.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

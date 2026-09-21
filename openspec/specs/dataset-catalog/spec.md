@@ -485,7 +485,7 @@ chunks of the stream as well.
 through the test runner's own request interception, and SHALL assert the counts of that
 fixture. The sphere file is imported and not fetched, as the other five entries import
 theirs, so it needs no interception: the bundler gives it a same-origin URL of its own
-naming. `multifaction` SHALL NOT be the entry the demo site
+naming. `multifaction` SHALL NOT be the entry the demo page
 loads at start, so the page fetches nothing until the user asks for it, and the scenario
 "The HUD makes no third-party request" holds unchanged.
 
@@ -493,7 +493,7 @@ loads at start, so the page fetches nothing until the user asks for it, and the 
 
 #### Scenario: The entry is in the catalog and fetches nothing at start
 
-- **WHEN** the browser test opens the demo site with every request to a host other than the
+- **WHEN** the browser test opens the demo page with every request to a host other than the
   page's own origin blocked and recorded, waits for `ready`, and reads `getDatasets()`
 - **THEN** the catalog holds `multifaction` and no request was blocked
 
@@ -576,7 +576,7 @@ removes the line leaves the old set's lines over the new set's systems.
 A line may name a system of the set being replaced, so a shape set that outlived its records
 would draw a route through positions that no longer mean anything.
 
-**The demo site SHALL hold its shapes in a map from entry id to shapes, and its `load()`
+**The demo page SHALL hold its shapes in a map from entry id to shapes, and its `load()`
 SHALL fill that map before it returns.** `DatasetInfo`, which a listener reads, carries the
 entry's id and no content, and `DatasetContent` carries the categories and the systems alone.
 The demo's `load()` already reads one file, and that file holds the shapes beside the
@@ -637,7 +637,7 @@ settles, so a rejected `load()` clears nothing.
 
 ### Requirement: The demo site carries seven data sets
 
-The demo site SHALL give the map a catalog of seven entries. Five of them are built by the
+The demo page SHALL give the map a catalog of seven entries. Five of them are built by the
 repository's own scripts from the Canonn Research Group's `CanonnED3D-Map` sources, one is
 built from a cycle file of the DCoH Overwatch archive, and `multifaction` fetches its
 records when the user loads it, which the requirement "The multifaction set fetches its
@@ -915,14 +915,14 @@ the same set, so no UIA line holds a coordinate and the EDSM lookup is never ask
   system and destination three times, of which the last reads `Hostile` of `Y`
 - **THEN** one line is written, and its two records carry the `Hostile` category
 
-**The demo site adds the shapes itself.** `DatasetContent` carries `categories` and
-`systems` and no shape, so the demo site SHALL add the shapes of an entry through
+**The demo page adds the shapes itself.** `DatasetContent` carries `categories` and
+`systems` and no shape, so the demo page SHALL add the shapes of an entry through
 `addSpheres` and `addLines` from its `onDatasetChange` listener. `loadDataset` clears the
 shapes, so an entry that carries none leaves the map with none.
 
 #### Scenario: The catalog holds the seven sets
 
-- **WHEN** the browser test opens the demo site, waits for `ready` and reads
+- **WHEN** the browser test opens the demo page, waits for `ready` and reads
   `getDatasets()` and `getLoadedDataset()`
 - **THEN** the reading holds the seven ids above and the loaded one is `guardian-ruins`
 

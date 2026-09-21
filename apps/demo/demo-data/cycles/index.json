@@ -1,0 +1,882 @@
+[
+  {
+    "cycle": 0,
+    "week": "2022-11-24",
+    "label": "Cycle 0, 2022-11-24",
+    "group": "2022",
+    "description": "Cycle 0 of the Thargoid war, the week of 2022-11-24. The week holds 1 Titan, 9 Invasion and 20 Controlled.",
+    "count": 30
+  },
+  {
+    "cycle": 1,
+    "week": "2022-12-01",
+    "label": "Cycle 1, 2022-12-01",
+    "group": "2022",
+    "description": "Cycle 1 of the Thargoid war, the week of 2022-12-01. The week holds 3 Titan, 25 Invasion, 8 Alert and 56 Controlled.",
+    "count": 92
+  },
+  {
+    "cycle": 2,
+    "week": "2022-12-08",
+    "label": "Cycle 2, 2022-12-08",
+    "group": "2022",
+    "description": "Cycle 2 of the Thargoid war, the week of 2022-12-08. The week holds 5 Titan, 41 Invasion, 31 Alert and 112 Controlled.",
+    "count": 189
+  },
+  {
+    "cycle": 3,
+    "week": "2022-12-15",
+    "label": "Cycle 3, 2022-12-15",
+    "group": "2022",
+    "description": "Cycle 3 of the Thargoid war, the week of 2022-12-15. The week holds 8 Titan, 59 Invasion, 38 Alert, 219 Controlled and 1 Recovery.",
+    "count": 325
+  },
+  {
+    "cycle": 4,
+    "week": "2022-12-22",
+    "label": "Cycle 4, 2022-12-22",
+    "group": "2022",
+    "description": "Cycle 4 of the Thargoid war, the week of 2022-12-22. The week holds 8 Titan, 50 Invasion, 87 Alert, 256 Controlled and 10 Recovery.",
+    "count": 411
+  },
+  {
+    "cycle": 5,
+    "week": "2022-12-29",
+    "label": "Cycle 5, 2022-12-29",
+    "group": "2022",
+    "description": "Cycle 5 of the Thargoid war, the week of 2022-12-29. The week holds 8 Titan, 38 Invasion, 51 Alert, 346 Controlled and 18 Recovery.",
+    "count": 461
+  },
+  {
+    "cycle": 6,
+    "week": "2023-01-05",
+    "label": "Cycle 6, 2023-01-05",
+    "group": "2023",
+    "description": "Cycle 6 of the Thargoid war, the week of 2023-01-05. The week holds 8 Titan, 23 Invasion, 79 Alert, 403 Controlled and 23 Recovery.",
+    "count": 536
+  },
+  {
+    "cycle": 7,
+    "week": "2023-01-12",
+    "label": "Cycle 7, 2023-01-12",
+    "group": "2023",
+    "description": "Cycle 7 of the Thargoid war, the week of 2023-01-12. The week holds 8 Titan, 25 Invasion, 66 Alert, 473 Controlled and 28 Recovery.",
+    "count": 600
+  },
+  {
+    "cycle": 8,
+    "week": "2023-01-19",
+    "label": "Cycle 8, 2023-01-19",
+    "group": "2023",
+    "description": "Cycle 8 of the Thargoid war, the week of 2023-01-19. The week holds 8 Titan, 29 Invasion, 94 Alert, 524 Controlled and 28 Recovery.",
+    "count": 683
+  },
+  {
+    "cycle": 9,
+    "week": "2023-01-26",
+    "label": "Cycle 9, 2023-01-26",
+    "group": "2023",
+    "description": "Cycle 9 of the Thargoid war, the week of 2023-01-26. The week holds 8 Titan, 33 Invasion, 66 Alert, 606 Controlled and 23 Recovery.",
+    "count": 736
+  },
+  {
+    "cycle": 10,
+    "week": "2023-02-02",
+    "label": "Cycle 10, 2023-02-02",
+    "group": "2023",
+    "description": "Cycle 10 of the Thargoid war, the week of 2023-02-02. The week holds 8 Titan, 43 Invasion, 88 Alert, 653 Controlled and 20 Recovery.",
+    "count": 812
+  },
+  {
+    "cycle": 11,
+    "week": "2023-02-09",
+    "label": "Cycle 11, 2023-02-09",
+    "group": "2023",
+    "description": "Cycle 11 of the Thargoid war, the week of 2023-02-09. The week holds 8 Titan, 50 Invasion, 87 Alert, 724 Controlled and 18 Recovery.",
+    "count": 887
+  },
+  {
+    "cycle": 12,
+    "week": "2023-02-16",
+    "label": "Cycle 12, 2023-02-16",
+    "group": "2023",
+    "description": "Cycle 12 of the Thargoid war, the week of 2023-02-16. The week holds 8 Titan, 52 Invasion, 87 Alert, 796 Controlled and 24 Recovery.",
+    "count": 967
+  },
+  {
+    "cycle": 13,
+    "week": "2023-02-23",
+    "label": "Cycle 13, 2023-02-23",
+    "group": "2023",
+    "description": "Cycle 13 of the Thargoid war, the week of 2023-02-23. The week holds 8 Titan, 59 Invasion, 77 Alert, 865 Controlled and 25 Recovery.",
+    "count": 1034
+  },
+  {
+    "cycle": 14,
+    "week": "2023-03-02",
+    "label": "Cycle 14, 2023-03-02",
+    "group": "2023",
+    "description": "Cycle 14 of the Thargoid war, the week of 2023-03-02. The week holds 8 Titan, 58 Invasion, 82 Alert, 933 Controlled and 28 Recovery.",
+    "count": 1109
+  },
+  {
+    "cycle": 15,
+    "week": "2023-03-09",
+    "label": "Cycle 15, 2023-03-09",
+    "group": "2023",
+    "description": "Cycle 15 of the Thargoid war, the week of 2023-03-09. The week holds 8 Titan, 67 Invasion, 84 Alert, 996 Controlled and 23 Recovery.",
+    "count": 1178
+  },
+  {
+    "cycle": 16,
+    "week": "2023-03-16",
+    "label": "Cycle 16, 2023-03-16",
+    "group": "2023",
+    "description": "Cycle 16 of the Thargoid war, the week of 2023-03-16. The week holds 8 Titan, 66 Invasion, 40 Alert, 1070 Controlled and 21 Recovery.",
+    "count": 1205
+  },
+  {
+    "cycle": 17,
+    "week": "2023-03-23",
+    "label": "Cycle 17, 2023-03-23",
+    "group": "2023",
+    "description": "Cycle 17 of the Thargoid war, the week of 2023-03-23. The week holds 8 Titan, 49 Invasion, 40 Alert, 1102 Controlled and 25 Recovery.",
+    "count": 1224
+  },
+  {
+    "cycle": 18,
+    "week": "2023-03-30",
+    "label": "Cycle 18, 2023-03-30",
+    "group": "2023",
+    "description": "Cycle 18 of the Thargoid war, the week of 2023-03-30. The week holds 8 Titan, 31 Invasion, 40 Alert, 1128 Controlled and 29 Recovery.",
+    "count": 1236
+  },
+  {
+    "cycle": 19,
+    "week": "2023-04-06",
+    "label": "Cycle 19, 2023-04-06",
+    "group": "2023",
+    "description": "Cycle 19 of the Thargoid war, the week of 2023-04-06. The week holds 8 Titan, 14 Invasion, 40 Alert, 1145 Controlled and 35 Recovery.",
+    "count": 1242
+  },
+  {
+    "cycle": 20,
+    "week": "2023-04-13",
+    "label": "Cycle 20, 2023-04-13",
+    "group": "2023",
+    "description": "Cycle 20 of the Thargoid war, the week of 2023-04-13. The week holds 8 Titan, 7 Invasion, 40 Alert, 1162 Controlled and 34 Recovery.",
+    "count": 1251
+  },
+  {
+    "cycle": 21,
+    "week": "2023-04-20",
+    "label": "Cycle 21, 2023-04-20",
+    "group": "2023",
+    "description": "Cycle 21 of the Thargoid war, the week of 2023-04-20. The week holds 8 Titan, 4 Invasion, 40 Alert, 1170 Controlled and 34 Recovery.",
+    "count": 1256
+  },
+  {
+    "cycle": 22,
+    "week": "2023-04-27",
+    "label": "Cycle 22, 2023-04-27",
+    "group": "2023",
+    "description": "Cycle 22 of the Thargoid war, the week of 2023-04-27. The week holds 8 Titan, 4 Invasion, 39 Alert, 1182 Controlled and 20 Recovery.",
+    "count": 1253
+  },
+  {
+    "cycle": 23,
+    "week": "2023-05-04",
+    "label": "Cycle 23, 2023-05-04",
+    "group": "2023",
+    "description": "Cycle 23 of the Thargoid war, the week of 2023-05-04. The week holds 8 Titan, 8 Invasion, 39 Alert, 1184 Controlled and 9 Recovery.",
+    "count": 1248
+  },
+  {
+    "cycle": 24,
+    "week": "2023-05-11",
+    "label": "Cycle 24, 2023-05-11",
+    "group": "2023",
+    "description": "Cycle 24 of the Thargoid war, the week of 2023-05-11. The week holds 8 Titan, 19 Invasion, 39 Alert, 1176 Controlled and 11 Recovery.",
+    "count": 1253
+  },
+  {
+    "cycle": 25,
+    "week": "2023-05-18",
+    "label": "Cycle 25, 2023-05-18",
+    "group": "2023",
+    "description": "Cycle 25 of the Thargoid war, the week of 2023-05-18. The week holds 8 Titan, 20 Invasion, 40 Alert, 1186 Controlled and 15 Recovery.",
+    "count": 1269
+  },
+  {
+    "cycle": 26,
+    "week": "2023-05-25",
+    "label": "Cycle 26, 2023-05-25",
+    "group": "2023",
+    "description": "Cycle 26 of the Thargoid war, the week of 2023-05-25. The week holds 8 Titan, 11 Invasion, 40 Alert, 1176 Controlled and 23 Recovery.",
+    "count": 1258
+  },
+  {
+    "cycle": 27,
+    "week": "2023-06-01",
+    "label": "Cycle 27, 2023-06-01",
+    "group": "2023",
+    "description": "Cycle 27 of the Thargoid war, the week of 2023-06-01. The week holds 8 Titan, 6 Invasion, 39 Alert, 1156 Controlled and 31 Recovery.",
+    "count": 1240
+  },
+  {
+    "cycle": 28,
+    "week": "2023-06-08",
+    "label": "Cycle 28, 2023-06-08",
+    "group": "2023",
+    "description": "Cycle 28 of the Thargoid war, the week of 2023-06-08. The week holds 8 Titan, 4 Invasion, 39 Alert, 1128 Controlled and 31 Recovery.",
+    "count": 1210
+  },
+  {
+    "cycle": 29,
+    "week": "2023-06-15",
+    "label": "Cycle 29, 2023-06-15",
+    "group": "2023",
+    "description": "Cycle 29 of the Thargoid war, the week of 2023-06-15. The week holds 8 Titan, 33 Alert, 1082 Controlled and 27 Recovery.",
+    "count": 1150
+  },
+  {
+    "cycle": 30,
+    "week": "2023-06-22",
+    "label": "Cycle 30, 2023-06-22",
+    "group": "2023",
+    "description": "Cycle 30 of the Thargoid war, the week of 2023-06-22. The week holds 8 Titan, 4 Invasion, 34 Alert, 1030 Controlled and 21 Recovery.",
+    "count": 1097
+  },
+  {
+    "cycle": 31,
+    "week": "2023-06-29",
+    "label": "Cycle 31, 2023-06-29",
+    "group": "2023",
+    "description": "Cycle 31 of the Thargoid war, the week of 2023-06-29. The week holds 8 Titan, 5 Invasion, 24 Alert, 971 Controlled and 24 Recovery.",
+    "count": 1032
+  },
+  {
+    "cycle": 32,
+    "week": "2023-07-06",
+    "label": "Cycle 32, 2023-07-06",
+    "group": "2023",
+    "description": "Cycle 32 of the Thargoid war, the week of 2023-07-06. The week holds 8 Titan, 32 Alert, 925 Controlled and 25 Recovery.",
+    "count": 990
+  },
+  {
+    "cycle": 33,
+    "week": "2023-07-13",
+    "label": "Cycle 33, 2023-07-13",
+    "group": "2023",
+    "description": "Cycle 33 of the Thargoid war, the week of 2023-07-13. The week holds 8 Titan, 27 Alert, 866 Controlled and 22 Recovery.",
+    "count": 923
+  },
+  {
+    "cycle": 34,
+    "week": "2023-07-20",
+    "label": "Cycle 34, 2023-07-20",
+    "group": "2023",
+    "description": "Cycle 34 of the Thargoid war, the week of 2023-07-20. The week holds 8 Titan, 28 Alert, 816 Controlled and 22 Recovery.",
+    "count": 874
+  },
+  {
+    "cycle": 35,
+    "week": "2023-07-27",
+    "label": "Cycle 35, 2023-07-27",
+    "group": "2023",
+    "description": "Cycle 35 of the Thargoid war, the week of 2023-07-27. The week holds 8 Titan, 33 Alert, 777 Controlled and 21 Recovery.",
+    "count": 839
+  },
+  {
+    "cycle": 36,
+    "week": "2023-08-03",
+    "label": "Cycle 36, 2023-08-03",
+    "group": "2023",
+    "description": "Cycle 36 of the Thargoid war, the week of 2023-08-03. The week holds 8 Titan, 31 Alert, 738 Controlled and 20 Recovery.",
+    "count": 797
+  },
+  {
+    "cycle": 37,
+    "week": "2023-08-10",
+    "label": "Cycle 37, 2023-08-10",
+    "group": "2023",
+    "description": "Cycle 37 of the Thargoid war, the week of 2023-08-10. The week holds 8 Titan, 38 Alert, 713 Controlled and 13 Recovery.",
+    "count": 772
+  },
+  {
+    "cycle": 38,
+    "week": "2023-08-17",
+    "label": "Cycle 38, 2023-08-17",
+    "group": "2023",
+    "description": "Cycle 38 of the Thargoid war, the week of 2023-08-17. The week holds 8 Titan, 32 Alert, 670 Controlled and 13 Recovery.",
+    "count": 723
+  },
+  {
+    "cycle": 39,
+    "week": "2023-08-24",
+    "label": "Cycle 39, 2023-08-24",
+    "group": "2023",
+    "description": "Cycle 39 of the Thargoid war, the week of 2023-08-24. The week holds 8 Titan, 36 Alert, 631 Controlled and 9 Recovery.",
+    "count": 684
+  },
+  {
+    "cycle": 40,
+    "week": "2023-08-31",
+    "label": "Cycle 40, 2023-08-31",
+    "group": "2023",
+    "description": "Cycle 40 of the Thargoid war, the week of 2023-08-31. The week holds 8 Titan, 1 Invasion, 38 Alert, 585 Controlled and 9 Recovery.",
+    "count": 641
+  },
+  {
+    "cycle": 41,
+    "week": "2023-09-07",
+    "label": "Cycle 41, 2023-09-07",
+    "group": "2023",
+    "description": "Cycle 41 of the Thargoid war, the week of 2023-09-07. The week holds 8 Titan, 35 Alert, 551 Controlled and 8 Recovery.",
+    "count": 602
+  },
+  {
+    "cycle": 42,
+    "week": "2023-09-14",
+    "label": "Cycle 42, 2023-09-14",
+    "group": "2023",
+    "description": "Cycle 42 of the Thargoid war, the week of 2023-09-14. The week holds 8 Titan, 3 Invasion, 38 Alert, 521 Controlled and 6 Recovery.",
+    "count": 576
+  },
+  {
+    "cycle": 43,
+    "week": "2023-09-21",
+    "label": "Cycle 43, 2023-09-21",
+    "group": "2023",
+    "description": "Cycle 43 of the Thargoid war, the week of 2023-09-21. The week holds 8 Titan, 4 Invasion, 38 Alert, 494 Controlled and 10 Recovery.",
+    "count": 554
+  },
+  {
+    "cycle": 44,
+    "week": "2023-09-28",
+    "label": "Cycle 44, 2023-09-28",
+    "group": "2023",
+    "description": "Cycle 44 of the Thargoid war, the week of 2023-09-28. The week holds 8 Titan, 5 Invasion, 38 Alert, 481 Controlled and 12 Recovery.",
+    "count": 544
+  },
+  {
+    "cycle": 45,
+    "week": "2023-10-05",
+    "label": "Cycle 45, 2023-10-05",
+    "group": "2023",
+    "description": "Cycle 45 of the Thargoid war, the week of 2023-10-05. The week holds 8 Titan, 38 Alert, 473 Controlled and 15 Recovery.",
+    "count": 534
+  },
+  {
+    "cycle": 46,
+    "week": "2023-10-12",
+    "label": "Cycle 46, 2023-10-12",
+    "group": "2023",
+    "description": "Cycle 46 of the Thargoid war, the week of 2023-10-12. The week holds 8 Titan, 37 Alert, 442 Controlled and 12 Recovery.",
+    "count": 499
+  },
+  {
+    "cycle": 47,
+    "week": "2023-10-19",
+    "label": "Cycle 47, 2023-10-19",
+    "group": "2023",
+    "description": "Cycle 47 of the Thargoid war, the week of 2023-10-19. The week holds 8 Titan, 1 Invasion, 38 Alert, 417 Controlled and 14 Recovery.",
+    "count": 478
+  },
+  {
+    "cycle": 48,
+    "week": "2023-10-26",
+    "label": "Cycle 48, 2023-10-26",
+    "group": "2023",
+    "description": "Cycle 48 of the Thargoid war, the week of 2023-10-26. The week holds 8 Titan, 39 Alert, 373 Controlled and 15 Recovery.",
+    "count": 435
+  },
+  {
+    "cycle": 49,
+    "week": "2023-11-02",
+    "label": "Cycle 49, 2023-11-02",
+    "group": "2023",
+    "description": "Cycle 49 of the Thargoid war, the week of 2023-11-02. The week holds 8 Titan, 36 Alert, 334 Controlled and 14 Recovery.",
+    "count": 392
+  },
+  {
+    "cycle": 50,
+    "week": "2023-11-09",
+    "label": "Cycle 50, 2023-11-09",
+    "group": "2023",
+    "description": "Cycle 50 of the Thargoid war, the week of 2023-11-09. The week holds 8 Titan, 37 Alert, 327 Controlled and 11 Recovery.",
+    "count": 383
+  },
+  {
+    "cycle": 51,
+    "week": "2023-11-16",
+    "label": "Cycle 51, 2023-11-16",
+    "group": "2023",
+    "description": "Cycle 51 of the Thargoid war, the week of 2023-11-16. The week holds 8 Titan, 32 Alert, 311 Controlled and 9 Recovery.",
+    "count": 360
+  },
+  {
+    "cycle": 52,
+    "week": "2023-11-23",
+    "label": "Cycle 52, 2023-11-23",
+    "group": "2023",
+    "description": "Cycle 52 of the Thargoid war, the week of 2023-11-23. The week holds 8 Titan, 33 Alert, 301 Controlled and 8 Recovery.",
+    "count": 350
+  },
+  {
+    "cycle": 53,
+    "week": "2023-11-30",
+    "label": "Cycle 53, 2023-11-30",
+    "group": "2023",
+    "description": "Cycle 53 of the Thargoid war, the week of 2023-11-30. The week holds 8 Titan, 3 Invasion, 29 Alert, 294 Controlled and 9 Recovery.",
+    "count": 343
+  },
+  {
+    "cycle": 54,
+    "week": "2023-12-07",
+    "label": "Cycle 54, 2023-12-07",
+    "group": "2023",
+    "description": "Cycle 54 of the Thargoid war, the week of 2023-12-07. The week holds 8 Titan, 2 Invasion, 36 Alert, 288 Controlled and 10 Recovery.",
+    "count": 344
+  },
+  {
+    "cycle": 55,
+    "week": "2023-12-14",
+    "label": "Cycle 55, 2023-12-14",
+    "group": "2023",
+    "description": "Cycle 55 of the Thargoid war, the week of 2023-12-14. The week holds 8 Titan, 2 Invasion, 32 Alert, 298 Controlled and 6 Recovery.",
+    "count": 346
+  },
+  {
+    "cycle": 56,
+    "week": "2023-12-21",
+    "label": "Cycle 56, 2023-12-21",
+    "group": "2023",
+    "description": "Cycle 56 of the Thargoid war, the week of 2023-12-21. The week holds 8 Titan, 10 Invasion, 35 Alert, 302 Controlled and 2 Recovery.",
+    "count": 357
+  },
+  {
+    "cycle": 57,
+    "week": "2023-12-28",
+    "label": "Cycle 57, 2023-12-28",
+    "group": "2023",
+    "description": "Cycle 57 of the Thargoid war, the week of 2023-12-28. The week holds 8 Titan, 7 Invasion, 35 Alert, 320 Controlled and 5 Recovery.",
+    "count": 375
+  },
+  {
+    "cycle": 58,
+    "week": "2024-01-04",
+    "label": "Cycle 58, 2024-01-04",
+    "group": "2024",
+    "description": "Cycle 58 of the Thargoid war, the week of 2024-01-04. The week holds 8 Titan, 5 Invasion, 38 Alert, 323 Controlled and 5 Recovery.",
+    "count": 379
+  },
+  {
+    "cycle": 59,
+    "week": "2024-01-11",
+    "label": "Cycle 59, 2024-01-11",
+    "group": "2024",
+    "description": "Cycle 59 of the Thargoid war, the week of 2024-01-11. The week holds 8 Titan, 10 Invasion, 44 Alert, 330 Controlled and 7 Recovery.",
+    "count": 399
+  },
+  {
+    "cycle": 60,
+    "week": "2024-01-18",
+    "label": "Cycle 60, 2024-01-18",
+    "group": "2024",
+    "description": "Cycle 60 of the Thargoid war, the week of 2024-01-18. The week holds 8 Titan, 20 Invasion, 37 Alert, 349 Controlled and 7 Recovery.",
+    "count": 421
+  },
+  {
+    "cycle": 61,
+    "week": "2024-01-25",
+    "label": "Cycle 61, 2024-01-25",
+    "group": "2024",
+    "description": "Cycle 61 of the Thargoid war, the week of 2024-01-25. The week holds 8 Titan, 18 Invasion, 41 Alert, 377 Controlled and 10 Recovery.",
+    "count": 454
+  },
+  {
+    "cycle": 62,
+    "week": "2024-02-01",
+    "label": "Cycle 62, 2024-02-01",
+    "group": "2024",
+    "description": "Cycle 62 of the Thargoid war, the week of 2024-02-01. The week holds 8 Titan, 22 Invasion, 51 Alert, 408 Controlled and 7 Recovery.",
+    "count": 496
+  },
+  {
+    "cycle": 63,
+    "week": "2024-02-08",
+    "label": "Cycle 63, 2024-02-08",
+    "group": "2024",
+    "description": "Cycle 63 of the Thargoid war, the week of 2024-02-08. The week holds 8 Titan, 33 Invasion, 45 Alert, 446 Controlled and 7 Recovery.",
+    "count": 539
+  },
+  {
+    "cycle": 64,
+    "week": "2024-02-15",
+    "label": "Cycle 64, 2024-02-15",
+    "group": "2024",
+    "description": "Cycle 64 of the Thargoid war, the week of 2024-02-15. The week holds 8 Titan, 31 Invasion, 51 Alert, 485 Controlled and 9 Recovery.",
+    "count": 584
+  },
+  {
+    "cycle": 65,
+    "week": "2024-02-22",
+    "label": "Cycle 65, 2024-02-22",
+    "group": "2024",
+    "description": "Cycle 65 of the Thargoid war, the week of 2024-02-22. The week holds 8 Titan, 28 Invasion, 48 Alert, 535 Controlled and 10 Recovery.",
+    "count": 629
+  },
+  {
+    "cycle": 66,
+    "week": "2024-02-29",
+    "label": "Cycle 66, 2024-02-29",
+    "group": "2024",
+    "description": "Cycle 66 of the Thargoid war, the week of 2024-02-29. The week holds 8 Titan, 30 Invasion, 46 Alert, 573 Controlled and 12 Recovery.",
+    "count": 669
+  },
+  {
+    "cycle": 67,
+    "week": "2024-03-07",
+    "label": "Cycle 67, 2024-03-07",
+    "group": "2024",
+    "description": "Cycle 67 of the Thargoid war, the week of 2024-03-07. The week holds 8 Titan, 33 Invasion, 43 Alert, 597 Controlled and 15 Recovery.",
+    "count": 696
+  },
+  {
+    "cycle": 68,
+    "week": "2024-03-14",
+    "label": "Cycle 68, 2024-03-14",
+    "group": "2024",
+    "description": "Cycle 68 of the Thargoid war, the week of 2024-03-14. The week holds 7 Titan, 29 Invasion, 31 Alert, 613 Controlled and 19 Recovery.",
+    "count": 699
+  },
+  {
+    "cycle": 69,
+    "week": "2024-03-21",
+    "label": "Cycle 69, 2024-03-21",
+    "group": "2024",
+    "description": "Cycle 69 of the Thargoid war, the week of 2024-03-21. The week holds 7 Titan, 30 Invasion, 26 Alert, 601 Controlled and 21 Recovery.",
+    "count": 685
+  },
+  {
+    "cycle": 70,
+    "week": "2024-03-28",
+    "label": "Cycle 70, 2024-03-28",
+    "group": "2024",
+    "description": "Cycle 70 of the Thargoid war, the week of 2024-03-28. The week holds 6 Titan, 25 Invasion, 35 Alert, 602 Controlled and 29 Recovery.",
+    "count": 697
+  },
+  {
+    "cycle": 71,
+    "week": "2024-04-04",
+    "label": "Cycle 71, 2024-04-04",
+    "group": "2024",
+    "description": "Cycle 71 of the Thargoid war, the week of 2024-04-04. The week holds 6 Titan, 16 Invasion, 66 Alert, 613 Controlled and 39 Recovery.",
+    "count": 740
+  },
+  {
+    "cycle": 72,
+    "week": "2024-04-11",
+    "label": "Cycle 72, 2024-04-11",
+    "group": "2024",
+    "description": "Cycle 72 of the Thargoid war, the week of 2024-04-11. The week holds 6 Titan, 19 Invasion, 33 Alert, 630 Controlled and 34 Recovery.",
+    "count": 722
+  },
+  {
+    "cycle": 73,
+    "week": "2024-04-18",
+    "label": "Cycle 73, 2024-04-18",
+    "group": "2024",
+    "description": "Cycle 73 of the Thargoid war, the week of 2024-04-18. The week holds 6 Titan, 8 Invasion, 40 Alert, 629 Controlled and 40 Recovery.",
+    "count": 723
+  },
+  {
+    "cycle": 74,
+    "week": "2024-04-25",
+    "label": "Cycle 74, 2024-04-25",
+    "group": "2024",
+    "description": "Cycle 74 of the Thargoid war, the week of 2024-04-25. The week holds 6 Titan, 8 Invasion, 37 Alert, 638 Controlled and 25 Recovery.",
+    "count": 714
+  },
+  {
+    "cycle": 75,
+    "week": "2024-05-02",
+    "label": "Cycle 75, 2024-05-02",
+    "group": "2024",
+    "description": "Cycle 75 of the Thargoid war, the week of 2024-05-02. The week holds 5 Titan, 10 Invasion, 39 Alert, 634 Controlled and 23 Recovery.",
+    "count": 711
+  },
+  {
+    "cycle": 76,
+    "week": "2024-05-09",
+    "label": "Cycle 76, 2024-05-09",
+    "group": "2024",
+    "description": "Cycle 76 of the Thargoid war, the week of 2024-05-09. The week holds 5 Titan, 15 Invasion, 33 Alert, 624 Controlled and 17 Recovery.",
+    "count": 694
+  },
+  {
+    "cycle": 77,
+    "week": "2024-05-16",
+    "label": "Cycle 77, 2024-05-16",
+    "group": "2024",
+    "description": "Cycle 77 of the Thargoid war, the week of 2024-05-16. The week holds 5 Titan, 10 Invasion, 36 Alert, 603 Controlled and 20 Recovery.",
+    "count": 674
+  },
+  {
+    "cycle": 78,
+    "week": "2024-05-23",
+    "label": "Cycle 78, 2024-05-23",
+    "group": "2024",
+    "description": "Cycle 78 of the Thargoid war, the week of 2024-05-23. The week holds 5 Titan, 15 Invasion, 31 Alert, 605 Controlled and 13 Recovery.",
+    "count": 669
+  },
+  {
+    "cycle": 79,
+    "week": "2024-05-30",
+    "label": "Cycle 79, 2024-05-30",
+    "group": "2024",
+    "description": "Cycle 79 of the Thargoid war, the week of 2024-05-30. The week holds 5 Titan, 9 Invasion, 33 Alert, 605 Controlled and 18 Recovery.",
+    "count": 670
+  },
+  {
+    "cycle": 80,
+    "week": "2024-06-06",
+    "label": "Cycle 80, 2024-06-06",
+    "group": "2024",
+    "description": "Cycle 80 of the Thargoid war, the week of 2024-06-06. The week holds 4 Titan, 30 Alert, 604 Controlled and 16 Recovery.",
+    "count": 654
+  },
+  {
+    "cycle": 81,
+    "week": "2024-06-13",
+    "label": "Cycle 81, 2024-06-13",
+    "group": "2024",
+    "description": "Cycle 81 of the Thargoid war, the week of 2024-06-13. The week holds 4 Titan, 35 Alert, 577 Controlled and 10 Recovery.",
+    "count": 626
+  },
+  {
+    "cycle": 82,
+    "week": "2024-06-20",
+    "label": "Cycle 82, 2024-06-20",
+    "group": "2024",
+    "description": "Cycle 82 of the Thargoid war, the week of 2024-06-20. The week holds 4 Titan, 31 Alert, 540 Controlled and 24 Recovery.",
+    "count": 599
+  },
+  {
+    "cycle": 83,
+    "week": "2024-06-27",
+    "label": "Cycle 83, 2024-06-27",
+    "group": "2024",
+    "description": "Cycle 83 of the Thargoid war, the week of 2024-06-27. The week holds 4 Titan, 26 Alert, 516 Controlled and 32 Recovery.",
+    "count": 578
+  },
+  {
+    "cycle": 84,
+    "week": "2024-07-04",
+    "label": "Cycle 84, 2024-07-04",
+    "group": "2024",
+    "description": "Cycle 84 of the Thargoid war, the week of 2024-07-04. The week holds 4 Titan, 8 Invasion, 11 Alert, 503 Controlled and 29 Recovery.",
+    "count": 555
+  },
+  {
+    "cycle": 85,
+    "week": "2024-07-11",
+    "label": "Cycle 85, 2024-07-11",
+    "group": "2024",
+    "description": "Cycle 85 of the Thargoid war, the week of 2024-07-11. The week holds 4 Titan, 9 Invasion, 3 Alert, 497 Controlled and 31 Recovery.",
+    "count": 544
+  },
+  {
+    "cycle": 86,
+    "week": "2024-07-18",
+    "label": "Cycle 86, 2024-07-18",
+    "group": "2024",
+    "description": "Cycle 86 of the Thargoid war, the week of 2024-07-18. The week holds 3 Titan, 7 Invasion, 3 Alert, 481 Controlled and 20 Recovery.",
+    "count": 514
+  },
+  {
+    "cycle": 87,
+    "week": "2024-07-25",
+    "label": "Cycle 87, 2024-07-25",
+    "group": "2024",
+    "description": "Cycle 87 of the Thargoid war, the week of 2024-07-25. The week holds 3 Titan, 6 Invasion, 4 Alert, 457 Controlled and 11 Recovery.",
+    "count": 481
+  },
+  {
+    "cycle": 88,
+    "week": "2024-08-01",
+    "label": "Cycle 88, 2024-08-01",
+    "group": "2024",
+    "description": "Cycle 88 of the Thargoid war, the week of 2024-08-01. The week holds 3 Titan, 6 Invasion, 4 Alert, 417 Controlled and 13 Recovery.",
+    "count": 443
+  },
+  {
+    "cycle": 89,
+    "week": "2024-08-08",
+    "label": "Cycle 89, 2024-08-08",
+    "group": "2024",
+    "description": "Cycle 89 of the Thargoid war, the week of 2024-08-08. The week holds 3 Titan, 6 Invasion, 4 Alert, 383 Controlled and 14 Recovery.",
+    "count": 410
+  },
+  {
+    "cycle": 90,
+    "week": "2024-08-15",
+    "label": "Cycle 90, 2024-08-15",
+    "group": "2024",
+    "description": "Cycle 90 of the Thargoid war, the week of 2024-08-15. The week holds 3 Titan, 6 Invasion, 4 Alert, 370 Controlled and 19 Recovery.",
+    "count": 402
+  },
+  {
+    "cycle": 91,
+    "week": "2024-08-22",
+    "label": "Cycle 91, 2024-08-22",
+    "group": "2024",
+    "description": "Cycle 91 of the Thargoid war, the week of 2024-08-22. The week holds 3 Titan, 6 Invasion, 3 Alert, 346 Controlled and 16 Recovery.",
+    "count": 374
+  },
+  {
+    "cycle": 92,
+    "week": "2024-08-29",
+    "label": "Cycle 92, 2024-08-29",
+    "group": "2024",
+    "description": "Cycle 92 of the Thargoid war, the week of 2024-08-29. The week holds 2 Titan, 6 Invasion, 2 Alert, 304 Controlled and 16 Recovery.",
+    "count": 330
+  },
+  {
+    "cycle": 93,
+    "week": "2024-09-05",
+    "label": "Cycle 93, 2024-09-05",
+    "group": "2024",
+    "description": "Cycle 93 of the Thargoid war, the week of 2024-09-05. The week holds 2 Titan, 6 Invasion, 2 Alert, 279 Controlled and 15 Recovery.",
+    "count": 304
+  },
+  {
+    "cycle": 94,
+    "week": "2024-09-12",
+    "label": "Cycle 94, 2024-09-12",
+    "group": "2024",
+    "description": "Cycle 94 of the Thargoid war, the week of 2024-09-12. The week holds 2 Titan, 6 Invasion, 2 Alert, 261 Controlled and 13 Recovery.",
+    "count": 284
+  },
+  {
+    "cycle": 95,
+    "week": "2024-09-19",
+    "label": "Cycle 95, 2024-09-19",
+    "group": "2024",
+    "description": "Cycle 95 of the Thargoid war, the week of 2024-09-19. The week holds 2 Titan, 7 Invasion, 2 Alert, 240 Controlled and 14 Recovery.",
+    "count": 265
+  },
+  {
+    "cycle": 96,
+    "week": "2024-09-26",
+    "label": "Cycle 96, 2024-09-26",
+    "group": "2024",
+    "description": "Cycle 96 of the Thargoid war, the week of 2024-09-26. The week holds 2 Titan, 8 Invasion, 1 Alert, 229 Controlled and 13 Recovery.",
+    "count": 253
+  },
+  {
+    "cycle": 97,
+    "week": "2024-10-03",
+    "label": "Cycle 97, 2024-10-03",
+    "group": "2024",
+    "description": "Cycle 97 of the Thargoid war, the week of 2024-10-03. The week holds 2 Titan, 6 Invasion, 2 Alert, 206 Controlled and 18 Recovery.",
+    "count": 234
+  },
+  {
+    "cycle": 98,
+    "week": "2024-10-10",
+    "label": "Cycle 98, 2024-10-10",
+    "group": "2024",
+    "description": "Cycle 98 of the Thargoid war, the week of 2024-10-10. The week holds 2 Titan, 3 Invasion, 1 Alert, 179 Controlled and 12 Recovery.",
+    "count": 197
+  },
+  {
+    "cycle": 99,
+    "week": "2024-10-17",
+    "label": "Cycle 99, 2024-10-17",
+    "group": "2024",
+    "description": "Cycle 99 of the Thargoid war, the week of 2024-10-17. The week holds 2 Titan, 3 Invasion, 1 Alert, 158 Controlled and 16 Recovery.",
+    "count": 180
+  },
+  {
+    "cycle": 100,
+    "week": "2024-10-24",
+    "label": "Cycle 100, 2024-10-24",
+    "group": "2024",
+    "description": "Cycle 100 of the Thargoid war, the week of 2024-10-24. The week holds 2 Titan, 3 Invasion, 1 Alert, 148 Controlled and 16 Recovery.",
+    "count": 170
+  },
+  {
+    "cycle": 101,
+    "week": "2024-10-31",
+    "label": "Cycle 101, 2024-10-31",
+    "group": "2024",
+    "description": "Cycle 101 of the Thargoid war, the week of 2024-10-31. The week holds 1 Titan, 3 Invasion, 2 Alert, 120 Controlled and 14 Recovery.",
+    "count": 140
+  },
+  {
+    "cycle": 102,
+    "week": "2024-11-07",
+    "label": "Cycle 102, 2024-11-07",
+    "group": "2024",
+    "description": "Cycle 102 of the Thargoid war, the week of 2024-11-07. The week holds 1 Titan, 2 Invasion, 87 Controlled and 9 Recovery.",
+    "count": 99
+  },
+  {
+    "cycle": 103,
+    "week": "2024-11-14",
+    "label": "Cycle 103, 2024-11-14",
+    "group": "2024",
+    "description": "Cycle 103 of the Thargoid war, the week of 2024-11-14. The week holds 1 Titan, 2 Invasion, 64 Controlled and 13 Recovery.",
+    "count": 80
+  },
+  {
+    "cycle": 104,
+    "week": "2024-11-21",
+    "label": "Cycle 104, 2024-11-21",
+    "group": "2024",
+    "description": "Cycle 104 of the Thargoid war, the week of 2024-11-21. The week holds 1 Titan, 43 Controlled and 9 Recovery.",
+    "count": 53
+  },
+  {
+    "cycle": 105,
+    "week": "2024-11-28",
+    "label": "Cycle 105, 2024-11-28",
+    "group": "2024",
+    "description": "Cycle 105 of the Thargoid war, the week of 2024-11-28. The week holds 1 Alert and 11 Recovery.",
+    "count": 12
+  },
+  {
+    "cycle": 106,
+    "week": "2024-12-05",
+    "label": "Cycle 106, 2024-12-05",
+    "group": "2024",
+    "description": "Cycle 106 of the Thargoid war, the week of 2024-12-05. The week holds 1 Titan, 12 Invasion, 4 Controlled and 6 Recovery.",
+    "count": 23
+  },
+  {
+    "cycle": 107,
+    "week": "2024-12-12",
+    "label": "Cycle 107, 2024-12-12",
+    "group": "2024",
+    "description": "Cycle 107 of the Thargoid war, the week of 2024-12-12. The week holds 1 Titan and 22 Recovery.",
+    "count": 23
+  },
+  {
+    "cycle": 108,
+    "week": "2024-12-19",
+    "label": "Cycle 108, 2024-12-19",
+    "group": "2024",
+    "description": "Cycle 108 of the Thargoid war, the week of 2024-12-19. The week holds 6 Recovery.",
+    "count": 6
+  },
+  {
+    "cycle": 109,
+    "week": "2024-12-26",
+    "label": "Cycle 109, 2024-12-26",
+    "group": "2024",
+    "description": "Cycle 109 of the Thargoid war, the week of 2024-12-26. The week holds 1 Recovery.",
+    "count": 1
+  }
+]

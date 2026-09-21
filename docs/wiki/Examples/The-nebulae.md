@@ -3,12 +3,7 @@
 The nebulae are an **opt-in**, because they are art and a host pays for it in its own
 build. The map draws 358 of them as ray-marched volumes.
 
-```ts
-import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
-import { nebulae } from '@elite-dangerous-almanac/galaxy-map/nebulae';
-
-const map = createGalaxyMap(canvas, { nebulae });
-```
+<!-- sample: the-nebulae -->
 
 Asking for them adds **2,912,225 bytes** of volume files, transfer tables and the index
 to your build. A build that never imports the subpath carries none of it.

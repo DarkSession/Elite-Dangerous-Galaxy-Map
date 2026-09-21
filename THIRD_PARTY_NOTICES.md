@@ -203,27 +203,37 @@ names and the descriptions in that file are this project's own.
 The systems and the factions are of the game's galaxy, so the Frontier Developments terms
 above also apply to them.
 
-## The Thargoid war records of the demo page
+## The Thargoid war records of the demo page and the cycles page
 
-`apps/demo/demo-data/thargoid-war.json` holds 4 categories and 189 systems. The records come from
-the **EDOverwatch.Archive** repository, at
+`apps/demo/demo-data/thargoid-war.json` holds 4 categories and 189 systems, and
+`apps/demo/demo-data/cycles/` holds one set for each cycle of the war, with a manifest
+beside them. The records come from the **EDOverwatch.Archive** repository, at
 [https://github.com/DarkSession/EDOverwatch.Archive](https://github.com/DarkSession/EDOverwatch.Archive),
-which is the archive of the Distant Cries of Humanity (DCoH) Overwatch site. The
-repository is public and **declares no licence**: it holds no `LICENSE` file and states no
-terms. This notice records where the data came from, as the notices of the Spansh dump and
-the two ED Assets files do.
+which is the archive of the Distant Cries of Humanity (DCoH) Overwatch site. **The archive
+is this project owner's own repository.** It is public and **declares no licence**: it
+holds no `LICENSE` file and states no terms. This notice therefore records where the data
+came from, as the notices of the Spansh dump and the two ED Assets files do, and not a
+permission this project does not hold.
 
-The file is a conversion of one cycle file of that archive,
+`thargoid-war.json` is a conversion of one cycle file of that archive,
 `By Cycle/2 - 2022-12-08.json`, which is cycle 2 of the Thargoid war and the week of
 2022-12-08. `apps/demo/scripts/build-demo-systems.mjs` makes the conversion, and
-`pnpm build:demo-data` runs it. The dump is 3.8 MB, so the script fetches it into `data/`,
-which the repository ignores. The conversion keeps each system's name, its coordinates,
-its population and the one war state the cycle file gives it, and drops every other field,
-including the progress readings of each state.
+`pnpm build:demo-data` runs it.
+
+The cycle sets are a conversion of **every** cycle file of `By Cycle/`, which is 110 files
+today. `apps/demo/scripts/build-cycle-sets.mjs` makes them with the same conversion, and
+`pnpm build:cycle-data` runs it. The script names one set after the number of its cycle
+and writes one manifest row per set.
+
+The cycle files are 1.09 GB in all, so both scripts fetch them into `apps/demo/data/`,
+which the repository ignores. The repository carries the converted sets alone. The
+conversion keeps each system's name, its coordinates, its population and the one war state
+the cycle file gives it, and drops every other field, including the progress readings of
+each state.
 
 The category names, the colours, the category descriptions and the record descriptions in
-that file are this project's own. The icons are this project's own choice as well, and the
-built-in symbols they name come from the library's own catalogue.
+those files are this project's own. The icons are this project's own choice as well, and
+the built-in symbols they name come from the library's own catalogue.
 
 The systems and the war are of the game's galaxy, so the Frontier Developments terms above
 also apply to them.

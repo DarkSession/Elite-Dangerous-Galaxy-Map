@@ -230,13 +230,19 @@ export default tseslint.config(
   },
   {
     // The demo is a package of the workspace and reaches the library by its **package
-    // name** alone. A relative path out of `apps/demo/src/` would resolve on the dev
-    // server, where the alias table points the name at the library's source, and break
-    // for anyone who consumed the built package the same way.
+    // name** alone. A relative path out of the demo's page directories would resolve on
+    // the dev server, where the alias table points the name at the library's source, and
+    // break for anyone who consumed the built package the same way.
     //
-    // The rule is scoped to `apps/demo/src/`. `e2e/`, `tests/` and the demo's own build
-    // script reach package source by relative path on purpose, and that stays legal.
-    files: ['apps/demo/src/**/*.ts'],
+    // The rule covers the three page directories of the package: `src/`, which holds the
+    // demo page, `examples/`, which holds the nine samples, and `cycles/`. `e2e/`,
+    // `tests/` and the demo's own build scripts reach package source by relative path on
+    // purpose, and that stays legal.
+    files: [
+      'apps/demo/src/**/*.ts',
+      'apps/demo/examples/**/*.ts',
+      'apps/demo/cycles/**/*.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -246,22 +252,23 @@ export default tseslint.config(
               group: ['../*', '../../*', '../../../*', '**/packages/**'],
               message:
                 'The demo imports the map by its package name. A relative reach out ' +
-                'of apps/demo/src/ resolves only on the dev server.',
+                'of a page directory of apps/demo/ resolves only on the dev server.',
             },
           ],
         },
       ],
-      // `no-restricted-imports` reads static imports alone. The demo loads its three
-      // data sets with `import()`, and that call takes the same rule: one level up to
-      // `../demo-data/` is the demo's own directory and stays legal, two levels up or a
-      // path through `packages/` reaches out of the package and does not.
+      // `no-restricted-imports` reads static imports alone. The demo page loads its data
+      // sets with `import()`, and the cycles page loads one cycle the same way. That call
+      // takes the same rule: one level up to `../demo-data/` is the demo's own directory
+      // and stays legal, two levels up or a path through `packages/` reaches out of the
+      // package and does not.
       'no-restricted-syntax': [
         'error',
         {
           selector: 'ImportExpression > Literal.source[value=/^\\.\\.\\/\\.\\./]',
           message:
             'The demo imports the map by its package name. A dynamic reach out of ' +
-            'apps/demo/src/ resolves only on the dev server.',
+            'a page directory of apps/demo/ resolves only on the dev server.',
         },
         {
           selector: 'ImportExpression > Literal.source[value=/packages\\//]',

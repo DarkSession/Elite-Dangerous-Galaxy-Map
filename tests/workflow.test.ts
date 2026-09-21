@@ -156,6 +156,17 @@ describe('the check job', () => {
     expect(scriptsOf(join(root, 'package.json'))['build:demo-site']).toBe(
       'pnpm --filter @elite-dangerous-almanac/galaxy-map-demo build:demo-site',
     );
+    // The two data builds of the demo package. Neither runs in the workflow: each one
+    // fetches dumps and writes committed files, which a developer does and a job does
+    // not.
+    for (const name of ['build:demo-data', 'build:cycle-data']) {
+      expect(scriptsOf(join(root, 'package.json'))[name]).toBe(
+        `pnpm --filter @elite-dangerous-almanac/galaxy-map-demo ${name}`,
+      );
+    }
+    expect(
+      scriptsOf(join(root, 'apps', 'demo', 'package.json'))['build:cycle-data'],
+    ).toBe('node scripts/build-cycle-sets.mjs');
   });
 
   test('the library build names its own Vite configuration', () => {

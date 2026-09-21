@@ -21,11 +21,29 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, test } from 'vitest';
-import { arrange, buildWiki, copyProse, rewriteLinks } from '../scripts/build-wiki.mjs';
+import {
+  arrange,
+  buildWiki,
+  copyProse,
+  rewriteLinks,
+  SAMPLE_BASE_URL,
+  sampleRegion,
+} from '../scripts/build-wiki.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageSource = join(root, 'packages', 'galaxy-map', 'src');
 const wikiDocs = join(root, 'docs', 'wiki');
+const samples = join(root, 'apps', 'demo', 'examples');
+
+/** Each marker of the source example pages, as the page file name and the sample id. */
+const sampleMarkers: { file: string; id: string }[] = [];
+for (const name of readdirSync(join(wikiDocs, 'Examples')).sort()) {
+  if (!name.endsWith('.md')) continue;
+  const text = readFileSync(join(wikiDocs, 'Examples', name), 'utf8');
+  for (const match of text.matchAll(/<!--\s*sample:\s*([\w-]+)\s*-->/g)) {
+    sampleMarkers.push({ file: name, id: match[1] as string });
+  }
+}
 
 /** The temporary directories the suite writes. `afterAll` removes each one. */
 const scratch: string[] = [];
@@ -261,12 +279,17 @@ describe('the prose pages', () => {
 
   // The check that catches the failure that matters most: an example that names a call
   // the package no longer exports.
+  //
+  // The reading is of the **sample source**, which is the one copy of the example code,
+  // and of the whole file rather than of the marked region alone. An import above the
+  // region is an import the page still runs, and the built block is written from this
+  // same source, so a member that goes takes the sample's name into the failure.
   test('import exported members alone', () => {
     const pattern =
       /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+'@elite-dangerous-almanac\/galaxy-map(\/[\w-]+)?'/g;
     let read = 0;
-    for (const name of readdirSync(join(wikiDocs, 'Examples')).sort()) {
-      const text = readFileSync(join(wikiDocs, 'Examples', name), 'utf8');
+    for (const { id } of sampleMarkers) {
+      const text = readFileSync(join(samples, id, 'main.ts'), 'utf8');
       for (const match of text.matchAll(pattern)) {
         const subpath = match[2] ?? '';
         const exported = subpath === '/nebulae' ? nebulaExports : mainExports;
@@ -276,15 +299,41 @@ describe('the prose pages', () => {
           read += 1;
           expect(
             exported,
-            `${name} imports '${imported}', which is not exported`,
+            `${id} imports '${imported}', which is not exported`,
           ).toContain(imported);
         }
       }
     }
     expect(
       read,
-      'no example imports anything, so the case reads nothing',
+      'no sample imports anything, so the case reads nothing',
     ).toBeGreaterThan(0);
+  });
+
+  // The sample source is the one copy of the example code. The block the wiki shows is
+  // written from it, so the two cannot drift.
+  test('hold the code of the sample each marker names', () => {
+    expect(sampleMarkers.length).toBe(9);
+    for (const { file, id } of sampleMarkers) {
+      const source = readFileSync(join(samples, id, 'main.ts'), 'utf8');
+      const code = sampleRegion(id, source);
+      expect(
+        readFileSync(join(tree, 'Examples', file), 'utf8'),
+        `${file} does not hold the code of the sample '${id}'`,
+      ).toContain(`\`\`\`ts\n${code}\n\`\`\``);
+    }
+  });
+
+  test('link the page that runs each block', () => {
+    expect(SAMPLE_BASE_URL).toBe(
+      'https://elite-dangerous-almanac.github.io/Galaxy-Map/examples/',
+    );
+    for (const { file, id } of sampleMarkers) {
+      expect(
+        readFileSync(join(tree, 'Examples', file), 'utf8'),
+        `${file} does not link the sample page of '${id}'`,
+      ).toContain(`](${SAMPLE_BASE_URL}${id}/)`);
+    }
   });
 });
 
@@ -408,6 +457,103 @@ describe('the link rewrite', () => {
     expect(rewritten).toBe(
       'See [GalaxyMap](GalaxyMap) and [GalaxyMapOptions](GalaxyMapOptions) and ' +
         '[the survey](https://example.test/survey).',
+    );
+  });
+});
+
+describe('a sample marker the build cannot fill', () => {
+  /** A `docs/wiki/` with the three single pages and the example pages given. */
+  function docsWith(examples: Record<string, string>): string {
+    const made = scratchDirectory();
+    mkdirSync(join(made, 'Examples'), { recursive: true });
+    for (const name of ['Home', 'Getting-started', 'Testing-subpath']) {
+      writeFileSync(join(made, `${name}.md`), `# ${name}\n`);
+    }
+    for (const [name, text] of Object.entries(examples)) {
+      writeFileSync(join(made, 'Examples', `${name}.md`), text);
+    }
+    return made;
+  }
+
+  /** A samples directory with one `main.ts` for each entry. */
+  function samplesWith(sources: Record<string, string>): string {
+    const made = scratchDirectory();
+    for (const [id, source] of Object.entries(sources)) {
+      mkdirSync(join(made, id), { recursive: true });
+      writeFileSync(join(made, id, 'main.ts'), source);
+    }
+    return made;
+  }
+
+  /** Runs the prose copy over one fixture pair and gives back what it threw. */
+  function copyWith(
+    examples: Record<string, string>,
+    sources: Record<string, string>,
+  ): string {
+    try {
+      copyProse(
+        docsWith(examples),
+        scratchDirectory(),
+        new Map(),
+        samplesWith(sources),
+      );
+    } catch (reason) {
+      return (reason as Error).message;
+    }
+    return '';
+  }
+
+  test('fails on a marker that names no sample', () => {
+    const message = copyWith(
+      { 'The-beacon': '# The beacon\n\n<!-- sample: the-beacon -->\n' },
+      { 'the-hud': 'export const a = 1;\n' },
+    );
+    expect(message).toContain("the example page 'The-beacon'");
+    expect(message).toContain('<!-- sample: the-beacon -->');
+    expect(message).toContain('is missing');
+  });
+
+  test('fails on an example page with no marker', () => {
+    const message = copyWith(
+      { 'The-beacon': '# The beacon\n\nProse and no marker.\n' },
+      {},
+    );
+    expect(message).toContain("the example page 'The-beacon'");
+    expect(message).toContain('carries no sample marker');
+  });
+
+  test('fails where two markers name one sample', () => {
+    const message = copyWith(
+      {
+        'A-page': '# A page\n\n<!-- sample: the-hud -->\n',
+        'B-page': '# B page\n\n<!-- sample: the-hud -->\n',
+      },
+      { 'the-hud': 'export const a = 1;\n' },
+    );
+    expect(message).toContain("the example page 'B-page'");
+    expect(message).toContain("the page 'A-page'");
+    expect(message).toContain('<!-- sample: the-hud -->');
+  });
+
+  test('fails on a sample that never closes its marked region', () => {
+    const message = copyWith(
+      { 'The-hud': '# The HUD\n\n<!-- sample: the-hud -->\n' },
+      { 'the-hud': '// wiki:start\nexport const a = 1;\n' },
+    );
+    expect(message).toContain("the sample 'the-hud'");
+    expect(message).toContain('never closes');
+  });
+
+  test('writes the whole file where a sample marks no region', () => {
+    const out = scratchDirectory();
+    copyProse(
+      docsWith({ 'The-hud': '# The HUD\n\n<!-- sample: the-hud -->\n' }),
+      out,
+      new Map(),
+      samplesWith({ 'the-hud': 'export const a = 1;\n' }),
+    );
+    expect(readFileSync(join(out, 'Examples', 'The-hud.md'), 'utf8')).toContain(
+      '```ts\nexport const a = 1;\n```',
     );
   });
 });
