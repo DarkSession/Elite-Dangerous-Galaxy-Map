@@ -12,6 +12,15 @@ The demo site is <https://elite-dangerous-almanac.github.io/Galaxy-Map/>. This r
 holds the library, that site and the tests. The published package carries its own README:
 [packages/galaxy-map/README.md](packages/galaxy-map/README.md).
 
+## Screenshots
+
+[![The galaxy from outside](docs/screenshots/screenshot01.webp)](docs/screenshots/screenshot01.webp)
+
+|                                                                                                                          |                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| [![The codex regions over the Inner Orion Spur](docs/screenshots/screenshot02.webp)](docs/screenshots/screenshot02.webp) | [![Thargoid war systems and the information panel](docs/screenshots/screenshot03.webp)](docs/screenshots/screenshot03.webp) |
+| [![Spheres, routes and system icons](docs/screenshots/screenshot04.webp)](docs/screenshots/screenshot04.webp)          | [![A nebula and a selected system](docs/screenshots/screenshot05.webp)](docs/screenshots/screenshot05.webp)                 |
+
 ## Install
 
 ```bash
