@@ -918,9 +918,15 @@ is meant to reach.
 
 **`fit: 'systems'` of a dataset view reads the same rule.** It sets the distance to `2 * R`
 over half the diagonal of the set's own box, before the margin an `auto` bound adds. An
-entry that names both therefore opens on the systems and can pull back to the margin: the
-zoom the bound allows is wider than the frame `fit` opens at, because the margin is room to
-fly and not room to look at.
+entry that names both therefore opens on the systems **where it opens at all**, and can pull
+back to the margin: the zoom the bound allows is wider than the frame `fit` opens at, because
+the margin is room to fly and not room to look at.
+
+**A load that holds the camera writes no distance at all.** `dataset-catalog` states five
+conditions under which a `loadDataset` that is not the start load leaves the camera where it
+is. Where they hold, the entry's `view` does not apply, so this rule does not run and the
+camera keeps the distance the user set. The last of those conditions reads the camera against
+the very distance this rule would write, so a held camera is never nearer than the frame.
 
 **A change of the bounds SHALL re-clamp the view in the frame it happens**, so a host that
 narrows the space while the camera is outside it does not leave the camera there. The view

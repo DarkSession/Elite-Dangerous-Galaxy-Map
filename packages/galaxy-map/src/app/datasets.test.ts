@@ -21,27 +21,40 @@ function entry(id: string, extra: Partial<DatasetEntry> = {}): DatasetEntry {
   } as DatasetEntry;
 }
 
-/** A writer that counts its calls, as the map's own writer does the reads. */
-function writer(): {
+/**
+ * A writer that counts its calls, as the map's own writer does the reads. `inside` is
+ * what `viewInsideBounds` answers, which is false for every test that reads the old
+ * behaviour.
+ */
+function writer(inside = false): {
   write: (content: DatasetContent) => {
     categories: { added: number; replaced: number; rejected: [] };
     systems: { added: number; replaced: number; rejected: [] };
   };
   setBounds: (bounds: BrowseBounds | null) => void;
   applyView: (view: DatasetView) => void;
+  viewInsideBounds: (bounds: BrowseBounds | null) => boolean;
   calls: DatasetContent[];
   /** Every `setBounds` the state machine made, in order. */
   bounds: (BrowseBounds | null)[];
   /** Every `applyView` the state machine made, in order. */
   views: DatasetView[];
+  /** Every `viewInsideBounds` the state machine made, in order. */
+  asked: (BrowseBounds | null)[];
+  /** The name of each `viewInsideBounds` and `setBounds` call, in order. */
+  order: string[];
 } {
   const calls: DatasetContent[] = [];
   const bounds: (BrowseBounds | null)[] = [];
   const views: DatasetView[] = [];
+  const asked: (BrowseBounds | null)[] = [];
+  const order: string[] = [];
   return {
     calls,
     bounds,
     views,
+    asked,
+    order,
     write(content: DatasetContent) {
       calls.push(content);
       return {
@@ -50,10 +63,16 @@ function writer(): {
       };
     },
     setBounds(value: BrowseBounds | null) {
+      order.push('setBounds');
       bounds.push(value);
     },
     applyView(view: DatasetView) {
       views.push(view);
+    },
+    viewInsideBounds(value: BrowseBounds | null) {
+      order.push('viewInsideBounds');
+      asked.push(value);
+      return inside;
     },
   };
 }
@@ -321,6 +340,134 @@ describe('the dataset state', () => {
     const noLink = createDatasetState({ datasets: [framed], ...plain });
     await noLink.startLoad();
     expect(plain.views).toEqual([{ fit: 'systems' }]);
+  });
+
+  test('holds the view where the camera already shows the new set', async () => {
+    const work = writer(true);
+    const state = createDatasetState({
+      datasets: [
+        entry('one', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+        entry('two', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+      ],
+      ...work,
+    });
+    await state.startLoad();
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+
+    await state.loadDataset('two');
+
+    // The held view calls `applyView` no times at all. A call with the view the camera
+    // already holds would set the map's `jumped` flag and raise its announce.
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+    // The load still writes the bounds and still reports the entry.
+    expect(work.bounds).toEqual([{ mode: 'auto' }, { mode: 'auto' }]);
+    expect(state.getLoadedDataset()?.id).toBe('two');
+  });
+
+  test('reads the camera before it writes the bounds', async () => {
+    // Applying a bound clamps the camera into it, so a reading taken after `setBounds`
+    // is true for every restricted bound and the rule would decide nothing.
+    const work = writer(true);
+    const state = createDatasetState({
+      datasets: [
+        entry('one', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+      ],
+      ...work,
+    });
+
+    await state.loadDataset('one');
+
+    expect(work.order).toEqual(['viewInsideBounds', 'setBounds']);
+    // The reading takes the same bounds the write takes.
+    expect(work.asked).toEqual([{ mode: 'auto' }]);
+  });
+
+  test('applies the view where the entry names no bounds', async () => {
+    const work = writer(true);
+    const state = createDatasetState({
+      datasets: [entry('one', { view: { fit: 'systems' } } as Partial<DatasetEntry>)],
+      ...work,
+    });
+
+    await state.loadDataset('one');
+
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+    // The space of such an entry is unrestricted, so no reading is taken at all.
+    expect(work.asked).toEqual([]);
+  });
+
+  test('applies the view where the camera is outside the new bounds', async () => {
+    const work = writer(false);
+    const state = createDatasetState({
+      datasets: [
+        entry('one', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+      ],
+      ...work,
+    });
+
+    await state.loadDataset('one');
+
+    expect(work.asked).toEqual([{ mode: 'auto' }]);
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+  });
+
+  test('applies the view where the entry names a field beside fit', async () => {
+    const beside: DatasetView[] = [
+      { fit: 'systems', cursor: [1, 2, 3] },
+      { fit: 'systems', system: 'Sol' },
+      { fit: 'systems', distance: 500 },
+      { fit: 'systems', yaw: 45 },
+      { fit: 'systems', pitch: 60 },
+      { cursor: [1, 2, 3] },
+    ];
+
+    for (const view of beside) {
+      const work = writer(true);
+      const state = createDatasetState({
+        datasets: [
+          entry('one', { bounds: { mode: 'auto' }, view } as Partial<DatasetEntry>),
+        ],
+        ...work,
+      });
+
+      await state.loadDataset('one');
+
+      expect(work.views, `the view ${JSON.stringify(view)} is held`).toEqual([view]);
+      // The field is read before the geometry, so such a load takes no reading.
+      expect(work.asked).toEqual([]);
+    }
+  });
+
+  test('applies the view on the start load', async () => {
+    // The camera has no view the user chose yet, so the start load frames its set even
+    // where all five conditions would otherwise hold.
+    const work = writer(true);
+    const state = createDatasetState({
+      datasets: [
+        entry('one', {
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        } as Partial<DatasetEntry>),
+      ],
+      ...work,
+    });
+
+    await state.startLoad();
+
+    expect(work.views).toEqual([{ fit: 'systems' }]);
+    expect(work.asked).toEqual([]);
   });
 
   test('an unsubscribed listener hears nothing more', async () => {

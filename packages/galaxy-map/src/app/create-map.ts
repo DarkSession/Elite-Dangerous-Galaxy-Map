@@ -1575,6 +1575,67 @@ export function createGalaxyMap(
   };
 
   /**
+   * The distance `fit: 'systems'` opens at for the set now on the map: the far zoom limit
+   * of half the diagonal of the set's own box. `applyDatasetView` writes it and
+   * `viewInsideBounds` reads the camera against it, so the two cannot drift apart.
+   */
+  const systemsFitDistance = (): number => {
+    const box = set.systemBox;
+    const half =
+      Math.hypot(
+        box.max[0] - box.min[0],
+        box.max[1] - box.min[1],
+        box.max[2] - box.min[2],
+      ) / 2;
+    return farZoomLimit(half);
+  };
+
+  /**
+   * Whether the camera stands inside `bounds` if they are applied now. `null` reads the
+   * bounds the options named, which is what `applyDatasetBounds(null)` restores.
+   *
+   * The reading applies nothing: it resolves the bounds into a local shape and writes
+   * neither `boundsSetting` nor `resolvedBounds`. The state machine reads it before it
+   * calls `setBounds`, because a bound that is applied clamps the camera into itself and
+   * every later reading is true.
+   *
+   * It reads the setting and not the resolved shape for the unrestricted case, because
+   * `unrestrictedBounds` gives a box a host could also have written by hand.
+   */
+  const viewInsideBounds = (bounds: BrowseBounds | null): boolean => {
+    const asked = bounds ?? optionBounds;
+    // Every camera is inside an unrestricted space, so a reading of true here would stop
+    // a jump to a set in another part of the galaxy.
+    if (asked.mode === 'unrestricted') return false;
+    // An `auto` bound over a set with no system resolves to unrestricted. A `sphere`
+    // bound over one does not, but `clearSystems` in `src/scene-data/real-systems.ts`
+    // marks the box empty and leaves the corners, so the box still holds the set before
+    // this one and the frame distance below would read those corners.
+    if (set.systemBox.empty) return false;
+    const shape = resolveBounds(asked, set.systemBox);
+    if (view.distance > shape.maxDistanceLy) return false;
+    // The camera shows at least as much as the frame would. Without this an `auto` bound,
+    // which grows the box by 1,000 light years, holds a camera zoomed in on one corner.
+    if (view.distance < systemsFitDistance()) return false;
+    // "Inside" is read as its own test and not as a round trip through `clampCursor`: a
+    // clamped cursor lands on the surface of a sphere, and the distance of that point can
+    // read an ulp above the radius.
+    if (shape.kind === 'sphere') {
+      const gap = Math.hypot(
+        view.cursor[0] - shape.centre[0],
+        view.cursor[1] - shape.centre[1],
+        view.cursor[2] - shape.centre[2],
+      );
+      return gap <= shape.radiusLy;
+    }
+    for (const axis of [0, 1, 2] as const) {
+      const at = view.cursor[axis];
+      if (at < shape.min[axis] || at > shape.max[axis]) return false;
+    }
+    return true;
+  };
+
+  /**
    * Opens the camera where an entry asks. `fit: 'systems'` centres on the box of the set
    * the load wrote and frames the whole of it, and a field the entry names beside `fit`
    * wins over what `fit` worked out. A `fit` over a set with no system leaves the view
@@ -1597,13 +1658,7 @@ export function createGalaxyMap(
         (box.min[1] + box.max[1]) / 2,
         (box.min[2] + box.max[2]) / 2,
       ];
-      const half =
-        Math.hypot(
-          box.max[0] - box.min[0],
-          box.max[1] - box.min[1],
-          box.max[2] - box.min[2],
-        ) / 2;
-      view.distance = farZoomLimit(half);
+      view.distance = systemsFitDistance();
     }
     if (asked.distance !== undefined) view.distance = asked.distance;
     if (asked.yaw !== undefined) view.yaw = asked.yaw;
@@ -1649,6 +1704,7 @@ export function createGalaxyMap(
     write: writeDataset,
     setBounds: applyDatasetBounds,
     applyView: applyDatasetView,
+    viewInsideBounds,
   });
   for (const reject of datasets.rejected) {
     console.warn('The map dropped a dataset entry.', reject);

@@ -1,5 +1,6 @@
 import { ESLint } from 'eslint';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { farZoomLimit } from '../camera/view';
 import { NO_WEBGL2_MESSAGE } from '../render/context';
 import { WORKER_STARTED } from '../scene-data/messages';
 import { createGalaxyMap, readNebulaSource } from './create-map';
@@ -689,5 +690,122 @@ describe('the nebula option', () => {
     expect(map.areNebulaeVisible()).toBe(false);
     map.setNebulaeVisible(true);
     expect(map.areNebulaeVisible()).toBe(false);
+  });
+});
+
+// The rule that holds the camera inside the bounds of the entry that loads. The state
+// machine reads `viewInsideBounds` on the map, and this is where that reading lives. The
+// browser suite reads the same rule end to end in `e2e/datasets.spec.ts`.
+describe('the camera over a dataset load', () => {
+  const scope = globalThis as unknown as {
+    window?: unknown;
+    requestAnimationFrame?: unknown;
+  };
+  let hadWindow = false;
+
+  beforeEach(() => {
+    hadWindow = 'window' in scope;
+    scope.window = {};
+    scope.requestAnimationFrame = vi.fn();
+  });
+
+  afterEach(() => {
+    if (!hadWindow) delete scope.window;
+    delete scope.requestAnimationFrame;
+  });
+
+  /** A sphere of 1,000 light years at the origin, which every entry below names. */
+  const SPHERE = { mode: 'sphere', centre: [0, 0, 0], radiusLy: 1000 } as const;
+  /** The two corners of the box the loaded set spans. */
+  const LOW = { x: -50, y: -50, z: -50 };
+  const HIGH = { x: 50, y: 50, z: 50 };
+  /** The distance `fit: 'systems'` writes for that box. */
+  const FIT = farZoomLimit(Math.hypot(100, 100, 100) / 2);
+
+  /** One entry naming the sphere, a `fit` view and the two corners, or no system. */
+  function entry(id: string, empty = false): unknown {
+    return {
+      id,
+      label: id,
+      bounds: SPHERE,
+      view: { fit: 'systems' },
+      load: () => ({
+        categories: [{ name: 'Test', color: [0, 180, 255] as const }],
+        systems: empty
+          ? []
+          : [
+              { name: `${id}-low`, coords: LOW, categories: ['Test'] },
+              { name: `${id}-high`, coords: HIGH, categories: ['Test'] },
+            ],
+      }),
+    };
+  }
+
+  /** A map over two entries of one region, with the first one already loaded. */
+  async function mapOfTwo(second: unknown = entry('second')): Promise<{
+    map: ReturnType<typeof createGalaxyMap>;
+    moves: number[];
+  }> {
+    const map = createGalaxyMap(refusingCanvas(), {
+      datasets: [entry('first'), second] as never,
+      dataset: 'first',
+    });
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    await map.loadDataset('first');
+    const moves: number[] = [];
+    map.onViewChange(() => moves.push(1));
+    return { map, moves };
+  }
+
+  test('holds the view for a cursor on the surface of a sphere bound', async () => {
+    // A clamp puts an outside cursor exactly on the surface, and the distance of that
+    // point can read an ulp above the radius. The reading is a direct test instead, so a
+    // camera on the edge is inside.
+    const { map, moves } = await mapOfTwo();
+    map.setView({ cursor: [1000, 0, 0], distance: 1500, yaw: 25, pitch: 40 });
+    const before = map.getView();
+    moves.length = 0;
+
+    await map.loadDataset('second');
+
+    // The reading moves no camera and raises no view change of its own. A reading that
+    // resolved the bounds on the map or re-clamped the view would fail both.
+    expect(map.getView()).toEqual(before);
+    expect(moves).toEqual([]);
+    // The load still writes the entry's bounds. Only the view is held.
+    expect(map.getBounds()).toEqual(SPHERE);
+  });
+
+  test('holds the view at the frame distance and frames it below', async () => {
+    const held = await mapOfTwo();
+    held.map.setView({ cursor: [0, 0, 0], distance: FIT, yaw: 25, pitch: 40 });
+    const before = held.map.getView();
+
+    await held.map.loadDataset('second');
+
+    // Condition 5 reads "at or above", so the camera at the frame distance holds.
+    expect(held.map.getView()).toEqual(before);
+
+    const framed = await mapOfTwo();
+    framed.map.setView({ cursor: [0, 0, 0], distance: FIT - 1, yaw: 25, pitch: 40 });
+
+    await framed.map.loadDataset('second');
+
+    expect(framed.map.getView().distance).toBeCloseTo(FIT, 6);
+  });
+
+  test('applies the view over an empty set under a sphere bound', async () => {
+    // A `sphere` bound over an empty set still resolves to a restricted space, but an
+    // empty box holds the corners of the set before it. The reading is false for it, so
+    // the view applies. A `fit` over an empty set moves the camera nowhere, so the view
+    // change is what tells the two paths apart.
+    const { map, moves } = await mapOfTwo(entry('empty', true));
+    map.setView({ cursor: [500, 0, 0], distance: 1500, yaw: 25, pitch: 40 });
+    moves.length = 0;
+
+    await map.loadDataset('empty');
+
+    expect(map.systemCount()).toBe(0);
+    expect(moves).toEqual([1]);
   });
 });

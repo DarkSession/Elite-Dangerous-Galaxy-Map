@@ -256,6 +256,10 @@ async function loadRow(row: ManifestRow): Promise<readonly SystemRecordInput[]> 
  * Each entry names the box of its own records, because one map holds one part of the
  * galaxy. `load()` fetches the files of that entry alone, so the browser downloads one
  * map at a time and not the 38.9 MB of the tree.
+ *
+ * Every entry names `bounds` and a `view` of `fit: 'systems'` alone, so a load holds the
+ * camera where the reader put it whenever the camera already shows the new map. A map the
+ * camera cannot see still frames itself. `DatasetView` states the five conditions.
  */
 const CANONN: readonly DatasetEntry[] = manifest.map((row): DatasetEntry => ({
   id: row.id,

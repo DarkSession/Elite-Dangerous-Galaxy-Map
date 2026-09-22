@@ -69,6 +69,34 @@ async function heldNames(page: Page): Promise<string[]> {
   });
 }
 
+/** The view the page holds, as four plain numbers. */
+async function readView(page: Page): Promise<{
+  cursor: [number, number, number];
+  distance: number;
+  yaw: number;
+  pitch: number;
+}> {
+  return await page.evaluate(() => {
+    const view = window.galaxyMap?.getView();
+    return {
+      cursor: [...(view?.cursor ?? [0, 0, 0])] as [number, number, number],
+      distance: view?.distance ?? -1,
+      yaw: view?.yaw ?? -1,
+      pitch: view?.pitch ?? -1,
+    };
+  });
+}
+
+/** The two opposite corners of the box one cycle's records span. */
+function boxOf(row: CycleRow): { min: number[]; max: number[] } {
+  const set = readJson<{ systems: CycleRecord[] }>(fileOf(row));
+  const axes = ['x', 'y', 'z'] as const;
+  return {
+    min: axes.map((axis) => Math.min(...set.systems.map((one) => one.coords[axis]))),
+    max: axes.map((axis) => Math.max(...set.systems.map((one) => one.coords[axis]))),
+  };
+}
+
 /**
  * The seven sets of the demo page. The cycles page is a host of its own, so its catalog
  * holds the cycles and none of these.
@@ -148,6 +176,11 @@ test.describe('the cycles page', () => {
   });
 
   test('opens the camera on the box of the cycle it loads', async ({ page }) => {
+    // The step from the first cycle to the second touches no camera, so the camera stands
+    // at the first cycle's frame, 52 light years out. The second cycle's frame is 223, so
+    // condition 5 of `dataset-catalog` fails and the entry's view applies. The reading is
+    // therefore the frame the fifth condition let through, and not the old unconditional
+    // one. The test below reads the other half: a camera zoomed out past 223 is held.
     await page.goto('./cycles/');
     await waitForPage(page);
     await page.evaluate(
@@ -211,5 +244,70 @@ test.describe('the step arrows of the cycles page', () => {
     );
     await expect(next).toBeDisabled();
     await expect(previous).toBeEnabled();
+  });
+});
+
+// The step arrows exist so that a reader compares one week against the next at one angle
+// and one zoom. The requirement "A step between cycles holds the camera" states the rule,
+// and `dataset-catalog` states the five conditions it reads.
+test.describe('the camera over a step between cycles', () => {
+  test('stepping to the next cycle holds a view that shows it', async ({ page }) => {
+    await page.goto('./cycles/');
+    await waitForPage(page);
+
+    const counter = page.locator('.gm-hud__dataset-counter');
+    const next = page.locator('.gm-hud__dataset-step[data-name="next"]');
+    const total = manifest.length;
+    await expect(counter).toHaveText(`1 / ${String(total)}`);
+
+    // 1,500 light years takes in the whole front. It is above the second cycle's frame
+    // of 223 and under the far zoom limit of its `auto` bound, which is 3,675.
+    await page.evaluate(() => {
+      window.galaxyMap?.setView({ distance: 1500, yaw: 90, pitch: 20 });
+    });
+    const before = await readView(page);
+
+    await next.click();
+    await expect(counter).toHaveText(`2 / ${String(total)}`, { timeout: 30000 });
+    const after = await readView(page);
+    const loaded = await page.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    const held = await page.evaluate(() => window.galaxyMap?.systemCount());
+    console.log('the view over a step of the war', { before, after, loaded, held });
+
+    expect(after).toEqual(before);
+    expect(loaded).toBe(`cycle-${SECOND.cycle}`);
+    expect(held).toBe(SECOND.count);
+  });
+
+  test('a cycle wider than the view is framed again', async ({ page }) => {
+    await page.goto('./cycles/');
+    await waitForPage(page);
+
+    const counter = page.locator('.gm-hud__dataset-counter');
+    const next = page.locator('.gm-hud__dataset-step[data-name="next"]');
+    const before = await readView(page);
+
+    await next.click();
+    await expect(counter).toHaveText(`2 / ${String(manifest.length)}`, {
+      timeout: 30000,
+    });
+    const after = await readView(page);
+    console.log('the view over an untouched step', { before, after });
+
+    // The war grows, so the second cycle's frame stands further off than the first one's.
+    // The camera was nearer than the new frame, which is condition 5.
+    expect(after.distance).toBeGreaterThan(before.distance);
+    const box = boxOf(SECOND);
+    for (const axis of [0, 1, 2]) {
+      const at = after.cursor[axis] as number;
+      expect(
+        at,
+        `the cursor sits off the box on axis ${String(axis)}`,
+      ).toBeGreaterThanOrEqual(box.min[axis] as number);
+      expect(
+        at,
+        `the cursor sits off the box on axis ${String(axis)}`,
+      ).toBeLessThanOrEqual(box.max[axis] as number);
+    }
   });
 });
