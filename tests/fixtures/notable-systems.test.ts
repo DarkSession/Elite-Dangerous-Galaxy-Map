@@ -147,6 +147,18 @@ describe('the plain text of an html field', () => {
     expect(plainTextFromHtml('<p>a &lt;b&gt; c</p>')).toBe('a b c');
   });
 
+  test('keeps no angle bracket a hostile field holds', () => {
+    const hostile = [
+      '<p><scr<b>ipt>alert(1)</scr</b>ipt></p>',
+      '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
+      '<p>&#60;img src=x onerror=alert(1)&#62;</p>',
+      '<p>a < b</p><script',
+    ];
+    for (const html of hostile) {
+      expect(plainTextFromHtml(html)).not.toMatch(/[<>]/);
+    }
+  });
+
   test('keeps the text of a link and drops a picture', () => {
     expect(plainTextFromHtml('<p><a href="x">Name</a><img src="y"></p>')).toBe('Name');
   });

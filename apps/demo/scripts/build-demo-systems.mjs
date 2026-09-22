@@ -347,6 +347,11 @@ export function escapeMarkdown(text) {
  * Turns one `html` field of the Notable Systems dump into plain text: the tags go, the
  * character references decode, and the paragraphs join with a blank line. A `<` or a `>`
  * that a reference decodes to goes as well, because the description carries no markup.
+ *
+ * The output carries no `<` and no `>`, whatever the field holds. The tag removal alone
+ * does not give that: it leaves a `<` that no `>` closes, and a reference decodes to one
+ * after it runs. The `[<>]` removal below it is the guarantee, and it comes after the
+ * decode for that reason. Keep the two in this order.
  */
 export function plainTextFromHtml(html) {
   const paragraphs = String(html ?? '')
