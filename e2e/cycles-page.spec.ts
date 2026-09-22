@@ -172,3 +172,44 @@ test.describe('the cycles page', () => {
     expect(view?.distance).toBeGreaterThan(0);
   });
 });
+
+// The page turns `datasetArrows` on, because its catalog is one entry per week of the
+// war in order. The scenarios "The arrows step through the catalog" and "The arrows stop
+// at the ends" read the page's own catalog.
+test.describe('the step arrows of the cycles page', () => {
+  test('the counter steps with the next arrow', async ({ page }) => {
+    await page.goto('./cycles/');
+    await waitForPage(page);
+
+    const counter = page.locator('.gm-hud__dataset-counter');
+    const next = page.locator('.gm-hud__dataset-step[data-name="next"]');
+    const total = manifest.length;
+    await expect(counter).toHaveText(`1 / ${String(total)}`);
+
+    await next.click();
+    await expect(counter).toHaveText(`2 / ${String(total)}`, { timeout: 30000 });
+    const loaded = await page.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    console.log('the cycle after one step', loaded);
+    expect(loaded).toBe(`cycle-${SECOND.cycle}`);
+  });
+
+  test('the arrows stop at the ends of the catalog', async ({ page }) => {
+    await page.goto('./cycles/');
+    await waitForPage(page);
+
+    const previous = page.locator('.gm-hud__dataset-step[data-name="previous"]');
+    const next = page.locator('.gm-hud__dataset-step[data-name="next"]');
+    const last = manifest[manifest.length - 1] as { cycle: number };
+
+    // The page opens on the first cycle, so the previous arrow has nothing to load.
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeEnabled();
+
+    await page.evaluate(
+      async (id) => await window.galaxyMap?.loadDataset(id),
+      `cycle-${last.cycle}`,
+    );
+    await expect(next).toBeDisabled();
+    await expect(previous).toBeEnabled();
+  });
+});

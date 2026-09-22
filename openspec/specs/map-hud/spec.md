@@ -14,18 +14,21 @@ default, and the map SHALL then build no HUD and add no element to the page. `hu
 SHALL build the HUD with its defaults. `hud` MAY instead be an object of these fields,
 each optional:
 
-| Field           | Type                         | What it does                                        |
-| --------------- | ---------------------------- | --------------------------------------------------- |
-| `title`         | string                       | The name in the top bar                             |
-| `host`          | element                      | Where the HUD is built                              |
-| `details`       | function                     | Loads a system's description, values and actions    |
-| `infoFields`    | object of three booleans     | Which worked-out fields the information panel shows |
-| `lockedOptions` | array of option names        | Map options the user may not change                 |
+| Field            | Type                         | What it does                                        |
+| ---------------- | ---------------------------- | --------------------------------------------------- |
+| `title`          | string                       | The name in the top bar                             |
+| `host`           | element                      | Where the HUD is built                              |
+| `details`        | function                     | Loads a system's description, values and actions    |
+| `infoFields`     | object of three booleans     | Which worked-out fields the information panel shows |
+| `lockedOptions`  | array of option names        | Map options the user may not change                 |
+| `datasetArrows`  | boolean                      | Draws the step arrows beside the dataset field      |
 
 `details` is stated by `system-details`. `infoFields` is stated by the requirement "The
-information panel shows the selected system" and `lockedOptions` by the requirement "The
-map options panel carries the map switches", both of this capability. A field the host leaves
-out takes its default, and a value the HUD cannot read takes the default as well.
+information panel shows the selected system" of this capability, `lockedOptions` by the
+requirement "The map options panel carries the switches the map can act on" of this
+capability, and `datasetArrows` by the requirement "The host turns on the dataset step
+arrows" of `dataset-catalog`. A field the host leaves out takes its default, and a value the
+HUD cannot read takes the default as well.
 
 With no `host` the library SHALL build its own element in the canvas's parent, as it does
 for the label overlay, so a host that gives a canvas alone gets a working HUD. The library
@@ -182,17 +185,32 @@ on a panel SHALL NOT orbit the map and SHALL NOT move the cursor.
 
 ### Requirement: The top bar names the map, the region and the zoom
 
-The top bar SHALL hold, from the left: the title, the name of the region under the cursor,
-the dataset field when the catalog holds an entry, and, on the right, the zoom distance
-and a **reset view** button.
+The top bar SHALL hold three groups: on the left the title and the name of the region under
+the cursor, in the **centre** the dataset field when the catalog holds an entry, and on the
+right the zoom distance and a **reset view** button.
 
 The title SHALL be the `title` of the options, and `GALACTIC CARTOGRAPHICS` when the
 options name none.
 
+**The dataset field sits at the centre of the bar.** The left group and the right group
+SHALL take an even share of the space the centre group leaves, so the field is centred on
+the bar's own width and not merely placed between the two groups. Where the text of the
+left or the right group is too long for its share, that group SHALL clip its text with an
+ellipsis rather than push the field off centre. The divider that sat beside the field is
+gone with the field's old place beside the region name.
+
+With `datasetArrows` on, the **centre group** SHALL hold that place: the arrows and the
+counter sit inside it, so the group is centred on the bar and the field sits a little left
+of the middle. The counter follows the next arrow and has no counterpart before the
+previous arrow, which is what the mockup draws, so the field moves left by about half the
+counter's width. The arrows are off by default, which `dataset-catalog` states, so the
+field itself is centred on every map that asks for none.
+
 The dataset field is what `dataset-catalog` states. It SHALL NOT replace the region name:
 the region name answers where the camera is looking and the dataset field answers what the
 map is showing, and the two are not the same question. With an empty catalog the bar SHALL
-be the bar it is today, with no gap where the field would sit.
+hold the left group and the right group and nothing between them, with no gap where the
+field would sit.
 
 The region name SHALL be `regionNameAt` of the view's cursor, which `galactic-regions`
 defines. The cursor is the point the camera looks at, so the name answers "where am I
@@ -231,8 +249,28 @@ DOM in a tick where the formatted text has not changed.
 
 - **WHEN** the browser test builds one map with a catalog of two entries and one with no
   `datasets` option, and reads each bar
-- **THEN** the first bar holds the dataset field beside the region name, and the second
-  holds the title, the region name, the zoom and the reset button and nothing else
+- **THEN** the first bar holds the dataset field between the region name and the zoom, and
+  the second holds the title, the region name, the zoom and the reset button and nothing
+  else
+
+#### Scenario: The dataset field is centred on the bar
+
+- **WHEN** the browser test opens a map with the HUD and a catalog at 1280 by 720, and
+  reads the horizontal centre of the dataset field and of the top bar
+- **THEN** the two are within 2 CSS pixels of each other
+
+#### Scenario: The centre group is centred while the arrows are on
+
+- **WHEN** the browser test opens a map with the HUD, a catalog and `datasetArrows` true at
+  1280 by 720, and reads the horizontal centre of the centre group and of the top bar
+- **THEN** the two are within 2 CSS pixels of each other
+
+#### Scenario: A long title does not push the field off centre
+
+- **WHEN** the browser test builds a map with a catalog and a title of 60 characters, reads
+  the horizontal centre of the dataset field and of the top bar, and reads whether the
+  title element's scroll width passes its client width
+- **THEN** the two centres are within 2 CSS pixels of each other and the title is clipped
 
 ### Requirement: The category browser lists the categories and turns them off
 
@@ -737,13 +775,44 @@ never selected.
   emulates `prefers-reduced-motion: reduce`, rebuilds the HUD and reads it again
 - **THEN** the first reading is 140 ms and the second is 0
 
-### Requirement: The map options panel carries the map switches
+### Requirement: The category panel's tabs join and its row icon turns
 
-The map options panel SHALL hold one switch for each map option the host leaves open, and
-no segmented control. The options are **Galactic regions**, **System names**, **System
-icons**, **Coordinate grid** and **Shapes**, and a sixth, **Nebulae**, where the map holds
-nebulae. `lockedOptions` below is what takes one out. Each one SHALL be a switch of the shape the
-panel already uses, with its label and its track.
+The **SYSTEMS** and **SHAPES** tabs SHALL draw as one joined control: the two buttons sit
+side by side with no gap and share the border between them, so the pair reads as one
+control with two states rather than as two buttons. The tab text SHALL be 11.5 px, weight
+600, with 2.5 px of letter spacing, in the **display face** the panel headings read in,
+which is what the mockup draws. That is larger than the 9 px the tabs carry today and a
+different face: the tabs read in the monospace face now.
+
+The icon at the end of a category row SHALL be a **chevron** that points down while the
+row's list is folded and turns 180 degrees while it is open. The three-line list icon is
+gone. The turn SHALL take the same 140 ms the list itself takes to open, so the icon and
+the list move together.
+
+The chevron SHALL carry `aria-hidden`, because the row already states the same thing
+through `aria-expanded`, and a reader that read both would say it twice.
+
+#### Scenario: The two tabs share one border
+
+- **WHEN** the browser test reads the bounding box of the **SYSTEMS** tab and of the
+  **SHAPES** tab
+- **THEN** the right edge of the first and the left edge of the second are within 1 CSS
+  pixel of each other
+
+#### Scenario: The row icon turns when the list opens
+
+- **WHEN** the browser test reads the computed `transform` of a folded category row's
+  icon, clicks the row away from its dot, waits 200 ms and reads the `transform` again
+- **THEN** the first reading is the identity and the second is a 180 degree rotation
+
+### Requirement: The map options panel carries the switches the map can act on
+
+The map options panel SHALL hold one switch for each map option the host leaves open **and
+the map can act on**, and no segmented control. The options are **Galactic regions**,
+**System names**, **System icons**, **Coordinate grid**, **Shapes** and **Nebulae**.
+`lockedOptions` below is what takes one out by the host's choice; three of the six are also
+taken out by what the map holds. Each one SHALL be a switch of the shape the panel already
+uses, with its label and its track.
 
 **Galactic regions** SHALL call `setRegionsVisible`, which `galactic-regions` defines. It
 SHALL open on the state the map is in, which is on unless the options named `regions:
@@ -755,40 +824,66 @@ SHALL open on the state the map is in, which is off unless the options named
 
 **System icons** SHALL call `setSystemIconsVisible`, which `system-icons` defines. It
 SHALL open on the state the map is in, which is on unless the options named
-`systemIcons: false`. It SHALL draw whether or not a record on the map names an icon,
-because a host can add one at any time.
+`systemIcons: false`. The panel SHALL draw this switch only while `hasSystemIcons()`
+returns true. On a map where no record names an icon the switch moves nothing the user can
+see.
+
+**`hasSystemIcons()` may read true after the last icon goes.** `system-icons` states the
+rule it follows: the reading rises when a record names an icon and falls only when the set
+is cleared, because a correction would need a sweep of the set. A record that is replaced by
+one with no icon therefore leaves the switch on the panel until the next dataset load. The
+panel SHALL NOT sweep the set to correct it: a switch that is there and moves nothing costs
+the user one reading, and a sweep of 50,000 records 10 times a second costs every user a
+frame.
 
 **Coordinate grid** SHALL call `setGridVisible`, which `coordinate-grid` defines. It SHALL
 open on the state the map is in, which is off unless the options named `grid`. The demo
 site names it, so the switch opens on there, and a map built with no options opens it off.
 
 **Shapes** SHALL call `setShapesVisible`, which `map-shapes` defines. It SHALL open on the
-state the map is in, which is on unless the options named `shapes: false`. It SHALL draw
-whether or not the map holds a shape, because a host can add one at any time.
+state the map is in, which is on unless the options named `shapes: false`. The panel SHALL
+draw this switch only while `sphereCount() + lineCount()` is above 0. On a map that holds no
+sphere and no line the switch moves nothing the user can see.
 
-**Nebulae** SHALL call `setNebulaeVisible`, which `nebulae` defines. The panel SHALL build
-this switch only where `hasNebulae()` returns true, and SHALL build the open switches of
-the other five otherwise. A switch that turned on a feature the map cannot draw would be a control that
-does nothing, and the other five are not in that position: each of them moves a feature
-every map holds. The switch SHALL open on the state the map is in, which is on.
+**Nebulae** SHALL call `setNebulaeVisible`, which `nebulae` defines. The panel SHALL draw
+this switch only where `hasNebulae()` returns true. The switch SHALL open on the state the
+map is in, which is on.
+
+**The three conditional switches follow the map, not the moment the HUD was built.** The
+panel SHALL read `hasSystemIcons()`, the two shape counts and `hasNebulae()` on its tick,
+which runs 10 times a second. A switch SHALL appear within one tick of its reading turning
+true, and SHALL go within one tick of its reading turning false, so a host that adds the
+first shape or a dataset load that clears the shapes moves the panel with it. Each of the
+four readings SHALL be a call that costs no walk of the set, so the tick's cost does not
+follow the size of the set: a map of 50,000 systems and 4,096 shapes costs the same four
+reads as an empty one.
+
+**A switch that goes SHALL keep its state.** The map option itself does not move when its
+switch goes: a map whose shapes were switched off and then cleared still reads
+`areShapesVisible()` as false, and the switch reads off when it comes back.
 
 The HUD SHALL reach all six through the public handle and through nothing else, which is
 the boundary `AGENTS.md` holds and the lint rules enforce.
 
 **The host locks an option.** `HudOptions` SHALL carry `lockedOptions`, an array of the
-names `regions`, `systemNames`, `systemIcons`, `grid`, `shapes` and `nebulae`. A locked option SHALL draw
-**no switch**. The user is never shown a control that does nothing, and a switch that reads
-disabled states a rule the user cannot act on. The panel SHALL leave out that switch and
-nothing else, so the switches that stay keep the order above.
+names `regions`, `systemNames`, `systemIcons`, `grid`, `shapes` and `nebulae`. A locked
+option SHALL draw **no switch**. The user is never shown a control that does nothing, and a
+switch that reads disabled states a rule the user cannot act on. The panel SHALL leave out
+that switch and nothing else, so the switches that stay keep the order above.
 
-**`nebulae` is lockable because it is a switch.** The lock list names every switch the
-panel can hold, and not only the five that every map holds. A host that locks `nebulae` on
-a map that holds no nebula source loses nothing, because that switch was never built.
+When **no switch the panel holds is shown**, whether because the host locked it or because
+the map holds nothing it moves, the HUD SHALL **show** no map options panel, and the left
+column SHALL hold the category browser alone. The panel SHALL come back within one tick of
+one switch being shown again. The rule is the switches the panel would show and not a fixed
+count, because the count is not fixed: it is three on a bare map, four with a shape, and six
+with a shape, an icon record and a nebula source.
 
-When **every switch the panel would hold** is locked, the HUD SHALL build **no map options
-panel**, and the left column SHALL hold the category browser alone. On a map with no nebula
-source that is the five; on a map with one it is the six. The rule is the switches the
-panel would hold and not a fixed count, because the count is not fixed.
+**"Shows no panel" is a reading of the screen and not a count of elements.** A panel that
+every lock took SHALL NOT be built at all, because that reading cannot change while the map
+runs. A panel the map emptied MAY stay in the document carrying `hidden`, because the map
+can fill it again on the next tick. A test of this rule SHALL read whether the panel is
+shown — `hidden`, or a box of no height — and SHALL NOT count elements, because the two
+cases differ there and the user cannot tell them apart.
 
 A name the six above do not hold SHALL be ignored, and a `lockedOptions` that is not an
 array SHALL be ignored, because a setting the HUD cannot read takes the default.
@@ -796,8 +891,9 @@ array SHALL be ignored, because a setting the HUD cannot read takes the default.
 **A lock holds the user, not the host.** `setRegionsVisible`, `setSystemNamesVisible`,
 `setSystemIconsVisible`, `setGridVisible`, `setShapesVisible` and `setNebulaeVisible` SHALL
 work on a locked option as they do on an open one, so the host changes it in code at any
-time. A locked option SHALL start at the value its `GalaxyMapOptions` field gives, which is
-`regions`, `systemNames`, `systemIcons`, `grid` and `shapes`; the nebulae start visible on a map that holds a source,
+time. The same holds for an option whose switch the map dropped. A locked option SHALL start
+at the value its `GalaxyMapOptions` field gives, which is `regions`, `systemNames`,
+`systemIcons`, `grid` and `shapes`; the nebulae start visible on a map that holds a source,
 which `nebulae` states. The library SHALL NOT read `lockedOptions` anywhere but the HUD.
 
 The three buttons **NONE**, **SIMPLIFIED** and **ACCURATE** are gone with the region mode
@@ -822,8 +918,8 @@ the handle moves the control with it.
 
 #### Scenario: A change through the handle moves the control
 
-- **WHEN** the browser test calls `setGridVisible(true)` and `setShapesVisible(false)` on
-  the handle and reads the two switches
+- **WHEN** the browser test adds one sphere, calls `setGridVisible(true)` and
+  `setShapesVisible(false)` on the handle, waits 200 ms and reads the two switches
 - **THEN** the grid switch reads on and the shapes switch reads off
 
 #### Scenario: The grid switch opens on the state the options named
@@ -833,17 +929,35 @@ the handle moves the control with it.
   and reads the same switch
 - **THEN** the first reads on and the second reads off
 
-#### Scenario: The shapes switch draws with no shape on the map
+#### Scenario: The shapes switch follows the shape set
 
-- **WHEN** a browser test builds a map with `hud: true` and adds no shape, and reads the
-  map options panel
-- **THEN** the panel holds a **Shapes** switch and it reads on
+- **WHEN** a browser test builds a map with `hud: true` and no shape and reads the map
+  options panel, adds one sphere, waits 200 ms and reads it again, then clears the shapes,
+  waits 200 ms and reads it a third time
+- **THEN** the panel shows no **Shapes** switch, then shows one that reads on, then shows
+  none again
+
+#### Scenario: The system icons switch follows the records
+
+- **WHEN** a browser test builds a map with `hud: true`, adds one system that names no
+  icon and reads the map options panel, then adds a system that names two icons, waits
+  200 ms and reads it again, then clears the systems, waits 200 ms and reads it a third
+  time
+- **THEN** the first reading shows no **System icons** switch, the second shows one that
+  reads on, and the third shows none again
+
+#### Scenario: A dropped switch keeps its state
+
+- **WHEN** a browser test adds one sphere, clicks the **Shapes** switch off, clears the
+  shapes, waits 200 ms, reads `areShapesVisible`, adds a sphere again, waits 200 ms and
+  reads the switch
+- **THEN** the reading is false at both points and the switch reads off when it comes back
 
 #### Scenario: The nebulae switch appears only where the map holds them
 
-- **WHEN** a browser test builds a map with `hud: true` and the nebula source and counts
-  the switches, and a second builds one with `hud: true` and no `nebulae` option and
-  counts them
+- **WHEN** a browser test builds a map with `hud: true`, the nebula source, one sphere and
+  one system that names an icon, and counts the switches, and a second builds one with the
+  same shape and record but no `nebulae` option and counts them
 - **THEN** the first holds six switches with a **Nebulae** switch that reads on, and the
   second holds five and no switch labelled **Nebulae**
 
@@ -862,18 +976,28 @@ the handle moves the control with it.
 
 #### Scenario: A locked option draws no switch
 
-- **WHEN** a browser test builds a map with `hud: { lockedOptions: ['grid', 'shapes'] }`
-  and reads the map options panel
-- **THEN** the panel holds the **Galactic regions**, **System names** and **System icons**
-  switches in that order, and holds no coordinate grid switch and no shapes switch
+- **WHEN** a browser test builds a map with `hud: { lockedOptions: ['grid', 'shapes'] }`,
+  adds one sphere and one system that names an icon, waits 200 ms and reads the map
+  options panel
+- **THEN** the panel shows the **Galactic regions**, **System names** and **System icons**
+  switches in that order, and shows no coordinate grid switch and no shapes switch
 
 #### Scenario: Every switch locked drops the panel
 
-- **WHEN** a browser test builds a map with no nebula source and
+- **WHEN** a browser test builds a map with no nebula source, one sphere, one system that
+  names an icon and
   `hud: { lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'] }` and
   reads the HUD, and a second builds one **with** the source and the same five names
-- **THEN** the first holds no map options panel and the category browser is there, and the
-  second holds a panel with the **Nebulae** switch alone
+- **THEN** the first shows no map options panel and the category browser is there, and the
+  second shows a panel with the **Nebulae** switch alone
+
+#### Scenario: A map that moves nothing holds no panel
+
+- **WHEN** a browser test builds a map with no nebula source, no shape, no icon record and
+  `hud: { lockedOptions: ['regions', 'systemNames', 'grid'] }`, reads the HUD, adds one
+  sphere, waits 200 ms and reads it again
+- **THEN** the first reading shows no map options panel and the second shows one with the
+  **Shapes** switch alone
 
 #### Scenario: The nebulae switch locks with the rest
 
@@ -892,16 +1016,17 @@ the handle moves the control with it.
 
 #### Scenario: A lock list the HUD cannot read is ignored
 
-- **WHEN** a browser test builds a map with no nebula source whose `lockedOptions` hold the
-  name `datasets` and the number 7, and a second whose `lockedOptions` is the string
-  `grid`, and reads the map options panel of each
-- **THEN** both panels hold all five switches
+- **WHEN** a browser test builds a map with no nebula source, one sphere and one system
+  that names an icon, whose `lockedOptions` hold the name `datasets` and the number 7, and
+  a second whose `lockedOptions` is the string `grid`, waits 200 ms and reads the map
+  options panel of each
+- **THEN** both panels show all five switches
 
 #### Scenario: The system icons switch moves the stacks
 
 - **WHEN** a browser test builds a map with the HUD, adds one system with two icons in
-  view, clicks the **System icons** switch, draws a frame and counts the icon placements
-  the handle reports, then clicks it again, draws and counts
+  view, waits 200 ms, clicks the **System icons** switch, draws a frame and counts the icon
+  placements the handle reports, then clicks it again, draws and counts
 - **THEN** the counts are 0 and 2, and the switch reads off and then on
 
   The stacks draw on the canvas and not in the overlay, which `system-icons` states, so
@@ -910,9 +1035,9 @@ the handle moves the control with it.
 
 #### Scenario: The system icons switch opens on the option
 
-- **WHEN** a browser test builds a map with `systemIcons: false` and the HUD and reads the
-  **System icons** switch, and a second builds one with no `systemIcons` option and reads
-  the same switch
+- **WHEN** a browser test builds a map with `systemIcons: false` and the HUD, adds one
+  system that names an icon, waits 200 ms and reads the **System icons** switch, and a
+  second builds one with no `systemIcons` option and does the same
 - **THEN** the first reads off and the second reads on
 
 ### Requirement: The information panel shows the selected system
@@ -1520,8 +1645,9 @@ icon alone.
 
 A control that holds a state the user can see SHALL report that state: the **colour dot**
 of a category row, the two tabs of the category panel and **every switch the map options
-panel holds** SHALL carry `aria-pressed`, and the rest of a category row SHALL carry
-`aria-expanded`. The dot SHALL carry an `aria-label` that names its category, because it
+panel shows** SHALL carry `aria-pressed`, and the rest of a category row SHALL carry
+`aria-expanded`. A switch the panel hides SHALL take no focus, because a hidden control is
+not a control the user can reach. The dot SHALL carry an `aria-label` that names its category, because it
 shows a colour alone.
 
 The lightbox SHALL take the focus when it opens and SHALL give it back to the thumbnail
@@ -1529,7 +1655,7 @@ that opened it when it closes, so a keyboard user is not left at the top of the 
 
 **The dataset dialog SHALL follow the same rule as the lightbox.** It SHALL take the focus
 when it opens, SHALL hold the focus while it is open, and SHALL give it back to the dataset
-field when it closes. Its filter box is a text field, so the movement keys SHALL NOT reach
+field when it closes. Its search box is a text field, so the movement keys SHALL NOT reach
 the camera while it holds the focus, which is the guard `map-navigation` already states.
 
 The movement keys SHALL keep working while a HUD control holds the focus. The guard of
@@ -1552,14 +1678,22 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
 
 #### Scenario: Tab reaches every control
 
-- **WHEN** the browser test opens the map with the HUD on and a set that holds a shape, so
-  the shapes tab is not disabled, focuses the search box, and presses `Tab` through the
+- **WHEN** the browser test opens the map with the HUD on, `datasetArrows` on and a set that
+  holds a shape and a system that names an icon, so the shapes tab is not disabled and every
+  conditional switch is shown, focuses the search box, and presses `Tab` through the
   panels, reading the focused element at each step
 - **THEN** the two tabs, every category dot, every category row, the ALL and NONE buttons,
-  every switch the panel holds, the two copy buttons, the dataset field and the reset
-  view button are each focused once. Where the map holds nebulae the panel holds six
-  switches and the **Nebulae** switch is one of them; where it does not, the panel holds
-  five and no focus step lands on a nebulae switch
+  every switch the panel shows, the two copy buttons, the two dataset step arrows, the
+  dataset field and the reset view button are each focused once. Where the map holds nebulae
+  the panel shows six switches and the **Nebulae** switch is one of them; where it does not,
+  the panel shows five and no focus step lands on a nebulae switch
+
+#### Scenario: Tab reaches every control of the dataset library
+
+- **WHEN** the browser test opens the dataset dialog on a catalog of two collections and
+  presses `Tab` through it, reading the focused element at each step
+- **THEN** the search box, every chip, every card and the close button are each focused
+  once, and the focus does not leave the dialog
 
 #### Scenario: Enter and Space work a control
 
@@ -1569,7 +1703,7 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
 
 #### Scenario: The controls carry their state and their names
 
-- **WHEN** the browser test reads every switch the panel holds, the two tabs and a
+- **WHEN** the browser test reads every switch the panel shows, the two tabs and a
   category row with the HUD on
 - **THEN** each switch and each tab reports its state in `aria-pressed`, the row's dot
   reports its state in `aria-pressed` and names its category, the rest of the row reports
@@ -1593,10 +1727,18 @@ and `E` are movement keys, so the same rule turns the camera from a focused butt
 #### Scenario: A panel of fewer switches still reports each state
 
 - **WHEN** a browser test builds a map with `hud: { lockedOptions: ['grid', 'shapes'] }`,
-  tabs through the map options panel and reads each control it reaches
+  adds one system that names an icon, waits 200 ms, tabs through the map options panel and
+  reads each control it reaches
 - **THEN** it reaches three switches — **Galactic regions**, **System names** and **System
   icons** — each carries `aria-pressed` and a name a screen reader can read, and each acts
   on `Enter` and on `Space`
+
+#### Scenario: A hidden switch takes no focus
+
+- **WHEN** a browser test builds a map with no shape, no icon record and no nebula source,
+  tabs through the map options panel and reads each control it reaches
+- **THEN** it reaches the **Galactic regions**, **System names** and **Coordinate grid**
+  switches alone, and no focus step lands on a shapes switch or a system icons switch
 
 ### Requirement: Escape closes the lightbox, then the panel
 
@@ -1656,11 +1798,14 @@ sits on, which the requirements of `real-systems` and `system-selection` bound. 
 reading fails, the implementation SHALL make the frame cheaper, or the set bound SHALL land
 lower. It SHALL NOT raise this number.
 
-The HUD SHALL hold at most 256 category rows, 200 system or shape rows, 8 thumbnails, 120
-dataset rows and one information panel, so its DOM node count does not follow the size of
-the set, the size of the shape set or the size of the catalog. The dataset rows SHALL only
-be there while the dialog is open. One tab shows at a time, so the rows of the other tab
-SHALL NOT be in the document.
+The HUD SHALL hold at most 256 category rows, 200 system or shape rows, 8 thumbnails, 256
+dataset cards and one information panel, so its DOM node count does not follow the size of
+the set or the size of the shape set. The cards follow the catalog, which the catalog reader
+caps at **256 entries**: the dialog holds one card per entry it keeps and needs no cap of its
+own, where the old grouped list held 120 rows and said when it cut the list. A card SHALL
+cost at most **5** elements, so a full catalog is at most 1,280 elements. The cards SHALL
+only be there while the dialog is open, and the dialog SHALL clear them when it closes. One
+tab shows at a time, so the rows of the other tab SHALL NOT be in the document.
 
 A system that belongs to several categories now shows in the list of each one, and a search
 opens every category that holds a match, so **200 rows is the count over every open list
@@ -1689,7 +1834,7 @@ geometry.
 #### Scenario: The HUD's node count does not follow the set
 
 - **WHEN** the browser test adds 50,000 systems in one category, expands it, and counts the
-  elements under the HUD root
+  elements under the HUD root with the dataset dialog closed
 - **THEN** the count is under 600
 
 #### Scenario: The node count does not follow the count of open lists
@@ -1718,8 +1863,13 @@ geometry.
 
 #### Scenario: The dialog's rows go when it closes
 
-- **WHEN** the browser test builds a map with 130 catalog entries, counts the elements
-  under the HUD root, opens the dataset dialog, counts again, closes it and counts once
-  more
-- **THEN** the second count is under 600 more than the first, and the third is the first
+- **WHEN** the browser test builds a map with a full catalog of 256 entries, counts the
+  elements under the HUD root, opens the dataset dialog, counts again, closes it and counts
+  once more
+- **THEN** the second count is at most 1,280 more than the first, and the third is back
+  within 20 of the first
 
+  The bound is the card bound of this requirement: 256 cards of at most 5 elements each. The
+  reading was 130 entries and 600 elements while the dialog held a grouped list of 120 rows.
+  The close reading is "within 20" and not "the same", because the dialog keeps its frame,
+  its search box and its chips.

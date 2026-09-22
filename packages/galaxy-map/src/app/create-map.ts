@@ -770,6 +770,16 @@ export interface GalaxyMap {
   setSystemIconsVisible(on: boolean): void;
   /** True while the system icon stacks draw. */
   areSystemIconsVisible(): boolean;
+  /**
+   * True while at least one record on the map named at least one icon. The HUD reads it
+   * to decide whether a **System icons** switch would move anything.
+   *
+   * The reading **rises** when a record that names an icon is added, and it **falls only
+   * when the system set is cleared**. A record that is replaced by one with no icon
+   * leaves the reading true, because a correction would need a sweep of the set. The
+   * call costs one read of a count and walks nothing.
+   */
+  hasSystemIcons(): boolean;
   /** Turns the cursor marker on or off. */
   setCursorMarkerVisible(on: boolean): void;
   /** True while the cursor marker draws. */
@@ -2482,6 +2492,9 @@ export function createGalaxyMap(
     },
     areSystemIconsVisible(): boolean {
       return iconsOn;
+    },
+    hasSystemIcons(): boolean {
+      return set.iconSystemCount > 0;
     },
     setCursorMarkerVisible(on: boolean): void {
       wake();

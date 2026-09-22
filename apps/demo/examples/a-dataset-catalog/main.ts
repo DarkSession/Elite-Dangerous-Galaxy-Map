@@ -29,7 +29,9 @@ const BEACONS: DatasetContent = {
 };
 
 const map = createGalaxyMap(canvas, {
-  hud: true,
+  // `datasetArrows` draws a previous and a next arrow around the dataset field, with an
+  // `i / n` counter. Each arrow loads the entry beside the loaded one in catalog order.
+  hud: { datasetArrows: true },
   dataset: 'ruins',
   datasets: [
     {

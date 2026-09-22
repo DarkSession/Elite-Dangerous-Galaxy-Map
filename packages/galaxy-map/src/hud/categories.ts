@@ -164,24 +164,24 @@ export interface CategoryPanel {
   dispose(): void;
 }
 
-/** Draws the three lines that mark the rest of the row as the one that opens the list. */
-function makeListIcon(doc: Document): SVGSVGElement {
+/**
+ * Draws the chevron at the end of a category row. It points down while the list is
+ * folded, and the style sheet turns it 180 degrees while the row's `aria-expanded` reads
+ * true. It carries `aria-hidden`, because the row already states the same thing.
+ */
+function makeChevronIcon(doc: Document): SVGSVGElement {
   const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 12 12');
-  svg.setAttribute('width', '11');
-  svg.setAttribute('height', '11');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.4');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'square');
   svg.setAttribute('aria-hidden', 'true');
-  for (const y of ['2.5', '6', '9.5']) {
-    const line = doc.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', '1');
-    line.setAttribute('y1', y);
-    line.setAttribute('x2', '11');
-    line.setAttribute('y2', y);
-    svg.appendChild(line);
-  }
+  const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', '4,6 8,10.5 12,6');
+  svg.appendChild(line);
   return svg;
 }
 
@@ -711,7 +711,8 @@ export function createCategoryPanel(doc: Document, map: GalaxyMap): CategoryPane
       // back through any of them. `writeCounts` rewrites it under a filter.
       countText.textContent = formatWhole(held.length);
       const icon = make(doc, 'span', 'gm-hud__category-chevron');
-      icon.appendChild(makeListIcon(doc));
+      icon.setAttribute('aria-hidden', 'true');
+      icon.appendChild(makeChevronIcon(doc));
       row.append(name, countText, icon);
       row.addEventListener('click', () => {
         const open = openOf[tab];

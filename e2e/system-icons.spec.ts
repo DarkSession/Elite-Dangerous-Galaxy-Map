@@ -1585,3 +1585,119 @@ test.describe('a nearer marker draws over an icon', () => {
     expect(glyph).toBeGreaterThan(0);
   });
 });
+
+// `hasSystemIcons()` is the reading the HUD takes to decide whether a **System icons**
+// switch would move anything. The reading rises with the first record that names an icon
+// and falls only on a clear.
+test.describe('the icon reading of the handle', () => {
+  /** Builds a map with no record, so the test adds its own. */
+  async function buildBareMap(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      window.galaxyMap?.dispose();
+      const wrap = document.createElement('div');
+      wrap.id = 'reading-wrap';
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      wrap.appendChild(canvas);
+      document.body.appendChild(wrap);
+      const map = factory(canvas, {} as never);
+      window.__iconsMap = map;
+      await map.ready;
+      map.addCategories([
+        { name: 'Alpha', color: [153, 230, 255], maxDrawRange: 200000 },
+      ]);
+    });
+  }
+
+  test.afterEach(async ({ page }) => {
+    await page.evaluate(() => {
+      window.__iconsMap?.dispose();
+      delete window.__iconsMap;
+      document.getElementById('reading-wrap')?.remove();
+    });
+  });
+
+  // The scenario "The reading follows the records".
+  test('the reading follows the records', async ({ page }) => {
+    await openMap(page);
+    await buildBareMap(page);
+
+    const readings = await page.evaluate(() => {
+      const map = window.__iconsMap;
+      if (map === undefined) throw new Error('The test built no map.');
+      const bare = map.hasSystemIcons();
+      map.addSystems([
+        { name: 'Plain', coords: { x: 0, y: 0, z: 0 }, categories: ['Alpha'] },
+      ] as never);
+      const plain = map.hasSystemIcons();
+      map.addSystems([
+        {
+          name: 'Marked',
+          coords: { x: 10, y: 0, z: 0 },
+          categories: ['Alpha'],
+          icons: ['titan', 'mission'],
+        },
+      ] as never);
+      return { bare, plain, marked: map.hasSystemIcons() };
+    });
+    console.log('the icon reading over three steps', readings);
+
+    expect(readings).toEqual({ bare: false, plain: false, marked: true });
+  });
+
+  // The scenario "A clear drops the reading".
+  test('a clear drops the reading', async ({ page }) => {
+    await openMap(page);
+    await buildBareMap(page);
+
+    const readings = await page.evaluate(() => {
+      const map = window.__iconsMap;
+      if (map === undefined) throw new Error('The test built no map.');
+      map.addSystems([
+        {
+          name: 'Marked',
+          coords: { x: 0, y: 0, z: 0 },
+          categories: ['Alpha'],
+          icons: ['titan'],
+        },
+      ] as never);
+      const held = map.hasSystemIcons();
+      map.clearSystems();
+      return { held, cleared: map.hasSystemIcons() };
+    });
+    console.log('the icon reading over a clear', readings);
+
+    expect(readings).toEqual({ held: true, cleared: false });
+  });
+
+  // The scenario "A replacement leaves the reading true".
+  test('a replacement leaves the reading true', async ({ page }) => {
+    await openMap(page);
+    await buildBareMap(page);
+
+    const reading = await page.evaluate(() => {
+      const map = window.__iconsMap;
+      if (map === undefined) throw new Error('The test built no map.');
+      map.addSystems([
+        {
+          name: 'Marked',
+          coords: { x: 0, y: 0, z: 0 },
+          categories: ['Alpha'],
+          icons: ['titan'],
+        },
+      ] as never);
+      // The same name with no icon replaces the record. A correction of the count would
+      // need a sweep of the set, so the reading stays true.
+      map.addSystems([
+        { name: 'Marked', coords: { x: 0, y: 0, z: 0 }, categories: ['Alpha'] },
+      ] as never);
+      return map.hasSystemIcons();
+    });
+    console.log('the icon reading after a replacement', reading);
+
+    expect(reading).toBe(true);
+  });
+});

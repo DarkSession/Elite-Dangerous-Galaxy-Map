@@ -12,7 +12,15 @@ writes its panel and reads no network. A host that fetches takes `signal` from t
 argument and passes it to the request, because the map aborts `signal` when the selection
 moves.
 `infoFields` turns a worked-out field off, and `lockedOptions` holds a map option at your
-setting and draws no switch for it.
+setting and draws no switch for it. `datasetArrows` draws a previous and a next arrow
+around the dataset field, which `A dataset catalog` states.
+
+**The panel shows the switches the map can act on.** The **Shapes** switch is there while
+the map holds at least one sphere or line, the **System icons** switch while at least one
+record names an icon, and the **Nebulae** switch where the map holds a nebula source. The
+panel reads all three on its tick, so a switch appears when you add the first shape and
+goes when a dataset load clears them. While the panel shows no switch it shows no panel,
+and the left column holds the category browser alone.
 
 The HUD reads the map through the public handle alone, so a host that wants its own
 chrome leaves `hud` out and builds it from the same members.

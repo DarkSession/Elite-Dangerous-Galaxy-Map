@@ -56,6 +56,17 @@ const styleText = `
   src: url(${monoRegular}) format('woff2');
 }
 
+/*
+ * The spinner's turn. An at-rule takes no selector, so it cannot sit under \`.gm-hud\`,
+ * which is the exception the \`@font-face\` rules above already take. The name carries
+ * the HUD's prefix, so it cannot collide with a host page's own keyframes.
+ */
+@keyframes gm-hud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .gm-hud {
   position: absolute;
   inset: 0;
@@ -120,24 +131,58 @@ const styleText = `
   background: linear-gradient(180deg, rgba(12, 8, 12, 0.92) 0%, rgba(12, 8, 12, 0.35) 100%);
   border-bottom: 1px solid rgba(255, 150, 60, 0.22);
 }
+/*
+ * The left group and the right group take an even share of the space the centre group
+ * leaves, so the dataset field sits at the middle of the bar's own width. A side group
+ * whose text is too long clips it, which is what \`min-width: 0\` and the ellipsis rules
+ * below are for: a group that could not shrink would push the field off centre.
+ */
 .gm-hud__top-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex: 1 1 0;
   min-width: 0;
 }
 .gm-hud__top-name {
   display: flex;
   align-items: baseline;
   gap: 14px;
-  flex: 0 0 auto;
   min-width: 0;
 }
-.gm-hud__top-divider {
-  width: 1px;
-  height: 26px;
+.gm-hud__top-centre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 12px;
+}
+.gm-hud__dataset-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
-  background: rgba(255, 150, 60, 0.22);
+  border: 1px solid rgba(255, 150, 60, 0.4);
+  color: ${ACCENT};
+}
+.gm-hud__dataset-step:hover:not(:disabled) {
+  background: rgba(255, 150, 60, 0.2);
+}
+.gm-hud__dataset-step:disabled {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(244, 230, 216, 0.22);
+  cursor: default;
+}
+.gm-hud__dataset-counter {
+  flex: 0 0 auto;
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: rgba(244, 230, 216, 0.35);
+  white-space: nowrap;
 }
 .gm-hud__dataset {
   display: flex;
@@ -165,19 +210,38 @@ const styleText = `
   color: ${ACCENT};
 }
 .gm-hud__dataset-value {
+  flex: 1 1 auto;
   font-size: 13px;
   letter-spacing: 1px;
   color: #f4e6d8;
-  max-width: 240px;
+  min-width: 0;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/*
+ * The caret is a vector and the spinner takes its place while a load runs. The two
+ * boxes are one size, so the field states the load without changing its width.
+ */
 .gm-hud__dataset-caret {
-  font-family: ${MONO};
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
   color: ${ACCENT};
-  white-space: nowrap;
+}
+.gm-hud__spinner {
+  display: block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 150, 60, 0.25);
+  border-top-color: ${ACCENT};
+  border-radius: 50%;
+  animation: gm-hud-spin 700ms linear infinite;
 }
 .gm-hud__title {
   margin: 0;
@@ -185,6 +249,9 @@ const styleText = `
   font-weight: 600;
   letter-spacing: 4px;
   color: ${ACCENT};
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gm-hud__region {
@@ -200,7 +267,10 @@ const styleText = `
 .gm-hud__top-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 26px;
+  flex: 1 1 0;
+  min-width: 0;
   font-family: ${MONO};
   font-size: 11px;
   letter-spacing: 1.5px;
@@ -208,6 +278,9 @@ const styleText = `
 }
 .gm-hud__zoom {
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gm-hud__zoom-value {
   color: ${ACCENT};
@@ -264,24 +337,34 @@ const styleText = `
   letter-spacing: 3px;
   color: ${ACCENT};
 }
+/*
+ * The two tabs read as one control with two states: no gap, and the second tab pulled
+ * one pixel left so the pair shares the border between them. The chosen tab draws over
+ * its neighbour, so its accent border is the one the user sees.
+ */
 .gm-hud__tabs {
   display: flex;
-  gap: 6px;
+  gap: 0;
 }
 .gm-hud__tab {
-  font-family: ${MONO};
-  font-size: 9px;
-  letter-spacing: 2px;
-  padding: 4px 9px;
-  border: 1px solid rgba(255, 150, 60, 0.3);
-  color: rgba(244, 230, 216, 0.7);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(244, 230, 216, 0.5);
+}
+.gm-hud__tab + .gm-hud__tab {
+  margin-left: -1px;
 }
 .gm-hud__tab:hover:not(:disabled) {
   background: rgba(255, 150, 60, 0.18);
 }
 .gm-hud__tab[aria-pressed='true'] {
+  position: relative;
+  z-index: 1;
   border-color: ${ACCENT};
-  background: rgba(255, 150, 60, 0.22);
+  background: rgba(255, 150, 60, 0.2);
   color: ${ACCENT};
 }
 .gm-hud__tab:disabled {
@@ -393,13 +476,25 @@ const styleText = `
   font-size: 10px;
   color: rgba(244, 230, 216, 0.4);
 }
+/*
+ * The chevron points down while the list is folded and turns 180 degrees while it is
+ * open. The turn takes the 140 ms the list itself takes, so the icon and the list move
+ * together.
+ */
 .gm-hud__category-chevron {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
-  color: rgba(255, 154, 60, 0.55);
+  color: rgba(244, 230, 216, 0.45);
+  transform: rotate(0deg);
+  transition: transform 140ms ease;
 }
 .gm-hud__category-row[aria-expanded='true'] .gm-hud__category-chevron {
   color: ${ACCENT};
+  transform: rotate(180deg);
 }
 /*
  * The list opens and closes over 140 ms on the track of a one-row grid, from 0fr to 1fr.
@@ -476,8 +571,12 @@ const styleText = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gm-hud__system-list {
+  .gm-hud__system-list,
+  .gm-hud__category-chevron {
     transition-duration: 0s;
+  }
+  .gm-hud__spinner {
+    animation: none;
   }
 }
 
@@ -795,8 +894,8 @@ const styleText = `
   background: rgba(4, 3, 6, 0.78);
 }
 .gm-hud__dialog-frame {
-  width: min(92%, 960px);
-  max-height: min(82%, 640px);
+  width: min(94%, 1040px);
+  height: min(84%, 680px);
   display: flex;
   flex-direction: column;
   background: rgba(12, 9, 13, 0.97);
@@ -808,9 +907,16 @@ const styleText = `
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex: 0 0 auto;
   padding: 14px 18px;
   border-bottom: 1px solid rgba(255, 150, 60, 0.24);
   background: rgba(255, 150, 60, 0.07);
+}
+.gm-hud__dialog-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
 }
 .gm-hud__dialog-title {
   margin: 0;
@@ -818,6 +924,14 @@ const styleText = `
   font-weight: 600;
   letter-spacing: 3px;
   color: ${ACCENT};
+  white-space: nowrap;
+}
+.gm-hud__dialog-count {
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(244, 230, 216, 0.4);
+  white-space: nowrap;
 }
 .gm-hud__dialog-close {
   width: 26px;
@@ -833,22 +947,13 @@ const styleText = `
 .gm-hud__dialog-close:hover {
   background: rgba(255, 150, 60, 0.2);
 }
-.gm-hud__dialog-body {
-  display: grid;
-  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
-  min-height: 0;
-  flex: 1 1 auto;
-}
-.gm-hud__dialog-side {
+.gm-hud__dialog-tools {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-.gm-hud__dialog-filter-wrap {
-  padding: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 10px;
   flex: 0 0 auto;
+  padding: 12px 18px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .gm-hud__dialog-filter {
   width: 100%;
@@ -857,153 +962,129 @@ const styleText = `
   color: #f4e6d8;
   font-family: inherit;
   font-size: 11px;
-  letter-spacing: 1.5px;
-  padding: 8px 9px;
+  letter-spacing: 2px;
+  padding: 8px 10px;
   outline: none;
 }
 .gm-hud__dialog-filter::placeholder {
   color: rgba(244, 230, 216, 0.35);
 }
-.gm-hud__dataset-list {
+.gm-hud__collections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+/*
+ * A collection chip and the cards of its collection carry one colour, which the dialog works out
+ * from the collection's name and writes on the element as \`--gm-collection-colour\`.
+ */
+.gm-hud__collection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  font-family: ${MONO};
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: rgba(244, 230, 216, 0.6);
+}
+.gm-hud__collection:hover {
+  border-color: rgba(255, 150, 60, 0.5);
+}
+.gm-hud__collection[aria-pressed='true'] {
+  border-color: var(--gm-collection-colour, ${ACCENT});
+  background: color-mix(in srgb, var(--gm-collection-colour, ${ACCENT}) 15%, transparent);
+  color: var(--gm-collection-colour, ${ACCENT});
+}
+.gm-hud__collection-swatch {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  transform: rotate(45deg);
+  background: var(--gm-collection-colour, ${ACCENT});
+  box-shadow: 0 0 7px var(--gm-collection-colour, ${ACCENT});
+}
+.gm-hud__collection-name {
+  white-space: nowrap;
+}
+.gm-hud__collection-count {
+  opacity: 0.55;
+}
+.gm-hud__dialog-body {
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
+  padding: 14px 18px 18px;
 }
-.gm-hud__dataset-group {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+.gm-hud__dataset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 9px;
+}
+/*
+ * One card is at most five elements: the button, the swatch, the collection, the label
+ * and, while the entry loads, the spinner. The label takes a row of its own, which is
+ * what the full-width flex line gives with no box to wrap the first row in.
+ */
+.gm-hud__dataset-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: rgba(18, 13, 19, 0.97);
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  font-family: ${MONO};
-  font-size: 9px;
-  letter-spacing: 2px;
+  gap: 5px 7px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+.gm-hud__dataset-card:hover {
+  border-color: rgba(255, 150, 60, 0.65);
+  background: rgba(255, 150, 60, 0.09);
+}
+.gm-hud__dataset-card[aria-current='true'],
+.gm-hud__dataset-card[data-loading='true'] {
+  border-color: ${ACCENT};
+  background: rgba(255, 150, 60, 0.1);
+}
+.gm-hud__dataset-card[aria-current='true'] .gm-hud__card-label,
+.gm-hud__dataset-card[data-loading='true'] .gm-hud__card-label {
   color: ${ACCENT};
 }
-.gm-hud__dataset-group-name {
+.gm-hud__card-swatch {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  transform: rotate(45deg);
+  background: var(--gm-card-colour, ${ACCENT});
+  box-shadow: 0 0 8px var(--gm-card-colour, ${ACCENT});
+}
+.gm-hud__card-collection {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gm-hud__dataset-group-count {
-  color: rgba(244, 230, 216, 0.35);
-}
-.gm-hud__dataset-row {
-  display: block;
-  width: 100%;
-  padding: 8px 12px 8px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  border-left: 2px solid transparent;
-  font-size: 12.5px;
-  letter-spacing: 1px;
-  color: rgba(244, 230, 216, 0.85);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gm-hud__dataset-row:hover {
-  background: rgba(255, 150, 60, 0.12);
-}
-.gm-hud__dataset-row[aria-current='true'] {
-  border-left-color: ${ACCENT};
-  color: ${ACCENT};
-}
-.gm-hud__dataset-row[aria-pressed='true'] {
-  background: rgba(255, 150, 60, 0.16);
-  color: ${ACCENT};
-}
-.gm-hud__dataset-empty,
-.gm-hud__dataset-cut {
-  padding: 16px 12px;
   font-family: ${MONO};
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  color: rgba(244, 230, 216, 0.4);
-}
-.gm-hud__dataset-cut {
-  padding: 8px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  flex: 0 0 auto;
-}
-.gm-hud__dialog-detail {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.gm-hud__detail-body {
-  overflow-y: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: 16px 18px;
-}
-.gm-hud__detail-label {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: #ffb055;
-}
-.gm-hud__detail-meta {
-  font-family: ${MONO};
-  font-size: 9px;
+  font-size: 8.5px;
   letter-spacing: 2px;
-  color: rgba(244, 230, 216, 0.45);
-  margin-top: 10px;
+  color: var(--gm-card-colour, ${ACCENT});
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.gm-hud__detail-description {
-  margin: 16px 0 0;
+.gm-hud__card-label {
+  flex: 1 0 100%;
+  min-width: 0;
   font-size: 13px;
-  line-height: 1.6;
-  color: rgba(244, 230, 216, 0.85);
-  white-space: pre-line;
+  letter-spacing: 0.8px;
+  line-height: 1.35;
+  color: #f4e6d8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.gm-hud__dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  flex: 0 0 auto;
-}
-.gm-hud__dialog-cancel {
+.gm-hud__dataset-empty {
+  padding: 26px 2px;
   font-family: ${MONO};
   font-size: 10px;
   letter-spacing: 2px;
-  padding: 9px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: rgba(244, 230, 216, 0.65);
-}
-.gm-hud__dialog-cancel:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.gm-hud__dialog-load {
-  font-family: ${MONO};
-  font-size: 10px;
-  letter-spacing: 2px;
-  padding: 9px 16px;
-  border: 1px solid ${ACCENT};
-  background: rgba(255, 150, 60, 0.2);
-  color: ${ACCENT};
-}
-.gm-hud__dialog-load:hover {
-  background: rgba(255, 150, 60, 0.28);
-}
-.gm-hud__dialog-load[aria-disabled='true'] {
-  border-color: rgba(255, 150, 60, 0.3);
-  background: rgba(255, 150, 60, 0.1);
-  color: rgba(244, 230, 216, 0.5);
-  cursor: default;
-}
-.gm-hud__dialog-load[aria-disabled='true']:hover {
-  background: rgba(255, 150, 60, 0.1);
+  color: rgba(244, 230, 216, 0.4);
 }
 
 .gm-hud__lightbox {

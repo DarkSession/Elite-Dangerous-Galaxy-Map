@@ -45,6 +45,13 @@ export interface HudOptions {
    * handle's setters still move it. A name the list does not hold is ignored.
    */
   readonly lockedOptions?: readonly HudMapOption[];
+  /**
+   * Draws a previous button and a next button around the dataset field, and an
+   * `i / n` counter after them. Each arrow loads the entry beside the loaded one in
+   * catalog order. It is false by default, and a value that is not a boolean reads as
+   * false.
+   */
+  readonly datasetArrows?: boolean;
 }
 
 /** What the HUD builder gives back. The map handle carries it as `hud`. */

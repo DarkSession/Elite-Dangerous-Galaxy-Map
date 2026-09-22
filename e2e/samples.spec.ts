@@ -143,4 +143,26 @@ test.describe('the sample pages', () => {
       expect(errors, `${id} raised ${errors.join(', ')}`).toEqual([]);
     });
   }
+
+  // `hud.datasetArrows` is off by default, and this is the one sample page that asks for
+  // it. The page is what `docs/wiki/Examples/A-dataset-catalog.md` states the option by.
+  test('the dataset catalog sample draws the step arrows and the counter', async ({
+    page,
+  }) => {
+    await page.goto('./examples/a-dataset-catalog/');
+    await waitForDrawnCentre(page);
+
+    await expect(page.locator('.gm-hud__dataset-step')).toHaveCount(2);
+    await expect(
+      page.locator('.gm-hud__dataset-step[data-name="previous"]'),
+    ).toHaveCount(1);
+    await expect(page.locator('.gm-hud__dataset-step[data-name="next"]')).toHaveCount(
+      1,
+    );
+    // The counter reads a dash in place of the place while the first load runs, so the
+    // reading allows both.
+    await expect(page.locator('.gm-hud__dataset-counter')).toHaveText(
+      /^(\d+|-) \/ \d+$/,
+    );
+  });
 });
