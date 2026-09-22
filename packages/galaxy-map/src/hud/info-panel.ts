@@ -11,6 +11,7 @@ import {
   formatWhole,
   make,
   makeButton,
+  makeSvg,
   replaceChildrenKeepingFocus,
   restoreFocus,
   setShown,
@@ -42,6 +43,12 @@ interface Field {
   readonly copy?: FieldCopy;
   /** True where the field takes both columns of the grid. */
   readonly wide?: boolean;
+  /**
+   * The worked-out field the panel writes again after it builds the grid. The panel
+   * finds the two fields by this and not by the label, because a host value can carry
+   * the label `RANGE` or `REGION` too.
+   */
+  readonly role?: 'range' | 'region';
 }
 
 /** Which worked-out fields the panel builds. */
@@ -145,7 +152,9 @@ export function fieldsOf(
       value: formatLightYears(distanceFromSol(position)),
     });
   }
-  if (switches.range) fields.push({ label: 'RANGE', value: formatLightYears(range) });
+  if (switches.range) {
+    fields.push({ label: 'RANGE', value: formatLightYears(range), role: 'range' });
+  }
   if (switches.region) {
     // The region is looked up on a promise, so the field is placed at once with an
     // empty value and the name is written in when the answer arrives. The grid then
@@ -153,7 +162,7 @@ export function fieldsOf(
     //
     // It takes both columns because a region name runs to 26 characters, as
     // `Outer Scutum-Centaurus Arm` does, and one column of two is too narrow for it.
-    fields.push({ label: 'REGION', value: '', wide: true });
+    fields.push({ label: 'REGION', value: '', wide: true, role: 'region' });
   }
   const add = (label: string, value: string | undefined): void => {
     // A field the record does not carry is left out, and not shown empty.
@@ -188,15 +197,9 @@ export function fieldsOf(
 
 /** Draws the two squares of the copy mark. */
 function makeCopyIcon(doc: Document): SVGSVGElement {
-  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const svg = makeSvg(doc, '0 0 14 14', 11);
   svg.setAttribute('class', 'gm-hud__copy-mark');
-  svg.setAttribute('viewBox', '0 0 14 14');
-  svg.setAttribute('width', '11');
-  svg.setAttribute('height', '11');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '1.3');
-  svg.setAttribute('aria-hidden', 'true');
   for (const corner of [
     ['1.2', '1.2'],
     ['4.8', '4.8'],
@@ -213,16 +216,10 @@ function makeCopyIcon(doc: Document): SVGSVGElement {
 
 /** Draws the tick the button shows after it wrote to the clipboard. */
 function makeTickIcon(doc: Document): SVGSVGElement {
-  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const svg = makeSvg(doc, '0 0 14 14', 11);
   svg.setAttribute('class', 'gm-hud__copy-tick');
-  svg.setAttribute('viewBox', '0 0 14 14');
-  svg.setAttribute('width', '11');
-  svg.setAttribute('height', '11');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '1.6');
   svg.setAttribute('stroke-linecap', 'square');
-  svg.setAttribute('aria-hidden', 'true');
   const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
   line.setAttribute('points', '2,7.5 5.5,11 12,3.5');
   svg.appendChild(line);
@@ -526,8 +523,8 @@ export function createInfoPanel(
       label.textContent = field.label;
       const value = make(doc, 'div', 'gm-hud__field-value');
       value.textContent = field.value;
-      if (field.label === 'RANGE') rangeValue = value;
-      if (field.label === 'REGION') regionValue = value;
+      if (field.role === 'range') rangeValue = value;
+      if (field.role === 'region') regionValue = value;
       if (field.copy === undefined) {
         box.append(label, value);
       } else {

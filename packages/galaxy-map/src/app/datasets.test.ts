@@ -263,6 +263,97 @@ describe('the dataset state', () => {
     expect(work.calls).toHaveLength(1);
   });
 
+  test('a later load aborts the signal of the first', async () => {
+    const work = writer();
+    let signal: AbortSignal | null = null;
+    let finish: (content: DatasetContent) => void = () => undefined;
+    const held = entry('held', {
+      load: (given: AbortSignal) => {
+        signal = given;
+        return new Promise<DatasetContent>((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    const state = createDatasetState({ datasets: [held, entry('fast')], ...work });
+
+    const first = state.loadDataset('held');
+    const second = state.loadDataset('fast');
+
+    expect((signal as AbortSignal | null)?.aborted).toBe(true);
+    finish(EMPTY);
+    await expect(first).rejects.toThrow(CANCELLED_MESSAGE);
+    await expect(second).resolves.toBeDefined();
+    expect(state.getLoadedDataset()?.id).toBe('fast');
+  });
+
+  test('a load that rejects on the abort rejects as cancelled', async () => {
+    const held = entry('held', {
+      load: (given: AbortSignal) =>
+        new Promise<DatasetContent>((_resolve, reject) => {
+          given.addEventListener('abort', () => {
+            reject(new DOMException('The fetch was aborted.', 'AbortError'));
+          });
+        }),
+    });
+    const state = createDatasetState({
+      datasets: [held, entry('fast')],
+      ...writer(),
+    });
+
+    const first = state.loadDataset('held');
+    await state.loadDataset('fast');
+
+    await expect(first).rejects.toThrow(CANCELLED_MESSAGE);
+  });
+
+  test('dispose aborts a load in flight', () => {
+    let signal: AbortSignal | null = null;
+    const held = entry('held', {
+      load: (given: AbortSignal) => {
+        signal = given;
+        return new Promise<DatasetContent>(() => undefined);
+      },
+    });
+    const state = createDatasetState({ datasets: [held], ...writer() });
+
+    void state.loadDataset('held');
+    expect((signal as AbortSignal | null)?.aborted).toBe(false);
+    state.clear();
+
+    expect((signal as AbortSignal | null)?.aborted).toBe(true);
+  });
+
+  test('a load that settles after dispose writes nothing', async () => {
+    const work = writer();
+    let finish: (content: DatasetContent) => void = () => undefined;
+    const held = entry('held', {
+      bounds: { mode: 'sphere', centre: [0, 0, 0], radiusLy: 100 },
+      view: { fit: 'systems' },
+      load: () =>
+        new Promise<DatasetContent>((resolve) => {
+          finish = resolve;
+        }),
+    });
+    const state = createDatasetState({ datasets: [held], ...work });
+    const listener = vi.fn();
+    state.onDatasetChange(listener);
+
+    const load = state.loadDataset('held');
+    state.clear();
+    finish({
+      categories: [{ name: 'Empire', color: [153, 230, 255] }],
+      systems: [{ name: 'One', coords: { x: 0, y: 0, z: 0 }, categories: ['Empire'] }],
+    } as DatasetContent);
+
+    await expect(load).rejects.toThrow(CANCELLED_MESSAGE);
+    expect(work.calls).toEqual([]);
+    expect(work.bounds).toEqual([]);
+    expect(work.views).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(state.getLoadedDataset()).toBeNull();
+  });
+
   test('the start load reads the named entry', async () => {
     const state = createDatasetState({
       datasets: [entry('one'), entry('two'), entry('three')],

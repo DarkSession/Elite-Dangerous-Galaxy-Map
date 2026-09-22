@@ -171,30 +171,12 @@ export function project(
   point: readonly [number, number, number],
   viewport: Viewport,
 ): ScreenPoint {
-  const relative = relativeToCamera(view, point);
-  const matrix = viewProjectionMatrix(view, viewport);
-  const clipX =
-    matrix[0] * relative[0] +
-    matrix[4] * relative[1] +
-    matrix[8] * relative[2] +
-    matrix[12];
-  const clipY =
-    matrix[1] * relative[0] +
-    matrix[5] * relative[1] +
-    matrix[9] * relative[2] +
-    matrix[13];
-  const clipW =
-    matrix[3] * relative[0] +
-    matrix[7] * relative[1] +
-    matrix[11] * relative[2] +
-    matrix[15];
-  const ndcX = clipX / clipW;
-  const ndcY = clipY / clipW;
-  return {
-    x: (ndcX * 0.5 + 0.5) * viewport.width,
-    y: (0.5 - ndcY * 0.5) * viewport.height,
-    inFront: clipW > 0,
-  };
+  return projectWith(
+    viewProjectionMatrix(view, viewport),
+    cameraPosition(view),
+    point,
+    viewport,
+  );
 }
 
 /**
@@ -231,18 +213,6 @@ export function rayDirectionFrom(
   const near = unproject(-1);
   const far = unproject(1);
   return toGame([far[0] - near[0], far[1] - near[1], far[2] - near[2]]);
-}
-
-/**
- * The direction of the ray through a screen pixel, in game coordinates. The vector is
- * not normalised. This inverts the view-projection matrix on every call.
- */
-export function rayDirection(
-  view: View,
-  pixel: { readonly x: number; readonly y: number },
-  viewport: Viewport,
-): [number, number, number] {
-  return rayDirectionFrom(inverseViewProjection(view, viewport), pixel, viewport);
 }
 
 /**

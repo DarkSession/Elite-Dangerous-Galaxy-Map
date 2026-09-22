@@ -231,11 +231,13 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
   const labels: HTMLElement[] = [];
   const keep = createNearestKeep(MARKER_KEEP);
   const boxes: LabelBox[] = [];
-  // The screen place of each keeper entry, worked out once a frame. The occlusion test
-  // reads it for every placed label, so one projection per candidate serves the whole
-  // frame rather than one per candidate per label.
+  // The screen place and the marker size of each keeper entry, worked out once a frame.
+  // The occlusion test reads the place for every placed label, and the name pass reads
+  // all three, so one projection per candidate serves the whole frame rather than one
+  // per candidate per label.
   const candidateX = new Float64Array(MARKER_KEEP);
   const candidateY = new Float64Array(MARKER_KEEP);
+  const candidateSize = new Float64Array(MARKER_KEEP);
   let shownLabels = 0;
 
   /** One label element of the pool, made on the frame that first needs it. */
@@ -372,6 +374,7 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         const spot = placeOf(keep.indices[slot] as number);
         candidateX[slot] = spot === null ? Number.NaN : spot.x;
         candidateY[slot] = spot === null ? Number.NaN : spot.y;
+        candidateSize[slot] = spot === null ? Number.NaN : spot.markerCss;
       }
 
       /**
@@ -445,8 +448,14 @@ export function createMarkerOverlay(host: HTMLElement): MarkerOverlay {
         for (let slot = 0; slot < keep.count && named < MAX_NAME_LABELS; slot += 1) {
           const index = keep.indices[slot] as number;
           if (index === hoverIndex || index === selectedIndex) continue;
-          const spot = placeOf(index);
-          if (spot === null) continue;
+          const x = candidateX[slot] as number;
+          // A candidate that does not project carries no place.
+          if (Number.isNaN(x)) continue;
+          const spot = {
+            x,
+            y: candidateY[slot] as number,
+            markerCss: candidateSize[slot] as number,
+          };
           const before = placed;
           place(index, spot, false);
           if (placed > before) named += 1;

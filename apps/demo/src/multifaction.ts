@@ -489,9 +489,13 @@ function movesStreams(): boolean {
   }
 }
 
-/** Reads the body in a worker, which keeps the inflate off the main thread. */
+/**
+ * Reads the body in a worker, which keeps the inflate off the main thread. An abort of
+ * `signal` terminates the worker, so the inflate of a dump that nobody reads stops.
+ */
 function readInWorker(
   body: ReadableStream<Uint8Array>,
+  signal: AbortSignal | undefined,
 ): Promise<readonly SystemRecordInput[]> {
   // The `new Worker(new URL(...))` stays written out, because the bundler reads the
   // literal to find the worker file.
@@ -499,8 +503,17 @@ function readInWorker(
     type: 'module',
   });
   return new Promise<readonly SystemRecordInput[]>((resolve, reject) => {
-    worker.addEventListener('message', (event: MessageEvent<MultifactionAnswer>) => {
+    const stop = (): void => {
       worker.terminate();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = (): void => {
+      stop();
+      reject(signal?.reason ?? new DOMException('The read was aborted.', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort);
+    worker.addEventListener('message', (event: MessageEvent<MultifactionAnswer>) => {
+      stop();
       const answer = event.data;
       if (answer.records === undefined) {
         reject(new Error(answer.error ?? 'The dump reader gave no answer.'));
@@ -509,11 +522,13 @@ function readInWorker(
       resolve(answer.records);
     });
     worker.addEventListener('error', (event) => {
-      worker.terminate();
+      stop();
       reject(new Error(`The dump reader stopped: ${event.message}`));
     });
     const request: MultifactionRequest = { body, wanted: MULTIFACTION_FACTIONS };
     worker.postMessage(request, [body as unknown as Transferable]);
+    // A signal that aborted before the worker started stops it at once.
+    if (signal?.aborted === true) onAbort();
   });
 }
 
@@ -535,16 +550,20 @@ function readHere(
  * It rejects where the browser gives no `DecompressionStream`, where the fetch fails, and
  * where the dump names neither faction. `loadDataset` then rejects, and the map keeps the
  * set it had.
+ *
+ * An abort of `signal` stops the download and the worker that reads it, and rejects. The
+ * map aborts the signal of a load when a later load starts.
  */
 export async function fetchMultifactionRecords(
   url: string = MULTIFACTION_DUMP_URL,
+  signal?: AbortSignal,
 ): Promise<readonly SystemRecordInput[]> {
   if (typeof DecompressionStream === 'undefined') {
     throw new Error(
       'This browser gives no DecompressionStream, so the dump cannot open.',
     );
   }
-  const answer = await fetch(url);
+  const answer = await fetch(url, signal === undefined ? {} : { signal });
   if (!answer.ok) {
     // Nothing reads the body of a failed answer, so cancel it and let the socket close.
     await answer.body?.cancel();
@@ -553,5 +572,6 @@ export async function fetchMultifactionRecords(
   if (answer.body === null) {
     throw new Error('The factions dump carries no body.');
   }
-  return movesStreams() ? readInWorker(answer.body) : readHere(answer.body);
+  // On the main thread the abort of the fetch errors the body, and the read rejects.
+  return movesStreams() ? readInWorker(answer.body, signal) : readHere(answer.body);
 }

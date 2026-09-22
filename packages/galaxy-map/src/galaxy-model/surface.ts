@@ -124,24 +124,6 @@ export function truncation(prepared: PreparedSurface, radius: number): number {
   return logistic(-(radius - prepared.truncationRadius) / prepared.truncationWidth);
 }
 
-/**
- * The part of the surface density that the arms modulate: the truncated sum of the
- * bar, the bulge and the disc.
- */
-export function axisymmetricDensity(
-  prepared: PreparedSurface,
-  x: number,
-  z: number,
-): number {
-  const u = x - prepared.centreX;
-  const v = z - prepared.centreZ;
-  const radius = Math.hypot(u, v);
-  return (
-    truncation(prepared, radius) *
-    (bulgeDensity(prepared, u, v) + discDensity(prepared, radius))
-  );
-}
-
 /** The winding law the four arms share, in radians. */
 export function armWinding(prepared: PreparedSurface, logRadiusValue: number): number {
   return (

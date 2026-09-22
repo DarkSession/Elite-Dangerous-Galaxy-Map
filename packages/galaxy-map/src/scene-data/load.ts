@@ -1,11 +1,6 @@
 // Starts every scene-data worker and waits for their results.
-import type {
-  PointCloudRequest,
-  PointCloudResponse,
-  RegionLinesResponse,
-} from './messages';
+import type { PointCloudResponse, RegionLinesResponse } from './messages';
 import { WORKER_STARTED } from './messages';
-import { DEFAULT_POINT_COUNT, DEFAULT_SEED } from './point-cloud';
 import type { DensityVolume, SceneData } from './types';
 
 /** The three workers a scene-data load starts. */
@@ -81,11 +76,6 @@ function runWorker<Request, Response>(
 export async function loadSceneData(
   options: SceneDataOptions = {},
 ): Promise<SceneData> {
-  const request: PointCloudRequest = {
-    count: DEFAULT_POINT_COUNT,
-    seed: DEFAULT_SEED,
-  };
-
   const create = options.createWorker ?? startWorker;
   const pointCloudWorker = create('point-cloud');
   const volumeWorker = create('volume');
@@ -122,11 +112,8 @@ export async function loadSceneData(
 
   const [cloud, volume, region] = await Promise.race([
     Promise.all([
-      runWorker<PointCloudRequest, PointCloudResponse>(
-        pointCloudWorker,
-        request,
-        started,
-      ),
+      // The point cloud worker reads the default count and seed itself.
+      runWorker<null, PointCloudResponse>(pointCloudWorker, null, started),
       runWorker<null, DensityVolume>(volumeWorker, null, started),
       runWorker<null, RegionLinesResponse>(regionWorker, null, started),
     ]),
@@ -138,6 +125,7 @@ export async function loadSceneData(
     cloudSet: cloud.cloudSet,
     volume,
     detail: cloud.detail,
+    detailGrid: cloud.grid,
     regionLines: region.lines,
     regionGrid: region.grid,
     regionFlow: region.flow,

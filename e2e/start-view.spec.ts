@@ -166,8 +166,8 @@ test("the user's input drops a pending start", async ({ page }) => {
 test('a pending start expires', async ({ page }) => {
   await openMap(page);
   await buildMap(page, { startView: { system: 'Target' } });
-  // 600 drawn frames, taken through `drawNow` rather than through 600 animation frames,
-  // which would take ten seconds at 60 Hz.
+  // 600 turns of the frame work, taken through `drawNow` rather than through 600
+  // animation frames, which would take ten seconds at 60 Hz.
   await page.evaluate(() => {
     for (let frame = 0; frame < 600; frame += 1) window.__startMap?.debug.drawNow();
   });

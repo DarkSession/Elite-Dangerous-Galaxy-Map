@@ -20,7 +20,7 @@ import type {
 import { fetchMultifactionRecords, MULTIFACTION_CATEGORIES } from './multifaction';
 
 /** The event the page sends once the scene data is drawn for the first time. */
-export const READY_EVENT = 'galaxy-map-ready';
+const READY_EVENT = 'galaxy-map-ready';
 
 const canvas = document.getElementById('map');
 const labelHost = document.getElementById('labels');
@@ -191,10 +191,11 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
       'permit locked and permit unlocked sectors.',
     // The entry carries no count, because it reads the records when the user loads it.
     // The dialog shows `FETCHED ON LOAD` in place of a count.
-    load: async (): Promise<DatasetContent> => {
+    load: async (signal: AbortSignal): Promise<DatasetContent> => {
       // The records come first: a failed fetch then leaves the shape map untouched, and
-      // the map keeps the set it had.
-      const systems = await fetchMultifactionRecords();
+      // the map keeps the set it had. The signal stops the 16.9 MB download when a later
+      // load replaces this one.
+      const systems = await fetchMultifactionRecords(undefined, signal);
       const spheres = (await import('../demo-data/multifaction-spheres.json')).default;
       DEMO_SHAPES.set('multifaction', {
         spheres: spheres.spheres as unknown as readonly SphereInput[],

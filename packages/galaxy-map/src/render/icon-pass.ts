@@ -48,7 +48,7 @@ export const MAX_STACK_ICONS = MAX_ICON_STACKS * MAX_ICONS;
  *
  * The stack's own marker sits at the stack's own range, so a strict comparison would
  * leave it alone if the two numbers were the same bits. They are not: the marker's range
- * comes from `length(aOffset)` on the card and the icon's from `Math.hypot` here, so the
+ * comes from `length(aOffset)` on the card and the icon's from `Math.sqrt` here, so the
  * two differ by an ulp or two.
  *
  * A relative bias scales with the range, which a fixed one would not. 1e-5 is about
@@ -334,6 +334,19 @@ export function createIconPass(
       const cz = z - cursor[2];
       if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
 
+      // `Math.sqrt` and not `Math.hypot`: the guard of `Math.hypot` against an overflow
+      // costs time on each candidate, and no range of the galaxy comes near one.
+      const range = Math.sqrt(x * x + y * y + z * z);
+      // A full keeper refuses a range at or past its furthest entry. This is the test
+      // `offerNearest` makes first, so the kept set does not change, and a stack it
+      // refuses costs no projection.
+      if (
+        keep.count === keep.limit &&
+        range >= (keep.ranges[keep.limit - 1] as number)
+      ) {
+        continue;
+      }
+
       const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
       if (clipW <= frame.near) continue;
       const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
@@ -343,7 +356,7 @@ export function createIconPass(
       // A candidate outside the viewport is dropped before any other work.
       if (deviceX < 0 || deviceY < 0 || deviceX > width || deviceY > height) continue;
 
-      offerNearest(keep, index, Math.hypot(x, y, z));
+      offerNearest(keep, index, range);
     }
 
     const stackCount = keep.count;

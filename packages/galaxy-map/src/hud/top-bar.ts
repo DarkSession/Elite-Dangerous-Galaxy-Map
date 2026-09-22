@@ -10,6 +10,7 @@ import {
   formatLightYears,
   make,
   makeButton,
+  makeSvg,
   setAttribute,
   setText,
 } from './dom';
@@ -102,15 +103,9 @@ export function counterText(
 
 /** Draws one chevron of the bar. The points give which way it points. */
 function makeChevron(doc: Document, points: string): SVGSVGElement {
-  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('width', '13');
-  svg.setAttribute('height', '13');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
+  const svg = makeSvg(doc, '0 0 16 16', 13);
   svg.setAttribute('stroke-width', '1.8');
   svg.setAttribute('stroke-linecap', 'square');
-  svg.setAttribute('aria-hidden', 'true');
   const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
   line.setAttribute('points', points);
   svg.appendChild(line);

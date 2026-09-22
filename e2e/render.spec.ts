@@ -141,3 +141,75 @@ test.describe('the canvas', () => {
     expect(size).toEqual([1600, 1200]);
   });
 });
+
+// The scenario "A host resizes the canvas box". A host can change the box with no
+// resize of the window, as when it opens a side panel.
+test.describe('the canvas box', () => {
+  test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+
+  test('a host resizes the canvas box', async ({ page }) => {
+    await openMap(page);
+    // Past the settle window, so the loop has stopped and only the box change wakes it.
+    await page.waitForTimeout(2000);
+
+    const reading = await page.evaluate(async () => {
+      const map = window.__galaxyMap;
+      const canvas = document.getElementById('map');
+      if (map?.readRect === undefined || !(canvas instanceof HTMLCanvasElement)) {
+        return { firstSum: -1, size: [0, 0] };
+      }
+      const readRect = map.readRect.bind(map);
+      const nextFrame = (): Promise<void> =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      /**
+       * The sum of the colour bytes of the whole drawing buffer. The probe scales a CSS rectangle
+       * by the ratio of the buffer width to the box width, so the height it asks for is
+       * the buffer height over that ratio.
+       */
+      const sum = (): number => {
+        const ratio = canvas.width / canvas.clientWidth;
+        const tall = Math.floor(canvas.height / ratio);
+        const bytes = readRect(0, 0, canvas.clientWidth, tall);
+        // The colour bytes alone. The context has no alpha, so an empty buffer reads
+        // 255 in the alpha byte of each pixel.
+        let total = 0;
+        for (let index = 0; index < bytes.length; index += 4) {
+          total +=
+            (bytes[index] as number) +
+            (bytes[index + 1] as number) +
+            (bytes[index + 2] as number);
+        }
+        return total;
+      };
+      canvas.style.width = '600px';
+      // The frame of the change runs the box observer after this callback. The read
+      // below runs in the next frame, before the loop renders into the new size, so it
+      // reads the buffer that the page painted for the frame of the change.
+      await nextFrame();
+      await nextFrame();
+      const firstSum = sum();
+      await nextFrame();
+      return { firstSum, size: map.drawingBufferSize?.() ?? [0, 0] };
+    });
+    console.log('the canvas after a change of its box', reading);
+
+    expect(reading.size[0]).toBe(600);
+    expect(reading.firstSum).toBeGreaterThan(0);
+  });
+});
+
+// The point cloud worker sends the detail grid it decoded, so the page fetches the PNG
+// once, in the worker. A worker keeps a resource timeline of its own, so its fetch is
+// not in the list of the page.
+test('the page fetches no detail grid of its own', async ({ page }) => {
+  await openMap(page);
+  const entries = await page.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .filter((name) => name.includes('galaxy-detail')),
+  );
+  console.log('the detail grid entries of the page', entries);
+
+  expect(entries).toEqual([]);
+});

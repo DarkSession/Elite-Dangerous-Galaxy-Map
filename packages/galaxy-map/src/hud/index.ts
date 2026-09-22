@@ -6,13 +6,13 @@
 import type { GalaxyMap } from '../app/create-map';
 import { createCategoryPanel } from './categories';
 import { createDatasetDialog } from './dataset-dialog';
-import { make, makeButton, setAttribute, setText } from './dom';
+import { make, makeButton, makeSvg, setAttribute, setText } from './dom';
 import { createInfoPanel } from './info-panel';
 import { createLightbox } from './lightbox';
 import { createOptionsPanel, readLockedOptions } from './options-panel';
 import { addHudStyles } from './styles';
 import { createTopBar, DEFAULT_TITLE, readDatasetArrows } from './top-bar';
-import type { HudHandle, HudOptions } from './types';
+import type { HudHandle, HudOptions, HudProbes } from './types';
 
 export type { HudAction } from './details';
 export type { HudHandle, HudOptions } from './types';
@@ -35,16 +35,10 @@ function makeDrawerTab(
 ): { readonly button: HTMLButtonElement; readonly label: HTMLElement } {
   const button = makeButton(doc, `gm-hud__drawer-tab gm-hud__drawer-tab--${side}`);
   button.setAttribute('aria-expanded', 'false');
-  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const svg = makeSvg(doc, '0 0 16 16', 16);
   svg.setAttribute('class', 'gm-hud__drawer-tab-chevron');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('width', '16');
-  svg.setAttribute('height', '16');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '2');
   svg.setAttribute('stroke-linecap', 'square');
-  svg.setAttribute('aria-hidden', 'true');
   const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
   // The chevron points away from its own edge while the drawer is shut. The style
   // sheet turns it 180 degrees while the drawer is open.
@@ -90,7 +84,7 @@ export function createHud(
   map: GalaxyMap,
   host: HTMLElement | null,
   options: HudOptions = {},
-): HudHandle {
+): HudHandle & HudProbes {
   const doc = host?.ownerDocument ?? document;
   addHudStyles(doc);
 

@@ -14,6 +14,7 @@ function makeScene(): SceneData {
   const chain = new Float32Array([0, 0, 0, 0, 0, 100]);
   const regionIds = new Uint8Array([1, 2, 3, 4]);
   const regionFlow = new Uint8Array([8, 4, 2, 3]);
+  const gridValues = new Uint8Array([127, 128, 129, 130]);
   return {
     pointCloud: { count: 2, positions, tints },
     cloudSet: {
@@ -39,6 +40,7 @@ function makeScene(): SceneData {
       scale: 3,
       data: detail,
     },
+    detailGrid: { size: 2, scale: 3, values: gridValues },
     regionLines: {
       chainCount: 1,
       vertexCount: 2,
@@ -76,6 +78,8 @@ describe('scene data', () => {
     expect(received.volume.lo).toBe(0);
     expect(Array.from(received.detail.data)).toEqual([120, 128, 136, 200]);
     expect(received.detail.scale).toBe(3);
+    expect(Array.from(received.detailGrid.values)).toEqual([127, 128, 129, 130]);
+    expect(received.detailGrid.size).toBe(2);
     expect(Array.from(received.regionLines.positions)).toEqual([0, 0, 0, 0, 0, 100]);
     expect(received.regionLines.chainCount).toBe(1);
     expect(Array.from(received.regionLines.first)).toEqual([0]);
@@ -91,6 +95,7 @@ describe('scene data', () => {
     expect(scene.cloudSet.ratios.buffer.byteLength).toBe(0);
     expect(scene.volume.data.buffer.byteLength).toBe(0);
     expect(scene.detail.data.buffer.byteLength).toBe(0);
+    expect(scene.detailGrid.values.buffer.byteLength).toBe(0);
     expect(scene.regionLines.positions.buffer.byteLength).toBe(0);
     expect(scene.regionLines.first.buffer.byteLength).toBe(0);
     expect(scene.regionLines.last.buffer.byteLength).toBe(0);

@@ -182,6 +182,20 @@ describe('the crossing labels', () => {
     expect(labelNumber(1234567.5)).toBe('1,234,568');
   });
 
+  test('read the same text as `toLocaleString` over 10,000 seeded values', () => {
+    // The kept format replaced a call of `toLocaleString` on each number. This holds the
+    // text of the two the same, at 0, at negative values and at values past a million.
+    let seed = 4711;
+    const values = [0, -0, -0.4, 0.5, -0.5];
+    for (let index = 0; index < 10000; index += 1) {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      values.push((seed / 2147483648 - 0.5) * 2e7);
+    }
+    for (const value of values) {
+      expect(labelNumber(value)).toBe((Math.round(value) || 0).toLocaleString('en-US'));
+    }
+  });
+
   test('carry the plane height as the middle number', () => {
     const frame = {
       view: viewAt([1200, -600, 2400], 1000),

@@ -13,6 +13,23 @@ export function make<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
+/**
+ * Makes the `svg` element of one HUD icon, with the attributes every icon shares: the
+ * view box, a square size in CSS pixels, no fill, a stroke in the text colour, and
+ * `aria-hidden`, because the control that holds the icon states the same thing in words.
+ * The caller adds the class, the stroke width and the shapes.
+ */
+export function makeSvg(doc: Document, viewBox: string, size: number): SVGSVGElement {
+  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', viewBox);
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  return svg;
+}
+
 /** Makes a button with a class. The style sheet resets the browser's own look. */
 export function makeButton(doc: Document, className: string): HTMLButtonElement {
   const button = make(doc, 'button', className);
@@ -43,15 +60,26 @@ export function setShown(element: HTMLElement, shown: boolean): void {
   element.hidden = !shown;
 }
 
-/** Writes one style property only when it differs. */
-export function setStyle(element: HTMLElement, name: string, value: string): void {
-  if (element.style.getPropertyValue(name) === value) return;
-  element.style.setProperty(name, value);
-}
+// The style writer is the one the overlays use. It keeps the value it last wrote and
+// reads no style back, which `src/app/set-style.ts` states.
+export { setStyle } from '../app/set-style';
+
+// The number formats, made once. Chrome builds a new format for each call of
+// `toLocaleString`, which costs 29 times the call of a format it keeps, and the top bar
+// and the information panel format a readout on each tick.
+const WHOLE_FORMAT = new Intl.NumberFormat('en-US');
+const COORDINATE_FORMAT = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 5,
+  useGrouping: true,
+});
+const PLAIN_COORDINATE_FORMAT = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 5,
+  useGrouping: false,
+});
 
 /** A whole number with a thousands separator, for example `1,500`. */
 export function formatWhole(value: number): string {
-  return Math.round(value).toLocaleString('en-US');
+  return WHOLE_FORMAT.format(Math.round(value));
 }
 
 /**
@@ -67,10 +95,7 @@ export function formatWhole(value: number): string {
  * `-9530.9375` read `-9,530.938`.
  */
 export function formatCoordinate(value: number, separators: boolean): string {
-  return value.toLocaleString('en-US', {
-    maximumFractionDigits: 5,
-    useGrouping: separators,
-  });
+  return (separators ? COORDINATE_FORMAT : PLAIN_COORDINATE_FORMAT).format(value);
 }
 
 /** A distance in whole light years with the unit, for example `1,500 LY`. */

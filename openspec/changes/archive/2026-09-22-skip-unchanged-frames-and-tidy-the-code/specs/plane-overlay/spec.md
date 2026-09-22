@@ -1,11 +1,4 @@
-# plane-overlay Specification
-
-## Purpose
-Places a DOM element flat on the galactic plane, so text and marks lie in the map rather
-than standing upright in front of it. It owns the plane-to-screen transform, the culling and
-the degenerate cases, so every overlay that draws on the plane reads one rule.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: An overlay element can lie on the galactic plane
 

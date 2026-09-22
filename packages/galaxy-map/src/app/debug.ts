@@ -11,7 +11,7 @@ import type { Controls } from '../camera/controls';
 import { planePoint, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
-import type { HudHandle } from '../hud/types';
+import type { HudHandle, HudProbes } from '../hud/types';
 import type { RenderContextResult } from '../render/context';
 import { createProgram } from '../render/program';
 import type {
@@ -270,7 +270,7 @@ export interface DebugDeps {
   /** The coordinate label overlay. */
   gridLabels(): GridLabelOverlay | null;
   /** The HUD, and null on a map that asked for none. */
-  hud(): HudHandle | null;
+  hud(): (HudHandle & HudProbes) | null;
   /** The coarse region grid the scene data carries. */
   regionGrid(): CoarseRegionGrid | null;
   /** The traced region boundary set. */
@@ -321,6 +321,9 @@ export function createDebug(deps: DebugDeps): GalaxyMapDebug {
     get look(): LookSettings {
       const held = deps.renderer();
       if (held === null) throw new Error('The map has no renderer.');
+      // A test writes the object it gets in the same task. The renderer does not see a
+      // write of a field, so the read wakes the loop, and the next turn renders the write.
+      deps.wake();
       return held.look;
     },
     measureFrames(count: number): number {

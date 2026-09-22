@@ -3,7 +3,7 @@ import { cameraDirection, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import { MAX_MARKER_CSS, markerCssSize, MIN_MARKER_CSS } from './marker-size';
-import { pickRadiusCss, pickSystem } from './picking';
+import { createKeptPick, pickRadiusCss, pickSystem } from './picking';
 import { createSystemSet } from './real-systems';
 import type { RealSystemSet } from './real-systems';
 
@@ -153,5 +153,69 @@ describe('the pick sweep', () => {
     const set = createSystemSet();
 
     expect(pickSystem(set, viewAt(1000), VIEWPORT, { x: 0, y: 0 })).toBe(-1);
+  });
+});
+
+describe('the kept hover pick', () => {
+  /** A kept pick over a sweep that counts its runs. */
+  function counted(): { kept: ReturnType<typeof createKeptPick>; runs: () => number } {
+    let runs = 0;
+    const kept = createKeptPick((set, view, viewport, pixel) => {
+      runs += 1;
+      return pickSystem(set, view, viewport, pixel);
+    });
+    return { kept, runs: () => runs };
+  }
+
+  // The scenario "A still pointer runs no pick" of `far-view-rendering`.
+  test('runs no pick for a still pointer', () => {
+    const view = viewAt(1000);
+    const set = setWith([['Sol', atRange(view, 400)]]);
+    const screen = project(view, atRange(view, 400), VIEWPORT);
+    const { kept, runs } = counted();
+
+    const first = kept.pick(set, view, VIEWPORT, screen, 1);
+    const second = kept.pick(set, view, VIEWPORT, { x: screen.x, y: screen.y }, 1);
+    kept.pick(set, view, VIEWPORT, { x: screen.x + 1, y: screen.y }, 1);
+
+    expect(first).toBe(0);
+    expect(second).toBe(first);
+    expect(runs()).toBe(2);
+  });
+
+  test('picks again when any part of the key changes', () => {
+    const view = viewAt(1000);
+    const set = setWith([['Sol', atRange(view, 400)]]);
+    const pixel = project(view, atRange(view, 400), VIEWPORT);
+    const { kept, runs } = counted();
+    kept.pick(set, view, VIEWPORT, pixel, 1);
+    expect(runs()).toBe(1);
+
+    // The view epoch.
+    kept.pick(set, view, VIEWPORT, pixel, 2);
+    expect(runs()).toBe(2);
+    // The pointer's `y`.
+    kept.pick(set, view, VIEWPORT, { x: pixel.x, y: pixel.y + 1 }, 2);
+    expect(runs()).toBe(3);
+    kept.pick(set, view, VIEWPORT, pixel, 2);
+    expect(runs()).toBe(4);
+    // The set's `version`: a record is added.
+    set.addSystems([
+      { name: 'Far', coords: { x: 900, y: 0, z: 900 }, categories: ['A'] },
+    ]);
+    expect(kept.pick(set, view, VIEWPORT, pixel, 2)).toBe(0);
+    expect(runs()).toBe(5);
+    // The set's `categoryVersion`: the category is turned off, so the pick finds none.
+    set.setCategoryVisible('A', false);
+    expect(kept.pick(set, view, VIEWPORT, pixel, 2)).toBe(-1);
+    expect(runs()).toBe(6);
+    // The canvas width, and then the height.
+    kept.pick(set, view, { width: 1000, height: 1080 }, pixel, 2);
+    expect(runs()).toBe(7);
+    kept.pick(set, view, { width: 1000, height: 900 }, pixel, 2);
+    expect(runs()).toBe(8);
+    // Nothing changed.
+    kept.pick(set, view, { width: 1000, height: 900 }, pixel, 2);
+    expect(runs()).toBe(8);
   });
 });

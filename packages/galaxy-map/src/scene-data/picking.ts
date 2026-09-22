@@ -156,3 +156,67 @@ export function pickSystem(
 
   return bestIndex;
 }
+
+/** The pick of the last turn, kept against the inputs it read. */
+export interface KeptPick {
+  /**
+   * The index of the system under the pointer, as `pickSystem` gives it. The sweep runs
+   * again only where the view epoch, the pointer, a set version or the canvas size
+   * changed since the last call, and the last answer comes back where none did.
+   */
+  pick(
+    set: RealSystemSet,
+    view: View,
+    viewport: Viewport,
+    pixel: { readonly x: number; readonly y: number },
+    epoch: number,
+  ): number;
+}
+
+/**
+ * Makes a kept pick. The hover pick runs on each turn of the loop, and a sweep of 50,000
+ * systems at a view and a pointer that did not move gives the answer it gave before.
+ *
+ * The key is the view epoch, the pointer, the set's `version` and `categoryVersion`, and
+ * the canvas size. The epoch rises on each write of the view. `version` rises on each
+ * change to the positions and the marker flags, and `categoryVersion` on each change to
+ * the draw ranges, the visibility and the name filter. The sweep reads nothing else.
+ * `sweep` is the pick the helper runs, which a test replaces to count the runs.
+ */
+export function createKeptPick(sweep: typeof pickSystem = pickSystem): KeptPick {
+  let answer = -1;
+  let held = false;
+  let epochAt = 0;
+  let xAt = 0;
+  let yAt = 0;
+  let versionAt = 0;
+  let categoryVersionAt = 0;
+  let widthAt = 0;
+  let heightAt = 0;
+  return {
+    pick(set, view, viewport, pixel, epoch): number {
+      if (
+        held &&
+        epoch === epochAt &&
+        pixel.x === xAt &&
+        pixel.y === yAt &&
+        set.version === versionAt &&
+        set.categoryVersion === categoryVersionAt &&
+        viewport.width === widthAt &&
+        viewport.height === heightAt
+      ) {
+        return answer;
+      }
+      answer = sweep(set, view, viewport, pixel);
+      held = true;
+      epochAt = epoch;
+      xAt = pixel.x;
+      yAt = pixel.y;
+      versionAt = set.version;
+      categoryVersionAt = set.categoryVersion;
+      widthAt = viewport.width;
+      heightAt = viewport.height;
+      return answer;
+    },
+  };
+}

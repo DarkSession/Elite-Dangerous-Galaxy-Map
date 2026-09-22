@@ -1,11 +1,13 @@
-// The field placement of the information panel and the reader of the `infoFields`
-// option. Both are pure, so they are read here with no DOM. The browser suite reads the
-// boxes the grid draws.
-import { describe, expect, test } from 'vitest';
-import { fieldsOf, readInfoFields } from './info-panel';
+// The field placement of the information panel, the reader of the `infoFields` option,
+// and the two fields the panel writes again after it builds the grid. The browser suite
+// reads the boxes the grid draws.
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { createInfoPanel, fieldsOf, readInfoFields } from './info-panel';
 import type { InfoFieldSwitches } from './info-panel';
 import type { SystemDetailValue } from './details';
-import type { RealSystem } from '../app/create-map';
+import type { Lightbox } from './lightbox';
+import type { HudInfoFields } from './types';
+import type { GalaxyMap, MapView, RealSystem } from '../app/create-map';
 
 /** Every worked-out field on, which is what a host that names none gets. */
 const ALL_ON: InfoFieldSwitches = { distanceFromSol: true, range: true, region: true };
@@ -129,5 +131,157 @@ describe('the field placement', () => {
       key: 'SYSTEM ADDRESS',
     });
     expect(fields[5]?.copy).toBeUndefined();
+  });
+});
+
+// The live fields are read over a fake document, because the unit run has no DOM. The
+// fake holds what the panel builds and nothing more.
+
+/** One element of the fake document. */
+interface FakeElement {
+  className: string;
+  textContent: string | null;
+  hidden: boolean;
+  type: string;
+  title: string;
+  readonly dataset: Record<string, string>;
+  readonly children: FakeElement[];
+  readonly classList: { add(name: string): void };
+  setAttribute(name: string, value: string): void;
+  addEventListener(name: string, listener: () => void): void;
+  appendChild(child: FakeElement): FakeElement;
+  append(...nodes: FakeElement[]): void;
+  replaceChildren(...nodes: FakeElement[]): void;
+  remove(): void;
+}
+
+/** A document that makes fake elements and holds no focus. */
+function fakeDocument(): Document {
+  const doc = { activeElement: null } as { activeElement: null };
+  const make = (): FakeElement => {
+    const element: FakeElement = {
+      className: '',
+      textContent: null,
+      hidden: false,
+      type: '',
+      title: '',
+      dataset: {},
+      children: [],
+      classList: {
+        add(name: string): void {
+          element.className = `${element.className} ${name}`.trim();
+        },
+      },
+      setAttribute(): void {},
+      addEventListener(): void {},
+      appendChild(child: FakeElement): FakeElement {
+        element.children.push(child);
+        return child;
+      },
+      append(...nodes: FakeElement[]): void {
+        element.children.push(...nodes);
+      },
+      replaceChildren(...nodes: FakeElement[]): void {
+        element.children.splice(0, element.children.length, ...nodes);
+      },
+      remove(): void {},
+    };
+    Object.defineProperty(element, 'ownerDocument', { value: doc });
+    return element;
+  };
+  return Object.assign(doc, {
+    createElement: make,
+    createElementNS: make,
+  }) as unknown as Document;
+}
+
+/** The label and the value text of each field of the panel's grid, in order. */
+function gridFields(panel: HTMLElement): [string, string][] {
+  const find = (element: FakeElement, name: string): FakeElement | null => {
+    if (element.className.split(' ').includes(name)) return element;
+    for (const child of element.children) {
+      const found = find(child, name);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  const grid = find(panel as unknown as FakeElement, 'gm-hud__field-grid');
+  return (grid?.children ?? []).map((box) => [
+    find(box, 'gm-hud__field-label')?.textContent ?? '',
+    find(box, 'gm-hud__field-value')?.textContent ?? '',
+  ]);
+}
+
+/**
+ * Opens the panel on Sol with the one worked-out field on and a loader that gives one
+ * host value with the same label. The view and the region name are the test's to move.
+ */
+function openPanel(
+  fields: HudInfoFields,
+  hostLabel: string,
+  view: MapView,
+  region: Promise<string | null>,
+): { element: HTMLElement; update(): void } {
+  const sol = system();
+  const map = {
+    getSelection: () => sol,
+    getView: () => view,
+    regionNameAtExact: () => region,
+    categoryCount: () => 0,
+  } as unknown as GalaxyMap;
+  const panel = createInfoPanel(
+    fakeDocument(),
+    map,
+    {
+      infoFields: fields,
+      details: () => ({ values: [{ label: hostLabel, value: 'host' }] }),
+    },
+    {} as Lightbox,
+  );
+  panel.rebuild();
+  return panel;
+}
+
+describe('the live fields of the panel', () => {
+  // `focusMark` asks whether the active element is an `HTMLElement`, and the unit run
+  // has no such class.
+  beforeEach(() => {
+    vi.stubGlobal('HTMLElement', class {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('a host value labelled RANGE keeps its value', () => {
+    const view: MapView = { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 };
+    const panel = openPanel(
+      { distanceFromSol: false, range: true, region: false },
+      'RANGE',
+      view,
+      Promise.resolve(null),
+    );
+    view.cursor = [100, 0, 0];
+    panel.update();
+    expect(gridFields(panel.element).slice(1)).toEqual([
+      ['RANGE', '100 LY'],
+      ['RANGE', 'host'],
+    ]);
+  });
+
+  test('a host value labelled REGION keeps its value', async () => {
+    const view: MapView = { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 };
+    const region = Promise.resolve('Inner Orion Spur');
+    const panel = openPanel(
+      { distanceFromSol: false, range: false, region: true },
+      'REGION',
+      view,
+      region,
+    );
+    await region;
+    await Promise.resolve();
+    expect(gridFields(panel.element).slice(1)).toEqual([
+      ['REGION', 'Inner Orion Spur'],
+      ['REGION', 'host'],
+    ]);
   });
 });
