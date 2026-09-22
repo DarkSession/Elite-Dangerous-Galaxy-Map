@@ -52,6 +52,8 @@ declare global {
     __touchMap?: GalaxyMap;
     /** The second map the dataset tests build, with a catalog of their own. */
     __datasetMap?: GalaxyMap;
+    /** The map the overlay host tests build, so a later step can draw a frame. */
+    __hostMap?: GalaxyMap;
     /** The second map the nebula tests build, with no nebula source. */
     __plainMap?: GalaxyMap;
     /** The ids of the entries whose `load()` the dataset tests' catalog called. */

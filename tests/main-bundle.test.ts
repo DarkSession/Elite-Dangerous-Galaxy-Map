@@ -138,8 +138,14 @@ const libraryRoot = join(root, 'packages', 'galaxy-map');
  * The reading was **268,965 bytes** while the pass held two programs, two instance
  * layouts and four shaders. Ordering the arrow with the icons merged them into one of
  * each, which took 2,755 bytes back out.
+ *
+ * The region label style takes the reading to **275,803 bytes**, from **274,685** on
+ * the commit before it. The 1,118 bytes are the 13 property-and-value pairs the label
+ * overlay now writes on each element, and the box the owned label host takes from the
+ * canvas each frame. Both reach every map: the overlay draws the regions, which are on
+ * by default. The bound rises to **280,000**, which leaves 4,197 bytes of room.
  */
-const ENTRY_CHUNK_LIMIT = 275_000;
+const ENTRY_CHUNK_LIMIT = 280_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first

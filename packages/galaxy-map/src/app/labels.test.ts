@@ -27,6 +27,7 @@ import {
   labelRangeFade,
   labelSweepRuns,
   MAX_LABELS,
+  REGION_LABEL_STYLE,
   SAMPLE_SPACING,
   samplePointCount,
   sampleFrame,
@@ -2418,5 +2419,29 @@ describe('a region that lies in the way', () => {
     }
     for (const move of moves)
       expect(move).toBeLessThanOrEqual(ANCHOR_MAX_PIXELS + 1e-6);
+  });
+});
+
+describe('the region label look', () => {
+  // This reads the table and not a drawn element. Vitest runs in the `node`
+  // environment (`vitest.config.ts:5`), which has no layout and no CSS engine, so a
+  // fake element gives back whatever string it was handed and would pass whatever the
+  // values meant. The meaning is read with `getComputedStyle` in `e2e/systems.spec.ts`.
+  // This guards against a property that gets dropped.
+  test('the table carries the position and the font longhands', () => {
+    expect(REGION_LABEL_STYLE['position']).toBe('absolute');
+    expect(REGION_LABEL_STYLE['font-size']).toBe('13px');
+    expect(REGION_LABEL_STYLE['line-height']).toBe('16px');
+    expect(REGION_LABEL_STYLE['font-family']).toBe('system-ui, sans-serif');
+  });
+
+  test('the table carries the text shadow and no font shorthand and no stroke', () => {
+    expect(REGION_LABEL_STYLE['text-shadow']).toBe('0 0 6px #000, 0 0 2px #000');
+    const keys = Object.keys(REGION_LABEL_STYLE);
+    expect(keys).not.toContain('font');
+    // The outline is the shadow alone. A later edit must not put the stroke back
+    // beside it, which would draw two outlines.
+    expect(keys).not.toContain('paint-order');
+    expect(keys).not.toContain('-webkit-text-stroke');
   });
 });
