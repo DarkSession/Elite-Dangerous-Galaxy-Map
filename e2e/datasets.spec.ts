@@ -1175,6 +1175,11 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
 test('the Thargoid war set restricts the bounds and frames itself', async ({
   page,
 }) => {
+  // The entry names `bounds: { mode: 'auto' }` and `view: { fit: 'systems' }`, so the
+  // first three conditions of the rule that holds the camera hold for it. It frames all
+  // the same, because the page opens 60,000 light years out and the far zoom limit of
+  // this entry's bounds is 3,816. The camera is outside the bounds, so condition 4 fails.
+  // That margin is why the demo page is unaffected by the rule.
   await openMap(page, '', { demoData: true });
   const atStart = await page.evaluate(
     () => (window.galaxyMap?.getBounds() ?? {}) as Record<string, unknown>,
@@ -1938,5 +1943,313 @@ test.describe('an entry frames its set', () => {
     console.log('the view over a load with no view', { before, after });
 
     expect(after).toEqual(before);
+  });
+});
+
+// The rule that holds the camera where the entry's bounds already show the new set. Each
+// test reads the five conditions of `dataset-catalog` through the public handle.
+test.describe('a load holds a camera that shows the new set', () => {
+  /** The box the entries of one region span, and the distance `fit` writes for it. */
+  const BOX: [[number, number, number], [number, number, number]] = [
+    [-100, -50, -100],
+    [100, 50, 100],
+  ];
+  const FIT_DISTANCE = Math.hypot(200, 100, 200);
+  /** The `auto` bound of that box, which grows it by 1,000 light years on each axis. */
+  const AUTO_LIMIT = Math.hypot(2200, 2100, 2200);
+
+  /** Two entries of one region, each naming the same `auto` bound and a `fit` view. */
+  const REGION: EntryBuild[] = [
+    {
+      id: 'week-one',
+      corners: BOX,
+      bounds: { mode: 'auto' },
+      view: { fit: 'systems' },
+    },
+    {
+      id: 'week-two',
+      corners: BOX,
+      bounds: { mode: 'auto' },
+      view: { fit: 'systems' },
+    },
+  ];
+
+  /** Writes the view the test wants the camera to hold before the next load. */
+  async function setView(
+    page: Page,
+    next: {
+      cursor: [number, number, number];
+      distance: number;
+      yaw: number;
+      pitch: number;
+    },
+  ): Promise<void> {
+    await page.evaluate((view) => {
+      window.__datasetMap?.setView(view);
+    }, next);
+  }
+
+  test('a step inside the bounds holds the camera', async ({ page }) => {
+    await openDatasets(page, { entries: REGION, dataset: 'week-one' });
+    await setView(page, {
+      cursor: [120, 30, 60],
+      distance: 800,
+      yaw: 25,
+      pitch: 40,
+    });
+
+    const before = await readView(page);
+    expect((await loadDataset(page, 'week-two')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a step inside the bounds', { before, after });
+
+    // The camera is inside the new bounds and stands off more than the frame would, so
+    // the entry's view does not apply at all.
+    expect(before.distance).toBeGreaterThan(FIT_DISTANCE);
+    expect(before.distance).toBeLessThan(AUTO_LIMIT);
+    expect(after).toEqual(before);
+  });
+
+  test('a camera outside the new bounds is framed', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        {
+          id: 'wide',
+          corners: [
+            [-20000, 0, -20000],
+            [20000, 0, 20000],
+          ],
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        },
+        REGION[1] as EntryBuild,
+      ],
+      dataset: 'wide',
+    });
+    // 50,000 light years is inside the wide entry's far zoom limit and far outside the
+    // 3,753 of the narrow one, so condition 4 fails.
+    await setView(page, { cursor: [0, 0, 0], distance: 50000, yaw: 25, pitch: 40 });
+
+    expect((await loadDataset(page, 'week-two')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load from outside the bounds', after);
+
+    expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('a camera zoomed in closer than the frame is framed again', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        {
+          id: 'tiny',
+          corners: [
+            [-10, -10, -10],
+            [10, 10, 10],
+          ],
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        },
+        REGION[1] as EntryBuild,
+      ],
+      dataset: 'tiny',
+    });
+
+    const before = await readView(page);
+    expect((await loadDataset(page, 'week-two')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load from inside the frame', { before, after });
+
+    // The frame of the small set leaves the camera nearer than the frame of the wide
+    // one, which is condition 5.
+    expect(before.distance).toBeLessThan(FIT_DISTANCE);
+    expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('a camera zoomed out past the frame keeps its view', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        {
+          id: 'tiny',
+          corners: [
+            [-10, -10, -10],
+            [10, 10, 10],
+          ],
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        },
+        REGION[1] as EntryBuild,
+      ],
+      dataset: 'tiny',
+    });
+    await setView(page, { cursor: [0, 0, 0], distance: 1500, yaw: 25, pitch: 40 });
+
+    const before = await readView(page);
+    expect((await loadDataset(page, 'week-two')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load from outside the frame', { before, after });
+
+    expect(before.distance).toBeGreaterThan(FIT_DISTANCE);
+    expect(before.distance).toBeLessThan(AUTO_LIMIT);
+    expect(after).toEqual(before);
+  });
+
+  test('an entry with no bounds still frames its systems', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        REGION[0] as EntryBuild,
+        { id: 'free', corners: BOX, view: { fit: 'systems' } },
+      ],
+      dataset: 'week-one',
+    });
+    // The camera stands inside the box and past its frame, so an entry that named the
+    // same `auto` bound would hold it.
+    await setView(page, { cursor: [0, 0, 0], distance: 800, yaw: 25, pitch: 40 });
+
+    expect((await loadDataset(page, 'free')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load of an entry with no bounds', after);
+
+    expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('a named field beats a camera inside the bounds', async ({ page }) => {
+    await openDatasets(page, {
+      entries: [
+        REGION[0] as EntryBuild,
+        {
+          id: 'angled',
+          corners: BOX,
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems', pitch: 60 },
+        },
+      ],
+      dataset: 'week-one',
+    });
+    await setView(page, { cursor: [120, 30, 60], distance: 800, yaw: 25, pitch: 40 });
+
+    expect((await loadDataset(page, 'angled')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load naming a pitch', after);
+
+    expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+    expect(after.pitch).toBe(60);
+  });
+
+  test('the start load frames its systems although the camera is inside its bounds', async ({
+    page,
+  }) => {
+    // The sphere holds the default camera, which stands at the origin 60,000 light years
+    // out, and its far zoom limit is 80,000. All five conditions would hold but for the
+    // start load, which has no camera the user chose.
+    await openDatasets(page, {
+      entries: [
+        {
+          id: 'start',
+          corners: [
+            [100, 50, 100],
+            [300, 150, 300],
+          ],
+          bounds: { mode: 'sphere', centre: [0, 0, 0], radiusLy: 40000 },
+          view: { fit: 'systems' },
+        },
+      ],
+      dataset: 'start',
+    });
+
+    const view = await readView(page);
+    console.log('the view after the start load', view);
+
+    expect(view.cursor[0]).toBeCloseTo(200, 6);
+    expect(view.cursor[1]).toBeCloseTo(100, 6);
+    expect(view.cursor[2]).toBeCloseTo(200, 6);
+    expect(Math.abs(view.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+  });
+
+  test('an auto bound over an empty set applies the view', async ({ page }) => {
+    // An `auto` bound over a set with no system resolves to unrestricted, so the view
+    // applies. A `fit` over an empty set moves the camera nowhere, so the flight is the
+    // reading that tells the two paths apart: an applied view ends a flight.
+    await openDatasets(page, {
+      entries: [
+        REGION[0] as EntryBuild,
+        {
+          id: 'nothing',
+          systems: 0,
+          bounds: { mode: 'auto' },
+          view: { fit: 'systems' },
+        },
+      ],
+      dataset: 'week-one',
+    });
+    await setView(page, { cursor: [0, 0, 0], distance: 800, yaw: 25, pitch: 40 });
+
+    const outcome = await page.evaluate(async () => {
+      const map = window.__datasetMap;
+      if (map === undefined) return 'none';
+      const flight = map.flyTo({ cursor: [500, 0, 500], distance: 1000 });
+      await map.loadDataset('nothing');
+      return flight;
+    });
+    console.log('the flight over a load of an empty set', outcome);
+
+    expect(outcome).toBe('interrupted');
+  });
+
+  test('a held view lets a running flight land', async ({ page }) => {
+    await openDatasets(page, { entries: REGION, dataset: 'week-one' });
+    await setView(page, { cursor: [0, 0, 0], distance: 1500, yaw: 25, pitch: 40 });
+
+    const outcome = await page.evaluate(async () => {
+      const map = window.__datasetMap;
+      if (map === undefined) return 'none';
+      const flight = map.flyTo({ cursor: [500, 0, 500], distance: 1000 });
+      await map.loadDataset('week-two');
+      return flight;
+    });
+    const after = await readView(page);
+    console.log('the flight over a held load', { outcome, after });
+
+    // A held view takes the camera from nobody, so it ends no flight.
+    expect(outcome).toBe('landed');
+    expect(after.cursor[0]).toBeCloseTo(500, 3);
+    expect(after.cursor[2]).toBeCloseTo(500, 3);
+  });
+
+  test('a held load lets a pending start view land', async ({ page }) => {
+    // A `startView` naming a record the start set does not hold waits for that record.
+    // An applied view drops the wait, and a held view leaves it, so the start view still
+    // centres the camera in the first frame a set holds the record.
+    const sphere = { mode: 'sphere', centre: [0, 0, 0], radiusLy: 40000 };
+    await openDatasets(page, {
+      entries: [
+        { id: 'first', corners: BOX, bounds: sphere, view: { fit: 'systems' } },
+        {
+          id: 'later',
+          corners: [
+            [1000, 0, 1000],
+            [1200, 100, 1200],
+          ],
+          bounds: sphere,
+          view: { fit: 'systems' },
+        },
+      ],
+      dataset: 'first',
+      startView: { system: 'later-corner-0' },
+    });
+
+    const before = await readView(page);
+    expect((await loadDataset(page, 'later')).ok).toBe(true);
+    await page.waitForTimeout(400);
+    const after = await readView(page);
+    console.log('the view over a held load with a pending start', { before, after });
+
+    // The deep link held the entry's view at start, so the camera stands where the map
+    // opens: at the origin, 60,000 light years out.
+    expect(before.distance).toBeCloseTo(60000, 3);
+    expect(after.cursor[0]).toBeCloseTo(1000, 6);
+    expect(after.cursor[1]).toBeCloseTo(0, 6);
+    expect(after.cursor[2]).toBeCloseTo(1000, 6);
+    // The camera kept the distance the user was given, because the view was held.
+    expect(after.distance).toBeCloseTo(60000, 3);
   });
 });

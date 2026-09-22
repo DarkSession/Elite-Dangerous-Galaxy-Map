@@ -222,6 +222,11 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
     // The set holds the bubble alone, so the entry names the box of its own systems and
     // opens the camera on it. A switch away from this entry restores the map's own
     // unrestricted bounds.
+    //
+    // A load holds the camera where it already shows the new set, which `DatasetView`
+    // states. This entry still frames, because the page opens 60,000 light years out and
+    // the far zoom limit of this box is 3,816. The camera is outside the bounds, so the
+    // fourth condition fails.
     bounds: { mode: 'auto' },
     view: { fit: 'systems' },
     load: async (): Promise<DatasetContent> =>

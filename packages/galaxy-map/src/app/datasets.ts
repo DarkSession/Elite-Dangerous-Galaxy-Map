@@ -30,6 +30,20 @@ export interface DatasetContent {
  * `fit`, which frames the set the load wrote. A field the entry names beside `fit` wins
  * over what `fit` worked out.
  *
+ * **A camera that already shows the new set keeps its place.** A `loadDataset` that is
+ * not the start load leaves the view alone when all five of these hold:
+ *
+ * 1. the entry names `bounds`;
+ * 2. those bounds resolve to a restricted space, and the new set holds a system;
+ * 3. the `view` names `fit: 'systems'` and no other field;
+ * 4. the cursor is inside those bounds and the distance is at or under their far zoom
+ *    limit;
+ * 5. the distance is at or above the distance `fit: 'systems'` writes for the new set.
+ *
+ * A catalog of one region therefore keeps the angle and the zoom the user set up. A host
+ * that wants every load to frame its set names a field beside `fit`, such as the pitch
+ * the camera holds, or drops `bounds` from the entry.
+ *
  * The `StartView` fields are repeated here rather than imported, because `create-map.ts`
  * imports this module and not the other way round.
  */
@@ -99,7 +113,12 @@ export interface DatasetEntry {
   readonly systemCount?: number;
   /** Where the set lives. An entry that names none restores the map's own option. */
   readonly bounds?: BrowseBounds;
-  /** Where the camera opens on a load of this entry. */
+  /**
+   * Where the camera opens on a load of this entry. An entry that names `bounds` and a
+   * `view` of `fit: 'systems'` alone holds the camera where the user put it, whenever
+   * the camera already shows the new set. `DatasetView` states the five conditions and
+   * the two ways to keep the frame on every load.
+   */
   readonly view?: DatasetView;
   /** Reads the set. The library calls it and adds what comes back. */
   load(): DatasetContent | Promise<DatasetContent>;
@@ -250,6 +269,34 @@ export interface DatasetWriter {
    * that names a `view`, so an entry that names none leaves the camera where it is.
    */
   applyView(view: DatasetView): void;
+  /**
+   * Whether the camera stands inside `bounds` if they are applied now. `null` reads the
+   * bounds the options named, which is what `setBounds(null)` restores.
+   *
+   * It resolves `bounds` against the system box of the set now on the map and applies
+   * nothing: the caller reads it **before** `setBounds`, because applying a bound clamps
+   * the camera into it and every later reading is true.
+   *
+   * It is false where the bounds resolve to unrestricted, because every camera is inside
+   * an unrestricted space and a reading of true would stop a jump the user needs.
+   *
+   * `runLoad` never passes `null`: it reads `entry.bounds !== undefined` first. The
+   * argument takes `null` so that it mirrors `setBounds(entry.bounds ?? null)` letter for
+   * letter, and the two calls cannot drift on to different bounds.
+   */
+  viewInsideBounds(bounds: BrowseBounds | null): boolean;
+}
+
+/**
+ * Whether a `view` asks for the frame of the set and nothing else.
+ *
+ * The rule that holds the camera reads `fit: 'systems'` alone. A field beside `fit` names
+ * where to look, and a held camera would then give a view the host never asked for. The
+ * helper counts the keys, so a field added to `DatasetView` later fails it rather than
+ * slipping through as a `fit`-only view.
+ */
+function fitOnly(view: DatasetView): boolean {
+  return view.fit === 'systems' && Object.keys(view).length === 1;
 }
 
 /** What the options give the state machine. */
@@ -310,12 +357,27 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     const content = await entry.load();
     if (ticket !== counter) throw new Error(CANCELLED_MESSAGE);
     const report = options.write(content);
+    // A camera that already shows the new set keeps its place. The reading comes after
+    // the write, because an `auto` bound resolves against the records that write put in,
+    // and before `setBounds`, because applying a bound clamps the camera into it and
+    // every later reading is true. The three conditions the entry carries are read first,
+    // so a load that cannot be held does no geometry at all.
+    const held =
+      !atStart &&
+      entry.bounds !== undefined &&
+      entry.view !== undefined &&
+      fitOnly(entry.view) &&
+      options.viewInsideBounds(entry.bounds ?? null);
     // The bounds and the view are written before the announce, so a listener that adds
     // the shapes of the entry reads the bounds the entry asked for.
     options.setBounds(entry.bounds ?? null);
     // A deep link wins at start: the start load holds the entry's view where the options
     // named a `startView`, because the load settles after the page has already drawn.
-    if (entry.view !== undefined && !(atStart && options.hasStartView === true)) {
+    if (
+      entry.view !== undefined &&
+      !held &&
+      !(atStart && options.hasStartView === true)
+    ) {
       options.applyView(entry.view);
     }
     loaded = entry;
