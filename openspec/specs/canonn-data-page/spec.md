@@ -233,7 +233,7 @@ entries.
 
 The build SHALL hold a table that names the subject group of every Canonn map it reads. A
 map SHALL belong to exactly one group, and the group SHALL be the entry's `collection`,
-which is what the dataset dialog groups the list by.
+which is what the dataset library draws a chip for.
 
 **The build SHALL list the Canonn source tree at run time** and SHALL fail, naming the
 file, where that listing holds a `MapData-*.js` file the table does not name. The listing
@@ -265,8 +265,9 @@ cannot see the source tree cannot say that the table is complete.
 
 #### Scenario: The dialog groups the maps
 
-- **WHEN** the browser suite opens the dataset dialog of the page
-- **THEN** each entry sits under its own group, and each group holds one entry or more
+- **WHEN** the browser suite opens the dataset library of the page and reads the chip row
+- **THEN** there is one chip per group the table names, each chip's count is the number of
+  entries of that group, and every entry of the catalog is under one of them
 
 ### Requirement: The build reads each map from the source that map uses
 

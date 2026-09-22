@@ -32,6 +32,7 @@ interface FakeElement {
   readonly tag: string;
   className: string;
   type?: string;
+  hidden?: boolean;
   textContent: string | null;
   readonly dataset: Record<string, string>;
   readonly children: FakeElement[];
@@ -86,6 +87,9 @@ interface MapState {
   shapes: boolean;
   nebulae: boolean;
   hasNebulae: boolean;
+  hasSystemIcons: boolean;
+  sphereCount: number;
+  lineCount: number;
 }
 
 /** A map handle that carries the six switches and nothing else. */
@@ -111,6 +115,9 @@ function fakeMap(state: MapState): GalaxyMap {
     setShapesVisible: (on: boolean) => {
       state.shapes = on;
     },
+    hasSystemIcons: () => state.hasSystemIcons,
+    sphereCount: () => state.sphereCount,
+    lineCount: () => state.lineCount,
     hasNebulae: () => state.hasNebulae,
     areNebulaeVisible: () => state.nebulae,
     setNebulaeVisible: (on: boolean) => {
@@ -119,7 +126,10 @@ function fakeMap(state: MapState): GalaxyMap {
   } as unknown as GalaxyMap;
 }
 
-/** The state a map with every switch on and no nebula source starts in. */
+/**
+ * The state a map that holds a shape and an icon record, and no nebula source, starts
+ * in. Both conditional readings are true, so the panel shows five switches.
+ */
 function startState(): MapState {
   return {
     regions: true,
@@ -129,7 +139,18 @@ function startState(): MapState {
     shapes: true,
     nebulae: true,
     hasNebulae: false,
+    hasSystemIcons: true,
+    sphereCount: 1,
+    lineCount: 0,
   };
+}
+
+/** The state of a map that holds no shape, no icon record and no nebula source. */
+function bareState(): MapState {
+  const state = startState();
+  state.hasSystemIcons = false;
+  state.sphereCount = 0;
+  return state;
 }
 
 /** The switches of a panel, in the order it shows them. */
@@ -140,7 +161,14 @@ function switchesOf(panel: OptionsPanel): FakeElement[] {
 
 /** The names of the switches of a panel, in the order it shows them. */
 function namesOf(panel: OptionsPanel): string[] {
-  return switchesOf(panel).map((button) => button.dataset['name'] ?? '');
+  return switchesOf(panel)
+    .filter((button) => button.hidden !== true)
+    .map((button) => button.dataset['name'] ?? '');
+}
+
+/** True while the panel itself is shown. */
+function panelShown(panel: OptionsPanel): boolean {
+  return (panel.element as unknown as FakeElement).hidden !== true;
 }
 
 describe('the switches the panel builds', () => {
@@ -216,7 +244,7 @@ describe('the switches the panel builds', () => {
     ]);
   });
 
-  test('drops the panel where the five names are locked and there is no nebula', () => {
+  test('shows no switch where the five names are locked and there is no nebula', () => {
     const locked = new Set<HudMapOption>([
       'regions',
       'systemNames',
@@ -227,13 +255,124 @@ describe('the switches the panel builds', () => {
     const withSource = startState();
     withSource.hasNebulae = true;
 
+    const bare = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(startState()),
+      locked,
+    ) as OptionsPanel;
+    const held = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(withSource),
+      locked,
+    ) as OptionsPanel;
+
+    expect(namesOf(bare)).toEqual([]);
+    expect(panelShown(bare)).toBe(false);
+    expect(namesOf(held)).toEqual(['nebulae']);
+    expect(panelShown(held)).toBe(true);
+  });
+
+  test('builds no panel where every name is locked', () => {
+    const locked = new Set<HudMapOption>([
+      'regions',
+      'systemNames',
+      'systemIcons',
+      'grid',
+      'shapes',
+      'nebulae',
+    ]);
+
     expect(
       createOptionsPanel(fakeDocument(), fakeMap(startState()), locked),
     ).toBeNull();
-    expect(
-      namesOf(
-        createOptionsPanel(fakeDocument(), fakeMap(withSource), locked) as OptionsPanel,
-      ),
-    ).toEqual(['nebulae']);
+  });
+});
+
+describe('the switches that follow the map', () => {
+  test('hides the panel of a map that holds no shape, no icon and no nebula', () => {
+    const panel = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(bareState()),
+      new Set(),
+    ) as OptionsPanel;
+
+    expect(namesOf(panel)).toEqual([
+      'galactic-regions',
+      'system-names',
+      'coordinate-grid',
+    ]);
+    expect(panelShown(panel)).toBe(true);
+  });
+
+  test('hides the panel while it shows no switch', () => {
+    const state = bareState();
+    const locked = new Set<HudMapOption>(['regions', 'systemNames', 'grid']);
+    const panel = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(state),
+      locked,
+    ) as OptionsPanel;
+
+    expect(panelShown(panel)).toBe(false);
+
+    state.sphereCount = 1;
+    panel.update();
+    expect(namesOf(panel)).toEqual(['shapes']);
+    expect(panelShown(panel)).toBe(true);
+  });
+
+  test('shows a switch that appears and hides it again on a later update', () => {
+    const state = bareState();
+    const panel = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(state),
+      new Set(),
+    ) as OptionsPanel;
+
+    expect(namesOf(panel)).not.toContain('shapes');
+    expect(namesOf(panel)).not.toContain('system-icons');
+
+    state.sphereCount = 1;
+    state.hasSystemIcons = true;
+    panel.update();
+    expect(namesOf(panel)).toEqual([
+      'galactic-regions',
+      'system-names',
+      'system-icons',
+      'coordinate-grid',
+      'shapes',
+    ]);
+
+    state.sphereCount = 0;
+    state.hasSystemIcons = false;
+    panel.update();
+    expect(namesOf(panel)).toEqual([
+      'galactic-regions',
+      'system-names',
+      'coordinate-grid',
+    ]);
+  });
+
+  test('keeps the map state of a switch that goes', () => {
+    const state = startState();
+    const panel = createOptionsPanel(
+      fakeDocument(),
+      fakeMap(state),
+      new Set(),
+    ) as OptionsPanel;
+    const shapes = switchesOf(panel)[4];
+
+    shapes?.listeners.get('click')?.();
+    expect(state.shapes).toBe(false);
+
+    state.sphereCount = 0;
+    panel.update();
+    expect(namesOf(panel)).not.toContain('shapes');
+    expect(state.shapes).toBe(false);
+
+    state.sphereCount = 1;
+    panel.update();
+    expect(namesOf(panel)).toContain('shapes');
+    expect(shapes?.getAttribute('aria-pressed')).toBe('false');
   });
 });

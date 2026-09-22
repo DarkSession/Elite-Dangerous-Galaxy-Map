@@ -455,3 +455,37 @@ test.describe('the Canonn page', () => {
     expect(selection.meanMs).toBeLessThanOrEqual(SELECTION_BUDGET_MS);
   });
 });
+
+// The dataset library shows the manifest's groups as a row of collection chips, in place
+// of the group headers the old side list drew.
+test.describe('the dataset library of the page', () => {
+  test('shows one chip per group of the manifest, sorted by name', async ({ page }) => {
+    await page.goto('./canonn/');
+    await waitForPage(page);
+
+    const dialog = page.locator('.gm-hud__dialog');
+    await page.locator('.gm-hud__dataset').click();
+    await expect(dialog).toBeVisible();
+
+    const names = await dialog
+      .locator('.gm-hud__collection-name')
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+    const cards = await dialog.locator('.gm-hud__dataset-card').count();
+    console.log('the chips of the Canonn page', { names, cards });
+
+    const groups = [...new Set(manifest.map((row) => row.group))]
+      .sort((left, right) => left.localeCompare(right))
+      .map((name) => name.toUpperCase());
+    expect(names).toEqual(['ALL', ...groups]);
+    expect(cards).toBe(manifest.length);
+
+    // One chip keeps the entries of that group alone.
+    const first = groups[0] as string;
+    const kept = manifest.filter((row) => row.group.toUpperCase() === first).length;
+    await dialog.locator('.gm-hud__collection').filter({ hasText: first }).click();
+    await expect(dialog.locator('.gm-hud__dataset-card')).toHaveCount(kept);
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  });
+});

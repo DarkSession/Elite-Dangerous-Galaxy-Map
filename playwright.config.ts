@@ -36,6 +36,9 @@ const timedSpecs = [
   // 18 ms, and the selection work over that entry against 2 ms. The second one reads
   // 0.70 ms on an idle card, and a 2 ms budget does not survive five other browsers.
   'canonn-page.spec.ts',
+  // The dataset switch made from the open library dialog reads 30 to 36 ms on one
+  // worker against a 40 ms budget, and 42.9 ms beside five other browsers.
+  'dataset-cost.spec.ts',
 ];
 
 /**

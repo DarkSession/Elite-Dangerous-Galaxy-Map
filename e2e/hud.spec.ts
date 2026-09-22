@@ -38,6 +38,24 @@ interface HudBuild {
    */
   readonly datasets?: boolean;
   /**
+   * How many entries that catalog holds. With more than one the map loads the second,
+   * so both step arrows have a neighbour to load. The default is one.
+   */
+  readonly datasetCount?: number;
+  /** What `datasetArrows` the HUD is built with. A non-boolean reads the default. */
+  readonly datasetArrows?: unknown;
+  /**
+   * True adds one sphere after the map builds, so the **Shapes** switch is shown and the
+   * **SHAPES** tab is not disabled. The panel drops the switch on a map that holds no
+   * shape.
+   */
+  readonly shape?: boolean;
+  /**
+   * True adds one category and one record that names two icons, so the **System icons**
+   * switch is shown. The panel drops the switch on a map where no record names one.
+   */
+  readonly iconRecord?: boolean;
+  /**
    * True builds the map with the nebula source the demo page holds, so the options
    * panel carries the sixth switch. The default gives no source, which is the state a
    * host that never asks for the nebulae is in.
@@ -107,16 +125,19 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
     if ('lockedOptions' in options) {
       hudOptions['lockedOptions'] = options.lockedOptions;
     }
+    if ('datasetArrows' in options) {
+      hudOptions['datasetArrows'] = options.datasetArrows;
+    }
     const hud = Object.keys(hudOptions).length === 0 ? true : hudOptions;
+    const count = options.datasetCount ?? 1;
     const datasets =
       options.datasets === true
-        ? [
-            {
-              id: 'one',
-              label: 'One',
-              load: (): unknown => ({ categories: [], systems: [] }),
-            },
-          ]
+        ? Array.from({ length: count }, (_unused: unknown, index: number) => ({
+            id: `set-${String(index)}`,
+            label: `Set ${String(index)}`,
+            collection: index % 2 === 0 ? 'First' : 'Second',
+            load: (): unknown => ({ categories: [], systems: [] }),
+          }))
         : undefined;
     const source = options.nebulae === true ? window.galaxyMapNebulae : undefined;
     const map = factory(canvas, {
@@ -126,11 +147,41 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
       ...('systemIcons' in options ? { systemIcons: options.systemIcons } : {}),
       ...(options.grid === undefined ? {} : { grid: options.grid }),
       ...(datasets === undefined ? {} : { datasets }),
+      // The map loads the middle entry, so the previous arrow and the next arrow each
+      // have a neighbour to load.
+      ...(datasets === undefined || count < 2
+        ? {}
+        : { dataset: `set-${String(Math.floor(count / 2))}` }),
       ...(source === undefined ? {} : { nebulae: source }),
     } as never);
     window.__hudMap = map;
     await map.ready;
+    // The two readings the map options panel follows. A map with no shape shows no
+    // **Shapes** switch, and a map where no record names an icon shows no **System
+    // icons** switch, so a test that reads one asks for it here.
+    if (options.shape === true) {
+      map.addSpheres([
+        { name: 'One sphere', position: [0, 0, 0], radius: 50, color: [255, 154, 60] },
+      ] as never);
+    }
+    if (options.iconRecord === true) {
+      map.addCategories([
+        { name: 'Icons', color: [153, 230, 255], maxDrawRange: 200000 },
+      ] as never);
+      map.addSystems([
+        {
+          name: 'An icon record',
+          coords: { x: 0, y: 0, z: 400 },
+          categories: ['Icons'],
+          icons: ['titan', 'mission'],
+        },
+      ] as never);
+    }
   }, build);
+  // The panel reads the two on its tick, which runs 10 times a second.
+  if (build.shape === true || build.iconRecord === true) {
+    await page.waitForTimeout(200);
+  }
 }
 
 /** The root of the HUD the tests drive. */
@@ -723,9 +774,186 @@ test.describe('the top bar', () => {
 
     expect(writes).toBe(0);
   });
+
+  // The scenario "The dataset field is centred on the bar".
+  test('the dataset field is centred on the bar', async ({ page }) => {
+    await openHud(page, { datasets: true });
+    const reading = await page.evaluate(() => {
+      const bar = document.querySelector('#hud-wrap .gm-hud__top-bar');
+      const field = document.querySelector('#hud-wrap .gm-hud__dataset');
+      if (bar === null || field === null) return null;
+      const barBox = bar.getBoundingClientRect();
+      const fieldBox = field.getBoundingClientRect();
+      return {
+        bar: barBox.left + barBox.width / 2,
+        field: fieldBox.left + fieldBox.width / 2,
+      };
+    });
+    console.log('the centre of the bar and of the field', reading);
+    if (reading === null) throw new Error('The bar holds no dataset field.');
+
+    expect(Math.abs(reading.bar - reading.field)).toBeLessThanOrEqual(2);
+  });
+
+  // The scenario "The centre group is centred while the arrows are on". The arrows and
+  // the counter sit inside the centre group, so it is the group that holds the middle of
+  // the bar. The counter follows the next arrow, as the mockup draws it, so the field
+  // itself sits a little left of the middle.
+  test('the centre group is centred while the arrows are on', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 3, datasetArrows: true });
+    const reading = await page.evaluate(() => {
+      const bar = document.querySelector('#hud-wrap .gm-hud__top-bar');
+      const centre = document.querySelector('#hud-wrap .gm-hud__top-centre');
+      if (bar === null || centre === null) return null;
+      const barBox = bar.getBoundingClientRect();
+      const centreBox = centre.getBoundingClientRect();
+      return {
+        bar: barBox.left + barBox.width / 2,
+        centre: centreBox.left + centreBox.width / 2,
+      };
+    });
+    console.log('the centre of the bar and of the centre group', reading);
+    if (reading === null) throw new Error('The bar holds no centre group.');
+
+    expect(Math.abs(reading.bar - reading.centre)).toBeLessThanOrEqual(2);
+  });
+
+  // The scenario "A long title does not push the field off centre".
+  test('a long title does not push the field off centre', async ({ page }) => {
+    await openHud(page, {
+      datasets: true,
+      title: 'A GALACTIC CARTOGRAPHICS CHART OF THE WHOLE OF THE GALAXY',
+    });
+    const reading = await page.evaluate(() => {
+      const bar = document.querySelector('#hud-wrap .gm-hud__top-bar');
+      const field = document.querySelector('#hud-wrap .gm-hud__dataset');
+      const title = document.querySelector('#hud-wrap .gm-hud__title');
+      if (bar === null || field === null || title === null) return null;
+      const barBox = bar.getBoundingClientRect();
+      const fieldBox = field.getBoundingClientRect();
+      return {
+        bar: barBox.left + barBox.width / 2,
+        field: fieldBox.left + fieldBox.width / 2,
+        clipped: title.scrollWidth > title.clientWidth,
+      };
+    });
+    console.log('the centres with a long title', reading);
+    if (reading === null) throw new Error('The bar holds no dataset field.');
+
+    expect(Math.abs(reading.bar - reading.field)).toBeLessThanOrEqual(2);
+    expect(reading.clipped).toBe(true);
+  });
+
+  // The field's caret is a vector now, and a turning spinner takes its place while a
+  // load runs. `e2e/datasets.spec.ts` reads the spinner over a real load.
+  test('the field ends in a vector chevron', async ({ page }) => {
+    await openHud(page, { datasets: true });
+    const caret = hud(page).locator('.gm-hud__dataset-caret');
+    await expect(caret).toBeVisible();
+    await expect(caret.locator('svg')).toHaveCount(1);
+    await expect(hud(page).locator('.gm-hud__dataset .gm-hud__spinner')).toBeHidden();
+  });
+
+  // The scenario "The arrows are off by default" of `dataset-catalog`.
+  test('the bar holds no step arrow by default', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 3 });
+
+    await expect(hud(page).locator('.gm-hud__dataset')).toHaveCount(1);
+    expect(await hud(page).locator('.gm-hud__dataset-step').count()).toBe(0);
+    expect(await hud(page).locator('.gm-hud__dataset-counter').count()).toBe(0);
+  });
+
+  // The scenario "An unreadable option leaves the arrows off".
+  test('an unreadable arrows option leaves the arrows off', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 3, datasetArrows: 'yes' });
+
+    expect(await hud(page).locator('.gm-hud__dataset-step').count()).toBe(0);
+  });
+
+  // The scenario "The arrows step through the catalog".
+  test('the arrows step through the catalog', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 3, datasetArrows: true });
+    const counter = hud(page).locator('.gm-hud__dataset-counter');
+    const next = hud(page).locator('.gm-hud__dataset-step[data-name="next"]');
+    await expect(counter).toHaveText('2 / 3');
+
+    await next.click();
+    await expect(counter).toHaveText('3 / 3');
+    await expect(hud(page).locator('.gm-hud__dataset-value')).toHaveText('Set 2');
+    expect(
+      await page.evaluate(() => window.__hudMap?.getLoadedDataset()?.id ?? null),
+    ).toBe('set-2');
+  });
+
+  // The scenario "The arrows stop at the ends".
+  test('the arrows stop at the ends of the catalog', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 3, datasetArrows: true });
+    const previous = hud(page).locator('.gm-hud__dataset-step[data-name="previous"]');
+    const next = hud(page).locator('.gm-hud__dataset-step[data-name="next"]');
+
+    await previous.click();
+    await expect(hud(page).locator('.gm-hud__dataset-counter')).toHaveText('1 / 3');
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeEnabled();
+    // Each button names the entry it loads, and the end of the catalog where there is
+    // none.
+    await expect(previous).toHaveAttribute('aria-label', 'First dataset');
+    await expect(next).toHaveAttribute('aria-label', 'Next dataset, Set 1');
+
+    await next.click();
+    await next.click();
+    await expect(hud(page).locator('.gm-hud__dataset-counter')).toHaveText('3 / 3');
+    await expect(next).toBeDisabled();
+    await expect(previous).toBeEnabled();
+    await expect(next).toHaveAttribute('aria-label', 'Last dataset');
+  });
 });
 
 test.describe('the category browser', () => {
+  // The scenario "The two tabs share one border".
+  test('the two tabs share one border', async ({ page }) => {
+    await openHud(page);
+    const boxes = await hud(page)
+      .locator('.gm-hud__tab')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const box = node.getBoundingClientRect();
+          return { left: box.left, right: box.right };
+        }),
+      );
+    console.log('the boxes of the two tabs', boxes);
+
+    expect(boxes).toHaveLength(2);
+    const first = boxes[0] as { left: number; right: number };
+    const second = boxes[1] as { left: number; right: number };
+    expect(Math.abs(first.right - second.left)).toBeLessThanOrEqual(1);
+  });
+
+  // The scenario "The row icon turns when the list opens".
+  test('the row icon turns when the list opens', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('One', [0, 0, 100], 'Alpha')]);
+    await expect(categoryRow(page, 'Alpha')).toBeVisible();
+
+    const turn = async (): Promise<string> =>
+      hud(page)
+        .locator('.gm-hud__category-chevron')
+        .first()
+        .evaluate((element: HTMLElement) => getComputedStyle(element).transform);
+
+    const folded = await turn();
+    await categoryRow(page, 'Alpha').click();
+    await page.waitForTimeout(200);
+    const open = await turn();
+    console.log('the chevron transform folded and open', { folded, open });
+
+    // The identity reads `none` or the identity matrix, and 180 degrees reads
+    // `matrix(-1, 0, 0, -1, 0, 0)`.
+    expect(['none', 'matrix(1, 0, 0, 1, 0, 0)']).toContain(folded);
+    expect(open).toBe('matrix(-1, 0, 0, -1, 0, 0)');
+  });
+
   test('a row toggles its category', async ({ page }) => {
     await openHud(page);
     await addCategories(page, ['Alpha', 'Beta']);
@@ -2127,10 +2355,14 @@ test.describe('the movement of an open list', () => {
   });
 });
 
-/** The name of every switch the map options panel holds, in order. */
+/**
+ * The name of every switch the map options panel **shows**, in order. A switch the map
+ * cannot act on is hidden and not rebuilt, so the reading skips a hidden button rather
+ * than counting elements.
+ */
 async function optionNames(page: Page): Promise<string[]> {
   return hud(page)
-    .locator('.gm-hud__options-panel .gm-hud__toggle')
+    .locator('.gm-hud__options-panel .gm-hud__toggle:not([hidden])')
     .evaluateAll((nodes) => nodes.map((node) => node.dataset['name'] ?? ''));
 }
 
@@ -2154,11 +2386,9 @@ test.describe('the map options panel', () => {
   });
 
   test('the panel holds no segmented control', async ({ page }) => {
-    await openHud(page);
+    await openHud(page, { shape: true, iconRecord: true });
     expect(await hud(page).locator('.gm-hud__segment').count()).toBe(0);
-    const switches = await hud(page)
-      .locator('.gm-hud__options-panel .gm-hud__toggle')
-      .evaluateAll((nodes) => nodes.map((node) => node.dataset['name'] ?? ''));
+    const switches = await optionNames(page);
     console.log('the switches of the map options panel', switches);
     expect(switches).toEqual([
       'galactic-regions',
@@ -2208,10 +2438,8 @@ test.describe('the map options panel', () => {
   });
 
   test('the panel holds a sixth switch with a nebula source', async ({ page }) => {
-    await openHud(page, { nebulae: true });
-    const switches = await hud(page)
-      .locator('.gm-hud__options-panel .gm-hud__toggle')
-      .evaluateAll((nodes) => nodes.map((node) => node.dataset['name'] ?? ''));
+    await openHud(page, { nebulae: true, shape: true, iconRecord: true });
+    const switches = await optionNames(page);
     console.log('the switches with a nebula source', switches);
     expect(switches).toEqual([
       'galactic-regions',
@@ -2227,14 +2455,15 @@ test.describe('the map options panel', () => {
   });
 
   test('the panel holds no nebulae switch with no source', async ({ page }) => {
-    await openHud(page);
+    await openHud(page, { shape: true, iconRecord: true });
     const labels = await hud(page)
-      .locator('.gm-hud__options-panel .gm-hud__toggle')
+      .locator('.gm-hud__options-panel .gm-hud__toggle:not([hidden])')
       .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
     console.log('the switch labels with no nebula source', labels);
-    expect(
-      await hud(page).locator('.gm-hud__toggle[data-name="nebulae"]').count(),
-    ).toBe(0);
+    expect(await optionNames(page)).toHaveLength(5);
+    await expect(
+      hud(page).locator('.gm-hud__toggle[data-name="nebulae"]'),
+    ).toBeHidden();
     expect(labels.some((label) => label.includes('Nebulae'))).toBe(false);
   });
 
@@ -2254,11 +2483,18 @@ test.describe('the map options panel', () => {
     await expect(nebulae).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('the shapes switch draws with no shape on the map', async ({ page }) => {
+  // The scenario "The shapes switch follows the shape set".
+  test('the shapes switch follows the shape set', async ({ page }) => {
     await openHud(page);
     const shapes = hud(page).locator('.gm-hud__toggle[data-name="shapes"]');
     expect(await page.evaluate(() => window.__hudMap?.sphereCount())).toBe(0);
-    expect(await page.evaluate(() => window.__hudMap?.lineCount())).toBe(0);
+    await expect(shapes).toBeHidden();
+
+    await page.evaluate(() => {
+      window.__hudMap?.addSpheres([
+        { name: 'One sphere', position: [0, 0, 0], radius: 50, color: [255, 154, 60] },
+      ] as never);
+    });
     await expect(shapes).toBeVisible();
     await expect(shapes).toContainText('Shapes');
     await expect(shapes).toHaveAttribute('aria-pressed', 'true');
@@ -2266,6 +2502,78 @@ test.describe('the map options panel', () => {
     await shapes.click();
     expect(await page.evaluate(() => window.__hudMap?.areShapesVisible())).toBe(false);
     await expect(shapes).toHaveAttribute('aria-pressed', 'false');
+
+    await page.evaluate(() => {
+      window.__hudMap?.clearShapes();
+    });
+    await expect(shapes).toBeHidden();
+  });
+
+  // The scenario "The system icons switch follows the records".
+  test('the system icons switch follows the records', async ({ page }) => {
+    await openHud(page);
+    const icons = hud(page).locator('.gm-hud__toggle[data-name="system-icons"]');
+    await addCategories(page, ['Alpha']);
+    expect(await addSystems(page, [record('No icons', [0, 0, 100], 'Alpha')])).toBe(1);
+    await page.waitForTimeout(200);
+    await expect(icons).toBeHidden();
+
+    expect(
+      await addSystems(page, [
+        record('Two icons', [0, 0, 200], 'Alpha', { icons: ['titan', 'mission'] }),
+      ]),
+    ).toBe(1);
+    await expect(icons).toBeVisible();
+    await expect(icons).toHaveAttribute('aria-pressed', 'true');
+
+    await page.evaluate(() => {
+      window.__hudMap?.clearSystems();
+    });
+    await expect(icons).toBeHidden();
+  });
+
+  // The scenario "A dropped switch keeps its state". The map option itself does not move
+  // when its switch goes.
+  test('a dropped switch keeps its state', async ({ page }) => {
+    await openHud(page, { shape: true });
+    const shapes = hud(page).locator('.gm-hud__toggle[data-name="shapes"]');
+    await shapes.click();
+    expect(await page.evaluate(() => window.__hudMap?.areShapesVisible())).toBe(false);
+
+    await page.evaluate(() => {
+      window.__hudMap?.clearShapes();
+    });
+    await expect(shapes).toBeHidden();
+    expect(await page.evaluate(() => window.__hudMap?.areShapesVisible())).toBe(false);
+
+    await page.evaluate(() => {
+      window.__hudMap?.addSpheres([
+        {
+          name: 'Another sphere',
+          position: [0, 0, 0],
+          radius: 50,
+          color: [255, 154, 60],
+        },
+      ] as never);
+    });
+    await expect(shapes).toBeVisible();
+    await expect(shapes).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // The scenario "A map that moves nothing holds no panel".
+  test('a map that moves nothing holds no panel', async ({ page }) => {
+    await openHud(page, { lockedOptions: ['regions', 'systemNames', 'grid'] });
+    const panel = hud(page).locator('.gm-hud__options-panel');
+    await expect(panel).toBeHidden();
+    await expect(hud(page).locator('.gm-hud__category-panel')).toBeVisible();
+
+    await page.evaluate(() => {
+      window.__hudMap?.addSpheres([
+        { name: 'One sphere', position: [0, 0, 0], radius: 50, color: [255, 154, 60] },
+      ] as never);
+    });
+    await expect(panel).toBeVisible();
+    expect(await optionNames(page)).toEqual(['shapes']);
   });
 
   test('the switches call the map and open on the state the map is in', async ({
@@ -2291,7 +2599,7 @@ test.describe('the map options panel', () => {
   });
 
   test('a change through the handle moves the control', async ({ page }) => {
-    await openHud(page);
+    await openHud(page, { shape: true });
     await page.evaluate(() => {
       window.__hudMap?.setGridVisible(true);
       window.__hudMap?.setShapesVisible(false);
@@ -2314,6 +2622,15 @@ test.describe('the map options panel', () => {
     expect(await page.evaluate(() => window.__hudMap?.areSystemNamesVisible())).toBe(
       true,
     );
+  });
+
+  // The scenario "The grid switch opens on the state the options named". The test above
+  // that reads the switches of a bare map covers the off half.
+  test('the grid switch opens on the state the options named', async ({ page }) => {
+    await openHud(page, { grid: true });
+    const grid = hud(page).locator('.gm-hud__toggle[data-name="coordinate-grid"]');
+    await expect(grid).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => window.__hudMap?.isGridVisible())).toBe(true);
   });
 
   // The scenario "The system icons switch moves the stacks". The stacks draw on the
@@ -2356,16 +2673,18 @@ test.describe('the map options panel', () => {
   // the middle of an icon. The test moves the system until its stack lies under the
   // options panel, because a stack at the middle of the screen lies under no panel.
   test('the HUD draws over an icon stack', async ({ page }) => {
-    await openHud(page);
+    // The sphere draws the **Shapes** switch, which makes the panel its full height. The
+    // test does not clear the shapes, so the panel keeps that height throughout.
+    await openHud(page, { shape: true });
     await addCategories(page, ['Alpha']);
     await setView(page, { cursor: [0, 0, 0], distance: 1000, yaw: 0, pitch: 35 });
     const panel = await hud(page).locator('.gm-hud__options-panel').boundingBox();
     if (panel === null) throw new Error('The HUD holds no options panel.');
-    // Below the middle of the panel by a stack height, so the icons over the marker land
-    // inside it.
+    // Near the foot of the panel, because the stack rises about 120 pixels over the
+    // marker and the panel sits at the foot of the window.
     const target = {
       x: panel.x + panel.width / 2,
-      y: panel.y + panel.height / 2 + 45,
+      y: panel.y + panel.height - 12,
     };
 
     /** Draws a frame and reads where a game position lands, in CSS pixels. */
@@ -2448,7 +2767,7 @@ test.describe('the map options panel', () => {
   // The scenario "The system icons switch opens on the option". The test above, which
   // builds the map with no `systemIcons`, reads the other half: the switch opens on.
   test('the icons switch opens on the state the options named', async ({ page }) => {
-    await openHud(page, { systemIcons: false });
+    await openHud(page, { systemIcons: false, iconRecord: true });
     await expect(
       hud(page).locator('.gm-hud__toggle[data-name="system-icons"]'),
     ).toHaveAttribute('aria-pressed', 'false');
@@ -2459,7 +2778,11 @@ test.describe('the map options panel', () => {
 
   // The scenario "A locked option draws no switch".
   test('a locked option draws no switch', async ({ page }) => {
-    await openHud(page, { lockedOptions: ['grid', 'shapes'] });
+    await openHud(page, {
+      lockedOptions: ['grid', 'shapes'],
+      shape: true,
+      iconRecord: true,
+    });
     const switches = await optionNames(page);
     console.log('the switches with the grid and the shapes locked', switches);
 
@@ -2470,9 +2793,14 @@ test.describe('the map options panel', () => {
   test('every switch locked drops the panel', async ({ page }) => {
     await openHud(page, {
       lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'],
+      shape: true,
+      iconRecord: true,
     });
 
-    expect(await hud(page).locator('.gm-hud__options-panel').count()).toBe(0);
+    // The reading is whether the panel is shown and not a count of elements: a panel
+    // every lock took is not built, and a panel the map emptied carries `hidden`. The
+    // user cannot tell the two apart.
+    await expect(hud(page).locator('.gm-hud__options-panel')).toBeHidden();
     await expect(hud(page).locator('.gm-hud__category-panel')).toBeVisible();
   });
 
@@ -2481,6 +2809,8 @@ test.describe('the map options panel', () => {
   test('the five names leave the nebulae switch', async ({ page }) => {
     await openHud(page, {
       nebulae: true,
+      shape: true,
+      iconRecord: true,
       lockedOptions: ['regions', 'systemNames', 'systemIcons', 'grid', 'shapes'],
     });
 
@@ -2512,7 +2842,7 @@ test.describe('the map options panel', () => {
     });
     console.log('the drawn count with every switch locked', drawn);
 
-    expect(await hud(page).locator('.gm-hud__options-panel').count()).toBe(0);
+    await expect(hud(page).locator('.gm-hud__options-panel')).toBeHidden();
     expect(drawn).toBeGreaterThan(0);
   });
 
@@ -2544,7 +2874,11 @@ test.describe('the map options panel', () => {
   // The scenario "A lock list the HUD cannot read is ignored", first list. `nebulae` is
   // a name the panel holds, so the unknown name here is `datasets`.
   test('an unknown name in the lock list is ignored', async ({ page }) => {
-    await openHud(page, { lockedOptions: ['datasets', 7] });
+    await openHud(page, {
+      lockedOptions: ['datasets', 7],
+      shape: true,
+      iconRecord: true,
+    });
 
     expect(await optionNames(page)).toEqual([
       'galactic-regions',
@@ -2557,7 +2891,7 @@ test.describe('the map options panel', () => {
 
   // The same scenario, second list: a `lockedOptions` that is not an array.
   test('a lock list that is not an array is ignored', async ({ page }) => {
-    await openHud(page, { lockedOptions: 'grid' });
+    await openHud(page, { lockedOptions: 'grid', shape: true, iconRecord: true });
 
     expect(await optionNames(page)).toEqual([
       'galactic-regions',
@@ -3918,15 +4252,18 @@ test.describe('the keyboard', () => {
   });
 
   test('Tab reaches every control', async ({ page }) => {
-    await openHud(page);
+    await openHud(page, { datasets: true, datasetCount: 3, datasetArrows: true });
     await addCategories(page, ['Alpha', 'Beta']);
+    // One record names two icons, so the **System icons** switch is shown: the panel
+    // drops it on a map where no record names one, and a hidden switch takes no focus.
     await addSystems(page, [
-      record('Tabbed', [0, 0, 100], 'Alpha'),
+      record('Tabbed', [0, 0, 100], 'Alpha', { icons: ['titan', 'mission'] }),
       record('Second', [0, 0, 200], 'Beta'),
     ]);
     // The shapes tab is disabled with no shape, and a disabled button takes no focus,
-    // so the set holds one shape.
+    // so the set holds one shape. The **Shapes** switch follows the same set.
     await addLines(page, [line('Ribbon', 'Alpha')]);
+    await page.waitForTimeout(200);
     await expect(categoryRow(page, 'Beta')).toBeVisible();
     // The information panel holds the two copy buttons, so the sweep opens it first.
     await select(page, 'Tabbed');
@@ -3963,6 +4300,9 @@ test.describe('the keyboard', () => {
       'gm-hud__toggle|system-icons',
       'gm-hud__toggle|coordinate-grid',
       'gm-hud__toggle|shapes',
+      'gm-hud__dataset-step|previous',
+      'gm-hud__dataset|',
+      'gm-hud__dataset-step|next',
       'gm-hud__reset|',
       'gm-hud__copy|name',
       'gm-hud__copy|position',
@@ -3976,7 +4316,7 @@ test.describe('the keyboard', () => {
   });
 
   test('Tab reaches the nebulae switch where the map holds one', async ({ page }) => {
-    await openHud(page, { nebulae: true });
+    await openHud(page, { nebulae: true, shape: true });
     await hud(page).locator('.gm-hud__toggle[data-name="shapes"]').focus();
     await page.keyboard.press('Tab');
     const after = await page.evaluate(() => {
@@ -3992,13 +4332,13 @@ test.describe('the keyboard', () => {
   });
 
   test('the controls carry their state and their names', async ({ page }) => {
-    await openHud(page);
+    await openHud(page, { shape: true });
     await addCategories(page, ['Alpha']);
     await addSystems(page, [record('Sol', [0, 0, 0], 'Alpha')]);
     await expect(categoryRow(page, 'Alpha')).toBeVisible();
 
     const switches = await hud(page)
-      .locator('.gm-hud__options-panel .gm-hud__toggle')
+      .locator('.gm-hud__options-panel .gm-hud__toggle:not([hidden])')
       .evaluateAll((nodes) =>
         nodes.map((node) => ({
           pressed: node.getAttribute('aria-pressed'),
@@ -4031,8 +4371,11 @@ test.describe('the keyboard', () => {
 
   // The scenario "A panel of fewer switches still reports each state".
   test('a panel of fewer switches still reports each state', async ({ page }) => {
-    await openHud(page, { lockedOptions: ['grid', 'shapes'] });
-    await hud(page).locator('.gm-hud__options-panel .gm-hud__toggle').first().focus();
+    await openHud(page, { lockedOptions: ['grid', 'shapes'], iconRecord: true });
+    await hud(page)
+      .locator('.gm-hud__options-panel .gm-hud__toggle:not([hidden])')
+      .first()
+      .focus();
 
     const reached: { name: string; pressed: string | null; text: string }[] = [];
     for (let step = 0; step < 5; step += 1) {
@@ -4068,6 +4411,30 @@ test.describe('the keyboard', () => {
     expect(await page.evaluate(() => window.__hudMap?.areRegionsVisible())).toBe(false);
     await page.keyboard.press(' ');
     expect(await page.evaluate(() => window.__hudMap?.areRegionsVisible())).toBe(true);
+  });
+
+  // The scenario "A hidden switch takes no focus".
+  test('a hidden switch takes no focus', async ({ page }) => {
+    await openHud(page);
+    await hud(page).locator('.gm-hud__toggle[data-name="galactic-regions"]').focus();
+
+    const reached: string[] = [];
+    for (let step = 0; step < 6; step += 1) {
+      const stop = await page.evaluate(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return null;
+        return {
+          className: active.className,
+          name: active.dataset['name'] ?? '',
+        };
+      });
+      if (stop === null || !stop.className.includes('gm-hud__toggle')) break;
+      reached.push(stop.name);
+      await page.keyboard.press('Tab');
+    }
+    console.log('the switches the tab ring reached on a bare map', reached);
+
+    expect(reached).toEqual(['galactic-regions', 'system-names', 'coordinate-grid']);
   });
 
   test('the lightbox holds and returns the focus', async ({ page }) => {

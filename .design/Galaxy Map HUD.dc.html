@@ -20,6 +20,7 @@
   ::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); }
   ::-webkit-scrollbar-thumb { background: rgba(255,150,60,0.35); }
   @keyframes hudPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+  @keyframes hudSpin { to { transform: rotate(360deg); } }
   @keyframes hudSweep { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
   input { font-family: inherit; }
 </style>
@@ -34,41 +35,46 @@
         <div style="position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255,150,60,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,150,60,0.10) 1px, transparent 1px); background-size: 240px 240px;"></div>
       </sc-if>
 
-      <sc-if value="{{ regionsSimple }}" hint-placeholder-val="{{ false }}">
-        <svg viewBox="0 0 3840 1968" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;">
-          <polygon points="1020,600 2240,540 2530,1000 1330,1110" fill="rgba(110,190,255,0.05)" stroke="rgba(140,200,255,0.38)" stroke-width="3"></polygon>
-          <polygon points="2380,300 3580,180 3830,620 2560,700" fill="rgba(255,150,60,0.04)" stroke="rgba(255,170,90,0.32)" stroke-width="3"></polygon>
-          <polygon points="440,900 1480,1150 1340,1620 380,1440" fill="rgba(200,130,255,0.04)" stroke="rgba(205,140,255,0.30)" stroke-width="3"></polygon>
-          <polygon points="2600,760 3640,690 3720,1270 2680,1230" fill="rgba(125,255,160,0.03)" stroke="rgba(125,255,160,0.26)" stroke-width="3"></polygon>
-          <polygon points="1400,1200 2530,1290 2380,1760 1480,1730" fill="rgba(255,90,140,0.03)" stroke="rgba(255,110,150,0.26)" stroke-width="3"></polygon>
-          <text x="1700" y="860" fill="rgba(180,215,255,0.75)" font-size="34" letter-spacing="10" font-family="Chakra Petch">INNER ORION SPUR</text>
-          <text x="2900" y="470" fill="rgba(255,190,130,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">OUTER ORION SPUR</text>
-          <text x="700" y="1230" fill="rgba(215,170,255,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">SANGUINEOUS RIM</text>
-          <text x="2940" y="1010" fill="rgba(160,255,190,0.6)" font-size="34" letter-spacing="10" font-family="Chakra Petch">TEMPLE REACH</text>
-          <text x="1720" y="1520" fill="rgba(255,150,180,0.6)" font-size="34" letter-spacing="10" font-family="Chakra Petch">ERRANT MARCHES</text>
-        </svg>
+      <sc-if value="{{ showNebulae }}" hint-placeholder-val="{{ true }}">
+        <div style="position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen; background-image: radial-gradient(closest-side, rgba(110,190,255,0.18), transparent 70%), radial-gradient(closest-side, rgba(255,120,170,0.16), transparent 70%), radial-gradient(closest-side, rgba(150,110,255,0.14), transparent 70%), radial-gradient(closest-side, rgba(120,255,190,0.10), transparent 70%); background-repeat: no-repeat; background-size: 900px 520px, 700px 420px, 820px 480px, 640px 380px; background-position: 26% 42%, 68% 30%, 18% 68%, 78% 62%;"></div>
       </sc-if>
 
-      <sc-if value="{{ regionsAccurate }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ showRegions }}" hint-placeholder-val="{{ true }}">
         <svg viewBox="0 0 3840 1968" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;">
-          <polygon points="1020,600 1560,520 2110,545 2380,690 2530,1000 1930,1095 1420,1110 1180,880" fill="rgba(110,190,255,0.06)" stroke="rgba(140,200,255,0.55)" stroke-width="2.5"></polygon>
-          <polygon points="2380,300 2880,215 3320,180 3660,255 3830,620 3400,700 2900,680 2560,700 2440,520" fill="rgba(255,150,60,0.05)" stroke="rgba(255,170,90,0.5)" stroke-width="2.5"></polygon>
-          <polygon points="440,900 900,980 1310,1105 1480,1190 1340,1620 900,1580 520,1500 380,1440 400,1140" fill="rgba(200,130,255,0.05)" stroke="rgba(205,140,255,0.46)" stroke-width="2.5"></polygon>
-          <polygon points="2600,760 3040,700 3450,685 3640,760 3720,1270 3200,1300 2760,1260 2680,1120" fill="rgba(125,255,160,0.04)" stroke="rgba(125,255,160,0.4)" stroke-width="2.5"></polygon>
-          <polygon points="1400,1200 1880,1240 2330,1275 2530,1360 2380,1760 1900,1790 1520,1740 1420,1540" fill="rgba(255,90,140,0.04)" stroke="rgba(255,110,150,0.4)" stroke-width="2.5"></polygon>
-          <polygon points="1180,300 1740,240 2200,270 2330,430 2100,520 1560,510 1120,520" fill="rgba(255,215,120,0.04)" stroke="rgba(255,215,120,0.36)" stroke-width="2.5"></polygon>
-          <polygon points="180,420 700,380 1060,440 1090,690 640,780 260,720" fill="rgba(120,220,255,0.03)" stroke="rgba(120,220,255,0.3)" stroke-width="2.5"></polygon>
-          <polygon points="2560,1290 3160,1320 3660,1330 3720,1660 3060,1720 2560,1680" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"></polygon>
-          <polyline points="1180,880 1930,1095 2380,690" fill="none" stroke="rgba(140,200,255,0.3)" stroke-width="2" stroke-dasharray="14 12"></polyline>
-          <polyline points="2560,700 3400,700 3660,255" fill="none" stroke="rgba(255,170,90,0.24)" stroke-width="2" stroke-dasharray="14 12"></polyline>
-          <text x="1620" y="850" fill="rgba(190,220,255,0.85)" font-size="34" letter-spacing="10" font-family="Chakra Petch">INNER ORION SPUR</text>
-          <text x="2880" y="450" fill="rgba(255,195,135,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">OUTER ORION SPUR</text>
-          <text x="640" y="1250" fill="rgba(220,180,255,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">SANGUINEOUS RIM</text>
-          <text x="2940" y="1000" fill="rgba(170,255,200,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">TEMPLE REACH</text>
-          <text x="1700" y="1520" fill="rgba(255,160,190,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">ERRANT MARCHES</text>
-          <text x="1500" y="400" fill="rgba(255,225,150,0.6)" font-size="30" letter-spacing="9" font-family="Chakra Petch">ACHERON BELT</text>
-          <text x="420" y="590" fill="rgba(160,230,255,0.55)" font-size="30" letter-spacing="9" font-family="Chakra Petch">VOID FRINGE</text>
-          <text x="2960" y="1530" fill="rgba(255,255,255,0.42)" font-size="30" letter-spacing="9" font-family="Chakra Petch">UNCHARTED</text>
+          <g style="{{ shapeOn.s1 }}">
+            <g style="{{ shapeStyle }}"><polygon points="1020,600 1560,520 2110,545 2380,690 2530,1000 1930,1095 1420,1110 1180,880" fill="rgba(110,190,255,0.06)" stroke="rgba(140,200,255,0.55)" stroke-width="2.5"></polygon></g>
+            <polyline points="1180,880 1930,1095 2380,690" fill="none" stroke="rgba(140,200,255,0.3)" stroke-width="2" stroke-dasharray="14 12"></polyline>
+            <text x="1620" y="850" fill="rgba(190,220,255,0.85)" font-size="34" letter-spacing="10" font-family="Chakra Petch">INNER ORION SPUR</text>
+          </g>
+          <g style="{{ shapeOn.s2 }}">
+            <g style="{{ shapeStyle }}"><polygon points="2380,300 2880,215 3320,180 3660,255 3830,620 3400,700 2900,680 2560,700 2440,520" fill="rgba(255,150,60,0.05)" stroke="rgba(255,170,90,0.5)" stroke-width="2.5"></polygon></g>
+            <polyline points="2560,700 3400,700 3660,255" fill="none" stroke="rgba(255,170,90,0.24)" stroke-width="2" stroke-dasharray="14 12"></polyline>
+            <text x="2880" y="450" fill="rgba(255,195,135,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">OUTER ORION SPUR</text>
+          </g>
+          <g style="{{ shapeOn.s3 }}">
+            <g style="{{ shapeStyle }}"><polygon points="440,900 900,980 1310,1105 1480,1190 1340,1620 900,1580 520,1500 380,1440 400,1140" fill="rgba(200,130,255,0.05)" stroke="rgba(205,140,255,0.46)" stroke-width="2.5"></polygon></g>
+            <text x="640" y="1250" fill="rgba(220,180,255,0.8)" font-size="34" letter-spacing="10" font-family="Chakra Petch">SANGUINEOUS RIM</text>
+          </g>
+          <g style="{{ shapeOn.s4 }}">
+            <g style="{{ shapeStyle }}"><polygon points="2600,760 3040,700 3450,685 3640,760 3720,1270 3200,1300 2760,1260 2680,1120" fill="rgba(125,255,160,0.04)" stroke="rgba(125,255,160,0.4)" stroke-width="2.5"></polygon></g>
+            <text x="2940" y="1000" fill="rgba(170,255,200,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">TEMPLE REACH</text>
+          </g>
+          <g style="{{ shapeOn.s5 }}">
+            <g style="{{ shapeStyle }}"><polygon points="1400,1200 1880,1240 2330,1275 2530,1360 2380,1760 1900,1790 1520,1740 1420,1540" fill="rgba(255,90,140,0.04)" stroke="rgba(255,110,150,0.4)" stroke-width="2.5"></polygon></g>
+            <text x="1700" y="1520" fill="rgba(255,160,190,0.7)" font-size="34" letter-spacing="10" font-family="Chakra Petch">ERRANT MARCHES</text>
+          </g>
+          <g style="{{ shapeOn.s6 }}">
+            <g style="{{ shapeStyle }}"><polygon points="1180,300 1740,240 2200,270 2330,430 2100,520 1560,510 1120,520" fill="rgba(255,215,120,0.04)" stroke="rgba(255,215,120,0.36)" stroke-width="2.5"></polygon></g>
+            <text x="1500" y="400" fill="rgba(255,225,150,0.6)" font-size="30" letter-spacing="9" font-family="Chakra Petch">ACHERON BELT</text>
+          </g>
+          <g style="{{ shapeOn.s7 }}">
+            <g style="{{ shapeStyle }}"><polygon points="180,420 700,380 1060,440 1090,690 640,780 260,720" fill="rgba(120,220,255,0.03)" stroke="rgba(120,220,255,0.3)" stroke-width="2.5"></polygon></g>
+            <text x="420" y="590" fill="rgba(160,230,255,0.55)" font-size="30" letter-spacing="9" font-family="Chakra Petch">VOID FRINGE</text>
+          </g>
+          <g style="{{ shapeOn.s8 }}">
+            <g style="{{ shapeStyle }}"><polygon points="2560,1290 3160,1320 3660,1330 3720,1660 3060,1720 2560,1680" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"></polygon></g>
+            <text x="2960" y="1530" fill="rgba(255,255,255,0.42)" font-size="30" letter-spacing="9" font-family="Chakra Petch">UNCHARTED</text>
+          </g>
         </svg>
       </sc-if>
 
@@ -87,19 +93,34 @@
   </div>
 
   <div style="position: absolute; top: 0; left: 0; right: 0; height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; background: linear-gradient(180deg, rgba(12,8,12,0.92) 0%, rgba(12,8,12,0.35) 100%); border-bottom: 1px solid rgba(255,150,60,0.22);">
-    <div style="display: flex; align-items: center; gap: 16px; min-width: 0;">
-      <div style="display: flex; align-items: baseline; gap: 14px; flex: 0 0 auto;">
-        <div style="font-size: 17px; font-weight: 600; letter-spacing: 4px; color: #ff9a3c;">GALACTIC MAP</div>
-        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45);">{{ datasetRegion }}</div>
-      </div>
-      <div style="width: 1px; height: 26px; flex: 0 0 auto; background: rgba(255,150,60,0.22);"></div>
-      <div style="{{ dsFieldStyle }}" title="{{ datasetTitle }}" style-hover="border-color: rgba(255,150,60,0.75);" onClick="{{ openModal }}">
-        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; letter-spacing: 2px; color: rgba(244,230,216,0.4); white-space: nowrap;">DATASET</div>
-        <div style="font-size: 13px; letter-spacing: 1px; color: #f4e6d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px;">{{ datasetLabel }}</div>
-        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #ff9a3c; white-space: nowrap;">▾</div>
+    <div style="display: flex; align-items: center; gap: 16px; flex: 1 1 0; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 14px; min-width: 0;">
+        <div style="font-size: 17px; font-weight: 600; letter-spacing: 4px; color: #ff9a3c; white-space: nowrap;">GALACTIC MAP</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ datasetRegion }}</div>
       </div>
     </div>
-    <div style="display: flex; align-items: center; gap: 18px; flex: 0 0 auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: rgba(244,230,216,0.6);">
+    <div style="display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0; padding: 0 12px;">
+      <div style="{{ prevDsStyle }}" title="{{ prevDsTitle }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ prevDs }}">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><polyline points="10,3 5.5,8 10,13"></polyline></svg>
+      </div>
+      <div style="{{ dsFieldStyle }}" title="{{ datasetTitle }}" style-hover="border-color: rgba(255,150,60,0.75);" onClick="{{ openModal }}">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; letter-spacing: 2px; color: rgba(244,230,216,0.4); white-space: nowrap;">DATASET</div>
+        <div style="flex: 1 1 auto; min-width: 0; font-size: 13px; letter-spacing: 1px; color: #f4e6d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;">{{ datasetLabel }}</div>
+        <sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ hudSpinnerStyle }}"></div>
+        </sc-if>
+        <sc-if value="{{ notBusy }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; justify-content: center; flex: 0 0 auto; color: #ff9a3c;">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><polyline points="4,6 8,10.5 12,6"></polyline></svg>
+          </div>
+        </sc-if>
+      </div>
+      <div style="{{ nextDsStyle }}" title="{{ nextDsTitle }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ nextDs }}">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><polyline points="6,3 10.5,8 6,13"></polyline></svg>
+      </div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1.5px; color: rgba(244,230,216,0.35); white-space: nowrap;">{{ dsIndexLabel }}</div>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 18px; flex: 1 1 0; min-width: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: rgba(244,230,216,0.6);">
       <div style="white-space: nowrap;">ZOOM <span style="color: #ff9a3c;">{{ zoomLabel }}</span></div>
       <div style="padding: 5px 11px; border: 1px solid rgba(255,150,60,0.4); color: #ff9a3c; cursor: pointer; white-space: nowrap; flex: 0 0 auto;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ resetView }}">RESET VIEW</div>
     </div>
@@ -109,30 +130,53 @@
 
     <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); display: flex; flex-direction: column; overflow: hidden; min-height: 300px; flex: 1 1 auto;">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid rgba(255,150,60,0.2); background: rgba(255,150,60,0.07);">
-        <div style="font-size: 12px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">SYSTEM CATEGORIES</div>
+        <div style="display: flex; gap: 0; flex: 0 0 auto;">
+          <div style="{{ modeSysStyle }}" onClick="{{ setModeSystems }}">SYSTEMS</div>
+          <div style="{{ modeShpStyle }}" onClick="{{ setModeShapes }}">SHAPES</div>
+        </div>
         <div style="display: flex; gap: 6px;">
           <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 3px 7px; border: 1px solid rgba(255,150,60,0.3); color: rgba(244,230,216,0.75); cursor: pointer;" style-hover="background: rgba(255,150,60,0.18);" onClick="{{ allOn }}">ALL</div>
           <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 3px 7px; border: 1px solid rgba(255,150,60,0.3); color: rgba(244,230,216,0.75); cursor: pointer;" style-hover="background: rgba(255,150,60,0.18);" onClick="{{ allOff }}">NONE</div>
         </div>
       </div>
 
-      <div style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto;">
-        <input type="text" placeholder="SEARCH SYSTEMS" value="{{ query }}" onChange="{{ onQuery }}" style="width: 100%; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 12px; letter-spacing: 2px; padding: 7px 9px; outline: none;">
-      </div>
+      <sc-if value="{{ panelSystems }}" hint-placeholder-val="{{ true }}">
+        <div style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto;">
+          <input type="text" placeholder="SEARCH SYSTEMS" value="{{ query }}" onChange="{{ onQuery }}" style="width: 100%; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 12px; letter-spacing: 2px; padding: 7px 9px; outline: none;">
+        </div>
+      </sc-if>
 
-      <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+      <sc-if value="{{ panelShapes }}" hint-placeholder-val="{{ false }}">
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+          <sc-for list="{{ shapes }}" as="sh" hint-placeholder-count="8">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.06);" style-hover="background: rgba(255,255,255,0.04);" onClick="{{ sh.onToggle }}">
+              <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: 0 0 auto;">
+                <div style="{{ sh.swatchStyle }}"></div>
+              </div>
+              <div style="{{ sh.nameStyle }}">{{ sh.name }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 14px 13px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.5);">
+          <div style="{{ hudSpinnerStyle }}"></div>
+          <div>LOADING DATASET…</div>
+        </div>
+      </sc-if>
+
+      <div style="{{ catsWrapStyle }}">
         <sc-for list="{{ cats }}" as="c" hint-placeholder-count="6">
           <div style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-            <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.04);" onClick="{{ c.onToggle }}">
-              <div style="{{ c.swatchStyle }}"></div>
+            <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.04);" onClick="{{ c.onExpand }}">
+              <div style="{{ c.swatchBtnStyle }}" title="{{ c.toggleLabel }}" onClick="{{ c.onToggle }}">
+                <div style="{{ c.swatchStyle }}"></div>
+              </div>
               <div style="{{ c.nameStyle }}">{{ c.name }}</div>
               <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(244,230,216,0.4);">{{ c.count }}</div>
-              <div style="{{ c.expandBtnStyle }}" title="{{ c.expandLabel }}" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ c.onExpand }}">
-                <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4">
-                  <line x1="1" y1="2.5" x2="11" y2="2.5"></line>
-                  <line x1="1" y1="6" x2="11" y2="6"></line>
-                  <line x1="1" y1="9.5" x2="11" y2="9.5"></line>
-                </svg>
+              <div style="{{ c.caretStyle }}">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><polyline points="4,6 8,10.5 12,6"></polyline></svg>
               </div>
             </div>
             <sc-if value="{{ c.expanded }}" hint-placeholder-val="{{ false }}">
@@ -140,7 +184,6 @@
                 <sc-for list="{{ c.systems }}" as="s" hint-placeholder-count="5">
                   <div style="{{ s.rowStyle }}" style-hover="background: rgba(255,150,60,0.14);" onClick="{{ s.onClick }}">
                     <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ s.name }}</span>
-                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: rgba(244,230,216,0.35);">{{ s.dist }}</span>
                   </div>
                 </sc-for>
               </div>
@@ -153,15 +196,7 @@
     <div style="pointer-events: auto; background: rgba(14,10,14,0.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,150,60,0.26); flex: 0 0 auto;">
       <div style="padding: 11px 14px; border-bottom: 1px solid rgba(255,150,60,0.2); background: rgba(255,150,60,0.07); font-size: 12px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">MAP OPTIONS</div>
       <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 13px;">
-        <div style="display: flex; flex-direction: column; gap: 7px;">
-          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.5);">GALAXY REGIONS</div>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">
-            <div style="{{ regNoneStyle }}" onClick="{{ setRegNone }}">NONE</div>
-            <div style="{{ regSimpleStyle }}" onClick="{{ setRegSimple }}">SIMPLIFIED</div>
-            <div style="{{ regAccStyle }}" onClick="{{ setRegAccurate }}">ACCURATE</div>
-          </div>
-        </div>
-        <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="3">
+        <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="6">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer;" onClick="{{ t.onToggle }}">
             <div style="font-size: 12px; letter-spacing: 1px; line-height: 1.3; white-space: nowrap; color: rgba(244,230,216,0.8);">{{ t.label }}</div>
             <div style="{{ t.trackStyle }}"><div style="{{ t.knobStyle }}"></div></div>
@@ -243,74 +278,54 @@
 
 
   <div style="{{ modalStyle }}" onClick="{{ closeModal }}">
-    <div style="width: min(92vw, 960px); max-height: min(82vh, 640px); display: flex; flex-direction: column; background: rgba(12,9,13,0.97); backdrop-filter: blur(14px); border: 1px solid rgba(255,150,60,0.45); box-shadow: 0 30px 90px rgba(0,0,0,0.8);" onClick="{{ stop }}">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid rgba(255,150,60,0.24); background: rgba(255,150,60,0.07);">
-        <div style="display: flex; align-items: baseline; gap: 12px;">
-          <div style="font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c;">DATASET LIBRARY</div>
-          
+    <div style="width: min(94vw, 1040px); height: min(84vh, 680px); display: flex; flex-direction: column; background: rgba(12,9,13,0.97); backdrop-filter: blur(14px); border: 1px solid rgba(255,150,60,0.45); box-shadow: 0 30px 90px rgba(0,0,0,0.8);" onClick="{{ stop }}">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid rgba(255,150,60,0.24); background: rgba(255,150,60,0.07); flex: 0 0 auto;">
+        <div style="display: flex; align-items: baseline; gap: 12px; min-width: 0;">
+          <div style="font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #ff9a3c; white-space: nowrap;">DATASET LIBRARY</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.4); white-space: nowrap;">{{ dsCountLabel }}</div>
         </div>
-        <div style="width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,150,60,0.35); color: #ff9a3c; font-size: 15px; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ closeModal }}">×</div>
+        <div style="width: 26px; height: 26px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,150,60,0.35); color: #ff9a3c; font-size: 15px; cursor: pointer;" style-hover="background: rgba(255,150,60,0.2);" onClick="{{ closeModal }}">×</div>
       </div>
 
-      <div style="display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); min-height: 0; flex: 1 1 auto;">
-        <div style="display: flex; flex-direction: column; min-height: 0; border-right: 1px solid rgba(255,255,255,0.08);">
-          <div style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;">
-            <input type="text" placeholder="FILTER BY NAME, BODY OR CATEGORY" value="{{ dsQuery }}" onChange="{{ onDsQuery }}" style="width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 11px; letter-spacing: 1.5px; padding: 8px 9px; outline: none;">
+      <div style="display: flex; flex-direction: column; gap: 10px; padding: 12px 18px 13px; border-bottom: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;">
+        <input type="text" placeholder="SEARCH DATASET NAMES" value="{{ dsQuery }}" onChange="{{ onDsQuery }}" style="width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,150,60,0.22); color: #f4e6d8; font-size: 11px; letter-spacing: 2px; padding: 8px 10px; outline: none;">
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+          <div style="{{ dsAllChipStyle }}" onClick="{{ pickAllCat }}">
+            <div>ALL</div>
+            <div style="opacity: 0.55;">{{ dsTotal }}</div>
           </div>
-          <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
-            <sc-for list="{{ dsGroups }}" as="g" hint-placeholder-count="4">
-              <div>
-                <div style="{{ g.headerStyle }}">
-                  <div style="{{ g.swatchStyle }}"></div>
-                  <div style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ g.name }}</div>
-                  <div style="color: rgba(244,230,216,0.35);">{{ g.count }}</div>
+          <sc-for list="{{ dsCats }}" as="dc" hint-placeholder-count="10">
+            <div style="{{ dc.chipStyle }}" onClick="{{ dc.onPick }}">
+              <div style="{{ dc.swatchStyle }}"></div>
+              <div style="white-space: nowrap;">{{ dc.name }}</div>
+              <div style="opacity: 0.55;">{{ dc.count }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 14px 18px 18px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 9px;">
+          <sc-for list="{{ dsCards }}" as="d" hint-placeholder-count="12">
+            <div style="{{ d.cardStyle }}" style-hover="border-color: rgba(255,150,60,0.65); background: rgba(255,150,60,0.09);" onClick="{{ d.onLoad }}">
+              <div style="display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 7px; min-width: 0;">
+                  <div style="{{ d.swatchStyle }}"></div>
+                  <div style="{{ d.catStyle }}">{{ d.category }}</div>
                 </div>
-                <sc-for list="{{ g.rows }}" as="d" hint-placeholder-count="3">
-                  <div style="{{ d.rowStyle }}" style-hover="background: rgba(255,150,60,0.12);" onClick="{{ d.onFocus }}">
-                    <div style="{{ d.labelStyle }}">{{ d.label }}</div>
-                  </div>
-                </sc-for>
+                <div style="{{ d.labelStyle }}">{{ d.label }}</div>
               </div>
-            </sc-for>
-            <sc-if value="{{ dsNoResults }}" hint-placeholder-val="{{ false }}">
-              <div style="padding: 16px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 1.5px; color: rgba(244,230,216,0.4);">NO MATCHING DATASETS</div>
-            </sc-if>
-          </div>
-        </div>
-
-        <div style="display: flex; flex-direction: column; min-height: 0;">
-          <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 16px 18px;">
-            <div style="font-size: 20px; font-weight: 600; letter-spacing: 1.5px; color: #ffb055; text-wrap: pretty;">{{ focusLabel }}</div>
-
-            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 18px 0 8px;">CATEGORIES IN THIS DATASET</div>
-            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">
-              <sc-for list="{{ focusCats }}" as="fc" hint-placeholder-count="5">
-                <div style="display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid rgba(255,255,255,0.09);">
-                  <div style="{{ fc.swatchStyle }}"></div>
-                  <div style="flex: 1 1 auto; min-width: 0; font-size: 12px; letter-spacing: 1px; color: rgba(244,230,216,0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ fc.name }}</div>
-                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(244,230,216,0.45);">{{ fc.count }}</div>
-                </div>
-              </sc-for>
+              <sc-if value="{{ d.isLoading }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ d.spinnerStyle }}"></div>
+              </sc-if>
             </div>
-
-            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 2px; color: rgba(244,230,216,0.45); margin: 18px 0 8px;">SAMPLE SYSTEMS</div>
-            <div style="display: flex; flex-direction: column;">
-              <sc-for list="{{ focusSystems }}" as="fs" hint-placeholder-count="6">
-                <div style="display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 12px; letter-spacing: 1px; color: rgba(244,230,216,0.8);">
-                  <div style="{{ fs.swatchStyle }}"></div>
-                  <div style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ fs.name }}</div>
-                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: rgba(244,230,216,0.4);">{{ fs.star }}</div>
-                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: rgba(244,230,216,0.35); width: 74px; text-align: right;">{{ fs.dist }} LY</div>
-                </div>
-              </sc-for>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;">
-            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; padding: 9px 14px; border: 1px solid rgba(255,255,255,0.16); color: rgba(244,230,216,0.65); cursor: pointer;" style-hover="background: rgba(255,255,255,0.08);" onClick="{{ closeModal }}">CANCEL</div>
-            <div style="{{ loadBtnStyle }}" style-hover="background: rgba(255,150,60,0.28);" onClick="{{ loadFocus }}">{{ loadBtnLabel }}</div>
-          </div>
+          </sc-for>
         </div>
+        <sc-if value="{{ dsNoResults }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 26px 2px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: rgba(244,230,216,0.4);">NO DATASET NAME MATCHES THAT FILTER</div>
+        </sc-if>
       </div>
+
     </div>
   </div>
 
@@ -337,8 +352,11 @@ class Component extends DCLogic {
       z: 0.5, px: 0, py: 0, fitted: false,
       on, expanded: null, query: '',
       selected: null, hover: null,
-      dataset: ds0.id, modalOpen: false, dsQuery: '', dsFocus: ds0.id, copied: null,
-      regions: props.regionMode || 'simplified',
+      dataset: ds0.id, modalOpen: false, dsQuery: '', dsCat: 'all', loading: null, copied: null,
+      showRegions: (props.regionMode || 'simplified') !== 'none',
+      showShapes: true, showNebulae: true,
+      panelMode: 'systems',
+      shapesOn: { s1: true, s2: true, s3: true, s4: true, s5: true, s6: true, s7: true, s8: true },
       showNames: false, showGlow: true, showGrid: false,
       lightbox: null
     };
@@ -523,13 +541,20 @@ class Component extends DCLogic {
     return this._cache[ds.id];
   }
 
-  pickDataset = (ds) => {
+  requestDataset = (ds) => {
+    if (this.state.loading) return;
     if (this.state.dataset === ds.id) { this.setState({ modalOpen: false }); return; }
+    this.setState({ loading: ds.id, selected: null, hover: null, expanded: null, query: '' });
+    clearTimeout(this._loadT);
+    this._loadT = setTimeout(() => this.pickDataset(ds), 750);
+  };
+
+  pickDataset = (ds) => {
     this.cats = ds.cats;
     this.systems = this.systemsFor(ds);
     const on = {};
     this.cats.forEach(c => { on[c.id] = true; });
-    this.setState({ dataset: ds.id, selected: null, hover: null, expanded: null, query: '', on, lightbox: null, modalOpen: false });
+    this.setState({ dataset: ds.id, selected: null, hover: null, expanded: null, query: '', on, lightbox: null, modalOpen: false, loading: null });
   };
 
   visible() {
@@ -543,8 +568,9 @@ class Component extends DCLogic {
     const st = this.state;
     const accent = this.props.accent || '#ff9a3c';
     const mScale = this.props.markerScale || 1;
-    const vis = this.visible();
-    const sel = this.systems.find(s => s.id === st.selected) || null;
+    const busy = !!st.loading;
+    const vis = busy ? [] : this.visible();
+    const sel = busy ? null : (this.systems.find(s => s.id === st.selected) || null);
     const inv = 1 / st.z;
 
     const markers = vis.map(s => {
@@ -565,7 +591,7 @@ class Component extends DCLogic {
       };
     });
 
-    const cats = this.cats.map(c => {
+    const cats = (busy ? [] : this.cats).map(c => {
       const active = st.on[c.id];
       const mine = this.systems.filter(s => s.cats.includes(c.id));
       const expanded = st.expanded === c.id;
@@ -573,23 +599,34 @@ class Component extends DCLogic {
         name: c.name,
         count: mine.length,
         expanded,
-        expandLabel: expanded ? 'Hide systems' : 'List systems',
-        expandBtnStyle: `display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 auto;border:1px solid ${expanded ? accent : 'rgba(255,150,60,0.28)'};background:${expanded ? 'rgba(255,150,60,0.2)' : 'transparent'};color:${expanded ? accent : 'rgba(255,154,60,0.9)'};cursor:pointer`,
+        toggleLabel: active ? 'Hide on map' : 'Show on map',
+        swatchBtnStyle: 'display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:0 0 auto;cursor:pointer',
+        caretStyle: `display:flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto;color:${expanded ? accent : 'rgba(244,230,216,0.45)'};transform:rotate(${expanded ? 180 : 0}deg);transition:transform .15s ease`,
         swatchStyle: `width:12px;height:12px;flex:0 0 auto;transform:rotate(45deg);background:${active ? c.color : 'transparent'};border:1px solid ${c.color};box-shadow:${active ? '0 0 10px ' + c.color : 'none'};opacity:${active ? 1 : 0.5}`,
         nameStyle: `flex:1 1 auto;font-size:13px;letter-spacing:1.5px;color:${active ? '#f4e6d8' : 'rgba(244,230,216,0.35)'}`,
-        onToggle: () => this.setState({ on: Object.assign({}, st.on, { [c.id]: !active }) }),
-        onExpand: (e) => { e.stopPropagation(); this.setState({ expanded: expanded ? null : c.id }); },
+        onToggle: (e) => { e.stopPropagation(); this.setState({ on: Object.assign({}, st.on, { [c.id]: !active }) }); },
+        onExpand: () => this.setState({ expanded: expanded ? null : c.id }),
         systems: mine.map(s => ({
           name: s.name,
-          dist: Math.round(Math.sqrt(s.cx * s.cx + s.cy * s.cy + s.cz * s.cz)).toLocaleString(),
           rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px 6px 16px;font-size:12px;letter-spacing:1px;cursor:pointer;color:${sel && sel.id === s.id ? accent : 'rgba(244,230,216,0.78)'};border-left:2px solid ${sel && sel.id === s.id ? accent : 'transparent'}`,
           onClick: () => { this.setState({ selected: s.id, on: Object.assign({}, st.on, { [c.id]: true }) }); this.centre(s); }
         }))
       };
     });
 
-    const segBase = 'text-align:center;font-family:\'IBM Plex Mono\',monospace;font-size:9px;letter-spacing:1px;padding:7px 2px;cursor:pointer;border:1px solid ';
-    const seg = (v) => segBase + (st.regions === v ? `${accent};background:rgba(255,150,60,0.22);color:${accent}` : 'rgba(255,255,255,0.14);background:transparent;color:rgba(244,230,216,0.55)');
+    const SHAPES = [
+      { id: 's1', name: 'Inner Orion Spur', color: '#8cc8ff' },
+      { id: 's2', name: 'Outer Orion Spur', color: '#ffaa5a' },
+      { id: 's3', name: 'Sanguineous Rim', color: '#cd8cff' },
+      { id: 's4', name: 'Temple Reach', color: '#7dffa0' },
+      { id: 's5', name: 'Errant Marches', color: '#ff6e96' },
+      { id: 's6', name: 'Acheron Belt', color: '#ffd778' },
+      { id: 's7', name: 'Void Fringe', color: '#78dcff' },
+      { id: 's8', name: 'Uncharted', color: '#e8e2ee' }
+    ];
+    const shapeOn = {};
+    SHAPES.forEach(s => { shapeOn[s.id] = `display:${st.shapesOn[s.id] === false ? 'none' : 'inline'}`; });
+    const modeTab = (active) => `font-size:11.5px;font-weight:600;letter-spacing:2.5px;padding:4px 10px;cursor:pointer;border:1px solid ${active ? accent : 'rgba(255,255,255,0.14)'};background:${active ? 'rgba(255,150,60,0.2)' : 'transparent'};color:${active ? accent : 'rgba(244,230,216,0.5)'};margin-right:-1px`;
 
     const mkToggle = (key, label) => {
       const v = st[key];
@@ -602,16 +639,20 @@ class Component extends DCLogic {
     };
 
     const cur = this.catalog.find(d => d.id === st.dataset) || this.catalog[0];
-    const focus = this.catalog.find(d => d.id === st.dsFocus) || cur;
-    const focusSys = st.modalOpen ? this.systemsFor(focus) : [];
+    const curIdx = this.catalog.indexOf(cur);
+    const stepBtn = (enabled) => `display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex:0 0 auto;border:1px solid ${enabled ? 'rgba(255,150,60,0.4)' : 'rgba(255,255,255,0.1)'};color:${enabled ? accent : 'rgba(244,230,216,0.22)'};cursor:${enabled ? 'pointer' : 'default'}`;
     const dq = st.dsQuery.trim().toLowerCase();
-    const dsList = dq ? this.catalog.filter(d => (d.label + ' ' + d.collection + ' ' + d.cats.map(c => c.name).join(' ')).toLowerCase().includes(dq)) : this.catalog;
-    const dsGroups = [];
-    dsList.slice(0, 120).forEach(d => {
-      let g = dsGroups.find(x => x.id === d.primary.id);
-      if (!g) { g = { id: d.primary.id, name: d.primary.name, color: d.primary.color, rows: [] }; dsGroups.push(g); }
-      g.rows.push(d);
+    const catList = [];
+    this.catalog.forEach(d => {
+      let e = catList.find(x => x.id === d.primary.id);
+      if (!e) { e = { id: d.primary.id, name: d.primary.name, color: d.primary.color, n: 0 }; catList.push(e); }
+      e.n++;
     });
+    catList.sort((a, b) => a.name.localeCompare(b.name));
+    const dsList = this.catalog.filter(d =>
+      (st.dsCat === 'all' || d.primary.id === st.dsCat) &&
+      (!dq || d.label.toLowerCase().includes(dq)));
+    const chipStyle = (active, color) => `display:flex;align-items:center;gap:6px;padding:5px 9px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:1.5px;border:1px solid ${active ? color : 'rgba(255,255,255,0.13)'};background:${active ? color + '26' : 'transparent'};color:${active ? color : 'rgba(244,230,216,0.6)'}`;
 
     const copyBtn = (done) => `display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:20px;height:20px;cursor:pointer;border:1px solid ${done ? accent : 'rgba(255,150,60,0.32)'};background:${done ? 'rgba(255,150,60,0.22)' : 'transparent'};color:${done ? accent : 'rgba(244,230,216,0.6)'}`;
 
@@ -628,16 +669,45 @@ class Component extends DCLogic {
       zoomLabel: st.z.toFixed(2) + '×',
       query: st.query,
       onQuery: (e) => this.setState({ query: e.target.value }),
-      allOn: () => { const o = {}; this.cats.forEach(c => o[c.id] = true); this.setState({ on: o }); },
-      allOff: () => { const o = {}; this.cats.forEach(c => o[c.id] = false); this.setState({ on: o }); },
+      allOn: () => {
+        if (st.panelMode === 'shapes') { const o = {}; SHAPES.forEach(s => o[s.id] = true); this.setState({ shapesOn: o }); return; }
+        const o = {}; this.cats.forEach(c => o[c.id] = true); this.setState({ on: o });
+      },
+      allOff: () => {
+        if (st.panelMode === 'shapes') { const o = {}; SHAPES.forEach(s => o[s.id] = false); this.setState({ shapesOn: o }); return; }
+        const o = {}; this.cats.forEach(c => o[c.id] = false); this.setState({ on: o });
+      },
+      busy,
+      notBusy: !busy,
+      hudSpinnerStyle: `width:12px;height:12px;flex:0 0 auto;border:1.5px solid ${accent}40;border-top-color:${accent};border-radius:50%;animation:hudSpin 0.7s linear infinite`,
+      panelSystems: st.panelMode === 'systems' && !busy,
+      panelShapes: st.panelMode === 'shapes' && !busy,
+      catsWrapStyle: `overflow-y:auto;min-height:0;flex:1 1 auto;display:${st.panelMode === 'systems' && !busy ? 'block' : 'none'}`,
+      modeSysStyle: modeTab(st.panelMode === 'systems'),
+      modeShpStyle: modeTab(st.panelMode === 'shapes'),
+      setModeSystems: () => this.setState({ panelMode: 'systems' }),
+      setModeShapes: () => this.setState({ panelMode: 'shapes' }),
+      shapeOn: shapeOn,
+      shapes: SHAPES.map(s => {
+        const active = st.shapesOn[s.id] !== false;
+        return {
+          name: s.name,
+          swatchStyle: `width:12px;height:12px;flex:0 0 auto;transform:rotate(45deg);background:${active ? s.color : 'transparent'};border:1px solid ${s.color};box-shadow:${active ? '0 0 10px ' + s.color : 'none'};opacity:${active ? 1 : 0.5}`,
+          nameStyle: `flex:1 1 auto;font-size:13px;letter-spacing:1.5px;color:${active ? '#f4e6d8' : 'rgba(244,230,216,0.35)'}`,
+          onToggle: () => this.setState({ shapesOn: Object.assign({}, st.shapesOn, { [s.id]: !active }) })
+        };
+      }),
       showGrid: st.showGrid,
-      regionsSimple: st.regions === 'simplified',
-      regionsAccurate: st.regions === 'accurate',
-      regNoneStyle: seg('none'), regSimpleStyle: seg('simplified'), regAccStyle: seg('accurate'),
-      setRegNone: () => this.setState({ regions: 'none' }),
-      setRegSimple: () => this.setState({ regions: 'simplified' }),
-      setRegAccurate: () => this.setState({ regions: 'accurate' }),
-      toggles: [mkToggle('showNames', 'System names'), mkToggle('showGlow', 'Category glow'), mkToggle('showGrid', 'Coordinate grid')],
+      showRegions: st.showRegions,
+      showNebulae: st.showNebulae,
+      shapeStyle: `fill-opacity:${st.showShapes ? 1 : 0}`,
+      toggles: [
+        mkToggle('showRegions', 'Galaxy regions'),
+        mkToggle('showShapes', 'Shapes'),
+        mkToggle('showNebulae', 'Nebulae'),
+        mkToggle('showNames', 'System names'),
+        mkToggle('showGrid', 'Coordinate grid')
+      ],
       infoPanelStyle: `position:absolute;top:70px;right:22px;width:380px;max-height:calc(100vh - 120px);display:${sel ? 'flex' : 'none'};flex-direction:column;background:rgba(14,10,14,0.9);backdrop-filter:blur(12px);border:1px solid ${accent}55;box-shadow:0 0 50px rgba(0,0,0,0.6);pointer-events:auto;z-index:20`,
       selName: sel ? sel.name : '',
       selPos: sel ? `${sel.cx.toLocaleString()} / ${sel.cy.toLocaleString()} / ${sel.cz.toLocaleString()}` : '',
@@ -656,49 +726,47 @@ class Component extends DCLogic {
       datasetTitle: `${cur.label} — ${cur.sub}`,
       datasetRegion: cur.region.toUpperCase(),
       dsFieldStyle: `display:flex;align-items:center;gap:10px;min-width:0;padding:5px 11px;cursor:pointer;border:1px solid ${st.modalOpen ? accent : 'rgba(255,150,60,0.3)'};background:${st.modalOpen ? 'rgba(255,150,60,0.16)' : 'rgba(0,0,0,0.3)'}`,
-      openModal: () => this.setState({ modalOpen: true, dsQuery: '', dsFocus: st.dataset }),
+      dsIndexLabel: `${curIdx + 1} / ${this.catalog.length}`,
+      prevDsStyle: stepBtn(curIdx > 0),
+      nextDsStyle: stepBtn(curIdx < this.catalog.length - 1),
+      prevDsTitle: curIdx > 0 ? `Previous dataset — ${this.catalog[curIdx - 1].label}` : 'First dataset',
+      nextDsTitle: curIdx < this.catalog.length - 1 ? `Next dataset — ${this.catalog[curIdx + 1].label}` : 'Last dataset',
+      prevDs: () => { if (curIdx > 0) this.requestDataset(this.catalog[curIdx - 1]); },
+      nextDs: () => { if (curIdx < this.catalog.length - 1) this.requestDataset(this.catalog[curIdx + 1]); },
+      openModal: () => this.setState({ modalOpen: true, dsQuery: '', dsCat: 'all' }),
       closeModal: () => this.setState({ modalOpen: false }),
       stop: (e) => e.stopPropagation(),
       modalStyle: `position:fixed;inset:0;display:${st.modalOpen ? 'flex' : 'none'};align-items:center;justify-content:center;background:rgba(4,3,6,0.78);backdrop-filter:blur(5px);z-index:70`,
       dsQuery: st.dsQuery,
       onDsQuery: (e) => this.setState({ dsQuery: e.target.value }),
-      dsCountLabel: `${dsList.length} OF ${this.catalog.length} DATASETS`,
+      dsCountLabel: st.dsCat === 'all' && !dq ? `${this.catalog.length} DATASETS` : `${dsList.length} OF ${this.catalog.length}`,
       dsNoResults: dsList.length === 0,
-      dsGroups: dsGroups.map(g => ({
-        name: g.name.toUpperCase(),
-        count: g.rows.length,
-        swatchStyle: `width:9px;height:9px;flex:0 0 auto;transform:rotate(45deg);background:${g.color};box-shadow:0 0 8px ${g.color}`,
-        headerStyle: `position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(18,13,19,0.97);border-top:1px solid rgba(255,255,255,0.07);border-bottom:1px solid rgba(255,255,255,0.07);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:${g.color}`,
-        rows: g.rows.map(d => {
-          const isFocus = focus.id === d.id;
-          const isCur = st.dataset === d.id;
-          return {
-            label: d.label, sub: d.sub, org: d.collection,
-            rowStyle: `display:flex;flex-direction:column;gap:2px;padding:8px 12px 8px 20px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);border-left:2px solid ${isCur ? accent : 'transparent'};background:${isFocus ? 'rgba(255,150,60,0.16)' : 'transparent'}`,
-            labelStyle: `font-size:12.5px;letter-spacing:1px;color:${isFocus || isCur ? accent : 'rgba(244,230,216,0.85)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`,
-            subStyle: `font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:1px;color:rgba(244,230,216,${isFocus ? 0.55 : 0.35})`,
-            onFocus: () => this.setState({ dsFocus: d.id })
-          };
-        })
+      dsTotal: this.catalog.length,
+      dsAllChipStyle: chipStyle(st.dsCat === 'all', accent),
+      dsCats: catList.map(c => ({
+        name: c.name.toUpperCase(),
+        count: c.n,
+        chipStyle: chipStyle(st.dsCat === c.id, c.color),
+        swatchStyle: `width:8px;height:8px;flex:0 0 auto;transform:rotate(45deg);background:${c.color};box-shadow:0 0 7px ${c.color}`,
+        onPick: () => this.setState({ dsCat: st.dsCat === c.id ? 'all' : c.id })
       })),
-      focusLabel: focus.label,
-      focusMeta: `${focus.collection.toUpperCase()} · ${focus.region.toUpperCase()} · ${focusSys.length || focus.count} SYSTEMS`,
-      focusCats: focus.cats.map(c => ({
-        name: c.name,
-        count: focusSys.filter(s => s.cats.includes(c.id)).length,
-        swatchStyle: `width:11px;height:11px;flex:0 0 auto;transform:rotate(45deg);background:${c.color};box-shadow:0 0 9px ${c.color}`
-      })),
-      focusSystems: focusSys.slice(0, 10).map(s => {
-        const c = focus.cats.find(k => k.id === s.cats[0]) || focus.cats[0];
+      pickAllCat: () => this.setState({ dsCat: 'all' }),
+      dsCards: dsList.map(d => {
+        const isCur = st.dataset === d.id;
+        const isLoading = st.loading === d.id;
+        const lit = isCur || isLoading;
         return {
-          name: s.name, star: s.star,
-          dist: Math.round(Math.sqrt(s.cx * s.cx + s.cy * s.cy + s.cz * s.cz)).toLocaleString(),
-          swatchStyle: `width:9px;height:9px;flex:0 0 auto;transform:rotate(45deg);background:${c.color}`
+          label: d.label,
+          category: d.primary.name.toUpperCase(),
+          isLoading,
+          cardStyle: `display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer;border:1px solid ${lit ? accent : 'rgba(255,255,255,0.1)'};background:${lit ? 'rgba(255,150,60,0.1)' : 'rgba(255,255,255,0.02)'}`,
+          swatchStyle: `width:9px;height:9px;flex:0 0 auto;transform:rotate(45deg);background:${d.primary.color};box-shadow:0 0 8px ${d.primary.color}`,
+          catStyle: `font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:2px;color:${d.primary.color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`,
+          labelStyle: `flex:1 1 auto;font-size:13px;letter-spacing:0.8px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${lit ? accent : '#f4e6d8'}`,
+          spinnerStyle: `width:12px;height:12px;flex:0 0 auto;border:1.5px solid ${accent}40;border-top-color:${accent};border-radius:50%;animation:hudSpin 0.7s linear infinite`,
+          onLoad: () => this.requestDataset(d)
         };
       }),
-      loadBtnLabel: st.dataset === focus.id ? 'CURRENTLY LOADED' : 'LOAD DATASET',
-      loadBtnStyle: `font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;padding:9px 16px;cursor:pointer;border:1px solid ${st.dataset === focus.id ? 'rgba(255,150,60,0.3)' : accent};background:rgba(255,150,60,${st.dataset === focus.id ? 0.1 : 0.2});color:${st.dataset === focus.id ? 'rgba(244,230,216,0.5)' : accent}`,
-      loadFocus: () => this.pickDataset(focus),
       selDist: sel ? Math.round(Math.sqrt(sel.cx * sel.cx + sel.cy * sel.cy + sel.cz * sel.cz)).toLocaleString() + ' LY' : '',
       selStar: sel ? sel.star : '',
       selCats,

@@ -11,7 +11,7 @@ import { createInfoPanel } from './info-panel';
 import { createLightbox } from './lightbox';
 import { createOptionsPanel, readLockedOptions } from './options-panel';
 import { addHudStyles } from './styles';
-import { createTopBar, DEFAULT_TITLE } from './top-bar';
+import { createTopBar, DEFAULT_TITLE, readDatasetArrows } from './top-bar';
 import type { HudHandle, HudOptions } from './types';
 
 export type { HudAction } from './details';
@@ -34,7 +34,12 @@ export function createHud(
 
   const element = make(doc, 'div', 'gm-hud');
   const lightbox = createLightbox(doc);
-  const topBar = createTopBar(doc, map, options.title ?? DEFAULT_TITLE);
+  const topBar = createTopBar(
+    doc,
+    map,
+    options.title ?? DEFAULT_TITLE,
+    readDatasetArrows(options.datasetArrows),
+  );
   // The dialog is there only when the top bar built the dataset field, which it does
   // only when the catalog holds an entry.
   const datasetDialog =

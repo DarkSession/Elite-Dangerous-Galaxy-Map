@@ -172,8 +172,15 @@ const ENTRY_CHUNK_LIMIT = 280_000;
  * at 70,000, which leaves 7,707 bytes of room. The guard still holds at that figure: it
  * is a guard against the HUD pulling in a data layer, and the region cell table alone is
  * 199 KiB.
+ *
+ * The reading is **71,668 bytes** with the redrawn toggles and dataset library, which
+ * passes the 70,000 bound, so the bound moves to **80,000**, the next round 10,000 bytes
+ * above it, as the step from 62,293 to 70,000 did. The card grid and the chip row of the dialog, the collection colour rule, the
+ * two step arrows and the counter of the top bar, the spinner and the style rules of all
+ * of them are what took the room, and every one of them is HUD code. The guard still
+ * holds at that figure, by the same reading as above.
  */
-const HUD_CHUNK_LIMIT = 70_000;
+const HUD_CHUNK_LIMIT = 80_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,

@@ -98,6 +98,10 @@ interface MapBuild {
   readonly catalog?: boolean;
   /** False builds the map with no HUD. */
   readonly hud?: boolean;
+  /** True turns the dataset step arrows on, which are off by default. */
+  readonly arrows?: boolean;
+  /** True gives the map back before the first load settles, so a test reads the wait. */
+  readonly noWait?: boolean;
   /** The `bounds` option the map takes. */
   readonly bounds?: unknown;
   /** The `startView` option the map takes. */
@@ -190,14 +194,19 @@ async function openDatasets(page: Page, build: MapBuild): Promise<void> {
     });
 
     const map = factory(canvas, {
-      hud: options.hud !== false,
+      hud:
+        options.hud === false
+          ? false
+          : options.arrows === true
+            ? { datasetArrows: true }
+            : true,
       ...(options.catalog === false ? {} : { datasets }),
       ...(options.dataset === undefined ? {} : { dataset: options.dataset }),
       ...(options.bounds === undefined ? {} : { bounds: options.bounds }),
       ...(options.startView === undefined ? {} : { startView: options.startView }),
     } as never);
     window.__datasetMap = map;
-    await map.ready;
+    if (options.noWait !== true) await map.ready;
   }, build);
 }
 
@@ -415,6 +424,8 @@ test('a full set of 50,000 systems switches inside the 40 ms budget', async ({
   expect(frame).toBeGreaterThan(0);
 });
 
+// The same switch, measured with the dialog open, is in `e2e/dataset-cost.spec.ts`. It
+// reads a time and asserts on it, so it belongs in the timed pass on one worker.
 test('the later load wins and the earlier one rejects as cancelled', async ({
   page,
 }) => {
@@ -520,7 +531,31 @@ test('the bar carries the dataset field only with a catalog', async ({ page }) =
   await expect(hud(page).locator('.gm-hud__reset')).toHaveCount(1);
 });
 
-test('the filter narrows the list', async ({ page }) => {
+// The dataset library: a search box, a row of collection chips and a grid of cards. One
+// click on a card loads that entry.
+
+/** The cards of the grid. */
+function cards(page: Page): Locator {
+  return dialog(page).locator('.gm-hud__dataset-card');
+}
+
+/** One card by the id of its entry, because the card text holds the collection too. */
+function cardOf(page: Page, id: string): Locator {
+  return dialog(page).locator(`.gm-hud__dataset-card[data-name="${id}"]`);
+}
+
+/** The chips of the collection row. */
+function chips(page: Page): Locator {
+  return dialog(page).locator('.gm-hud__collection');
+}
+
+/** The line in the dialog's header. */
+function headerCount(page: Page): Locator {
+  return dialog(page).locator('.gm-hud__dialog-count');
+}
+
+// The scenario "The search box narrows the grid".
+test('the search box narrows the grid', async ({ page }) => {
   await openDatasets(page, {
     entries: [
       { id: 'ruins', label: 'Guardian Ruins', collection: 'Canonn', systems: 2 },
@@ -531,29 +566,178 @@ test('the filter narrows the list', async ({ page }) => {
   });
 
   await field(page).click();
-  const rows = dialog(page).locator('.gm-hud__dataset-row');
-  await expect(rows).toHaveCount(3);
+  await expect(cards(page)).toHaveCount(3);
+  await expect(headerCount(page)).toHaveText('3 DATASETS');
 
   await dialog(page).locator('.gm-hud__dialog-filter').fill('notable');
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Notable Systems');
-
-  // The filter reads the loaded entry's category names as well, which is the one set
-  // whose categories the map holds.
-  await dialog(page).locator('.gm-hud__dialog-filter').fill('ruins 0');
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Guardian Ruins');
+  await expect(cards(page)).toHaveCount(1);
+  await expect(cards(page).first()).toContainText('Notable Systems');
+  await expect(headerCount(page)).toHaveText('1 OF 3');
 
   await dialog(page).locator('.gm-hud__dialog-filter').fill('nothing here');
-  await expect(rows).toHaveCount(0);
-  await expect(dialog(page).locator('.gm-hud__dataset-empty')).toHaveCount(1);
+  await expect(cards(page)).toHaveCount(0);
+  await expect(dialog(page).locator('.gm-hud__dataset-empty')).toBeVisible();
 });
 
-test('the list is grouped and capped, and its rows go when the dialog closes', async ({
+// The scenario "The search box reads the label alone".
+test('the search box reads the label alone', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      {
+        id: 'ruins',
+        label: 'Guardian Ruins',
+        collection: 'Canonn Research Group',
+        systems: 2,
+      },
+      {
+        id: 'structures',
+        label: 'Guardian Structures',
+        collection: 'Canonn Research Group',
+      },
+      { id: 'notable', label: 'Notable Systems', collection: 'Canonn Research Group' },
+    ],
+    dataset: 'ruins',
+  });
+
+  await field(page).click();
+  await dialog(page).locator('.gm-hud__dialog-filter').fill('canonn');
+  await expect(cards(page)).toHaveCount(0);
+  await expect(dialog(page).locator('.gm-hud__dataset-empty')).toBeVisible();
+  await expect(dialog(page).locator('.gm-hud__dataset-empty')).toHaveText(
+    'NO DATASET NAME MATCHES THAT FILTER',
+  );
+});
+
+// The scenario "A chip keeps one collection".
+test('a chip keeps one collection', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Canonn' },
+      { id: 'three', label: 'Three', collection: 'Canonn' },
+      { id: 'four', label: 'Four', collection: 'Thargoid War' },
+      { id: 'five', label: 'Five', collection: 'Thargoid War' },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  const labels = await chips(page).evaluateAll((nodes) =>
+    nodes.map((node) => (node.textContent ?? '').trim()),
+  );
+  console.log('the chips of the dialog', labels);
+  expect(labels).toEqual(['ALL5', 'CANONN3', 'THARGOID WAR2']);
+
+  await chips(page).filter({ hasText: 'THARGOID WAR' }).click();
+  await expect(cards(page)).toHaveCount(2);
+  await expect(headerCount(page)).toHaveText('2 OF 5');
+
+  // A second click on the chip that is already picked keeps every entry again.
+  await chips(page).filter({ hasText: 'THARGOID WAR' }).click();
+  await expect(cards(page)).toHaveCount(5);
+  await expect(headerCount(page)).toHaveText('5 DATASETS');
+});
+
+// The scenario "One collection draws no chip row".
+test('one collection draws no chip row', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Canonn' },
+      { id: 'three', label: 'Three', collection: 'Canonn' },
+      { id: 'four', label: 'Four', collection: 'Canonn' },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await expect(dialog(page).locator('.gm-hud__collections')).toBeHidden();
+
+  // A catalog that names no collection at all draws no chip row either.
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'two', label: 'Two' },
+      { id: 'three', label: 'Three' },
+      { id: 'four', label: 'Four' },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await expect(dialog(page).locator('.gm-hud__collections')).toBeHidden();
+});
+
+// The scenario "The chips are sorted by name".
+test('the chips are sorted by name', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Zeta', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Alpha' },
+      { id: 'three', label: 'Three', collection: 'Mu' },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  const names = await dialog(page)
+    .locator('.gm-hud__collection-name')
+    .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+  console.log('the chip names in the order the row draws them', names);
+
+  expect(names).toEqual(['ALL', 'ALPHA', 'MU', 'ZETA']);
+});
+
+// The scenario "One collection takes one colour".
+test('one collection takes one colour', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Canonn' },
+      { id: 'three', label: 'Three', collection: 'Thargoid War' },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  const reading = await page.evaluate(() => {
+    const colourOf = (element: Element | null): string =>
+      element === null ? '' : getComputedStyle(element).backgroundColor;
+    const chipOf = (name: string): string =>
+      colourOf(
+        document.querySelector(
+          `#dataset-wrap .gm-hud__collection[data-name="${name}"] .gm-hud__collection-swatch`,
+        ),
+      );
+    const cardOf = (id: string): string =>
+      colourOf(
+        document.querySelector(
+          `#dataset-wrap .gm-hud__dataset-card[data-name="${id}"] .gm-hud__card-swatch`,
+        ),
+      );
+    return {
+      canonnChip: chipOf('Canonn'),
+      warChip: chipOf('Thargoid War'),
+      one: cardOf('one'),
+      two: cardOf('two'),
+      three: cardOf('three'),
+    };
+  });
+  console.log('the swatch colours', reading);
+
+  expect(reading.one).toBe(reading.canonnChip);
+  expect(reading.two).toBe(reading.canonnChip);
+  expect(reading.three).toBe(reading.warChip);
+  expect(reading.canonnChip).not.toBe(reading.warChip);
+});
+
+// The scenarios "The grid holds a catalog of 256" and "The dialog's rows go when it
+// closes".
+test('the grid holds a catalog of 256, and its cards go when the dialog closes', async ({
   page,
 }) => {
   const entries: EntryBuild[] = [];
-  for (let index = 0; index < 130; index += 1) {
+  for (let index = 0; index < 256; index += 1) {
     entries.push({
       id: `set-${index}`,
       label: `Set ${index}`,
@@ -566,11 +750,9 @@ test('the list is grouped and capped, and its rows go when the dialog closes', a
   const closed = await hud(page).locator('*').count();
   await field(page).click();
 
-  await expect(dialog(page).locator('.gm-hud__dataset-group')).toHaveCount(3);
-  await expect(dialog(page).locator('.gm-hud__dataset-row')).toHaveCount(120);
-  await expect(dialog(page).locator('.gm-hud__dataset-cut')).toHaveText(
-    '120 OF 130 DATASETS',
-  );
+  await expect(cards(page)).toHaveCount(256);
+  await expect(chips(page)).toHaveCount(4);
+  await expect(headerCount(page)).toHaveText('256 DATASETS');
   const open = await hud(page).locator('*').count();
 
   await page.keyboard.press('Escape');
@@ -578,11 +760,14 @@ test('the list is grouped and capped, and its rows go when the dialog closes', a
   const again = await hud(page).locator('*').count();
   console.log('the HUD nodes closed', closed, 'open', open, 'closed again', again);
 
-  expect(open - closed).toBeLessThan(600);
-  expect(again).toBe(closed);
+  // The bound is 256 cards of at most 5 elements each.
+  expect(open - closed).toBeLessThanOrEqual(1280);
+  expect(Math.abs(again - closed)).toBeLessThanOrEqual(20);
 });
 
-test('the dialog loads the entry the user chose, and cancel loads nothing', async ({
+// The scenarios "A card click loads the dataset", "The loaded card closes the dialog and
+// loads nothing" and "A card names its fields in its title".
+test('a card click loads the dataset and the loaded card loads nothing', async ({
   page,
 }) => {
   await openDatasets(page, {
@@ -602,80 +787,251 @@ test('the dialog loads the entry the user chose, and cancel loads nothing', asyn
     dataset: 'one',
   });
 
-  const rows = dialog(page).locator('.gm-hud__dataset-row');
-
-  // Cancel loads nothing.
   await field(page).click();
-  await rows.filter({ hasText: 'Two' }).click();
-  await expect(dialog(page).locator('.gm-hud__detail-label')).toHaveText('Two');
-  // The detail pane reads the collection, the region and the count on one line, as the
-  // mockup writes them.
-  await expect(dialog(page).locator('.gm-hud__detail-meta')).toHaveText(
-    'CANONN · SECOND REGION · 5 SYSTEMS',
-  );
-  await expect(dialog(page).locator('.gm-hud__detail-description')).toHaveText(
-    'The second.',
-  );
-  await dialog(page).locator('.gm-hud__dialog-cancel').click();
-  await expect(dialog(page)).toBeHidden();
-  expect((await reading(page)).loaded).toBe('one');
+  const second = cards(page).filter({ hasText: 'Two' });
+  // The card carries the fields the detail pane showed, in its `title`.
+  const title = await second.getAttribute('title');
+  console.log('the title of the second card', title);
+  expect(title).toContain('Second Region');
+  expect(title).toContain('The second.');
+  expect(title).toContain('5 SYSTEMS');
 
-  // Load dataset loads it and closes the dialog.
-  await field(page).click();
-  await rows.filter({ hasText: 'Two' }).click();
-  await dialog(page).locator('.gm-hud__dialog-load').click();
+  await second.click();
   await expect(dialog(page)).toBeHidden();
   await expect(field(page)).toContainText('Two');
   const after = await reading(page);
-  console.log('the map after the dialog loaded', after);
+  console.log('the map after the card click', after);
   expect(after).toMatchObject({ systems: 5, categories: 2, loaded: 'two' });
 
-  // The loaded entry reads CURRENTLY LOADED, and a click on it starts no load.
+  // A click on the card of the loaded entry closes the dialog and loads nothing.
   await field(page).click();
-  await rows.filter({ hasText: 'Two' }).click();
-  const button = dialog(page).locator('.gm-hud__dialog-load');
-  await expect(button).toHaveText('CURRENTLY LOADED');
-  await expect(button).toHaveAttribute('aria-disabled', 'true');
-  // The button reports its state with `aria-disabled` and stays in the tab order, so a
-  // real click reaches it and its handler does nothing. Playwright reads `aria-disabled`
-  // as a disabled control, so the click goes past that check.
-  await button.click({ force: true });
-  await expect(dialog(page)).toBeVisible();
+  await expect(cards(page).filter({ hasText: 'Two' })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  await cards(page).filter({ hasText: 'Two' }).click();
+  await expect(dialog(page)).toBeHidden();
   const loads = await page.evaluate(() => window.__datasetLoads ?? []);
   console.log('the loads the page counted', loads);
   expect(loads).toEqual(['one', 'two']);
+  expect((await reading(page)).loaded).toBe('two');
 });
 
-test('a second click starts no third load while one runs', async ({ page }) => {
+// The scenario "Closing the dialog loads nothing".
+test('closing the dialog loads nothing', async ({ page }) => {
   await openDatasets(page, {
     entries: [
       { id: 'one', label: 'One', systems: 2 },
-      // The load takes long enough that the second click below lands while it runs.
-      { id: 'slow', label: 'Slow', systems: 4, delay: 1500 },
+      { id: 'two', label: 'Two', systems: 3 },
     ],
     dataset: 'one',
   });
 
-  const rows = dialog(page).locator('.gm-hud__dataset-row');
   await field(page).click();
-  await rows.filter({ hasText: 'Slow' }).click();
-  await dialog(page).locator('.gm-hud__dialog-load').click();
-  // The dialog closes on the click, so the second click reopens it, chooses the same
-  // entry and presses the button again while the first load is still running.
-  await expect(field(page)).toHaveAttribute('data-loading', 'true');
-  await field(page).click();
-  await rows.filter({ hasText: 'Slow' }).click();
-  await dialog(page).locator('.gm-hud__dialog-load').click({ force: true });
+  await dialog(page).locator('.gm-hud__dialog-close').click();
+  await expect(dialog(page)).toBeHidden();
+  expect((await reading(page)).loaded).toBe('one');
+});
 
-  await expect(field(page)).toHaveAttribute('data-loading', 'false', {
-    timeout: 10000,
+// The scenarios "A loading card holds the dialog open" and "The field shows a spinner
+// while a load runs".
+test('a loading card holds the dialog open and the field shows the spinner', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'slow', label: 'Slow', systems: 4, delay: 700 },
+    ],
+    dataset: 'one',
   });
+
+  await field(page).click();
+  const slow = cardOf(page, 'slow');
+  await slow.click();
+
+  // The dialog stays open with the spinner on the card the user clicked, and the field
+  // shows the same spinner in place of its chevron.
+  await expect(dialog(page)).toBeVisible();
+  await expect(slow.locator('.gm-hud__spinner')).toBeVisible();
+  await expect(slow).toHaveAttribute('data-loading', 'true');
+  await expect(hud(page).locator('.gm-hud__dataset .gm-hud__spinner')).toBeVisible();
+  await expect(hud(page).locator('.gm-hud__dataset-caret')).toBeHidden();
+
+  await expect(dialog(page)).toBeHidden({ timeout: 10000 });
+  await expect(hud(page).locator('.gm-hud__dataset-caret')).toBeVisible();
+  await expect(hud(page).locator('.gm-hud__dataset .gm-hud__spinner')).toBeHidden();
+  expect((await reading(page)).loaded).toBe('slow');
+});
+
+// The scenario "A second click starts no second load".
+test('a second click starts no second load', async ({ page }) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'slow', label: 'Slow', systems: 4, delay: 1500 },
+      { id: 'other', label: 'Other', systems: 6 },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await cardOf(page, 'slow').click();
+  // The dialog stays open, so the second click lands on a card while the load runs.
+  await expect(dialog(page)).toBeVisible();
+  await cardOf(page, 'other').click();
+
+  await expect(dialog(page)).toBeHidden({ timeout: 10000 });
   const loads = await page.evaluate(() => window.__datasetLoads ?? []);
   const after = await reading(page);
   console.log('the loads', loads, 'the map', after);
 
   expect(loads).toEqual(['one', 'slow']);
   expect(after).toMatchObject({ systems: 4, loaded: 'slow' });
+});
+
+// Escape and a click outside close the dialog while a load runs, and the load continues.
+test('Escape closes the dialog during a load and the load continues', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'slow', label: 'Slow', systems: 4, delay: 700 },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await cardOf(page, 'slow').click();
+  await expect(dialog(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toBeHidden();
+  // The field carries the load after the dialog closes.
+  await expect(field(page)).toHaveAttribute('data-loading', 'true');
+
+  await expect(field(page)).toHaveAttribute('data-loading', 'false', {
+    timeout: 10000,
+  });
+  const after = await reading(page);
+  console.log('the map after the dialog closed during the load', after);
+  expect(after).toMatchObject({ systems: 4, loaded: 'slow' });
+});
+
+// The scenario "A step arrow takes the focus back after the load".
+test('a step arrow takes the keyboard focus back when the load ends', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'slow', label: 'Slow', systems: 4, delay: 700 },
+      { id: 'three', label: 'Three', systems: 3 },
+    ],
+    dataset: 'one',
+    arrows: true,
+  });
+
+  const next = hud(page).locator('.gm-hud__dataset-step[data-name="next"]');
+  await next.focus();
+  await page.keyboard.press('Enter');
+
+  // The load disables both arrows, so the pressed one drops the focus to the body.
+  await expect(next).toBeDisabled();
+  expect(await page.evaluate(() => document.activeElement?.tagName ?? '')).not.toBe(
+    'BUTTON',
+  );
+
+  await expect(field(page)).toHaveAttribute('data-loading', 'false', {
+    timeout: 10000,
+  });
+  await expect(next).toBeEnabled();
+  // The arrow enables again, and it takes the focus back, so a second press needs no
+  // new tab of the keyboard.
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.getAttribute('data-name') ?? null,
+    ),
+  ).toBe('next');
+  expect(await reading(page)).toMatchObject({ loaded: 'slow' });
+});
+
+// The scenario "A dialog opened again during a load stays open".
+test('a dialog opened again during a load stays open when the load settles', async ({
+  page,
+}) => {
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2 },
+      { id: 'slow', label: 'Slow', systems: 4, delay: 700 },
+    ],
+    dataset: 'one',
+  });
+
+  await field(page).click();
+  await cardOf(page, 'slow').click();
+  // The first open goes while the load runs, and a second open follows it.
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toBeHidden();
+  await field(page).click();
+  await expect(dialog(page)).toBeVisible();
+
+  // The load of the first open settles here. It closed the dialog it was started from,
+  // and it leaves the second one where the user put it.
+  await expect(field(page)).toHaveAttribute('data-loading', 'false', {
+    timeout: 10000,
+  });
+  await expect(dialog(page)).toBeVisible();
+  expect(await reading(page)).toMatchObject({ loaded: 'slow' });
+});
+
+// The scenario "The counter reads a dash before the first load".
+test('the counter reads a dash before the first load', async ({ page }) => {
+  // The first entry settles after 1500 ms and the page does not wait for it, so the
+  // test reads the counter while the first load runs. The spec names 300 ms; the longer
+  // wait leaves room for the HUD's own dynamic import on a cold browser.
+  await openDatasets(page, {
+    entries: [
+      { id: 'one', label: 'One', systems: 2, delay: 1500 },
+      { id: 'two', label: 'Two', systems: 3 },
+      { id: 'three', label: 'Three', systems: 4 },
+    ],
+    dataset: 'one',
+    arrows: true,
+    noWait: true,
+  });
+
+  const counter = hud(page).locator('.gm-hud__dataset-counter');
+  await expect(counter).toHaveText('- / 3');
+  await expect(counter).toHaveText('1 / 3', { timeout: 10000 });
+});
+
+// The scenario "A rejected start load leaves both arrows disabled".
+test('a rejected start load leaves both arrows disabled', async ({ page }) => {
+  // The map always starts a load, so this is the only way to reach a bar whose map holds
+  // no entry of the catalog. Neither step names a target, so neither button enables. The
+  // user loads an entry from the dialog, which the field beside the arrows opens.
+  await openDatasets(page, {
+    entries: [
+      { id: 'bad', label: 'Bad', fail: true },
+      { id: 'good', label: 'Good', systems: 3 },
+    ],
+    dataset: 'bad',
+    arrows: true,
+  });
+
+  const previous = hud(page).locator('.gm-hud__dataset-step[data-name="previous"]');
+  const next = hud(page).locator('.gm-hud__dataset-step[data-name="next"]');
+  const counter = hud(page).locator('.gm-hud__dataset-counter');
+  console.log('the arrows after the failed start load', {
+    previous: await previous.isDisabled(),
+    next: await next.isDisabled(),
+    counter: await counter.textContent(),
+  });
+
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeDisabled();
+  await expect(counter).toHaveText('- / 2');
 });
 
 test('the open field carries the accent border', async ({ page }) => {
@@ -697,7 +1053,7 @@ test('the open field carries the accent border', async ({ page }) => {
   await field(page).click();
   await expect(dialog(page)).toBeVisible();
   const open = await read();
-  await hud(page).locator('.gm-hud__dialog-cancel').click();
+  await dialog(page).locator('.gm-hud__dialog-close').click();
   await expect(dialog(page)).toBeHidden();
   const again = await read();
   console.log('the dataset field border', { closed, open, again });
@@ -711,11 +1067,13 @@ test('the open field carries the accent border', async ({ page }) => {
   expect(again.border).toBe(closed.border);
 });
 
+// The scenarios "The dataset dialog holds and returns the focus" and "Tab reaches every
+// control of the dataset library".
 test('the dialog holds the focus and gives it back to the field', async ({ page }) => {
   await openDatasets(page, {
     entries: [
-      { id: 'one', label: 'One', systems: 2 },
-      { id: 'two', label: 'Two', systems: 3 },
+      { id: 'one', label: 'One', collection: 'Canonn', systems: 2 },
+      { id: 'two', label: 'Two', collection: 'Thargoid War', systems: 3 },
     ],
     dataset: 'one',
   });
@@ -731,12 +1089,28 @@ test('the dialog holds the focus and gives it back to the field', async ({ page 
     });
   expect(await inside()).toBe(true);
 
-  // Tab through every control of the dialog and once more. The focus stays inside.
+  // Tab through every control of the dialog and once more. The focus stays inside, and
+  // the search box, each chip, each card and the close button are each reached once.
+  // The focus starts on the search box, so one pass of `controls` presses reaches every
+  // other control once and comes back to the search box.
   const controls = await dialog(page).locator('button, input').count();
-  for (let step = 0; step < controls + 1; step += 1) {
+  const seen: string[] = [];
+  for (let step = 0; step < controls; step += 1) {
     await page.keyboard.press('Tab');
     expect(await inside()).toBe(true);
+    seen.push(
+      await page.evaluate(() => {
+        const active = document.activeElement;
+        return active instanceof HTMLElement ? active.className : '';
+      }),
+    );
   }
+  console.log('the focus ring of the dialog', seen);
+  // Three chips, two cards, the close button and the search box.
+  expect(seen.filter((name) => name.includes('gm-hud__collection'))).toHaveLength(3);
+  expect(seen.filter((name) => name.includes('gm-hud__dataset-card'))).toHaveLength(2);
+  expect(seen.filter((name) => name.includes('gm-hud__dialog-close'))).toHaveLength(1);
+  expect(seen.filter((name) => name.includes('gm-hud__dialog-filter'))).toHaveLength(1);
 
   await page.keyboard.press('Escape');
   await expect(dialog(page)).toBeHidden();
@@ -770,6 +1144,7 @@ test('Escape closes the dialog first and the selection second', async ({ page })
   expect((await reading(page)).selection).toBeNull();
 });
 
+// The scenario "The dialog fetches nothing".
 test('the dialog calls no load to fill itself', async ({ page }) => {
   await openDatasets(page, {
     entries: [
@@ -783,18 +1158,17 @@ test('the dialog calls no load to fill itself', async ({ page }) => {
   await field(page).click();
   await dialog(page).locator('.gm-hud__dialog-filter').fill('t');
   await dialog(page).locator('.gm-hud__dialog-filter').fill('');
-  const rows = dialog(page).locator('.gm-hud__dataset-row');
-  const count = await rows.count();
-  for (let index = 0; index < count; index += 1) await rows.nth(index).click();
+  await chips(page).filter({ hasText: 'CANONN' }).click();
+  await expect(cards(page)).toHaveCount(2);
 
-  // The entry with no collection sits in the OTHER group.
-  await expect(dialog(page).locator('.gm-hud__dataset-group-name')).toHaveText([
-    'CANONN',
-    'OTHER',
-  ]);
+  // The entry with no collection sits under the OTHER chip.
+  const names = await dialog(page)
+    .locator('.gm-hud__collection-name')
+    .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ''));
+  expect(names).toEqual(['ALL', 'CANONN', 'OTHER']);
 
   const loads = await page.evaluate(() => window.__datasetLoads ?? []);
-  console.log('the loads after opening, filtering and clicking', loads);
+  console.log('the loads after opening, searching and picking a chip', loads);
   expect(loads).toEqual(['one']);
 });
 
@@ -1235,27 +1609,26 @@ test('a browser with no DecompressionStream rejects the load', async ({ page }) 
   expect(reading.after).toBe(reading.before);
 });
 
-test('the dialog reads FETCHED ON LOAD for the entry that fetches', async ({
-  page,
-}) => {
+test('the card reads FETCHED ON LOAD for the entry that fetches', async ({ page }) => {
   await openMap(page, '', { demoData: true, hud: true });
 
   const demoHud = page.locator('.gm-hud');
   const demoDialog = demoHud.locator('.gm-hud__dialog');
-  const meta = demoDialog.locator('.gm-hud__detail-meta');
   await demoHud.locator('.gm-hud__dataset').click();
-  const rows = demoDialog.locator('.gm-hud__dataset-row');
+  const demoCards = demoDialog.locator('.gm-hud__dataset-card');
 
-  await rows.filter({ hasText: 'Canonn Factions' }).click();
-  await expect(demoDialog.locator('.gm-hud__detail-label')).toHaveText(
-    'Canonn Factions',
-  );
-  // The entry carries no count, because it reads its records when the user loads it.
-  await expect(meta).toContainText('FETCHED ON LOAD');
+  // The card carries the region, the description and the count in its `title`. The entry
+  // that fetches carries no count, because it reads its records when the user loads it.
+  const fetched = await demoCards
+    .filter({ hasText: 'Canonn Factions' })
+    .getAttribute('title');
+  const counted = await demoCards
+    .filter({ hasText: 'Adamastor Routes' })
+    .getAttribute('title');
+  console.log('the two card titles', { fetched, counted });
 
-  // An entry that carries a count still reads that count.
-  await rows.filter({ hasText: 'Adamastor Routes' }).click();
-  await expect(meta).toContainText('8 SYSTEMS');
+  expect(fetched).toContain('FETCHED ON LOAD');
+  expect(counted).toContain('8 SYSTEMS');
 
   await page.keyboard.press('Escape');
   await expect(demoDialog).toBeHidden();

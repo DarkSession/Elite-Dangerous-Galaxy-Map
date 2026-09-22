@@ -1,13 +1,18 @@
 // The map options panel: the galactic regions switch, the system names switch, the
-// system icons switch, the coordinate grid switch, the shapes switch and, where the map
-// holds nebulae, the nebulae switch. Each control shows the state the map is in, so a host that changes a
-// setting through the handle moves the control with it.
+// system icons switch, the coordinate grid switch, the shapes switch and the nebulae
+// switch. Each control shows the state the map is in, so a host that changes a setting
+// through the handle moves the control with it.
 //
 // The panel builds its switches from one list. `lockedOptions` filters that list, and a
 // locked option draws no switch: the user is never shown a control that does nothing.
-// A map with no nebula source drops the nebulae switch by the same reading.
+//
+// Three of the six follow the map and not the moment the HUD was built: the system icons
+// switch, the shapes switch and the nebulae switch. The panel reads each one on its tick
+// and hides the switch the map cannot act on. It hides the switch and does not rebuild
+// the body: a rebuild costs a DOM write on a tick and loses the focus of a switch the
+// user is tabbed onto, and a hidden button takes no focus and lays out nothing.
 import type { GalaxyMap } from '../app/create-map';
-import { make, makeButton, setPressed } from './dom';
+import { make, makeButton, setPressed, setShown } from './dom';
 import type { HudMapOption } from './types';
 
 /** The names of the switches the panel can hold. */
@@ -39,6 +44,8 @@ interface Toggle {
   read(): boolean;
   /** Moves the map to the other state. */
   flip(): void;
+  /** True while the map can act on the switch. A false reading hides it. */
+  shown(): boolean;
 }
 
 /**
@@ -56,19 +63,19 @@ export function readLockedOptions(value: unknown): ReadonlySet<HudMapOption> {
 }
 
 /**
- * The switches the panel can hold, in the order it shows them. The nebulae switch is
- * there only where the map holds a source it can read, which `hasNebulae` answers: a
- * switch that turned on a feature the map cannot draw would be a control that does
- * nothing.
+ * The switches the panel can hold, in the order it shows them. Each `shown` reading
+ * costs one call that walks nothing, so the tick's cost does not follow the size of the
+ * set.
  */
 function togglesOf(map: GalaxyMap): Toggle[] {
-  const toggles: Toggle[] = [
+  return [
     {
       name: 'regions',
       key: 'galactic-regions',
       label: 'Galactic regions',
       read: () => map.areRegionsVisible(),
       flip: () => map.setRegionsVisible(!map.areRegionsVisible()),
+      shown: () => true,
     },
     {
       name: 'systemNames',
@@ -76,15 +83,18 @@ function togglesOf(map: GalaxyMap): Toggle[] {
       label: 'System names',
       read: () => map.areSystemNamesVisible(),
       flip: () => map.setSystemNamesVisible(!map.areSystemNamesVisible()),
+      shown: () => true,
     },
-    // The switch draws whether or not a record on the map names an icon, because a host
-    // can add one at any time.
+    // The switch is there only while a record on the map names an icon. The reading
+    // rises and falls only on a clear, which `system-icons` states, so a record that
+    // lost its icons leaves the switch until the next load.
     {
       name: 'systemIcons',
       key: 'system-icons',
       label: 'System icons',
       read: () => map.areSystemIconsVisible(),
       flip: () => map.setSystemIconsVisible(!map.areSystemIconsVisible()),
+      shown: () => map.hasSystemIcons(),
     },
     {
       name: 'grid',
@@ -92,27 +102,28 @@ function togglesOf(map: GalaxyMap): Toggle[] {
       label: 'Coordinate grid',
       read: () => map.isGridVisible(),
       flip: () => map.setGridVisible(!map.isGridVisible()),
+      shown: () => true,
     },
-    // The switch draws whether or not the map holds a shape, because a host can add one
-    // at any time.
+    // The switch is there only while the map holds a sphere or a line. A map that holds
+    // none gives the user a control that moves nothing they can see.
     {
       name: 'shapes',
       key: 'shapes',
       label: 'Shapes',
       read: () => map.areShapesVisible(),
       flip: () => map.setShapesVisible(!map.areShapesVisible()),
+      shown: () => map.sphereCount() + map.lineCount() > 0,
     },
-  ];
-  if (map.hasNebulae()) {
-    toggles.push({
+    // The switch is there only where the map holds a nebula source it can read.
+    {
       name: 'nebulae',
       key: 'nebulae',
       label: 'Nebulae',
       read: () => map.areNebulaeVisible(),
       flip: () => map.setNebulaeVisible(!map.areNebulaeVisible()),
-    });
-  }
-  return toggles;
+      shown: () => map.hasNebulae(),
+    },
+  ];
 }
 
 /** Builds one switch with its label and its track. */
@@ -130,7 +141,10 @@ function makeToggle(doc: Document, key: string, label: string): HTMLButtonElemen
 /**
  * Builds the map options panel, or gives null where every switch the panel would hold is
  * locked. The HUD then builds no panel and the left column holds the category browser
- * alone.
+ * alone. A lock cannot change while the map runs, so that reading is made once.
+ *
+ * A panel the map emptied stays in the document and carries `hidden`, because the map
+ * can fill it again on the next tick.
  */
 export function createOptionsPanel(
   doc: Document,
@@ -159,9 +173,18 @@ export function createOptionsPanel(
   });
   element.append(header, body);
 
-  // The tick reads the same list, so a locked option costs no work per tick.
+  // The tick reads the same list, so a locked option costs no work per tick. A switch
+  // the map cannot act on takes `hidden`, and the panel takes `hidden` while it shows
+  // none.
   function update(): void {
-    for (const one of built) setPressed(one.button, one.toggle.read());
+    let anyShown = false;
+    for (const one of built) {
+      const shown = one.toggle.shown();
+      if (shown) anyShown = true;
+      setShown(one.button, shown);
+      setPressed(one.button, one.toggle.read());
+    }
+    setShown(element, anyShown);
   }
 
   update();

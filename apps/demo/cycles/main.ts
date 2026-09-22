@@ -63,9 +63,10 @@ const CYCLES: readonly DatasetEntry[] = manifest.map((row): DatasetEntry => ({
 
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 const map = createGalaxyMap(canvas, {
-  // The HUD holds the dataset library dialog, which is how the user steps from one week
-  // to the next.
-  hud: true,
+  // The catalog is one entry per week of the war, in cycle order, so the step arrows are
+  // the control this page wants: one click on the next arrow loads the next week. The
+  // dataset library dialog is still there for a jump to a week far from this one.
+  hud: { datasetArrows: true },
   datasets: CYCLES,
   dataset: CYCLES[0].id,
 });
