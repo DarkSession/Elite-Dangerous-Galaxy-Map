@@ -14,6 +14,13 @@ import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/re
 /** The frame time the map must stay under, in milliseconds. */
 const BUDGET_MS = 16.7;
 
+/**
+ * The mean the icon placement sweep must stay under, in milliseconds, over a set of
+ * 50,000 systems with 4 icons each at 1920x1080. The sweep cost 1.49 ms while it built a
+ * record and a category object for each candidate.
+ */
+const ICON_SWEEP_BUDGET_MS = 1.2;
+
 const SOL: [number, number, number] = [0, 0, 0];
 const GALACTIC_CENTRE: [number, number, number] = [15, -35, 25895];
 // The cloud pass draws in full from 12,000 light years, and the sprite layers per
@@ -374,8 +381,11 @@ async function waitFrames(page: Page, count: number): Promise<void> {
 
 /**
  * Waits for a number of animation frames, and moves the pointer on the canvas in each
- * one. A map nobody touches draws at the idle rate, so a reading of the work one frame
+ * one. A map nobody touches draws no frame at all, so a reading of the work one frame
  * does must hold the map awake, as a user who keeps the pointer on it does.
+ *
+ * A pointer move alone renders no canvas, so each frame calls the wake probe beside the
+ * move. The move keeps the pick in the work the reading covers.
  */
 async function hoverFrames(
   page: Page,
@@ -399,6 +409,7 @@ async function hoverFrames(
             clientY: pixelY,
           }),
         );
+        window.__galaxyMap?.wake?.();
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
     },
@@ -419,7 +430,7 @@ interface IntervalStats {
  * Resets the interval reading, holds the map awake for 120 frames and gives back every
  * statistic. The worst frame and the frame count say what a mean over the budget was:
  * many slightly late frames are load on the machine, and one long stall is a defect in
- * the page. The map is held awake because a map nobody touches draws at the idle rate,
+ * the page. The map is held awake because a map nobody touches draws no frame at all,
  * and a turn of the loop that draws nothing costs nothing to read. The draw count comes
  * back with the reading, so every caller can prove its window drew.
  */
@@ -556,6 +567,9 @@ test('the icon placement holds the frame interval budget', async ({ page }) => {
     arrows: (window.galaxyMap?.debug.iconPlacements() ?? []).filter(
       (one) => one.kind === 'arrow',
     ).length,
+    // The scenario "The full sweep costs under 1.2 ms" of `system-icons`. The probe is
+    // the mean of the last 120 sweeps, which is the 120 frames above.
+    sweepMs: window.__galaxyMap?.iconSweepMs?.() ?? Number.POSITIVE_INFINITY,
   }));
   console.log('the selection work with 4 icons a record', { hovered, ...reading });
 
@@ -565,6 +579,8 @@ test('the icon placement holds the frame interval budget', async ({ page }) => {
   expect(reading.arrows).toBeGreaterThan(0);
   expect(reading.interval.frames).toBeGreaterThanOrEqual(110);
   expect(reading.interval.meanMs).toBeLessThanOrEqual(INTERVAL_BUDGET_MS);
+  expect(reading.sweepMs).toBeGreaterThan(0);
+  expect(reading.sweepMs).toBeLessThanOrEqual(ICON_SWEEP_BUDGET_MS);
 });
 
 // The scenario "A full set of icons holds the draw budget" of `system-icons`. The pass
@@ -1141,8 +1157,9 @@ test('the shape flag sweep holds its budget', async ({ page }) => {
 });
 
 // Nothing in the map is driven by a clock, so a map nobody touches draws the picture it
-// drew before. The loop still turns at the rate of the display; the draw falls to the
-// idle rate, and every change brings it back.
+// drew before. The loop stops 1200 milliseconds after the last change, and every change
+// brings it back. The name of the test is the name of the scenario: the idle rate is now
+// zero.
 test('a still map draws at the idle rate and wakes on a change', async ({ page }) => {
   test.setTimeout(120000);
   await openMap(page);
@@ -1160,12 +1177,9 @@ test('a still map draws at the idle rate and wakes on a change', async ({ page }
   });
   console.log('two still seconds', still);
 
-  // 200 milliseconds between draws gives 10 draws in two seconds. The band holds a
-  // browser that turns the loop a little early or a little late.
-  expect(still.draws).toBeGreaterThan(5);
-  expect(still.draws).toBeLessThan(20);
-  // The loop itself must keep running, so a change is on the screen in the next frame.
-  expect(still.turns).toBeGreaterThan(100);
+  // The loop stops, so the map costs no frame and no turn at all.
+  expect(still.draws).toBe(0);
+  expect(still.turns).toBe(0);
 
   const moved = await page.evaluate(async () => {
     window.__galaxyMap?.resetFrameStats?.();
@@ -1199,4 +1213,167 @@ test('a still map draws at the idle rate and wakes on a change', async ({ page }
   console.log('the draws in three frames after the grid switch', switched);
 
   expect(switched).toBeGreaterThan(0);
+
+  // The scenario "A wheel notch wakes the loop". A notch sets the glide target and moves
+  // the view only when the loop turns, so the input itself is what starts a stopped loop.
+  const wheeled = await page.evaluate(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    window.__galaxyMap?.resetFrameStats?.();
+    document
+      .querySelector('canvas')
+      ?.dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -120, clientX: 960, clientY: 540 }),
+      );
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  });
+  console.log('the draws in 300 milliseconds after one wheel notch', wheeled);
+
+  expect(wheeled).toBeGreaterThan(10);
+});
+
+// The scenario "An icon texture wakes the loop". The icon vector is fetched after the
+// frame that named it drew, which is the one thing the map fetches for itself. The route
+// below holds the answer past the settle window, so the loop is stopped when it lands.
+test('an icon texture wakes the loop', async ({ page }) => {
+  test.setTimeout(120000);
+  const icon = 'demo-images/ruins-site.svg';
+  await page.route(`**/${icon}`, async (route) => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+    await route.continue();
+  });
+  await openMap(page);
+  await page.waitForTimeout(2000);
+
+  await page.evaluate((url) => {
+    const map = window.galaxyMap;
+    if (map === undefined) return;
+    map.addCategories([{ name: 'Empire', color: [153, 230, 255] }]);
+    map.setView({ cursor: [0, 0, 0], distance: 500, yaw: 0, pitch: 35 });
+    map.addSystems([
+      {
+        name: 'One',
+        coords: { x: 0, y: 0, z: 0 },
+        categories: ['Empire'],
+        icons: [{ url, color: [255, 0, 255] }],
+      },
+    ]);
+  }, icon);
+
+  // Past the settle window the add opened. The vector is still in flight, so the loop
+  // is stopped and the next draw is the one the landing wakes.
+  await page.waitForTimeout(2000);
+  const before = await page.evaluate(() => {
+    window.__galaxyMap?.resetFrameStats?.();
+    return {
+      draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+      icons: (window.galaxyMap?.debug.iconPlacements() ?? []).filter(
+        (one) => one.kind === 'icon',
+      ).length,
+    };
+  });
+
+  await page.waitForFunction(
+    () =>
+      (window.galaxyMap?.debug.iconPlacements() ?? []).some(
+        (one) => one.kind === 'icon',
+      ),
+    undefined,
+    { timeout: 30000, polling: 100 },
+  );
+  const after = await page.evaluate(() => ({
+    draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+    icons: (window.galaxyMap?.debug.iconPlacements() ?? []).filter(
+      (one) => one.kind === 'icon',
+    ).length,
+  }));
+  console.log('the icon texture landing', { before, after });
+
+  expect(before.icons).toBe(0);
+  expect(after.draws).toBeGreaterThan(0);
+  expect(after.icons).toBe(1);
+});
+
+// The scenario "A held key holds the loop" of `far-view-rendering`, and the requirement
+// that a flight in progress holds the loop awake. Both move the view on every turn, so
+// both hold the loop through the wake that every view write makes.
+test('a flight and a held key hold the loop', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  await page.waitForTimeout(2000);
+
+  const flown = await page.evaluate(async () => {
+    window.__galaxyMap?.resetFrameStats?.();
+    void window.galaxyMap?.flyTo({ cursor: [0, 0, 20000], distance: 6000 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  });
+  console.log('the draws in three seconds of a flight', flown);
+
+  expect(flown).toBeGreaterThan(100);
+
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => window.__galaxyMap?.resetFrameStats?.());
+  await page.mouse.move(960, 540);
+  await page.keyboard.down('w');
+  await page.waitForTimeout(3000);
+  await page.keyboard.up('w');
+  const held = await page.evaluate(
+    () => window.__galaxyMap?.frameStats?.().frames ?? -1,
+  );
+  console.log('the draws in three seconds of a held key', held);
+
+  expect(held).toBeGreaterThan(100);
+});
+
+// The scenario "A pointer move over a still camera renders no canvas". The renderer reads
+// no hover: the ring and the hovered name are overlay elements, so the turn runs the pick
+// and the marker overlay and renders nothing.
+test('a pointer move over a still camera renders no canvas', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  expect(await addSpreadSystems(page, false, 1000)).toBe(1000);
+
+  // The cursor goes on one system, so its marker draws at the middle of the screen and
+  // the pointer below hovers it.
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    const system = map?.getSystem(0) ?? null;
+    if (map === undefined || system === null) return;
+    map.setView({ cursor: [...system.position], distance: 500, yaw: 0, pitch: 35 });
+  });
+  await page.mouse.move(960, 540);
+  await waitFrames(page, 5);
+
+  // Past the settle window, so the loop has stopped.
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => window.__galaxyMap?.resetFrameStats?.());
+
+  const until = Date.now() + 3000;
+  let step = 0;
+  while (Date.now() < until) {
+    step += 1;
+    await page.mouse.move(960 + (step % 2), 540);
+    await page.waitForTimeout(16);
+  }
+
+  const reading = await page.evaluate(() => ({
+    draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+    hovered: window.galaxyMap?.getHover()?.name ?? null,
+    rings: document.querySelectorAll('.gm-system-ring').length,
+    ring: document.querySelector('.gm-system-ring')?.getBoundingClientRect() ?? null,
+  }));
+  console.log('three seconds of pointer moves over a still camera', reading);
+
+  expect(reading.draws).toBe(0);
+  expect(reading.hovered).not.toBeNull();
+  expect(reading.rings).toBe(1);
+  const box = reading.ring as {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
+  expect(Math.abs((box.left + box.right) / 2 - 960)).toBeLessThan(3);
+  expect(Math.abs((box.top + box.bottom) / 2 - 540)).toBeLessThan(3);
 });

@@ -123,6 +123,25 @@ describe('the icon texture array', () => {
     expect(textures.side()).toBe(56);
   });
 
+  test('reports each landed vector once', async () => {
+    const context = fakeContext();
+    const fake = fakeRasterise(['/b.svg']);
+    const landed: number[] = [];
+    const textures = createIconTextures(context.gl, {
+      rasterise: fake.rasterise,
+      onReady: () => landed.push(landed.length),
+    });
+
+    textures.layerOf('/a.svg');
+    textures.layerOf('/a.svg');
+    // A vector the browser refuses lands nowhere, so it reports nothing.
+    textures.layerOf('/b.svg');
+    await settle();
+
+    expect(landed).toEqual([0]);
+    expect(textures.layerOf('/a.svg')).toBe(0);
+  });
+
   test('gives each distinct URL its own layer', async () => {
     const context = fakeContext();
     const fake = fakeRasterise();

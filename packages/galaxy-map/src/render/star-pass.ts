@@ -7,6 +7,7 @@ import {
   starSpreadValue,
   STARS_PER_BOXEL,
 } from '../scene-data/boxel';
+import { smoothStep } from '../math';
 import { DEFAULT_POINT_COUNT } from '../scene-data/point-cloud';
 import {
   RECORD_VALUES,
@@ -53,18 +54,13 @@ export const CLOSE_FADE_FAR = 2560;
 /** The multiple of a boxel edge the field is proved to cover. */
 const COVERED_BOXELS = 3;
 
-function smoothstep(low: number, high: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return t * t * (3 - 2 * t);
-}
-
 /**
  * How much of the field draws at a zoom distance, 0 to 1. It is 1 at 4,000 light years
  * and below and 0 at 8,000 and above, so the far view draws as it did before the field
  * existed.
  */
 export function starWeight(distance: number): number {
-  return 1 - smoothstep(STAR_FADE_NEAR, STAR_FADE_FAR, distance);
+  return 1 - smoothStep(STAR_FADE_NEAR, STAR_FADE_FAR, distance);
 }
 
 /**
@@ -98,7 +94,7 @@ export function effectiveStarDistance(distance: number): number {
  * This function reads the view's own zoom distance, not the effective one.
  */
 export function closeFade(distance: number): number {
-  return smoothstep(CLOSE_FADE_NEAR, CLOSE_FADE_FAR, distance);
+  return smoothStep(CLOSE_FADE_NEAR, CLOSE_FADE_FAR, distance);
 }
 
 /**
@@ -127,7 +123,7 @@ export function starFade(
   radii: readonly [number, number],
   range: number,
 ): number {
-  return weight * (1 - smoothstep(radii[0], radii[1], range));
+  return weight * (1 - smoothStep(radii[0], radii[1], range));
 }
 
 /** The share of the light a point cloud sample carries at a range. */

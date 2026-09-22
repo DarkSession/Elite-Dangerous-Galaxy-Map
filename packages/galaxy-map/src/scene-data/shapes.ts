@@ -9,6 +9,8 @@
 // owns. The set works out what draws in a sweep that runs on a change of the set, the
 // table, a category's shape visibility or the name filter, and never per frame.
 
+import { readColor, readName, readPoint } from './read-field';
+
 /** The largest number of spheres the set holds. */
 export const MAX_SPHERES = 1024;
 
@@ -276,33 +278,6 @@ export interface ShapeSet {
   getShapeNameFilter(): string;
   /** Empties the set and releases what it holds. */
   dispose(): void;
-}
-
-/** Three finite numbers, or null. */
-function readPoint(value: unknown): [number, number, number] | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  const parts: number[] = [];
-  for (const part of value) {
-    if (typeof part !== 'number' || !Number.isFinite(part)) return null;
-    parts.push(part);
-  }
-  return [parts[0] as number, parts[1] as number, parts[2] as number];
-}
-
-/** Three finite numbers from 0 to 255, or null. */
-function readColor(value: unknown): [number, number, number] | null {
-  const parts = readPoint(value);
-  if (parts === null) return null;
-  for (const part of parts) {
-    if (part < 0 || part > 255) return null;
-  }
-  return parts;
-}
-
-/** A string of at least one character, or null. */
-function readName(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  return value;
 }
 
 /**

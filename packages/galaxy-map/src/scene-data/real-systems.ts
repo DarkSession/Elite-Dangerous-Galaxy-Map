@@ -1,6 +1,7 @@
 // The category table, the record reader and the set of real star systems the host
 // gives the map. This module owns the shape of an EDSM or a Spansh dump record:
 // nothing else reads a raw record. Nothing here knows about WebGL.
+import { readColor, readName } from './read-field';
 import { readIcons } from './marker-icons';
 import type { ResolvedIcon, SystemIconInput } from './marker-icons';
 import { loadGalaxyModel } from '../galaxy-model/load';
@@ -303,6 +304,19 @@ export interface RealSystemSet {
   readonly iconIndices: Int32Array;
   /** How many indices the list above holds. */
   readonly iconIndexCount: number;
+  /**
+   * Where the icons of each record start in `iconVectors`, in the same order as the
+   * records. The entry of a record that names none is not read: `iconCounts` reads 0.
+   */
+  readonly iconStarts: Int32Array;
+  /** How many icons each record names, in the same order, and 0 where it names none. */
+  readonly iconCounts: Uint8Array;
+  /**
+   * The icons of every record, in one flat run per record. The icon pass reads the three
+   * views and builds no record for a candidate: a record object and a category object
+   * per candidate was a third of the sweep's time at 50,000 systems.
+   */
+  readonly iconVectors: readonly ResolvedIcon[];
   /** How many categories the table holds. */
   readonly categoryCount: number;
   /** Rises on every change to the set. */
@@ -385,24 +399,6 @@ export interface RealSystemSet {
    * record carries one, and the name when it does not.
    */
   indexOfIdentity(identity: string): number;
-}
-
-/** True when three finite numbers from 0 to 255 name a colour. */
-function readColor(value: unknown): [number, number, number] | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  const parts: number[] = [];
-  for (const part of value) {
-    if (typeof part !== 'number' || !Number.isFinite(part)) return null;
-    if (part < 0 || part > 255) return null;
-    parts.push(part);
-  }
-  return [parts[0] as number, parts[1] as number, parts[2] as number];
-}
-
-/** A string of at least one character, or null. */
-function readName(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  return value;
 }
 
 /** A finite number, or null. */
@@ -577,6 +573,15 @@ export function createSystemSet(): RealSystemSet {
   let iconIndices = new Int32Array(0);
   let iconFlags = new Uint8Array(0);
   let iconIndexCount = 0;
+  // The icons of each record, in one flat run per record, as the categories are. The
+  // icon pass reads these and never builds a record. A record names at most 4 icons, so
+  // the run of a record is short; a replacement writes over the run while its count
+  // fits, by the rule the category rows follow.
+  let iconStart = new Int32Array(0);
+  let iconCount = new Uint8Array(0);
+  let iconRoom = new Uint8Array(0);
+  const iconVectors: ResolvedIcon[] = [];
+  let iconVectorCount = 0;
 
   /** Puts a slot in the icon list, once. */
   const noteIconSystem = (slot: number): void => {
@@ -654,6 +659,15 @@ export function createSystemSet(): RealSystemSet {
     const nextIconFlags = new Uint8Array(next);
     nextIconFlags.set(iconFlags);
     iconFlags = nextIconFlags;
+    const nextIconStart = new Int32Array(next);
+    nextIconStart.set(iconStart);
+    iconStart = nextIconStart;
+    const nextIconCount = new Uint8Array(next);
+    nextIconCount.set(iconCount);
+    iconCount = nextIconCount;
+    const nextIconRoom = new Uint8Array(next);
+    nextIconRoom.set(iconRoom);
+    iconRoom = nextIconRoom;
     const nextMarkerFlags = new Uint8Array(next);
     nextMarkerFlags.set(markerFlags);
     markerFlags = nextMarkerFlags;
@@ -786,6 +800,18 @@ export function createSystemSet(): RealSystemSet {
     for (let step = 0; step < names.length; step += 1) {
       catRows[start + step] =
         categoryOf.get(names[step] as string) ?? UNCATEGORISED_INDEX;
+    }
+    // The icons go in as one flat run, by the same rule the category rows follow.
+    const icons = system.icons ?? [];
+    if (icons.length > (iconRoom[slot] as number)) {
+      iconStart[slot] = iconVectorCount;
+      iconVectorCount += icons.length;
+      iconRoom[slot] = icons.length;
+    }
+    iconCount[slot] = icons.length;
+    const iconAt = iconStart[slot] as number;
+    for (let step = 0; step < icons.length; step += 1) {
+      iconVectors[iconAt + step] = icons[step] as ResolvedIcon;
     }
     widenBox(system.position);
     positions[slot * 3] = system.position[0];
@@ -1015,6 +1041,10 @@ export function createSystemSet(): RealSystemSet {
       slotOf.clear();
       iconIndexCount = 0;
       iconFlags.fill(0);
+      iconCount.fill(0);
+      iconRoom.fill(0);
+      iconVectors.length = 0;
+      iconVectorCount = 0;
       uncategorisedSystems = 0;
       boxEmpty = true;
       version += 1;
@@ -1028,6 +1058,10 @@ export function createSystemSet(): RealSystemSet {
       slotOf.clear();
       iconIndexCount = 0;
       iconFlags.fill(0);
+      iconCount.fill(0);
+      iconRoom.fill(0);
+      iconVectors.length = 0;
+      iconVectorCount = 0;
       uncategorisedSystems = 0;
       boxEmpty = true;
       categories.length = 0;
@@ -1051,6 +1085,15 @@ export function createSystemSet(): RealSystemSet {
     },
     get iconIndexCount(): number {
       return iconIndexCount;
+    },
+    get iconStarts(): Int32Array {
+      return iconStart.subarray(0, systems.length);
+    },
+    get iconCounts(): Uint8Array {
+      return iconCount.subarray(0, systems.length);
+    },
+    get iconVectors(): readonly ResolvedIcon[] {
+      return iconVectors;
     },
     get systemBox(): SystemBox {
       return {

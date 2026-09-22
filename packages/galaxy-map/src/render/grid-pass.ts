@@ -4,6 +4,7 @@
 // lines are all worked out for each fragment, so no line is a vertex and no buffer holds
 // a line.
 import type { Range } from '../galaxy-model/types';
+import { smoothStep } from '../math';
 import { createProgram } from './program';
 import type { Program } from './program';
 import vertexSource from './shaders/grid.vert?raw';
@@ -99,13 +100,6 @@ export const GRID_LABEL_COLOR_DEEP: readonly [number, number, number] = [20, 88,
  * and the line it sits on therefore recede together, and the label keeps more of itself.
  */
 export const GRID_LABEL_MERGE_FLOOR = 0.75;
-
-/** The smooth step of `smoothstep(low, high, value)`. */
-export function smoothStep(low: number, high: number, value: number): number {
-  if (high <= low) return value >= high ? 1 : 0;
-  const part = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return part * part * (3 - 2 * part);
-}
 
 /**
  * How much of its own strength the grid keeps over a background of this luminance. A

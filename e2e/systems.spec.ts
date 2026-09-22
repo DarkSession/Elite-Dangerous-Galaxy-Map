@@ -2456,6 +2456,42 @@ test.describe('the overlay host the library makes', () => {
     expect(reading.labels.length).toBeGreaterThan(0);
   });
 
+  test('dispose leaves nothing in a host-given label host', async ({ page }) => {
+    await openMap(page);
+    await page.evaluate(async () => {
+      window.galaxyMap?.dispose();
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      const host = document.createElement('div');
+      host.id = 'own-host';
+      host.style.cssText = 'position: absolute; inset: 0; overflow: hidden;';
+      wrap.append(canvas, host);
+      document.body.appendChild(wrap);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas, { labelHost: host });
+      window.__hostMap = map;
+      await map.ready;
+    });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const counted = await page.evaluate(() => {
+      window.__hostMap?.setView({ distance: 15000 });
+      window.__hostMap?.debug.drawNow();
+      const host = document.getElementById('own-host');
+      if (host === null) throw new Error('the page holds no host');
+      const before = host.childElementCount;
+      window.__hostMap?.dispose();
+      return { before, after: host.childElementCount };
+    });
+    console.log('the host-given label host', counted);
+
+    expect(counted.before).toBeGreaterThan(0);
+    expect(counted.after).toBe(0);
+  });
+
   test('a host the options name keeps its own box', async ({ page }) => {
     await openMap(page);
     await page.evaluate(async () => {

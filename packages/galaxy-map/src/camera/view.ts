@@ -1,5 +1,6 @@
 // The view state the camera, the URL fragment and the tests all read.
 import { galaxyModel } from '../galaxy-model/model';
+import { clamp } from '../math';
 
 /** Where the camera looks and from how far. Every value is `float64`. */
 export interface View {
@@ -41,12 +42,6 @@ export const FIELD_OF_VIEW_DEGREES = 60;
 /** The view the page shows when the URL carries no fragment. */
 export function createDefaultView(): View {
   return { cursor: [0, 0, 0], distance: 60000, yaw: 0, pitch: 35 };
-}
-
-function clamp(value: number, low: number, high: number): number {
-  if (value < low) return low;
-  if (value > high) return high;
-  return value;
 }
 
 /** The margin an `auto` bound grows its box by where the host names none, in light years. */

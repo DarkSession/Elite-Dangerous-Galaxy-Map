@@ -149,27 +149,42 @@ describe('the read-back cycle', () => {
     };
   }
 
-  test('gives nothing on the first call and starts one copy', () => {
+  test('takes nothing before any start', () => {
     const device = hooks();
     const cycle = createReadbackCycle(device.hooks);
     const into = new Uint8Array(4);
 
-    expect(cycle.frame(into)).toBe(false);
+    // The frame takes before it draws, so the first frame of all takes before any copy
+    // was ever started.
+    expect(cycle.take(into)).toBe(false);
+    expect(device.taken).toEqual([]);
+    expect(device.started).toEqual([]);
+  });
+
+  test('gives nothing on the first frame and starts one copy', () => {
+    const device = hooks();
+    const cycle = createReadbackCycle(device.hooks);
+    const into = new Uint8Array(4);
+
+    expect(cycle.take(into)).toBe(false);
+    cycle.start();
     expect(device.started).toEqual([0]);
     expect(device.taken).toEqual([]);
   });
 
-  test('gives the bytes on the call after the fence passes', () => {
+  test('gives the bytes on the frame after the fence passes', () => {
     const device = hooks();
     const cycle = createReadbackCycle(device.hooks);
     const into = new Uint8Array(4);
 
-    cycle.frame(into);
-    // The fence of the first copy has not passed, so the second call still gives
+    cycle.take(into);
+    cycle.start();
+    // The fence of the first copy has not passed, so the second frame still gives
     // nothing and the bytes stay where they are.
-    expect(cycle.frame(into)).toBe(false);
+    expect(cycle.take(into)).toBe(false);
+    cycle.start();
     device.pass();
-    expect(cycle.frame(into)).toBe(true);
+    expect(cycle.take(into)).toBe(true);
     expect(device.taken).toEqual([1]);
     expect(into[0]).toBe(2);
   });
@@ -183,7 +198,8 @@ describe('the read-back cycle', () => {
       device.pass();
       const startedBefore = device.started.length;
       const takenBefore = device.taken.length;
-      cycle.frame(into);
+      cycle.take(into);
+      cycle.start();
       const wrote = device.started[startedBefore] as number;
       const read = device.taken[takenBefore];
       expect(device.started).toHaveLength(startedBefore + 1);
@@ -194,12 +210,25 @@ describe('the read-back cycle', () => {
     expect(READBACK_SLOTS).toBe(2);
   });
 
-  test('drops every fence it still holds on a dispose', () => {
+  test('takes no slot twice where no start ran between', () => {
     const device = hooks();
     const cycle = createReadbackCycle(device.hooks);
     const into = new Uint8Array(4);
 
-    cycle.frame(into);
+    cycle.start();
+    device.pass();
+    expect(cycle.take(into)).toBe(true);
+    // A frame that asks for no reading starts none, so the frame after it finds the
+    // slot empty and takes nothing.
+    expect(cycle.take(into)).toBe(false);
+    expect(device.taken).toEqual([0]);
+  });
+
+  test('drops every fence it still holds on a dispose', () => {
+    const device = hooks();
+    const cycle = createReadbackCycle(device.hooks);
+
+    cycle.start();
     cycle.dispose();
 
     expect(device.dropped).toEqual([0]);

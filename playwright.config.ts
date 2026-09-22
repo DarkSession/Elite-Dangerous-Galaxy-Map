@@ -39,6 +39,9 @@ const timedSpecs = [
   // The dataset switch made from the open library dialog reads 30 to 36 ms on one
   // worker against a 40 ms budget, and 42.9 ms beside five other browsers.
   'dataset-cost.spec.ts',
+  // The read-back reads 0.35 to 0.44 ms on one worker against 0.5 ms, and 2.69 ms
+  // beside five other browsers.
+  'readback-cost.spec.ts',
 ];
 
 /**

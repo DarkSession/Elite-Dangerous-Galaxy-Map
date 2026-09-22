@@ -238,7 +238,7 @@ test.describe('the cursor marker', () => {
         await map.ready;
         map.debug.drawNow();
         const result = {
-          on: map.getCursorMarkerVisible(),
+          on: map.isCursorMarkerVisible(),
           markers: wrap.querySelectorAll('.gm-cursor-marker').length,
         };
         map.dispose();

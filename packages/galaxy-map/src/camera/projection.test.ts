@@ -8,6 +8,7 @@ import {
   planePoint,
   planePointFrom,
   project,
+  projectWith,
   rayDirection,
   rayDirectionFrom,
   relativeToCamera,
@@ -19,6 +20,37 @@ import { createDefaultView, MAX_DISTANCE, MIN_DISTANCE } from './view';
 import type { View } from './view';
 
 const viewport = { width: 1920, height: 1080 };
+
+describe('the projection with a held matrix', () => {
+  test('reads the same as the one that builds its own', () => {
+    const view = createDefaultView();
+    view.distance = 4000;
+    view.pitch = 25;
+    view.yaw = 40;
+    view.cursor = [120, -30, 25895];
+    const matrix = viewProjectionMatrix(view, viewport);
+    const camera = cameraPosition(view);
+    const points: [number, number, number][] = [
+      [0, 0, 0],
+      [120, -30, 25895],
+      [1000, 0, 25895],
+      [-1000, 0, 25895],
+      [120, 500, 25895],
+      [120, -500, 25895],
+      [120, -30, 20000],
+      [120, -30, 40000],
+      [25000, 0, -20000],
+      [-25000, 1000, 60000],
+    ];
+    for (const point of points) {
+      const held = projectWith(matrix, camera, point, viewport);
+      const built = project(view, point, viewport);
+      expect(held.x).toBeCloseTo(built.x, 6);
+      expect(held.y).toBeCloseTo(built.y, 6);
+      expect(held.inFront).toBe(built.inFront);
+    }
+  });
+});
 
 describe('the projection', () => {
   test('flips z from game coordinates to the world frame', () => {

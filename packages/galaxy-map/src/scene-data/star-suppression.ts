@@ -135,10 +135,6 @@ export interface StarSuppression {
     out: Uint32Array,
     offset: number,
   ): number;
-  /** How many boxels the sweep computed a mask for since the last `begin`. */
-  readonly sweptCount: number;
-  /** How many boxels the cache holds. */
-  readonly cacheSize: number;
 }
 
 /** One cached boxel: its mask words and how many stars they suppress. */
@@ -157,11 +153,9 @@ export function createStarSuppression(set: RealSystemSet | null): StarSuppressio
   let positions: Float64Array = new Float64Array(0);
   let indexClass = -1;
   let indexVersion = -1;
-  let swept = 0;
 
   return {
     begin(sizeClass: number): void {
-      swept = 0;
       const version = set === null ? -1 : set.version;
       if (version !== indexVersion) {
         // A changed set invalidates every mask, because a mask holds the systems the
@@ -214,19 +208,11 @@ export function createStarSuppression(set: RealSystemSet | null): StarSuppressio
         out,
         offset,
       );
-      swept += 1;
       cache.set(cacheKey, {
         words: out.slice(offset, offset + MASK_WORDS),
         suppressed,
       });
       return suppressed;
-    },
-
-    get sweptCount(): number {
-      return swept;
-    },
-    get cacheSize(): number {
-      return cache.size;
     },
   };
 }

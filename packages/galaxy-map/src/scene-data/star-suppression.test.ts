@@ -8,7 +8,7 @@ import {
   starPosition,
 } from './boxel';
 import type { BoxelIndex, DrawnBoxel } from './boxel';
-import { createSystemSet, MAX_SYSTEMS, SUPPRESSION_RADIUS_LY } from './real-systems';
+import { createSystemSet, SUPPRESSION_RADIUS_LY } from './real-systems';
 import type { RealSystemSet } from './real-systems';
 import {
   buildSuppressionIndex,
@@ -196,83 +196,5 @@ describe('the sweep over a drawn set', () => {
     expect(counts[1]).toBe(0);
     expect(counts[2]).toBe(0);
     expect(counts[3]).toBe(0);
-  });
-
-  test('computes only the boxels a camera move brought in', () => {
-    const distance = 1000;
-    const base = baseSizeClass(distance);
-    const edge = boxelEdge(base);
-    const camera: [number, number, number] = [0, 0, 0];
-    const block = listDrawnBoxels(camera, distance).filter(
-      (boxel) => boxel.sizeClass === base,
-    );
-    expect(block.length).toBe(512);
-
-    // A full set spread evenly over the base class block and 2 base boxels past it on
-    // each side, so every boxel the move brings in holds records too and a boxel the
-    // sweep skips is a boxel it kept rather than one with nothing in it. The side of the
-    // grid follows the bound, so the spread holds at every set size.
-    const corner = boxelOrigin(block[0]?.index as BoxelIndex, base);
-    const span = 12 * edge;
-    const low = [
-      (corner[0] as number) - 2 * edge,
-      (corner[1] as number) - 2 * edge,
-      (corner[2] as number) - 2 * edge,
-    ];
-    const side = Math.ceil(Math.cbrt(MAX_SYSTEMS));
-    const step = span / side;
-    const systems = setOf(
-      Array.from(
-        { length: MAX_SYSTEMS },
-        (_ignored, slot): [number, number, number] => [
-          (low[0] as number) + ((slot % side) + 0.5) * step,
-          (low[1] as number) + ((((slot / side) | 0) % side) + 0.5) * step,
-          (low[2] as number) + ((((slot / (side * side)) | 0) % side) + 0.5) * step,
-        ],
-      ),
-    );
-
-    const suppression = createStarSuppression(systems);
-    const words = new Uint32Array(MASK_WORDS * 512);
-    const keysOf = (from: readonly [number, number, number]): Set<string> =>
-      new Set(
-        listDrawnBoxels(from, distance)
-          .filter((boxel) => boxel.sizeClass === base)
-          .map((boxel) => boxel.index.join(',')),
-      );
-    const build = (from: readonly [number, number, number]): number => {
-      const boxels = listDrawnBoxels(from, distance).filter(
-        (boxel) => boxel.sizeClass === base,
-      );
-      suppression.begin(base);
-      boxels.forEach((boxel, slot) => {
-        suppression.write(boxel.index, boxel.sizeClass, 30, words, slot * MASK_WORDS);
-      });
-      return suppression.sweptCount;
-    };
-
-    expect(build(camera)).toBe(512);
-
-    // `buildBoxelBlocks` takes the base low from the four boxels the class above
-    // drops, so the base block moves in steps of two base boxels. A camera step of one
-    // base boxel therefore brings in either no boxel or two planes of 64. The sweep
-    // computes a set for exactly the boxels that entered, and for no other.
-    let previous = keysOf(camera);
-    const entered: number[] = [];
-    for (let step = 1; step <= 2; step += 1) {
-      const from: [number, number, number] = [
-        camera[0] + step * edge,
-        camera[1],
-        camera[2],
-      ];
-      const swept = build(from);
-      const next = keysOf(from);
-      const fresh = [...next].filter((key) => !previous.has(key)).length;
-      expect(swept, `step ${step}`).toBe(fresh);
-      entered.push(swept);
-      previous = next;
-    }
-    expect(entered.some((count) => count === 0)).toBe(true);
-    expect(Math.max(...entered)).toBeLessThanOrEqual(128);
   });
 });

@@ -460,34 +460,58 @@ describe('the icon stack placement', () => {
     expect(kinds).toEqual([1, 0, 0, 1, 0, 0]);
   });
 
-  test('reads nothing of a set in which no record holds an icon', () => {
+  /**
+   * Counts every read of the three icon views of a set. The sweep reads the views and
+   * builds no record, so these are what a test of the no-icon rule watches.
+   */
+  function watchIconTables(set: RealSystemSet): {
+    set: RealSystemSet;
+    reads: string[];
+  } {
+    const reads: string[] = [];
+    const names = new Set(['iconStarts', 'iconCounts', 'iconVectors']);
+    const watched = new Proxy(set, {
+      get(target, key, receiver): unknown {
+        if (typeof key === 'string' && names.has(key)) reads.push(key);
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    return { set: watched, reads };
+  }
+
+  test('reads none of the icon tables of a set in which no record holds an icon', () => {
     const context = fakeContext();
     const pass = passOver(context.gl);
     const records: SystemRecordInput[] = [];
     for (let index = 0; index < 200; index += 1) {
       records.push(record(`S${index}`, [index % 50, 0, 0]));
     }
-    const set = setOf(records);
-    const read = vi.fn(set.system.bind(set));
-    const watched = { ...set, system: read } as unknown as RealSystemSet;
+    const watched = watchIconTables(setOf(records));
 
-    expect(prepareOf(pass, watched)).toBe(0);
-    expect(read).not.toHaveBeenCalled();
+    expect(prepareOf(pass, watched.set)).toBe(0);
+    expect(watched.reads).toEqual([]);
     expect(pass.placements()).toEqual([]);
   });
 
-  test('draws the stack once a record of that same set holds an icon', async () => {
+  test('reads the icon tables once a record of that same set holds an icon', async () => {
     const context = fakeContext();
     const pass = passOver(context.gl);
     const set = setOf([record('Sol', [0, 0, 0])]);
-    expect(prepareOf(pass, set)).toBe(0);
+    const watched = watchIconTables(set);
+    expect(prepareOf(pass, watched.set)).toBe(0);
 
     set.addSystems([record('Sol', [0, 0, 0], [hostIcon('/a.svg', [1, 2, 3])])]);
-    prepareOf(pass, set);
+    prepareOf(pass, watched.set);
     await settle();
 
-    expect(prepareOf(pass, set)).toBe(1);
+    expect(prepareOf(pass, watched.set)).toBe(1);
     expect(pass.placements()).toHaveLength(2);
+    // The control of the case above: the sweep reads the three flat views and no record.
+    expect([...new Set(watched.reads)].sort()).toEqual([
+      'iconCounts',
+      'iconStarts',
+      'iconVectors',
+    ]);
   });
 
   test('draws the other icons of a stack while one vector is not ready', async () => {

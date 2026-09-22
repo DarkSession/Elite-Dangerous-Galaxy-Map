@@ -212,8 +212,11 @@ const SELECTION_BUDGET_MS = 2;
 
 /**
  * Waits for a number of animation frames, and moves the pointer on the canvas in each
- * one. A map nobody touches draws at the idle rate, so a reading of the work one frame
+ * one. A map nobody touches draws no frame at all, so a reading of the work one frame
  * does must hold the map awake, as a user who keeps the pointer on it does.
+ *
+ * A pointer move alone renders no canvas, so each frame calls the wake probe beside the
+ * move. The move keeps the pick in the work the reading covers.
  */
 async function hoverFrames(
   page: Page,
@@ -237,6 +240,7 @@ async function hoverFrames(
             clientY: pixelY,
           }),
         );
+        window.__galaxyMap?.wake?.();
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
     },

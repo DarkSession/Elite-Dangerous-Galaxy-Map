@@ -15,6 +15,7 @@
 // the traced set is already a round turn of that half width. What the width does not do is
 // hide the raster: the traced set is a smoothed line and reads 0.06 CSS pixels of roughness
 // at the nearest range that draws, against the lattice polyline's 1.26.
+import { smoothStep } from '../math';
 import { toWorldPositions } from './buffers';
 import { createProgram } from './program';
 import type { Program } from './program';
@@ -129,11 +130,6 @@ const RIBBON_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]);
 /** How many bytes one vertex of the boundary set takes. */
 const VERTEX_BYTES = 12;
 
-function smoothstep(low: number, high: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return t * t * (3 - 2 * t);
-}
-
 /**
  * How much of the overlay draws at a zoom distance, 0 to 1. It is full at 20,000 light
  * years and below and falls to nothing at 30,000, which is the zoom at which the whole
@@ -143,7 +139,7 @@ function smoothstep(low: number, high: number, value: number): number {
  * shader holds it per pixel, so a close zoom keeps the lines near the horizon.
  */
 export function regionFade(distance: number): number {
-  return 1 - smoothstep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance);
+  return 1 - smoothStep(REGION_FADE_IN_NEAR, REGION_FADE_IN_FAR, distance);
 }
 
 /**

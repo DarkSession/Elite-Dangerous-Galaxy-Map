@@ -3,7 +3,6 @@ import { ALL_INTERACTION, attachControls, readInteraction } from '../camera/cont
 import type { Controls, InteractionSwitches } from '../camera/controls';
 import { flightAt, planFlight } from '../camera/flight';
 import type { FlightPlan } from '../camera/flight';
-import { planePoint, project } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import {
   copyView,
@@ -23,18 +22,8 @@ import { createGalaxyModel } from '../galaxy-model/model';
 import type { HudHandle, HudOptions } from '../hud/types';
 import { createRenderContext } from '../render/context';
 import type { RenderContextResult } from '../render/context';
-import { createProgram } from '../render/program';
 import { createFrameAccumulator, createRenderer } from '../render/renderer';
-import type {
-  BackgroundReading,
-  FrameAccumulator,
-  FrameStats,
-  GridLevelReading,
-  IconPlacement,
-  LookSettings,
-  PassSwitches,
-  Renderer,
-} from '../render/renderer';
+import type { FrameAccumulator, FrameStats, Renderer } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
 import { pickSystem } from '../scene-data/picking';
 import {
@@ -64,7 +53,11 @@ import type {
   SphereInput,
 } from '../scene-data/shapes';
 import type { CoarseRegionGrid, RegionLines } from '../scene-data/types';
+import { createDebug } from './debug';
+import type { GalaxyMapDebug } from './debug';
 import { createDatasetState } from './datasets';
+import { readViewInput } from './view-input';
+import type { StartView } from './view-input';
 import type {
   DatasetContent,
   DatasetEntry,
@@ -74,11 +67,12 @@ import type {
   DatasetView,
 } from './datasets';
 import { createGridLabelOverlay } from './grid-labels';
-import type { GridLabelOverlay, GridLabelPlaced } from './grid-labels';
+import type { GridLabelOverlay } from './grid-labels';
 import { createLabelOverlay, STILL_FRAME } from './labels';
-import type { FrameTiming, LabelOverlay, SamplingStats } from './labels';
+import type { FrameTiming, LabelOverlay } from './labels';
 import { createCursorMarkerOverlay } from './cursor-marker';
 import type { CursorMarkerOverlay } from './cursor-marker';
+import { readPoint } from '../scene-data/read-field';
 import { createMarkerOverlay } from './markers';
 import type { MarkerOverlay } from './markers';
 
@@ -266,26 +260,9 @@ export interface FlyToOptions {
 /** How a flight ended. */
 export type FlightOutcome = 'landed' | 'interrupted';
 
-/**
- * The camera a host asks the map to open at. `cursor` and `system` name the same field
- * two ways, and `cursor` wins where the host gives both.
- */
-export interface StartView {
-  /** The point the camera centres on, in game coordinates. */
-  readonly cursor?: readonly [number, number, number];
-  /**
-   * The identity of a system to centre on: the `id64` where the record carries one, and
-   * the name where it does not. The host adds its records after the map is built, so the
-   * map holds the identity and applies it in the first frame the set holds the record.
-   */
-  readonly system?: string;
-  /** The distance from the cursor to the camera, in light years. */
-  readonly distance?: number;
-  /** The camera's angle around the cursor, in degrees. */
-  readonly yaw?: number;
-  /** The camera's elevation above the galactic plane, in degrees. */
-  readonly pitch?: number;
-}
+// The start view and its reader live in `./view-input`, which the dataset entry reads
+// too. The type is named here again so the barrel and a host keep one import.
+export type { StartView } from './view-input';
 
 /** How many drawn frames a pending start view waits for its record. */
 const PENDING_START_FRAMES = 600;
@@ -301,76 +278,9 @@ const PENDING_START_FRAMES = 600;
  */
 const SETTLE_MS = 1200;
 
-/**
- * How long the loop waits between draws while nothing changes, in milliseconds.
- *
- * Nothing in the map is driven by a clock: no shader reads a time, and every change of
- * the picture wakes the loop. A map nobody touches therefore draws the same picture
- * again. At the rate of the display that held the container's card at 33 percent of its
- * capacity, against 2 percent for a blank page.
- *
- * The loop still runs at the rate of the display, so a change is picked up in the next
- * frame. This is the rate of the draw alone, and it is a floor and not a rule: a change
- * the map does not hear about is on the screen inside this time rather than never.
- */
-const IDLE_DRAW_MS = 200;
-
-/** True where a field the host left out, or a finite number. */
-function readNumberField(value: unknown): boolean {
-  return value === undefined || (typeof value === 'number' && Number.isFinite(value));
-}
-
 /** A finite number, or null. */
 function readNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-/** Three finite numbers, or null. */
-function readPoint(value: unknown): [number, number, number] | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  if (!(value as unknown[]).every((part) => Number.isFinite(part))) return null;
-  const point = value as number[];
-  return [point[0] as number, point[1] as number, point[2] as number];
-}
-
-/**
- * Reads a host's start view, or null where it cannot be read. An unreadable field makes
- * the whole setting unreadable, so a map never opens at half of what the host asked for.
- */
-export function readStartView(value: unknown): StartView | null {
-  if (value === null || typeof value !== 'object') return null;
-  const source = value as {
-    cursor?: unknown;
-    system?: unknown;
-    distance?: unknown;
-    yaw?: unknown;
-    pitch?: unknown;
-  };
-  if (!readNumberField(source.distance)) return null;
-  if (!readNumberField(source.yaw)) return null;
-  if (!readNumberField(source.pitch)) return null;
-  const start: {
-    cursor?: [number, number, number];
-    system?: string;
-    distance?: number;
-    yaw?: number;
-    pitch?: number;
-  } = {};
-  if (source.cursor !== undefined) {
-    const cursor = source.cursor;
-    if (!Array.isArray(cursor) || cursor.length !== 3) return null;
-    if (!(cursor as unknown[]).every((part) => Number.isFinite(part))) return null;
-    const point = cursor as number[];
-    start.cursor = [point[0] as number, point[1] as number, point[2] as number];
-  }
-  if (source.system !== undefined) {
-    if (typeof source.system !== 'string' || source.system === '') return null;
-    start.system = source.system;
-  }
-  if (typeof source.distance === 'number') start.distance = source.distance;
-  if (typeof source.yaw === 'number') start.yaw = source.yaw;
-  if (typeof source.pitch === 'number') start.pitch = source.pitch;
-  return start;
 }
 
 /**
@@ -415,201 +325,6 @@ export interface MapView {
   distance: number;
   yaw: number;
   pitch: number;
-}
-
-/**
- * The renderer probes the browser tests read. This is not part of the supported
- * surface, and phase 4 may change it.
- */
-export interface GalaxyMapDebug {
-  setPasses(passes: Partial<PassSwitches>): void;
-  /**
-   * Sets how much of the volume's extinction a nebula takes, 0 to 1. It writes
-   * the same field as `look.nebulaOcclusion`. The setter sits beside the mutable handle
-   * because the browser tests reach the hook through `window.__galaxyMap`, where a named
-   * call is what the page can expose and type. The frame holds the range, so both routes
-   * give the same picture.
-   */
-  setNebulaOcclusion(value: number): void;
-  /**
-   * Draws the nebula records in the reverse order. The pass composites without an
-   * order, so the frame does not change, and the browser test that reads that is the
-   * one caller.
-   */
-  setNebulaOrderReversed(value: boolean): void;
-  readonly look: LookSettings;
-  measureFrames(count: number): number;
-  frameStats(): FrameStats;
-  resetFrameStats(): void;
-  drawNow(): void;
-  starVertexCount(): number;
-  starDrawnCount(): number;
-  starSuppressedCount(): number;
-  systemMarkerCount(): number;
-  /** How many nebula instances the last frame drew. */
-  nebulaDrawnCount(): number;
-  /** How many draw calls the last frame's nebula pass issued. */
-  nebulaDrawCalls(): number;
-  /** How many records passed the size floor in the last frame, before the budget. */
-  nebulaAboveFloorCount(): number;
-  /** How much of the screen the last frame's nebulae cover, in screen areas. */
-  nebulaCoveredArea(): number;
-  /**
-   * The front range and the centre range the last frame sent the two sprite passes, in
-   * light years.
-   */
-  nebulaSpriteRange(): [number, number];
-  /**
-   * Whether the nebula records and the volumes reached the renderer. The start chain does
-   * not wait for them, so a caller that reads the pass must wait for this.
-   */
-  nebulaeAttached(): boolean;
-  /**
-   * How long the last rebuild of the marker flags took, in milliseconds. The sweep runs
-   * on a change of the set, the table, the visibility or the filter, and not on a
-   * frame, so the reading is of the last change and not of the last frame.
-   */
-  categorySweepMs(): number;
-  /**
-   * How long the last sweep of the shape flags took, in milliseconds. It follows the same
-   * rule as `categorySweepMs`, over the spheres and the lines.
-   */
-  shapeSweepMs(): number;
-  /** Holds the close fade at a value from 0 to 1, or `null` for the zoom distance. */
-  setCloseFade(value: number | null): void;
-  /**
-   * Holds the near plane in light years, or `null` for the zoom distance rule. The hold
-   * reaches the frame alone: `project` and `planePointAt` build their matrix from the
-   * rule, so a hold below 100 light years would make the drawn frame and the projected
-   * pixel disagree. The scenario the hook serves reads 500 light years and above, where
-   * the rule already gives 10.
-   */
-  setNearPlane(value: number | null): void;
-  readPixel(x: number, y: number): [number, number, number, number];
-  readRect(x: number, y: number, width: number, height: number): Uint8Array;
-  drawingBufferSize(): [number, number];
-  viewport(): Viewport;
-  project(point: readonly [number, number, number]): { x: number; y: number };
-  planePointAt(x: number, y: number): [number, number, number] | null;
-  regionNameAtScreen(x: number, y: number): string | null;
-  /** The vertices of the traced set, whether the region overlay draws or not. */
-  regionLinePositions(): Float32Array;
-  /** The chain bounds of the traced set, whether the region overlay draws or not. */
-  regionLineChains(): { first: Uint32Array; last: Uint32Array };
-  regionSampleCounts(): { id: number; name: string; count: number }[];
-  regionSampleTotal(): number;
-  labelSampling(): SamplingStats;
-  resetLabelSampling(): void;
-  /**
-   * How long the category panel's last count pass took, in milliseconds, and 0 where
-   * the map holds no HUD. The pass runs once per change of the filter text and reads
-   * each thing once per category it names.
-   */
-  categoryCountMs(): number;
-  /**
-   * The hover pick, the pin, the ring and the name label placement of the frames the
-   * loop drew since the last reset. The work runs around the draw call, so `frameStats`
-   * does not see it.
-   */
-  selectionSampling(): SamplingStats;
-  resetSelectionSampling(): void;
-  /**
-   * The interval between the animation frames the loop drew since the last reset. It
-   * covers everything the browser does per frame, so it is what shows a dropped frame.
-   */
-  frameIntervalStats(): SamplingStats;
-  resetFrameIntervalStats(): void;
-  /** How many vertices the last frame's grid draw issued. */
-  gridVertexCount(): number;
-  /**
-   * The spacing of the label level of the last frame, in light years, and 0 in a frame
-   * the grid did not draw in.
-   */
-  gridSpacingLy(): number;
-  /**
-   * What each of the six levels of the last frame drew, in order of rising spacing. The
-   * reading is empty in a frame the grid did not draw in.
-   */
-  gridLevels(): GridLevelReading[];
-  /**
-   * The crossing labels of the last frame, each with its text, its box in CSS pixels,
-   * the drawn alpha of its level at its crossing and the opacity it was given. The
-   * opacity is a product of two numbers and only one of them reaches a pixel, so a test
-   * cannot read the line factor from the picture alone.
-   */
-  gridLabelReadings(): GridLabelPlaced[];
-  /**
-   * The width and the height of the background reading's own target, and `[0, 0]`
-   * before the first frame that builds one. It reports the storage and not the last
-   * reading, so a frame without the grid can be held to taking none.
-   */
-  backgroundSize(): [number, number];
-  /**
-   * The width and the height of the region overlay's coverage buffer, and null before
-   * the first frame that draws the overlay. The buffer holds the full drawing buffer
-   * size, which the blur of the overlay needs.
-   */
-  regionCoverageSize(): [number, number] | null;
-  /**
-   * How many draw calls the shape pass made in the last frame. The count is fixed at
-   * three whatever the shape count, and 0 in a frame that drew no shape.
-   */
-  shapeDrawCalls(): number;
-  /**
-   * The width and the height of the shape pass's line buffer, and null before the first
-   * frame that drew a line.
-   */
-  shapeLineBufferSize(): [number, number] | null;
-  /**
-   * How many draw calls the marker pass made in the last frame. It is 1 in a frame with
-   * markers and no sphere, and 2 in a frame that also wrote the range buffer.
-   */
-  markerDrawCalls(): number;
-  /**
-   * Where each icon and each arrow of the last frame drew, in CSS pixels from the top
-   * left of the canvas. The list is empty in a frame that drew no stack. The renderer
-   * places the stacks, so this is the only reading of them: they are pixels on the
-   * canvas and not elements in the overlay.
-   */
-  iconPlacements(): IconPlacement[];
-  /**
-   * How many draw calls the icon pass made in the last frame. It is 1 in a frame with a
-   * stack, whatever the stack count, and 0 in a frame that drew none. The arrows and the
-   * icons share one instance stream, so one call draws them all.
-   */
-  iconDrawCalls(): number;
-  /**
-   * The width and the height of the range buffer, and null where the context cannot blend
-   * into a float target. A test reads it to tell the range path from the fallback.
-   */
-  rangeBufferSize(): [number, number] | null;
-  /**
-   * The range the range buffer holds at one pixel, in CSS pixels from the top left, in
-   * light years. A pixel where no marker body drew reads a value above every drawable
-   * range, and the reading is null where the map holds no range buffer.
-   */
-  readRange(x: number, y: number): number | null;
-  /**
-   * The background reading of the last frame, and null in a frame that built none. The
-   * read waits for the card, so it is a probe and not the path the labels take.
-   */
-  backgroundReading(): BackgroundReading | null;
-  /**
-   * The milliseconds left in the running selection flight, and 0 when none runs. The
-   * browser tests read the flight from it.
-   */
-  selectionFlightMs(): number;
-  /**
-   * The distance in light years the zoom glide moves toward, and null when no glide
-   * runs. The browser tests read it to wait for the camera to settle.
-   */
-  zoomTargetLy(): number | null;
-  compileTestProgram(vertex: string, fragment: string): string | null;
-  /**
-   * The unmasked renderer string the card reports. It is empty until `ready` settles,
-   * because the context is made after the scene workers start.
-   */
-  readonly renderer: string;
 }
 
 /** What `createGalaxyMap` gives back. */
@@ -783,7 +498,7 @@ export interface GalaxyMap {
   /** Turns the cursor marker on or off. */
   setCursorMarkerVisible(on: boolean): void;
   /** True while the cursor marker draws. */
-  getCursorMarkerVisible(): boolean;
+  isCursorMarkerVisible(): boolean;
   /** Turns the coordinate grid on or off. */
   setGridVisible(on: boolean): void;
   /** True while the coordinate grid draws. */
@@ -1110,25 +825,32 @@ export function createGalaxyMap(
   let framesDrawn = 0;
   /**
    * The time the loop draws every frame until. Every change pushes it forward by
-   * `SETTLE_MS`, and past it the loop falls back to `IDLE_DRAW_MS`.
+   * `SETTLE_MS`, and the loop stops past it.
    */
   let awakeUntil = 0;
 
   /**
-   * Says the picture changed, so the loop draws every frame while it settles.
+   * Says the picture changed, so the loop draws every frame while it settles and starts
+   * again where it stopped.
    *
    * Every member of the handle that changes what the map draws calls this first, and so
-   * does every write of the view, the resize and the pointer move. A change that does
-   * not call it is on the screen inside `IDLE_DRAW_MS` and not in the next frame.
+   * does every write of the view, the resize and every thing the map fetched as it
+   * lands. A change that does not call it never reaches the screen.
+   *
+   * A disposed map wakes nothing at all. Every setter calls this with no check of its
+   * own, and a late answer to a fetch calls it too, so the check belongs here: `dispose`
+   * stops the loop and no call after it may start one.
    */
   const wake = (): void => {
+    if (disposed) return;
     awakeUntil = performance.now() + SETTLE_MS;
+    startLoop();
   };
 
   // The start view is taken here and not in the first frame, so the first frame the user
   // sees is already the view the host asked for. The map does not fly to it.
   const startView =
-    options.startView === undefined ? null : readStartView(options.startView);
+    options.startView === undefined ? null : readViewInput(options.startView);
   if (startView !== null) {
     if (startView.distance !== undefined) view.distance = startView.distance;
     if (startView.yaw !== undefined) view.yaw = startView.yaw;
@@ -1266,7 +988,34 @@ export function createGalaxyMap(
   let regionsVisible = typeof options.regions === 'boolean' ? options.regions : true;
   let shapesVisible = typeof options.shapes === 'boolean' ? options.shapes : true;
   let frameHandle: number | null = null;
+  // The frame loop itself, which the start chain builds. `null` until then, so a wake
+  // before the first frame writes the settle window and requests nothing.
+  let loop: ((now: number) => void) | null = null;
+  // The time the last turn of the loop ran at, which gives the frame its seconds. It is
+  // the timestamp `requestAnimationFrame` passes and not a wall clock reading.
+  let previousTurnMs = 0;
+  // True where the turn that follows is the first of a restarted loop. Such a turn has
+  // no turn before it, so it covers no time and reports no interval.
+  let restarted = false;
+  // True where the pointer moved since the last turn. Such a turn runs the pick and the
+  // marker overlay and renders no canvas, because the renderer reads no hover.
+  let pointerMoved = false;
+  /**
+   * The view epoch. It rises on every write of the view and on a resize, so a stage
+   * that reads the view alone can keep what it worked out for the epoch before.
+   */
+  let viewEpoch = 0;
   let disposed = false;
+
+  /**
+   * Requests a frame where the loop is stopped. The loop stops when nothing is left to
+   * draw or to pick, so every path that changes the picture restarts it through `wake`.
+   */
+  const startLoop = (): void => {
+    if (disposed || loop === null || frameHandle !== null) return;
+    restarted = true;
+    frameHandle = requestAnimationFrame(loop);
+  };
   // `dispose` releases the renderer, so the last reading is kept. The test that checks
   // the loop stopped reads the count before and after the call.
   let lastStats: FrameStats = { frames: 0, meanMs: 0, worstMs: 0 };
@@ -1317,7 +1066,9 @@ export function createGalaxyMap(
 
   const announce = (): void => {
     // Every write of the view passes here, so the camera, the zoom glide, the movement
-    // keys, a selection flight and a host's own `setView` all wake the loop.
+    // keys, a selection flight and a host's own `setView` all wake the loop and raise
+    // the epoch.
+    viewEpoch += 1;
     wake();
     const copy = readView();
     for (const listener of listeners) listener(copy);
@@ -1426,6 +1177,8 @@ export function createGalaxyMap(
     // cuts off settles before the new plan takes its place.
     endFlight();
     flight = { plan, startMs: performance.now(), settle: null };
+    // A flight holds the loop awake, but a stopped loop has to turn again to see it.
+    wake();
   };
 
   /**
@@ -1450,10 +1203,8 @@ export function createGalaxyMap(
     endFlight();
 
     const next = copyView(view);
-    let place: readonly [number, number, number] | null = null;
-    if (readPoint(asked.cursor) !== null) {
-      place = readPoint(asked.cursor);
-    } else if (typeof asked.system === 'string') {
+    let place: readonly [number, number, number] | null = readPoint(asked.cursor);
+    if (place === null && typeof asked.system === 'string') {
       const index = set.indexOfIdentity(asked.system);
       const system = index < 0 ? null : set.system(index);
       if (system === null) {
@@ -1468,12 +1219,12 @@ export function createGalaxyMap(
     if (place !== null) next.cursor = [place[0], place[1], place[2]];
     // A field that is not a finite number keeps the value the view holds, as a field the
     // host leaves out does.
-    if (readNumber(asked.distance) !== null) {
-      next.distance = readNumber(asked.distance) as number;
-    }
-    if (readNumber(asked.yaw) !== null) next.yaw = readNumber(asked.yaw) as number;
-    if (readNumber(asked.pitch) !== null)
-      next.pitch = readNumber(asked.pitch) as number;
+    const distance = readNumber(asked.distance);
+    const yaw = readNumber(asked.yaw);
+    const pitch = readNumber(asked.pitch);
+    if (distance !== null) next.distance = distance;
+    if (yaw !== null) next.yaw = yaw;
+    if (pitch !== null) next.pitch = pitch;
     // The end view takes the browsable bounds before the path is worked out, so a target
     // outside them lands on the nearest view the bounds allow.
     normaliseView(next, resolvedBounds);
@@ -1490,6 +1241,7 @@ export function createGalaxyMap(
       return promise;
     }
     flight = { plan, startMs: performance.now(), settle };
+    wake();
     return promise;
   };
 
@@ -1736,6 +1488,10 @@ export function createGalaxyMap(
     // or the stack of a selected system lifts one frame late.
     renderer.setSystemIconsDraw(iconsOn);
     renderer.setSelectedSystem(selectedIndex);
+    // A read-back is a cost only a coordinate label spends. The frame takes one while
+    // the grid is on and the last update of the labels placed one. The renderer takes
+    // one on its own until a first reading lands, which the first label placed reads.
+    renderer.setBackgroundReadback(gridOn && (gridLabels?.readings().length ?? 0) > 0);
     renderer.render(view);
     const size = renderer.viewport();
     // The owned host takes the canvas's box again, because the canvas may have moved or
@@ -1786,10 +1542,36 @@ export function createGalaxyMap(
       // picture, which a person does not see, and a read that waits for the card costs
       // more than the pass it reads.
       background: renderer.backgroundFrame(),
+      epoch: viewEpoch,
     });
   };
 
+  /**
+   * Runs the overlay work of a turn on which nothing but the pointer moved: the hover
+   * pick and the marker overlay. It touches no pass, so `frameStats` counts none of it,
+   * which is the rule the still-map scenario reads.
+   */
+  const overlayFrame = (): void => {
+    if (renderer === null) return;
+    const size = renderer.viewport();
+    const started = performance.now();
+    hoverIndex = lastPointer === null ? -1 : pickSystem(set, view, size, lastPointer);
+    markers?.update({
+      view,
+      viewport: size,
+      set,
+      hoverIndex,
+      selectedIndex:
+        selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity),
+      namesOn,
+    });
+    selectionWork.add(performance.now() - started);
+  };
+
   const onResize = (): void => {
+    // The canvas box decides where a point of the view lands, so a resize is a view
+    // change for every stage that reads the epoch.
+    viewEpoch += 1;
     wake();
     renderer?.resize();
     if (loadingImage !== null) placeLoadingImage(loadingImage, canvas);
@@ -1854,7 +1636,9 @@ export function createGalaxyMap(
 
     await nextFrame();
     if (disposed) return;
-    renderer = createRenderer(gl, canvas);
+    // An icon vector lands after the frame that named it drew, which is the one thing
+    // the renderer fetches for itself. The wake puts it on the screen in the next frame.
+    renderer = createRenderer(gl, canvas, { onChange: wake });
     renderer.resize();
     renderer.setSystems(set);
     renderer.setShapes(shapes);
@@ -1890,15 +1674,21 @@ export function createGalaxyMap(
         // does not move the view back.
         endFlight();
         dropPendingStart();
+        // A wheel notch sets the glide target and a key press records the key. Neither
+        // moves the view until `controls.update` runs, so the input itself is what wakes
+        // the loop; the glide and the held key then hold it awake through `announce`.
+        wake();
       },
       reducedMotion,
       bounds: () => resolvedBounds,
       interaction: () => interaction,
       onPointer(pixel: { x: number; y: number } | null): void {
-        // The hover pick reads this in the draw, so a pointer that moves over a still
-        // camera still changes the picture.
-        wake();
+        // A pointer move is not a change of the picture: the renderer reads no hover,
+        // and the hover ring and the hovered name are overlay elements. The mark asks
+        // the loop for one overlay turn, and the settle window does not move.
         lastPointer = pixel;
+        pointerMoved = true;
+        startLoop();
       },
       onClick(pixel: { x: number; y: number }): void {
         const index = pickSystem(set, view, viewport(), pixel);
@@ -1959,7 +1749,7 @@ export function createGalaxyMap(
             // The source builds the draw. The renderer holds the slot alone and knows
             // neither the records nor the art.
             renderer.setNebulae(nebulaSource.createDraw(gl, records, volumes));
-            renderer.setPasses({ nebulae: nebulaeVisible });
+            renderer.setNebulaDraw(nebulaeVisible);
             nebulaeAttached = true;
             wake();
           }
@@ -1978,12 +1768,15 @@ export function createGalaxyMap(
     if (disposed) return;
     drawFrame();
 
-    let previous = performance.now();
-    let drawnAt = previous;
-    const loop = (now: number): void => {
-      const seconds = Math.min((now - previous) / 1000, 0.1);
-      frameIntervals.add(now - previous);
-      previous = now;
+    previousTurnMs = performance.now();
+    loop = (now: number): void => {
+      // The turn that follows a restart covers no time and holds no interval: the map
+      // drew nothing while the loop was stopped, so the gap is not a frame of the map.
+      const seconds = restarted ? 0 : Math.min((now - previousTurnMs) / 1000, 0.1);
+      const intervalMs = now - previousTurnMs;
+      const first = restarted;
+      restarted = false;
+      previousTurnMs = now;
       // The flight moves the view before the draw, so the frame the user sees is the
       // frame the flight reached.
       // `auto` follows the set, so the shape is worked out again where the set changed
@@ -1996,21 +1789,25 @@ export function createGalaxyMap(
       advanceFlight(performance.now());
       controls?.update(seconds);
       refreshHud();
-      // The loop runs at the rate of the display and the draw does not. Nothing moves
-      // the picture but a change, and every change wakes the loop, so a map nobody
-      // touches redraws at the idle rate and leaves the GPU to the rest of the page.
+      // Nothing moves the picture but a change, and every change wakes the loop, so a
+      // map nobody touches costs no frame at all and leaves the GPU to the rest of the
+      // page.
       //
-      // A pending start holds the loop awake, because it expires on a count of drawn
-      // frames and a map that drew at the idle rate would hold it 12 times as long.
-      const awake = now < awakeUntil || pendingStart !== null;
-      if (awake || now - drawnAt >= IDLE_DRAW_MS) {
-        // The frame covers the time since the last turn of the loop and not since the
-        // last draw. The loop drops a draw only where nothing moves, so no movement is
-        // lost, and an eased value does not step where the loop comes back.
+      // A pending start and a running flight hold the loop awake: the start expires on
+      // a count of drawn frames, and the flight moves the view on every turn.
+      const awake = now < awakeUntil || pendingStart !== null || flight !== null;
+      if (awake) {
+        // The frame covers the time since the last turn of the loop. The interval is a
+        // frame interval, so a turn that draws nothing adds none.
+        if (!first) frameIntervals.add(intervalMs);
         drawFrame({ seconds, jump: false });
-        drawnAt = now;
+      } else if (pointerMoved) {
+        overlayFrame();
       }
-      frameHandle = requestAnimationFrame(loop);
+      pointerMoved = false;
+      // The loop stops where it holds nothing to draw and nothing to pick. `wake` and a
+      // pointer move each start it again.
+      frameHandle = awake && loop !== null ? requestAnimationFrame(loop) : null;
     };
     frameHandle = requestAnimationFrame(loop);
   };
@@ -2052,208 +1849,37 @@ export function createGalaxyMap(
   // rejection.
   void ready.then(removeLoadingImage, removeLoadingImage);
 
-  const debug: GalaxyMapDebug = {
-    setPasses(passes: Partial<PassSwitches>): void {
-      renderer?.setPasses(passes);
-      if (passes.regions !== undefined) regionPassOn = passes.regions;
-      drawFrame();
-    },
-    setNebulaOcclusion(value: number): void {
-      renderer?.setNebulaOcclusion(value);
-      drawFrame();
-    },
-    setNebulaOrderReversed(value: boolean): void {
-      renderer?.setNebulaOrderReversed(value);
-      drawFrame();
-    },
-    get look(): LookSettings {
-      if (renderer === null) throw new Error('The map has no renderer.');
-      return renderer.look;
-    },
-    measureFrames(count: number): number {
-      return renderer?.measureFrames(view, count) ?? 0;
-    },
-    frameStats(): FrameStats {
-      return renderer?.frameStats() ?? lastStats;
-    },
-    resetFrameStats(): void {
-      renderer?.resetFrameStats();
-    },
-    nebulaDrawnCount(): number {
-      return renderer?.nebulaDrawnCount() ?? 0;
-    },
-    nebulaDrawCalls(): number {
-      return renderer?.nebulaDrawCalls() ?? 0;
-    },
-    nebulaAboveFloorCount(): number {
-      return renderer?.nebulaAboveFloorCount() ?? 0;
-    },
-    nebulaCoveredArea(): number {
-      return renderer?.nebulaCoveredArea() ?? 0;
-    },
-    nebulaSpriteRange(): [number, number] {
-      return renderer?.nebulaSpriteRange() ?? [0, 0];
-    },
-    nebulaeAttached(): boolean {
-      return nebulaeAttached;
-    },
-    drawNow(): void {
-      drawFrame();
-    },
-    starVertexCount(): number {
-      return renderer?.starVertexCount() ?? 0;
-    },
-    starDrawnCount(): number {
-      return renderer?.starDrawnCount() ?? 0;
-    },
-    starSuppressedCount(): number {
-      return renderer?.starSuppressedCount() ?? 0;
-    },
-    categorySweepMs(): number {
-      // The reading is of the sweep the frame before asked for, so a caller draws a
-      // frame after the change it wants to measure.
-      return set.lastSweepMs;
-    },
-    shapeSweepMs(): number {
-      // The flags of the shapes are read while the frame draws, so the reading is of the
-      // last frame and a caller draws one after the change it wants to measure.
-      return shapes.lastSweepMs;
-    },
-    systemMarkerCount(): number {
-      return renderer?.systemMarkerCount() ?? 0;
-    },
-    setCloseFade(value: number | null): void {
-      renderer?.setCloseFade(value);
-      drawFrame();
-    },
-    setNearPlane(value: number | null): void {
-      renderer?.setNearPlane(value);
-      drawFrame();
-    },
-    readPixel(x: number, y: number): [number, number, number, number] {
-      return renderer?.readPixel(x, y) ?? [0, 0, 0, 0];
-    },
-    readRect(x: number, y: number, width: number, height: number): Uint8Array {
-      return renderer?.readRect(x, y, width, height) ?? new Uint8Array(0);
-    },
-    drawingBufferSize(): [number, number] {
-      return renderer?.drawingBufferSize() ?? [canvas.width, canvas.height];
-    },
-    viewport,
-    project(point: readonly [number, number, number]): { x: number; y: number } {
-      const screen = project(view, point, viewport());
-      return { x: screen.x, y: screen.y };
-    },
-    planePointAt(x: number, y: number): [number, number, number] | null {
-      return planePoint(view, { x, y }, viewport(), view.cursor[1]);
-    },
-    regionNameAtScreen(x: number, y: number): string | null {
-      if (regionGrid === null) return null;
-      const point = planePoint(view, { x, y }, viewport(), 0);
-      if (point === null) return null;
-      return regionOfId(coarseRegionIdAt(regionGrid, point[0], point[2]))?.name ?? null;
-    },
-    regionLinePositions(): Float32Array {
-      return regionLines?.positions ?? new Float32Array(0);
-    },
-    regionLineChains(): { first: Uint32Array; last: Uint32Array } {
-      return {
-        first: regionLines?.first ?? new Uint32Array(0),
-        last: regionLines?.last ?? new Uint32Array(0),
-      };
-    },
-    regionSampleCounts(): { id: number; name: string; count: number }[] {
-      return labels?.lastCounts().map((entry) => ({ ...entry })) ?? [];
-    },
-    regionSampleTotal(): number {
-      return labels?.lastSampleCount() ?? 0;
-    },
-    labelSampling(): SamplingStats {
-      return labels?.sampling() ?? { frames: 0, meanMs: 0, worstMs: 0 };
-    },
-    resetLabelSampling(): void {
-      labels?.resetSampling();
-    },
-    categoryCountMs(): number {
-      return hud?.categoryCountMs() ?? 0;
-    },
-    selectionSampling(): SamplingStats {
-      return selectionWork.read();
-    },
-    resetSelectionSampling(): void {
-      selectionWork.reset();
-    },
-    frameIntervalStats(): SamplingStats {
-      return frameIntervals.read();
-    },
-    resetFrameIntervalStats(): void {
-      frameIntervals.reset();
-    },
-    gridVertexCount(): number {
-      return renderer?.gridVertexCount() ?? 0;
-    },
-    gridSpacingLy(): number {
-      return renderer?.gridSpacingLy() ?? 0;
-    },
-    gridLevels(): GridLevelReading[] {
-      return renderer?.gridLevels() ?? [];
-    },
-    gridLabelReadings(): GridLabelPlaced[] {
-      return gridLabels?.readings() ?? [];
-    },
-    backgroundSize(): [number, number] {
-      return renderer?.backgroundSize() ?? [0, 0];
-    },
-    regionCoverageSize(): [number, number] | null {
-      return renderer?.regionCoverageSize() ?? null;
-    },
-    shapeDrawCalls(): number {
-      return renderer?.shapeDrawCalls() ?? 0;
-    },
-    shapeLineBufferSize(): [number, number] | null {
-      return renderer?.shapeLineBufferSize() ?? null;
-    },
-    markerDrawCalls(): number {
-      return renderer?.markerDrawCalls() ?? 0;
-    },
-    iconPlacements(): IconPlacement[] {
-      return renderer?.iconPlacements() ?? [];
-    },
-    iconDrawCalls(): number {
-      return renderer?.iconDrawCalls() ?? 0;
-    },
-    rangeBufferSize(): [number, number] | null {
-      return renderer?.rangeBufferSize() ?? null;
-    },
-    readRange(x: number, y: number): number | null {
-      return renderer?.readRange(x, y) ?? null;
-    },
-    backgroundReading(): BackgroundReading | null {
-      return renderer?.backgroundReading() ?? null;
-    },
-    selectionFlightMs(): number {
+  const debug: GalaxyMapDebug = createDebug({
+    renderer: () => renderer,
+    context: () => context,
+    controls: () => controls,
+    labels: () => labels,
+    gridLabels: () => gridLabels,
+    hud: () => hud,
+    regionGrid: () => regionGrid,
+    regionLines: () => regionLines,
+    lastStats: () => lastStats,
+    nebulaeAttached: () => nebulaeAttached,
+    flightLeftMs: (): number => {
       if (flight === null) return 0;
       const left = flight.plan.durationMs - (performance.now() - flight.startMs);
       return left > 0 ? left : 0;
     },
-    zoomTargetLy(): number | null {
-      return controls?.zoomTargetLy() ?? null;
+    setRegionPass: (on: boolean): void => {
+      regionPassOn = on;
     },
-    compileTestProgram(vertex: string, fragment: string): string | null {
-      const gl = context?.gl ?? null;
-      if (gl === null) return 'The map has no context.';
-      try {
-        const probe = createProgram(gl, 'probe', vertex, fragment);
-        gl.deleteProgram(probe.program);
-        return null;
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error);
-      }
+    drawFrame: () => {
+      drawFrame();
     },
-    get renderer(): string {
-      return context?.renderer ?? '';
-    },
-  };
+    wake,
+    viewport,
+    canvas,
+    view,
+    set,
+    shapes,
+    selectionWork,
+    frameIntervals,
+  });
 
   const map: GalaxyMap = {
     addCategories(categories: readonly CategoryInput[]): CategoryReport {
@@ -2315,6 +1941,8 @@ export function createGalaxyMap(
       }
       renderer?.dispose();
       renderer = null;
+      // The region labels come out of the label host, which may be the host's own.
+      labels?.clear();
       labels = null;
       markers?.clear();
       markers = null;
@@ -2459,7 +2087,7 @@ export function createGalaxyMap(
       if (nebulaSource === null) return;
       if (on === nebulaeVisible) return;
       nebulaeVisible = on;
-      renderer?.setPasses({ nebulae: nebulaeVisible });
+      renderer?.setNebulaDraw(nebulaeVisible);
       drawFrame();
     },
     areShapesVisible(): boolean {
@@ -2535,8 +2163,9 @@ export function createGalaxyMap(
       };
     },
     setSystemNamesVisible(on: boolean): void {
+      if (typeof on !== 'boolean') return;
       wake();
-      namesOn = on === true;
+      namesOn = on;
     },
     areSystemNamesVisible(): boolean {
       return namesOn;
@@ -2553,23 +2182,24 @@ export function createGalaxyMap(
       return set.iconSystemCount > 0;
     },
     setCursorMarkerVisible(on: boolean): void {
+      if (typeof on !== 'boolean') return;
       wake();
-      cursorMarkerOn = on !== false;
+      cursorMarkerOn = on;
       // The next frame places the marker again. Turning it off takes the element out of
       // the overlay at once, so a host that reads the overlay after the call sees the
       // change without a frame, as `setGridVisible` clears the grid labels.
       if (!cursorMarkerOn) cursorMarker?.clear();
     },
-    getCursorMarkerVisible(): boolean {
+    isCursorMarkerVisible(): boolean {
       return cursorMarkerOn;
     },
     setGridVisible(on: boolean): void {
+      if (typeof on !== 'boolean') return;
       wake();
-      const next = on === true;
       // A set to the value the switch already holds raises no listener, so a host that
       // writes the state it read does not write its own URL fragment again.
-      if (next === gridOn) return;
-      gridOn = next;
+      if (on === gridOn) return;
+      gridOn = on;
       renderer?.setGridDraw(gridOn);
       if (!gridOn) gridLabels?.clear();
       for (const listener of gridListeners) listener(gridOn);

@@ -95,13 +95,18 @@ function sortedNames(directory) {
  * `Interfaces/GalaxyMap.md` at `/wiki/GalaxyMap`, so a link that carries a folder or the
  * extension resolves to nothing. A target that is not a markdown path — an address with
  * a scheme, an anchor of the same page — is left as it is.
+ *
+ * A link to a member of another page carries an anchor, as `StartView.md#cursor` does.
+ * The anchor stays on the bare name, which is how a wiki addresses a heading of a page.
  */
 export function rewriteLinks(text) {
-  return text.replace(/\]\(([^)\s]+)\)/g, (whole, target) =>
-    target.endsWith('.md') && !target.includes(':')
-      ? `](${basename(target, '.md')})`
-      : whole,
-  );
+  return text.replace(/\]\(([^)\s]+)\)/g, (whole, target) => {
+    if (target.includes(':')) return whole;
+    const cut = target.indexOf('#');
+    const path = cut < 0 ? target : target.slice(0, cut);
+    const anchor = cut < 0 ? '' : target.slice(cut);
+    return path.endsWith('.md') ? `](${basename(path, '.md')}${anchor})` : whole;
+  });
 }
 
 /**

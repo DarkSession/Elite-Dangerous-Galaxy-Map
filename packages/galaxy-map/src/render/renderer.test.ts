@@ -790,6 +790,16 @@ describe('the volume texture the renderer owns', () => {
     renderer.dispose();
   });
 
+  test('leaves a switch as it is on a value that is not a boolean', () => {
+    const { context, renderer } = withVolume();
+    renderer.setPasses({ volume: false });
+    renderer.setPasses({ volume: 'yes' as unknown as boolean });
+    renderer.render({ cursor: [0, 0, 0], distance: 12000, yaw: 0, pitch: 30 });
+
+    expect(uniformOf(context, 'uOcclusion')).toBe(0);
+    renderer.dispose();
+  });
+
   test('carries an occlusion of its own, at 2, which the caller may change', () => {
     const { context, renderer } = withVolume();
     expect(DEFAULT_NEBULA_OCCLUSION).toBe(2);

@@ -5,11 +5,13 @@
 // samples the viewport on a grid of screen points, turns each point into a plane point
 // at `y = 0`, and reads the region from the coarse grid the scene data carries. The
 // counts give the candidates, the order and the anchors.
+import { smoothStep } from '../math';
 import {
   cameraPosition,
   inverseViewProjection,
   planePointFrom,
-  project,
+  projectWith,
+  viewProjectionMatrix,
 } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
@@ -162,15 +164,14 @@ export interface LabelCandidate {
   readonly anchor: AnchorPoint;
 }
 
-function clamp(value: number, low: number, high: number): number {
+/**
+ * `value` held between `low` and `high`, or the middle of the two where it cannot be
+ * held: a value that is not finite, or a band whose `high` is below its `low`.
+ */
+function clampOrMiddle(value: number, low: number, high: number): number {
   if (!Number.isFinite(value)) return (low + high) / 2;
   if (high < low) return (low + high) / 2;
   return Math.min(Math.max(value, low), high);
-}
-
-function smoothstep(low: number, high: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return t * t * (3 - 2 * t);
 }
 
 /**
@@ -195,7 +196,7 @@ export function labelFade(distance: number): number {
  * read there once rather than over the box the text covers.
  */
 export function labelRangeFade(range: number): number {
-  return smoothstep(REGION_RANGE_NONE, REGION_RANGE_FULL, range);
+  return smoothStep(REGION_RANGE_NONE, REGION_RANGE_FULL, range);
 }
 
 /**
@@ -351,6 +352,9 @@ export function sampleFrame(
   const planeZ = pool.planeZ;
   const ids = pool.ids;
   const inverse = inverseViewProjection(view, viewport);
+  // One matrix for the whole sweep. `project` builds three matrices per call, and the
+  // sweep projects one point for each sample it keeps.
+  const forward = viewProjectionMatrix(view, viewport);
   const origin = cameraPosition(view);
   const pixel = { x: 0, y: 0 };
 
@@ -366,7 +370,7 @@ export function sampleFrame(
     flow === null ? null : coarseRegionFlowStepAt(grid, flow, readX, readZ);
 
   const toScreen = (readX: number, readZ: number): AnchorPoint | null => {
-    const screen = project(view, [readX, 0, readZ], viewport);
+    const screen = projectWith(forward, origin, [readX, 0, readZ], viewport);
     if (!screen.inFront) return null;
     return { x: screen.x, y: screen.y };
   };
@@ -568,8 +572,8 @@ export function regionTarget(
     where.y <= viewport.height + bandY;
   if (where !== null && inFrame) {
     const inset = {
-      x: clamp(where.x, LABEL_INSET, viewport.width - LABEL_INSET),
-      y: clamp(where.y, LABEL_INSET, viewport.height - LABEL_INSET),
+      x: clampOrMiddle(where.x, LABEL_INSET, viewport.width - LABEL_INSET),
+      y: clampOrMiddle(where.y, LABEL_INSET, viewport.height - LABEL_INSET),
     };
     if (inset.x === where.x && inset.y === where.y)
       return { point: centre, centre: true };
@@ -1381,8 +1385,8 @@ export function labelCandidates(
       // the map slides under it. `labelBox` moves the box itself fully into the frame,
       // so a label at the edge stays readable and still slides with its region.
       anchor: {
-        x: clamp(screen.x, 0, viewport.width),
-        y: clamp(screen.y, 0, viewport.height),
+        x: clampOrMiddle(screen.x, 0, viewport.width),
+        y: clampOrMiddle(screen.y, 0, viewport.height),
       },
     });
   }
@@ -1404,8 +1408,8 @@ export function labelCandidates(
 /** The box of a label centred on its anchor, moved to lie inside the viewport. */
 function labelBox(anchor: AnchorPoint, size: LabelSize, viewport: Viewport): LabelBox {
   return {
-    left: clamp(anchor.x - size.width / 2, 0, viewport.width - size.width),
-    top: clamp(anchor.y - size.height / 2, 0, viewport.height - size.height),
+    left: clampOrMiddle(anchor.x - size.width / 2, 0, viewport.width - size.width),
+    top: clampOrMiddle(anchor.y - size.height / 2, 0, viewport.height - size.height),
     width: size.width,
     height: size.height,
   };
@@ -1493,6 +1497,11 @@ export interface LabelOverlay {
   }[];
   /** How many samples of the last frame landed on the plane. */
   lastSampleCount(): number;
+  /**
+   * Removes every label the overlay shows from the host and forgets where they were.
+   * `dispose` calls it, so a host-given label host is left as the map found it.
+   */
+  clear(): void;
   /** The mean sweep time since the last reset, for the budget test. */
   sampling(): SamplingStats;
   /** Starts the sweep time mean again. */
@@ -1674,6 +1683,11 @@ export function createLabelOverlay(
       // The placement carries every label it chose into the next frame, including the
       // ones the range fade left out, so a label that comes back does not start again.
       memory = rememberLabels(labels);
+    },
+    clear(): void {
+      for (const label of shown) elements.get(label.id)?.remove();
+      shown = [];
+      memory = NO_LABEL_MEMORY;
     },
     lastCounts(): { id: number; name: string; count: number }[] {
       const samples = last;

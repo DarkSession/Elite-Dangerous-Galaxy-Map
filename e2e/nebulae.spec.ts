@@ -550,6 +550,31 @@ test('the switch removes the sprites and gives them back', async ({ page }) => {
   expect(asked).toEqual([]);
 });
 
+test('the pass switch and the host switch stay apart', async ({ page }) => {
+  await openMap(page, BRIGHT_VIEW);
+
+  const before = await drawnNow(page);
+  await page.evaluate(() => {
+    window.__galaxyMap?.setPasses?.({ nebulae: false });
+  });
+  const off = await drawnNow(page);
+  // The pass switch is off and the host switch is on, and the two are apart.
+  const visible = await page.evaluate(() => window.galaxyMap?.areNebulaeVisible());
+  // The host switch goes off and on again. It writes the draw flag alone, so the pass
+  // switch holds the frame at 0.
+  await page.evaluate(() => {
+    window.galaxyMap?.setNebulaeVisible(false);
+    window.galaxyMap?.setNebulaeVisible(true);
+  });
+  const after = await drawnNow(page);
+  console.log('the two switches', { before, off, visible, after });
+
+  expect(before).toBeGreaterThan(0);
+  expect(off).toBe(0);
+  expect(visible).toBe(true);
+  expect(after).toBe(0);
+});
+
 test('a map with no nebula option downloads neither file', async ({ page }) => {
   await openMap(page, BRIGHT_VIEW);
   const asked = watchNebulaFiles(page);

@@ -13,10 +13,6 @@ export type WorkerName = 'point-cloud' | 'volume' | 'region-lines';
 
 /** Options for one scene-data load. */
 export interface SceneDataOptions {
-  /** The number of point cloud samples. */
-  readonly count?: number;
-  /** The generator seed. */
-  readonly seed?: number;
   /**
    * Stops the load. Every worker the load started is terminated when the signal fires,
    * and the promise rejects. `dispose` on the map handle fires it.
@@ -86,8 +82,8 @@ export async function loadSceneData(
   options: SceneDataOptions = {},
 ): Promise<SceneData> {
   const request: PointCloudRequest = {
-    count: options.count ?? DEFAULT_POINT_COUNT,
-    seed: options.seed ?? DEFAULT_SEED,
+    count: DEFAULT_POINT_COUNT,
+    seed: DEFAULT_SEED,
   };
 
   const create = options.createWorker ?? startWorker;

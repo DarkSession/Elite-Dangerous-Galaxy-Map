@@ -5,6 +5,7 @@
 // `?url&no-inline` and not `?url`: the library build inlines every asset as a data
 // URI by default, which would put the whole record set in the entry chunk. The suffix
 // keeps it a file the browser fetches when the map starts.
+import { smoothStep } from '../math';
 import recordsUrl from './nebulae.json?url&no-inline';
 
 /** The error a failed record load throws. */
@@ -103,12 +104,6 @@ export interface NebulaSet {
   readonly names: readonly (string | null)[];
   /** One record, for a caller that wants the fields by name. */
   record(index: number): NebulaRecord;
-}
-
-/** The smooth step between two edges, 0 at or below `low` and 1 at or above `high`. */
-function smoothStep(low: number, high: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return t * t * (3 - 2 * t);
 }
 
 /**

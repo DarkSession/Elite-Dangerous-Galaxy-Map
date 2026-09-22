@@ -19,7 +19,7 @@ import type {
 import type { MultifactionAnswer, MultifactionRequest } from './multifaction-message';
 
 /** Where the records come from. The map of the Canonn Research Group reads the same file. */
-export const MULTIFACTION_DUMP_URL = 'https://downloads.spansh.co.uk/factions.json.gz';
+const MULTIFACTION_DUMP_URL = 'https://downloads.spansh.co.uk/factions.json.gz';
 
 /**
  * The factions the entry names, in the order it names them. There is no faction picker:
@@ -50,12 +50,12 @@ const FACTION_COLOURS: readonly (readonly [
 ];
 
 /** The name of the category a faction gives a system it controls. */
-export function controlledCategory(faction: string): string {
+function controlledCategory(faction: string): string {
   return `${faction} Controlled`;
 }
 
 /** The name of the category a faction gives a system it is present in. */
-export function presentCategory(faction: string): string {
+function presentCategory(faction: string): string {
   return `${faction} Present`;
 }
 
@@ -81,7 +81,7 @@ export const MULTIFACTION_CATEGORIES: readonly CategoryInput[] =
   });
 
 /** One system of one faction, as the dump writes it. */
-export interface DumpSystem {
+interface DumpSystem {
   readonly systemName?: unknown;
   readonly systemId64?: unknown;
   readonly isControllingFaction?: unknown;
@@ -99,7 +99,7 @@ export interface DumpFaction {
 }
 
 /** What the line reader gives back. */
-export interface FactionRead {
+interface FactionRead {
   /** The factions it found, in the order it was asked for them. */
   readonly factions: readonly DumpFaction[];
   /** How many faction lines it read before it stopped. */

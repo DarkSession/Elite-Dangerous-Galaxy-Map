@@ -177,6 +177,13 @@ fetches nothing.
 The switch SHALL change what draws and SHALL NOT change the selection, the zoom band or
 the budget. With the nebulae off the pass SHALL report 0 drawn instances and 0 draw calls.
 
+**The two switches are not the same switch.** The renderer's `nebulae` pass switch is a
+probe the browser tests read, and the host switch is on the handle. The pass switch off
+and the host switch off SHALL draw the same frame, and neither SHALL move the other's
+reading: `areNebulaeVisible()` SHALL read what the host set, whatever the pass switch is,
+and a host switch write SHALL NOT turn a pass switch back on. The regions, the shapes, the
+grid and the icons hold this rule already, and the nebulae wrote one field for both.
+
 #### Scenario: The switch removes the sprites and gives them back
 
 - **WHEN** the browser test opens a map with the nebula source inside the zoom band,
@@ -194,6 +201,13 @@ the budget. With the nebulae off the pass SHALL report 0 drawn instances and 0 d
   `areNebulaeVisible` and `setNebulaeVisible(true)`
 - **THEN** the first two return `false`, the third throws nothing, and
   `areNebulaeVisible` still returns `false`
+
+#### Scenario: The pass switch and the host switch stay apart
+
+- **WHEN** the browser test opens a map with the nebula source inside the zoom band,
+  calls `debug.setPasses({ nebulae: false })`, reads `areNebulaeVisible()` and the drawn
+  count, then calls `setNebulaeVisible(true)` and reads the drawn count again
+- **THEN** the reading is true and both counts are 0
 
 ### Requirement: A record carries an asset and a rotation
 

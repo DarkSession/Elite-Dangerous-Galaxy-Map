@@ -215,6 +215,12 @@ export interface StarBoxelRecord {
   readonly seed: number;
 }
 
+/**
+ * How many boxel readings the field holds before it drops them all. It is the cap the
+ * suppression sweep holds its own masks at.
+ */
+const MAX_BOXEL_CACHE_ENTRIES = 8192;
+
 /** How many values one record holds. */
 export const RECORD_VALUES = 9;
 
@@ -246,8 +252,6 @@ export interface StarBoxelTable {
    * a real system suppresses that star. A record outside the base size class is zero.
    */
   readonly mask: Uint32Array;
-  /** The byte view of the mask, which the renderer uploads. */
-  readonly maskBytes: Uint8Array;
 }
 
 /** What the star field needs to build a table. */
@@ -270,8 +274,6 @@ export interface StarField {
   record(index: number): StarBoxelRecord;
   /** How many times the field has read the density of the drawn set. */
   readonly recomputeCount: number;
-  /** How many boxels the last build swept for suppressed stars. */
-  readonly sweptCount: number;
 }
 
 /** The identity of a drawn set: the base class and the low index of every block. */
@@ -316,13 +318,20 @@ export function createStarField(
   const bytes = new Uint8Array(buffer);
   const maskBuffer = new ArrayBuffer(DRAWN_BOXEL_COUNT * MASK_WORDS * 4);
   const mask = new Uint32Array(maskBuffer);
-  const maskBytes = new Uint8Array(maskBuffer);
   let samples: BoxelSample[] = [];
   let key = '';
+  // What the model said about each boxel the field has read: the density at its centre
+  // and the zone its centre sits in. A boxel that stays in the drawn set across a camera
+  // move costs no model read. The field holds one model for its life, so a model change
+  // builds a new field and a new cache with it.
+  //
+  // The key is a string, as `star-suppression` keys its own cache: a boxel index is
+  // three integers and not one, so no number key can hold it. The cap is the same 8,192
+  // entries, and the whole cache is dropped at it rather than swept.
+  const boxelCache = new Map<string, { density: number; zone: number }>();
   let drawnStars = 0;
   let suppressedStars = 0;
   let recomputeCount = 0;
-  let sweptCount = 0;
 
   const readSet = (
     camera: readonly [number, number, number],
@@ -336,6 +345,7 @@ export function createStarField(
     key = nextKey;
 
     const base = baseSizeClass(distance);
+    if (boxelCache.size > MAX_BOXEL_CACHE_ENTRIES) boxelCache.clear();
     suppression.begin(base);
     const boxels = listDrawnBoxels(camera, distance);
     const next: BoxelSample[] = [];
@@ -349,11 +359,20 @@ export function createStarField(
       const originY = origin[1];
       const originZ = origin[2];
       const half = edge / 2;
-      const density = model.detailedMassDensity(
-        originX + half,
-        originY + half,
-        originZ + half,
-      );
+      const boxelKey = `${boxel.sizeClass}:${boxel.index[0]},${boxel.index[1]},${boxel.index[2]}`;
+      let read = boxelCache.get(boxelKey);
+      if (read === undefined) {
+        read = {
+          density: model.detailedMassDensity(
+            originX + half,
+            originY + half,
+            originZ + half,
+          ),
+          zone: model.zone(originX + half, originZ + half),
+        };
+        boxelCache.set(boxelKey, read);
+      }
+      const density = read.density;
       const volume = edge * edge * edge;
       const placed = placedStarCount(systemsInVolume(density, volume));
       const suppressed = suppression.write(
@@ -380,7 +399,7 @@ export function createStarField(
         // The radius reads the placed count, so the field's grain does not shift
         // when a host loads data near the camera.
         radius: starRadius(edge, placed),
-        zone: model.zone(originX + half, originZ + half),
+        zone: read.zone,
         seed: boxelSeed(boxel.index, boxel.sizeClass),
       });
       stars += drawn;
@@ -389,7 +408,6 @@ export function createStarField(
     samples = next;
     drawnStars = stars;
     suppressedStars = removed;
-    sweptCount = suppression.sweptCount;
     recomputeCount += 1;
   };
 
@@ -423,7 +441,6 @@ export function createStarField(
         drawnStars,
         suppressedStars,
         mask,
-        maskBytes,
       };
     },
     record(index: number): StarBoxelRecord {
@@ -447,9 +464,6 @@ export function createStarField(
     },
     get recomputeCount(): number {
       return recomputeCount;
-    },
-    get sweptCount(): number {
-      return sweptCount;
     },
   };
 }
