@@ -446,6 +446,15 @@ describe('the publish workflow', () => {
     expect(prepare).toContain('run: pnpm test:package');
   });
 
+  test('reads the tarball name from the JSON report of the pack', () => {
+    // The `prepack` banner goes to standard output, so a plain `$(npm pack)` holds the
+    // banner lines and the file name together, and the file check fails.
+    const commands = withoutComments(prepare);
+    expect(commands).toContain('tarball=$(npm pack --json | node -p');
+    expect(commands).toContain('[0].filename');
+    expect(commands).not.toContain('tarball=$(npm pack)');
+  });
+
   test('reads the version back out of the tarball', () => {
     expect(prepare).toContain('tar -xOf "$tarball" package/package.json');
     expect(prepare).toMatch(/if \[ "\$packed_version" != "\$EXPECTED_VERSION" \]/);
