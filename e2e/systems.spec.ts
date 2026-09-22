@@ -2042,3 +2042,464 @@ test.describe('a set with no category', () => {
     expect(some).toBe(2);
   });
 });
+
+/**
+ * The region label overlay on a page that carries no rule of its own.
+ *
+ * The library writes the whole look of a region label on the element, so a page needs
+ * no rule for the labels to draw where the placement put them. `apps/demo/index.html`
+ * carried the only such rule in the repository and no longer does, so these readings
+ * run on a page with none, as every sample page and every host page does.
+ */
+test.describe('the region label look', () => {
+  /** The 48 CSS pixel square at the top left corner, which the placement keeps clear. */
+  const CORNER = 48;
+
+  /** One label's computed place and box, in CSS pixels. */
+  interface LabelPlace {
+    readonly position: string;
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  }
+
+  /** Asserts what every reading of a placed set of labels must hold. */
+  function expectPlaced(
+    places: readonly LabelPlace[],
+    viewport: { readonly width: number; readonly height: number },
+  ): void {
+    expect(places.length).toBeGreaterThan(0);
+    const corners = new Set<string>();
+    for (const place of places) {
+      expect(place.position).toBe('absolute');
+      // Wholly inside the corner square is the stack this change removes. A label the
+      // placement chose to draw there passes, because part of its box lies outside.
+      const inCorner =
+        place.left >= 0 &&
+        place.top >= 0 &&
+        place.right <= CORNER &&
+        place.bottom <= CORNER;
+      expect(
+        inCorner,
+        `a label lies in the top left corner: ${JSON.stringify(place)}`,
+      ).toBe(false);
+      expect(place.left).toBeGreaterThanOrEqual(0);
+      expect(place.top).toBeGreaterThanOrEqual(0);
+      expect(place.right).toBeLessThanOrEqual(viewport.width);
+      expect(place.bottom).toBeLessThanOrEqual(viewport.height);
+      corners.add(`${place.left},${place.top}`);
+    }
+    // A stack in normal flow gives every label the same left and a top that follows the
+    // one before, so two labels of the same height share a point only in the stack.
+    expect(corners.size).toBe(places.length);
+  }
+
+  test('the library writes the look and the place with no page rule', async ({
+    page,
+  }) => {
+    await openMap(page);
+    const reading = await page.evaluate(async () => {
+      // The page's own map goes first, so the two do not share the canvas or the loop.
+      window.galaxyMap?.dispose();
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      wrap.appendChild(canvas);
+      document.body.appendChild(wrap);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas);
+      await map.ready;
+      // The region labels fade out above 20,000 light years, so the reading needs a
+      // view inside that band.
+      map.setView({ distance: 15000 });
+      map.debug.drawNow();
+
+      const labels = [...wrap.querySelectorAll('.region-label')] as HTMLElement[];
+      const first = labels[0];
+      const style = first === undefined ? null : getComputedStyle(first);
+      return {
+        look:
+          style === null
+            ? null
+            : {
+                position: style.position,
+                pointerEvents: style.pointerEvents,
+                whiteSpace: style.whiteSpace,
+                boxSizing: style.boxSizing,
+                padding: style.padding,
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                fontFamily: style.fontFamily,
+                letterSpacing: style.letterSpacing,
+                textTransform: style.textTransform,
+                color: style.color,
+                zIndex: style.zIndex,
+                textShadow: style.textShadow,
+                strokeWidth: style.webkitTextStrokeWidth,
+              },
+        places: labels.map((element) => {
+          const box = element.getBoundingClientRect();
+          return {
+            position: getComputedStyle(element).position,
+            left: box.left,
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+          };
+        }),
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      };
+    });
+    console.log('the region label look', reading.look);
+    console.log('the region label places', reading.places);
+
+    const look = reading.look;
+    if (look === null) throw new Error('the page drew no region label');
+    expect(look.position).toBe('absolute');
+    expect(look.pointerEvents).toBe('none');
+    expect(look.whiteSpace).toBe('nowrap');
+    expect(look.boxSizing).toBe('border-box');
+    expect(look.padding).toBe('2px 6px');
+    expect(look.fontSize).toBe('13px');
+    expect(look.lineHeight).toBe('16px');
+    expect(look.fontFamily).toBe('system-ui, sans-serif');
+    // The computed value of `0.08em` at 13 pixels, which the browser resolves to pixels.
+    expect(Number.parseFloat(look.letterSpacing)).toBeCloseTo(1.04, 2);
+    expect(look.textTransform).toBe('uppercase');
+    expect(look.color).toBe('rgb(207, 228, 255)');
+    expect(look.zIndex).toBe('1');
+    // The outline is the blurred shadow the demo page drew, and no stroke. Chromium
+    // serialises each shadow with the colour first and the colour as `rgb(...)`.
+    expect(look.textShadow).toBe('rgb(0, 0, 0) 0px 0px 6px, rgb(0, 0, 0) 0px 0px 2px');
+    expect(look.strokeWidth).toBe('0px');
+
+    expectPlaced(reading.places, reading.viewport);
+  });
+
+  test('a page rule still reaches a property the library leaves alone', async ({
+    page,
+  }) => {
+    await openMap(page);
+    const reading = await page.evaluate(async () => {
+      window.galaxyMap?.dispose();
+      // `font-style` is not one of the properties the library writes, so the rule wins.
+      const sheet = document.createElement('style');
+      sheet.textContent = '.region-label { font-style: italic; }';
+      document.head.appendChild(sheet);
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      wrap.appendChild(canvas);
+      document.body.appendChild(wrap);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas);
+      await map.ready;
+      map.setView({ distance: 15000 });
+      map.debug.drawNow();
+
+      const first = wrap.querySelector('.region-label');
+      if (first === null) return null;
+      const style = getComputedStyle(first);
+      return { fontStyle: style.fontStyle, position: style.position };
+    });
+    console.log('the page rule reading', reading);
+
+    if (reading === null) throw new Error('the page drew no region label');
+    expect(reading.fontStyle).toBe('italic');
+    expect(reading.position).toBe('absolute');
+  });
+});
+
+/**
+ * The label host the library makes when the options name none. It covers the canvas's
+ * box, and it takes that box again when the canvas moves or resizes.
+ */
+test.describe('the overlay host the library makes', () => {
+  /** A box in viewport coordinates, in CSS pixels. */
+  interface Rect {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  }
+
+  /** What one reading of the host and the canvas holds. */
+  interface HostReading {
+    readonly host: Rect;
+    readonly canvas: Rect;
+    readonly labels: readonly Rect[];
+  }
+
+  /**
+   * Asserts two boxes are the same, to half a CSS pixel. The fault it guards against is
+   * tens of pixels.
+   *
+   * The two sides are not the same quantity. The host's width comes from
+   * `renderer.viewport()`, which is the whole number `canvas.clientWidth`, while the
+   * wanted width is a client rect and can carry a fraction. A canvas whose laid-out
+   * width carries one therefore differs by up to half a pixel, and the reading allows
+   * it. `toBeCloseTo(value, 0)` is that half pixel; a digit of 1 would allow 0.05.
+   */
+  function expectSameBox(read: Rect, wanted: Rect): void {
+    expect(read.left).toBeCloseTo(wanted.left, 0);
+    expect(read.top).toBeCloseTo(wanted.top, 0);
+    expect(read.width).toBeCloseTo(wanted.width, 0);
+    expect(read.height).toBeCloseTo(wanted.height, 0);
+  }
+
+  /**
+   * Builds a map over a canvas of its own, with no `labelHost`, and keeps the handle on
+   * the window so a later step can draw another frame. `layout` names the style of the
+   * wrapper and of the canvas, so each test writes the page it is about.
+   */
+  async function buildOwnHost(
+    page: Page,
+    layout: { wrap: string; canvas: string; plainBody?: boolean },
+  ): Promise<void> {
+    await page.evaluate(async (build) => {
+      // The page's own map goes first, so the two do not share the canvas or the loop.
+      window.galaxyMap?.dispose();
+      if (build.plainBody === true) {
+        // A plain page: no element of the demo page is left, and the body carries the
+        // browser's default margin, which the demo page's own rule sets to 0.
+        document.body.replaceChildren();
+        document.body.style.margin = '8px';
+      }
+      const parent =
+        build.wrap === ''
+          ? document.body
+          : document.body.appendChild(document.createElement('div'));
+      if (parent !== document.body) parent.style.cssText = build.wrap;
+      const canvas = document.createElement('canvas');
+      // The demo page's own canvas is still in the document, so the reading below
+      // names this one by its id rather than taking the first canvas of the page.
+      canvas.id = 'own-canvas';
+      canvas.style.cssText = build.canvas;
+      parent.appendChild(canvas);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas);
+      window.__hostMap = map;
+      await map.ready;
+    }, layout);
+  }
+
+  /** Draws one frame and reads the host's box, the canvas's box and every label box. */
+  async function readHost(page: Page, distance?: number): Promise<HostReading> {
+    return page.evaluate((band) => {
+      const map = window.__hostMap;
+      if (map === undefined) throw new Error('the test built no map');
+      if (band !== undefined) map.setView({ distance: band });
+      map.debug.drawNow();
+      const canvas = document.getElementById('own-canvas');
+      if (canvas === null) throw new Error('the page holds no canvas of the test');
+      // The host is the element the library added beside the canvas, so it is the one
+      // sibling that is not the canvas.
+      const host = [...(canvas.parentElement?.children ?? [])].find(
+        (child) => child !== canvas,
+      );
+      if (host === undefined) throw new Error('the map made no host');
+      const box = (element: Element): Rect => {
+        const rect = element.getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      };
+      return {
+        host: box(host),
+        canvas: box(canvas),
+        labels: [...host.querySelectorAll('.region-label')].map(box),
+      };
+    }, distance);
+  }
+
+  test('the host follows a resize and holds every label', async ({ page }) => {
+    await openMap(page);
+    await buildOwnHost(page, {
+      wrap: 'position: absolute; inset: 0;',
+      canvas: 'display: block; width: 100%; height: 100%;',
+    });
+    const before = await readHost(page, 15000);
+    console.log('the host before the resize', before.host);
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const after = await readHost(page, 15000);
+    console.log('the host after the resize', after.host, 'the canvas', after.canvas);
+
+    expect(after.canvas.width).toBeGreaterThan(before.canvas.width);
+    expectSameBox(after.host, after.canvas);
+    expect(after.labels.length).toBeGreaterThan(0);
+    for (const label of after.labels) {
+      expect(label.left).toBeGreaterThanOrEqual(after.host.left - 0.5);
+      expect(label.top).toBeGreaterThanOrEqual(after.host.top - 0.5);
+      expect(label.left + label.width).toBeLessThanOrEqual(
+        after.host.left + after.host.width + 0.5,
+      );
+      expect(label.top + label.height).toBeLessThanOrEqual(
+        after.host.top + after.host.height + 0.5,
+      );
+    }
+  });
+
+  test('the host covers a canvas a positioned parent offsets', async ({ page }) => {
+    await openMap(page);
+    await buildOwnHost(page, {
+      wrap: 'position: absolute; inset: 0;',
+      canvas:
+        'display: block; position: absolute; left: 40px; top: 24px;' +
+        ' width: 640px; height: 480px;',
+    });
+    const reading = await readHost(page, 15000);
+    console.log('the offset canvas', reading.canvas, 'the host', reading.host);
+
+    expect(reading.canvas.left).toBeCloseTo(40, 1);
+    expect(reading.canvas.top).toBeCloseTo(24, 1);
+    expectSameBox(reading.host, reading.canvas);
+  });
+
+  test('the host covers a canvas with no positioned ancestor', async ({ page }) => {
+    await openMap(page);
+    // The plainest page a host can write. An offset and the host's `left` are defined
+    // against different frames, and this is not the page that separates them: Blink
+    // answers `offsetLeft` from the document origin under a static `body`, so both
+    // land on 8. The test after this one is the one that parts them.
+    await buildOwnHost(page, {
+      wrap: '',
+      canvas: 'display: block; width: 640px; height: 480px;',
+      plainBody: true,
+    });
+    const reading = await readHost(page, 15000);
+    console.log('the plain page canvas', reading.canvas, 'the host', reading.host);
+
+    expect(reading.canvas.left).toBeCloseTo(8, 1);
+    expect(reading.canvas.top).toBeCloseTo(8, 1);
+    expectSameBox(reading.host, reading.canvas);
+  });
+
+  test('the host covers a canvas in a table cell', async ({ page }) => {
+    await openMap(page);
+    // This is the reading that separates the rect difference from `canvas.offsetLeft`.
+    // A static `td` is an offsetParent but it is not a containing block for an
+    // absolutely positioned element, so the canvas reads an offset of 0 inside the
+    // cell while the host's `left` resolves against the initial containing block. An
+    // `offsetLeft` implementation puts the host at the table's left edge, and the
+    // canvas sits at the cell's.
+    await page.evaluate(async () => {
+      // The page's own map goes first, so the two do not share the canvas or the loop.
+      window.galaxyMap?.dispose();
+      document.body.replaceChildren();
+
+      const table = document.createElement('table');
+      table.style.cssText =
+        'margin: 24px 0 0 40px; border-spacing: 0; border-collapse: collapse;';
+      const cell = document.createElement('td');
+      cell.style.cssText = 'padding: 0;';
+      const row = document.createElement('tr');
+      const body = document.createElement('tbody');
+      row.appendChild(cell);
+      body.appendChild(row);
+      table.appendChild(body);
+      document.body.appendChild(table);
+
+      const canvas = document.createElement('canvas');
+      canvas.id = 'own-canvas';
+      canvas.style.cssText = 'display: block; width: 640px; height: 480px;';
+      cell.appendChild(canvas);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas);
+      window.__hostMap = map;
+      await map.ready;
+    });
+    const reading = await readHost(page, 15000);
+    console.log('the table cell canvas', reading.canvas, 'the host', reading.host);
+
+    expect(reading.canvas.left).toBeCloseTo(40, 1);
+    expect(reading.canvas.top).toBeCloseTo(24, 1);
+    expectSameBox(reading.host, reading.canvas);
+  });
+
+  test('a canvas that starts at zero gets a working host', async ({ page }) => {
+    await openMap(page);
+    await buildOwnHost(page, {
+      wrap: 'position: absolute; inset: 0; display: none;',
+      canvas: 'display: block; width: 100%; height: 100%;',
+    });
+    const shown = await page.evaluate(() => {
+      const canvas = document.getElementById('own-canvas');
+      const wrap = canvas?.parentElement;
+      if (canvas === null || wrap === null || wrap === undefined) {
+        throw new Error('the page holds no canvas of the test');
+      }
+      wrap.style.display = 'block';
+      return canvas.clientWidth;
+    });
+    console.log('the canvas is now', shown, 'CSS pixels across');
+    expect(shown).toBeGreaterThan(0);
+
+    const reading = await readHost(page, 15000);
+    console.log('the host after the canvas got a box', reading.host);
+    expectSameBox(reading.host, reading.canvas);
+    expect(reading.labels.length).toBeGreaterThan(0);
+  });
+
+  test('a host the options name keeps its own box', async ({ page }) => {
+    await openMap(page);
+    await page.evaluate(async () => {
+      window.galaxyMap?.dispose();
+      const sheet = document.createElement('style');
+      sheet.textContent =
+        '#own-host { position: absolute; inset: 0; overflow: hidden; }';
+      document.head.appendChild(sheet);
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position: absolute; inset: 0;';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      const host = document.createElement('div');
+      host.id = 'own-host';
+      wrap.append(canvas, host);
+      document.body.appendChild(wrap);
+
+      const factory = window.galaxyMapFactory;
+      if (factory === undefined) throw new Error('The page has no map factory.');
+      const map = factory(canvas, { labelHost: host });
+      window.__hostMap = map;
+      await map.ready;
+    });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const written = await page.evaluate(() => {
+      window.__hostMap?.setView({ distance: 15000 });
+      window.__hostMap?.debug.drawNow();
+      const host = document.getElementById('own-host');
+      if (host === null) throw new Error('the page holds no host');
+      return {
+        left: host.style.left,
+        top: host.style.top,
+        width: host.style.width,
+        height: host.style.height,
+        labels: host.querySelectorAll('.region-label').length,
+      };
+    });
+    console.log('the inline style of the host the options named', written);
+
+    expect(written.labels).toBeGreaterThan(0);
+    expect(written.left).toBe('');
+    expect(written.top).toBe('');
+    expect(written.width).toBe('');
+    expect(written.height).toBe('');
+  });
+});

@@ -23,6 +23,9 @@ const SAMPLE_IDS = readdirSync(examples)
 /** The side of the block at the middle of the canvas the reading takes, in pixels. */
 const BLOCK = 40;
 
+/** The 48 CSS pixel square at the top left corner, which the placement keeps clear. */
+const CORNER = 48;
+
 /**
  * The sum of the three channels above which a pixel is drawn and not the background. The
  * page opens on a black field, so any light the renderer put down passes it.
@@ -67,6 +70,60 @@ async function waitForDrawnCentre(page: Page): Promise<void> {
 test.describe('the sample pages', () => {
   test('are the nine of the examples directory', () => {
     expect(SAMPLE_IDS.length).toBe(9);
+  });
+
+  // A sample page carries the shared stylesheet and no rule of its own for a library
+  // element, so it reads whether the library places its own overlay elements without
+  // help from the page. `spheres-and-lines` opens at 900 light years with a pitch of
+  // -25 degrees, so the frame holds the horizon and the sweep places a label on load.
+  // `the-camera` also reaches the band with no camera move of its own, but its last
+  // line is a `flyTo`, so a reading of that page lands at an unpinned point of the
+  // flight.
+  test('spheres-and-lines places its region labels', async ({ page }) => {
+    await page.goto('./examples/spheres-and-lines/');
+    await waitForDrawnCentre(page);
+    // The labels arrive with the sweep, which runs after the first drawn frame.
+    await page.waitForFunction(
+      () => document.querySelectorAll('.region-label').length > 0,
+      undefined,
+      { timeout: 30000 },
+    );
+
+    const reading = await page.evaluate(() => ({
+      places: [...document.querySelectorAll('.region-label')].map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          position: getComputedStyle(element).position,
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+        };
+      }),
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    }));
+    console.log('the sample page labels', reading.places);
+
+    expect(reading.places.length).toBeGreaterThan(0);
+    const corners = new Set<string>();
+    for (const place of reading.places) {
+      expect(place.position).toBe('absolute');
+      // Wholly inside the corner square is the stack in normal flow. A label the
+      // placement chose to draw there passes, because part of its box lies outside.
+      const inCorner =
+        place.left >= 0 &&
+        place.top >= 0 &&
+        place.right <= CORNER &&
+        place.bottom <= CORNER;
+      expect(
+        inCorner,
+        `a label lies in the top left corner: ${JSON.stringify(place)}`,
+      ).toBe(false);
+      expect(place.right).toBeLessThanOrEqual(reading.viewport.width);
+      expect(place.bottom).toBeLessThanOrEqual(reading.viewport.height);
+      corners.add(`${place.left},${place.top}`);
+    }
+    expect(corners.size).toBe(reading.places.length);
   });
 
   for (const id of SAMPLE_IDS) {

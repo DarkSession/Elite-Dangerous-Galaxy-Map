@@ -852,8 +852,80 @@ function nextFrame(): Promise<void> {
   });
 }
 
-/** Makes the label host the library owns, over the canvas, in the canvas's parent. */
-function makeLabelHost(canvas: HTMLCanvasElement): HTMLElement | null {
+/** The box the library last wrote on the label host it owns, in CSS pixels. */
+interface HostBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The box a host that is not yet placed stands at. */
+const NO_HOST_BOX: HostBox = { left: 0, top: 0, width: 0, height: 0 };
+
+/**
+ * Writes the canvas's box on the label host the library owns, and gives back what the
+ * host now carries. `held` is the box the write before left.
+ *
+ * The place comes from the two client rects and not from `canvas.offsetLeft`. The two
+ * are defined against different frames: an offset is measured from `offsetParent`,
+ * while the host's `left` resolves against its containing block. The frames agree on
+ * every ordinary page, including a canvas in a static `body`, where Blink answers the
+ * offset from the document origin. They part on a static `td`, `th` or `table`
+ * ancestor, which is an offsetParent but is not a containing block for an absolutely
+ * positioned element: an offset implementation then leaves the host at the table's
+ * left edge while the canvas sits in the cell.
+ *
+ * The rect difference asks no such question, so it needs no rule about the page's
+ * layout. That is why it is the pair to use. It reads where the host landed and moves
+ * it by what is left over, added to the value written last, so it is self-correcting
+ * whatever the containing block turns out to be and it needs no computed-style read.
+ *
+ * The four numbers are compared first, so a steady frame writes nothing.
+ */
+function placeLabelHost(
+  host: HTMLElement,
+  canvas: HTMLCanvasElement,
+  held: HostBox,
+  width: number,
+  height: number,
+): HostBox {
+  const canvasRect = canvas.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
+  // ponytail: the rect difference is in screen pixels and `left` is in local CSS
+  // pixels, so an ancestor `transform: scale(s)` scales the correction. The error after
+  // a frame is (1 - s) times the error before, so it converges for 0 < s < 2, holds at
+  // s = 2, and grows outside that range, which a negative scale such as scale(-1) also
+  // gives. No page in the tree scales an ancestor of the canvas; divide the accumulated
+  // scale out if one ever does.
+  const left = held.left + canvasRect.left - hostRect.left;
+  const top = held.top + canvasRect.top - hostRect.top;
+  if (
+    left === held.left &&
+    top === held.top &&
+    width === held.width &&
+    height === held.height
+  ) {
+    return held;
+  }
+  host.style.left = `${left}px`;
+  host.style.top = `${top}px`;
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  return { left, top, width, height };
+}
+
+/**
+ * Makes the label host the library owns, over the canvas, in the canvas's parent, and
+ * gives back the element with the box written on it.
+ *
+ * The place goes on here as well as the size, so the host covers the canvas before the
+ * first frame rather than starting at the parent's origin and correcting itself. The
+ * element is appended first, because both client rects need it in the tree.
+ */
+function makeLabelHost(
+  canvas: HTMLCanvasElement,
+): { host: HTMLElement; box: HostBox } | null {
   const parent = canvas.parentElement;
   if (parent === null) return null;
   const host = canvas.ownerDocument.createElement('div');
@@ -865,7 +937,14 @@ function makeLabelHost(canvas: HTMLCanvasElement): HTMLElement | null {
   host.style.overflow = 'hidden';
   host.style.pointerEvents = 'none';
   parent.appendChild(host);
-  return host;
+  const written: HostBox = {
+    left: 0,
+    top: 0,
+    width: canvas.clientWidth,
+    height: canvas.clientHeight,
+  };
+  const box = placeLabelHost(host, canvas, written, written.width, written.height);
+  return { host, box };
 }
 
 /** Puts the loading image in the middle of the canvas's box. */
@@ -1161,6 +1240,9 @@ export function createGalaxyMap(
   const selectionWork: FrameAccumulator = createFrameAccumulator();
   const frameIntervals: FrameAccumulator = createFrameAccumulator();
   let ownedHost: HTMLElement | null = null;
+  // The box the frame before wrote on the owned host. `placeLabelHost` adds the rect
+  // difference to it, so it starts at what `makeLabelHost` wrote and not at 0.
+  let hostBox: HostBox = NO_HOST_BOX;
   let controls: Controls | null = null;
   // What the canvas carried as its own `touch-action` before the map wrote one. `dispose`
   // puts it back, so a host gets the canvas it gave.
@@ -1590,6 +1672,16 @@ export function createGalaxyMap(
     renderer.setSelectedSystem(selectedIndex);
     renderer.render(view);
     const size = renderer.viewport();
+    // The owned host takes the canvas's box again, because the canvas may have moved or
+    // grown since the frame before. This goes before the overlays update: a write after
+    // them places the labels of this frame against the box of the frame before, so the
+    // frame that follows a resize still clips against the old box. `onResize` needs no
+    // write of its own, and a canvas that measured 0 at the start gets a working host
+    // on the first frame after it takes a box. A host the options name belongs to the
+    // page, so `ownedHost` is the flag.
+    if (ownedHost !== null) {
+      hostBox = placeLabelHost(ownedHost, canvas, hostBox, size.width, size.height);
+    }
     // The hover pick and the overlay marks are one reading, because the two run together
     // around the draw call and the budget covers them together.
     const started = performance.now();
@@ -1702,8 +1794,16 @@ export function createGalaxyMap(
     renderer.setShapes(shapes);
     renderer.setShapeDraw(shapesVisible);
 
-    const host = options.labelHost ?? makeLabelHost(canvas);
-    if (host !== null && host !== options.labelHost) ownedHost = host;
+    const given = options.labelHost ?? null;
+    const made = given === null ? makeLabelHost(canvas) : null;
+    const host = given ?? made?.host ?? null;
+    if (made !== null) {
+      ownedHost = made.host;
+      // The held box is what `makeLabelHost` wrote. The frame adds the rect difference
+      // to it, so a held 0 against a host already placed would drop that place for one
+      // frame.
+      hostBox = made.box;
+    }
     labels = host === null ? null : createLabelOverlay(host);
     markers = host === null ? null : createMarkerOverlay(host);
     gridLabels = host === null ? null : createGridLabelOverlay(host);

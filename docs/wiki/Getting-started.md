@@ -46,7 +46,13 @@ rejects when the browser gives no WebGL2 context or the card reports a software 
 
 `createGalaxyMap(canvas, options)` takes the options in one object. With no options the
 map draws the galaxy, the region overlay and the cursor marker, and it makes its own
-label element inside the canvas's parent.
+label element inside the canvas's parent. That element covers the canvas, and it takes
+the canvas's box again when the canvas moves or resizes.
+
+The library writes the whole look of a region label on the element itself: the position,
+the box, the font, the colour and the outline. Your page needs no style rule for the
+labels to draw in the right place. The class name is `region-label`, so a rule of your
+own still reaches a property the library leaves alone.
 
 [GalaxyMapOptions](GalaxyMapOptions) is the whole list, and
 [GalaxyMap](GalaxyMap) is the handle you get back. The examples cover the options a host

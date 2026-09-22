@@ -1500,6 +1500,56 @@ export interface LabelOverlay {
 }
 
 /**
+ * The whole look of a region label, which the overlay writes on the element itself.
+ *
+ * Every other overlay element of the library styles itself: the system name label, the
+ * hover ring, the selection pin, the grid coordinate label and the cursor marker. The
+ * region label read its look from a rule the page carried, so on a page with no such
+ * rule every label laid out in normal flow from the top left corner of the host, and
+ * the stack blinked as the chosen set changed from frame to frame.
+ *
+ * `position` is the property that fault turns on. The placement writes `left` and `top`
+ * in CSS pixels each frame, and both are inert on a static box.
+ *
+ * The outline is the blurred text shadow the demo page drew, and not a drawn stroke.
+ * The owner chose the shadow over a stroke for the look. It has a cost: Firefox
+ * rasterises a blurred text shadow on the CPU, and the name overlay's two blurred
+ * shadows cost 4.2 ms of a frame that cost 12.1 ms while the camera moves.
+ * `browser-suite` holds the reading. This overlay draws at most `MAX_LABELS` shadows
+ * against the name overlay's 64, so the cost here is smaller, but it is not nothing.
+ *
+ * The three font properties are longhands. The `font` shorthand also resets
+ * `font-style`, `font-variant`, `font-weight`, `font-stretch` and `font-size-adjust` in
+ * the declaration that carries it, and an inline value beats a page rule, so the
+ * shorthand would take five more properties from the page without naming them. The
+ * family is named and not inherited, because `measureById` keeps the box it reads for
+ * the life of the overlay: an inherited family lets a page move every label by setting
+ * a font for its own text.
+ *
+ * `z-index` puts the label over every plane element. `src/app/plane-overlay.ts` states
+ * that rule.
+ *
+ * The class name stays `region-label`. An inline value wins over a page rule, so a rule
+ * cannot reach the properties here, but it still reaches every property they leave
+ * alone.
+ */
+export const REGION_LABEL_STYLE: Readonly<Record<string, string>> = {
+  position: 'absolute',
+  'pointer-events': 'none',
+  'white-space': 'nowrap',
+  'box-sizing': 'border-box',
+  padding: '2px 6px',
+  'font-size': '13px',
+  'line-height': '16px',
+  'font-family': 'system-ui, sans-serif',
+  'letter-spacing': '0.08em',
+  'text-transform': 'uppercase',
+  color: '#cfe4ff',
+  'text-shadow': '0 0 6px #000, 0 0 2px #000',
+  'z-index': '1',
+};
+
+/**
  * Builds the label overlay in an element. The builder measures every region name once,
  * with the element's own style, and then keeps one element per region to reuse.
  */
@@ -1512,10 +1562,11 @@ export function createLabelOverlay(
   for (const region of regions) {
     const element = host.ownerDocument.createElement('div');
     element.className = 'region-label';
-    // Over every plane element. `src/app/plane-overlay.ts` states the rule. The host
-    // styles `.region-label` and the library writes the place, so the level is written
-    // here beside the place and not left to a rule the host may not carry.
-    element.style.zIndex = '1';
+    // The library writes the whole look, so a page needs no rule of its own.
+    // `REGION_LABEL_STYLE` states what each property is for.
+    for (const [property, value] of Object.entries(REGION_LABEL_STYLE)) {
+      element.style.setProperty(property, value);
+    }
     element.dataset['regionId'] = String(region.id);
     element.textContent = region.name;
     elements.set(region.id, element);
