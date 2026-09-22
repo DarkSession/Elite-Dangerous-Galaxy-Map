@@ -211,8 +211,11 @@ jobs:
             --ignore-scripts >/dev/null
 
           # `--ignore-scripts` is off here on purpose: `prepack` copies the licence into
-          # the package, and the tarball must carry it.
-          tarball=$(npm pack)
+          # the package, and the tarball must carry it. npm writes the banner of each
+          # script to standard output, so the plain `npm pack` output holds more than
+          # the file name. With `--json`, the banner goes to standard error, and the
+          # file name is read from the report.
+          tarball=$(npm pack --json | node -p 'JSON.parse(require("fs").readFileSync(0))[0].filename')
           if [ ! -f "$tarball" ]; then
             echo "::error::npm pack wrote no $tarball"
             exit 1
