@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { channels, openMap } from './helpers';
+import { channels, heldKeyFrames, openMap, waitForFirstReading } from './helpers';
 
 test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 
@@ -2665,7 +2665,7 @@ test.describe('under the plane', () => {
         // 300 frames and not 60: the sweep costs about 0.2 milliseconds and the clock
         // steps by 0.1, so 60 frames leaves the 20 per cent bound on the noise floor.
         // The check runs on every animation frame, and it moves the pointer as a user's
-        // hand does, because a map nobody touches draws at the idle rate.
+        // hand does, because a map nobody touches draws no frame.
         () => {
           document.querySelector('canvas')?.dispatchEvent(
             new PointerEvent('pointermove', {
@@ -2675,6 +2675,9 @@ test.describe('under the plane', () => {
               pointerType: 'mouse',
             }),
           );
+          // A pointer move renders no canvas, so the wake is what holds the loop
+          // drawing while the sweep fills its 300 frames.
+          window.__galaxyMap?.wake?.();
           return (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300;
         },
         undefined,
@@ -2692,5 +2695,87 @@ test.describe('under the plane', () => {
     const larger = Math.max(below, above);
     const smaller = Math.min(below, above);
     expect((larger - smaller) / larger).toBeLessThan(0.2);
+  });
+});
+
+/**
+ * Draws `count` animation frames and gives back how many the map drew. Each turn wakes
+ * the loop, because a map nobody touches draws no frame. The read-back lands at the
+ * start of a later frame, which a `drawNow` loop with no gap between frames does not
+ * give.
+ */
+async function animationFrames(page: Page, count: number): Promise<number> {
+  return page.evaluate(async (want) => {
+    window.__galaxyMap?.resetFrameStats?.();
+    for (let frame = 0; frame < want; frame += 1) {
+      window.__galaxyMap?.wake?.();
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    }
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  }, count);
+}
+
+test.describe('the read-back of the reading', () => {
+  // The scenario "No label, no read-back". The plane is edge-on, so the placement keeps
+  // no label and no label needs the reading. The frame still builds it.
+  test('takes no read-back while no label is placed', async ({ page }) => {
+    test.setTimeout(120000);
+    await openMap(page, '#c=0,0,0&d=4000&p=0&y=0');
+    // The plane is edge-on at a pitch of 0, and the view goes in again so the scenario
+    // reads that pitch and no other.
+    await setView(page, [0, 0, 0], 4000, 0, 0);
+    await setGrid(page, true);
+    await waitForFirstReading(page);
+
+    const placed = await page.evaluate(
+      () => window.galaxyMap?.debug.gridLabelReadings().length ?? -1,
+    );
+    const drawn = await heldKeyFrames(page, 120);
+    const stats = await page.evaluate(
+      () =>
+        window.galaxyMap?.debug.readbackStats() ?? {
+          frames: -1,
+          meanMs: -1,
+          worstMs: -1,
+        },
+    );
+    const size = await page.evaluate(
+      () => window.galaxyMap?.debug.backgroundSize() ?? [0, 0],
+    );
+    console.log('the read-back with no label placed', {
+      placed,
+      drawn,
+      size,
+      ...stats,
+    });
+
+    expect(placed).toBe(0);
+    expect(drawn).toBeGreaterThanOrEqual(120);
+    expect(stats.frames).toBe(0);
+    // The reading is built and never read back.
+    expect(size).toEqual([120, 68]);
+  });
+
+  // The scenario "The label reads a reading that landed".
+  test('lands a reading the labels read', async ({ page }) => {
+    await openMap(page, '#c=0,0,0&d=4000&p=5&y=0');
+    await setGrid(page, true);
+    await animationFrames(page, 3);
+
+    const held = await page.evaluate(
+      () => window.galaxyMap?.debug.backgroundFrame() ?? null,
+    );
+    const reading = await page.evaluate(() => {
+      const one = window.galaxyMap?.debug.backgroundReading() ?? null;
+      return one === null ? null : { width: one.width, height: one.height };
+    });
+    console.log('the reading after three animation frames', { held, reading });
+
+    expect(held).toEqual([120, 68]);
+    expect(reading).toEqual({ width: 120, height: 68 });
   });
 });

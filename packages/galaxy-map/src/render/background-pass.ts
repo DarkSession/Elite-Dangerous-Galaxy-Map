@@ -63,10 +63,16 @@ export interface ReadbackHooks {
 /** The ping-pong read-back of the reading, one frame late. */
 export interface ReadbackCycle {
   /**
-   * Starts one copy and takes the copy of an earlier frame. It gives true when `into`
-   * now holds a reading. The slot it writes is never the slot it reads.
+   * Takes the copy an earlier frame started, when its fence has passed. It gives true
+   * when `into` now holds a reading. The frame calls it before its first draw command,
+   * because a take after the draw commands drains every command queued before it.
    */
-  frame(into: Uint8Array): boolean;
+  take(into: Uint8Array): boolean;
+  /**
+   * Starts one copy, in a slot that is never the slot the next take reads. The frame
+   * calls it after the reading is built, and only where a caller asks for a reading.
+   */
+  start(): void;
   /** Drops every fence the cycle holds. */
   dispose(): void;
 }
@@ -75,31 +81,29 @@ export interface ReadbackCycle {
 export const READBACK_SLOTS = 2;
 
 /**
- * The read-back state machine. The first call starts a copy and has nothing to give.
- * Each later call takes the copy of the frame before, when its fence has passed, and
- * starts the next one in the other slot.
+ * The read-back state machine. The first take has nothing to give, because no start ran
+ * before it. Each later take reads the copy an earlier start made, when its fence has
+ * passed, and each start writes the other slot.
  */
 export function createReadbackCycle(hooks: ReadbackHooks): ReadbackCycle {
   const fences: unknown[] = new Array<unknown>(READBACK_SLOTS).fill(null);
   let next = 0;
 
   return {
-    frame(into: Uint8Array): boolean {
-      // The slot the last frame wrote is the one this frame reads, so the copy of this
-      // frame never lands in the buffer this frame takes its bytes from.
+    take(into: Uint8Array): boolean {
+      // The slot the last start wrote is the one the take reads, so the copy a frame
+      // starts never lands in the buffer that same frame took its bytes from.
       const read = (next + READBACK_SLOTS - 1) % READBACK_SLOTS;
+      const fence = fences[read];
+      if (fence === null || !hooks.passed(fence)) return false;
+      hooks.take(read, into);
+      hooks.drop(fence);
+      fences[read] = null;
+      return true;
+    },
+    start(): void {
       const write = next;
       next = (next + 1) % READBACK_SLOTS;
-
-      let took = false;
-      const fence = fences[read];
-      if (fence !== null && hooks.passed(fence)) {
-        hooks.take(read, into);
-        hooks.drop(fence);
-        fences[read] = null;
-        took = true;
-      }
-
       const held = fences[write];
       if (held !== null) {
         // A fence that has not passed by the time its slot comes round again is
@@ -108,7 +112,6 @@ export function createReadbackCycle(hooks: ReadbackHooks): ReadbackCycle {
         fences[write] = null;
       }
       fences[write] = hooks.start(write) ?? null;
-      return took;
     },
     dispose(): void {
       for (let slot = 0; slot < READBACK_SLOTS; slot += 1) {
@@ -149,13 +152,37 @@ export function backgroundLuminance(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/** What the read-backs since the last reset cost. */
+export interface ReadbackStats {
+  /** How many read-backs landed. */
+  readonly frames: number;
+  /** Their mean time in milliseconds. */
+  readonly meanMs: number;
+  /** The worst of them, in milliseconds. */
+  readonly worstMs: number;
+}
+
 /** The background reading pass. */
 export interface BackgroundPass {
   /**
-   * Builds the reading from the scene target and starts its copy back to the
-   * processor. The source must be the full drawing buffer size.
+   * Builds the reading from the scene target. The source must be the full drawing
+   * buffer size. It neither takes nor starts a read-back: the frame owns both.
    */
   render(scene: WebGLTexture, width: number, height: number, exposure: number): void;
+  /**
+   * Takes the copy an earlier frame started, and gives true where one landed. The frame
+   * calls it before its first draw command.
+   */
+  take(): boolean;
+  /**
+   * Starts the copy of the reading the frame just built. The frame calls it after the
+   * chain, and only where the caller asks for a reading.
+   */
+  start(): void;
+  /** What the read-backs since the last reset cost. */
+  readbackStats(): ReadbackStats;
+  /** Starts the read-back mean again. */
+  resetReadbackStats(): void;
   /** The reading of the last `render` call. */
   readonly texture: WebGLTexture;
   /** The reading target's own size, or `[0, 0]` while it holds no storage. */
@@ -200,6 +227,11 @@ export function createBackgroundPass(
   let landed = false;
   let readingWidth = 0;
   let readingHeight = 0;
+  // What the takes since the last reset cost. The clock runs around the copy out of the
+  // pixel buffer alone, which is the call that drains the command queue.
+  let takeCount = 0;
+  let takeTotalMs = 0;
+  let takeWorstMs = 0;
 
   /** Matches every target and every pixel buffer to a drawing buffer size. */
   const resize = (width: number, height: number): void => {
@@ -270,7 +302,12 @@ export function createBackgroundPass(
       },
       take(slot: number, into: Uint8Array): void {
         gl.bindBuffer(gl.PIXEL_PACK_BUFFER, (buffers as WebGLBuffer[])[slot] ?? null);
+        const started = performance.now();
         gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, into);
+        const spent = performance.now() - started;
+        takeCount += 1;
+        takeTotalMs += spent;
+        if (spent > takeWorstMs) takeWorstMs = spent;
         gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
       },
       drop(fence: unknown): void {
@@ -306,8 +343,27 @@ export function createBackgroundPass(
       }
       reduce.halve(source, reading as RenderTarget, null);
 
-      if (cycle !== null && pixels !== null && cycle.frame(pixels)) landed = true;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    },
+    take(): boolean {
+      if (cycle === null || pixels === null || !cycle.take(pixels)) return false;
+      landed = true;
+      return true;
+    },
+    start(): void {
+      cycle?.start();
+    },
+    readbackStats(): ReadbackStats {
+      return {
+        frames: takeCount,
+        meanMs: takeCount === 0 ? 0 : takeTotalMs / takeCount,
+        worstMs: takeWorstMs,
+      };
+    },
+    resetReadbackStats(): void {
+      takeCount = 0;
+      takeTotalMs = 0;
+      takeWorstMs = 0;
     },
     get texture(): WebGLTexture {
       return (reading as RenderTarget).texture;

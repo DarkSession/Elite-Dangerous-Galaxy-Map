@@ -12,18 +12,11 @@ import {
   prepareSurface,
   sampleCorrection,
   surfaceDensity,
-  toPolar,
 } from './surface';
 import type { PreparedSurface } from './surface';
 import { halfMassHeight, prepareVertical, verticalProfile } from './vertical';
 import type { PreparedVertical } from './vertical';
-import type {
-  GalaxyModelDocument,
-  PlanePoint,
-  PolarPoint,
-  Range,
-  Vector3,
-} from './types';
+import type { GalaxyModelDocument, PlanePoint, Range, Vector3 } from './types';
 
 /** Everything the map reads from the galaxy model. */
 export interface GalaxyModel {
@@ -32,9 +25,6 @@ export interface GalaxyModel {
   readonly bounds: Range;
   readonly epsilon: number;
   readonly maxHeight: number;
-  readonly armCount: number;
-  /** Galactocentric radius and azimuth of a plane point. */
-  polar(x: number, z: number): PolarPoint;
   /** Galactocentric radius of a plane point, in light years. */
   radius(x: number, z: number): number;
   /** Surface density in map units, without the correction grid. */
@@ -155,8 +145,6 @@ export function createGalaxyModel(
     bounds: document.bounds,
     epsilon: document.epsilon,
     maxHeight: document.vertical.max_height_ly,
-    armCount: document.surface.arms.list.length,
-    polar: (x, z) => toPolar(surface, x, z),
     radius: (x, z) => Math.hypot(x - document.centre[0], z - document.centre[2]),
     surfaceDensity: (x, z) => surfaceDensity(surface, x, z),
     correctedSurfaceDensity: (x, z) => correctedSurfaceDensity(surface, x, z),

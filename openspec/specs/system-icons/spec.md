@@ -434,17 +434,23 @@ follows the size of the set:
 - **The sweep SHALL read the systems that carry an icon and not the whole set.** The set
   SHALL be able to name those systems, so the per-frame cost follows the number of records
   with icons and not the 50,000 the set can hold.
+- **The sweep SHALL read the set's tables and SHALL NOT build a record for a candidate.**
+  The position, the icon list and the category's limit SHALL come from the flat tables the
+  set holds, so a candidate costs no allocation and no lookup by identity. The sweep built
+  a record and a category object for each of 50,000 candidates, which was a third of its
+  time.
 
 #### Scenario: A set with no icon reads nothing
 
 - **WHEN** a map holds 50,000 systems, no record names an icon, the icon switch is on, the
   name switch is off, and there is no hover and no selection
-- **THEN** the pass places no stack and reads no system of the set, counted over a frame
+- **THEN** the pass places no stack and reads none of the set's icon tables, counted over
+  a frame
 
 #### Scenario: One icon turns the placement back on
 
 - **WHEN** one record of that same set is given an icon
-- **THEN** the pass's reads of the set rise above zero, and the stack draws
+- **THEN** the pass reads the set's icon tables, and the stack draws
 
 The second scenario is the control for the first. Without it, the first also passes on the
 day the pass stops sweeping at all.
@@ -484,6 +490,12 @@ partial cover.
   waits for the loads to settle, draws a frame and reads the placements and the console
 - **THEN** 64 of the systems carry an icon, one carries none, and the console holds one
   warning about the cap
+
+#### Scenario: The full sweep costs under 1.2 ms
+
+- **WHEN** the browser test adds 50,000 systems inside the frame, each carrying 4 icons,
+  draws 120 frames and reads the icon sweep time probe
+- **THEN** the mean is 1.2 ms or less at 1920x1080
 
 ### Requirement: The icon stack holds the Firefox paint budget
 

@@ -656,8 +656,6 @@ export interface Controls {
    * selection flight, so the flight never takes a frame the user is driving.
    */
   isMoving(): boolean;
-  /** True while the user drags or orbits. */
-  isInteracting(): boolean;
   /**
    * The distance in light years the zoom glide moves toward, and null when no glide
    * runs. A browser test reads it to wait for the camera to settle.
@@ -988,9 +986,6 @@ export function attachControls(
     isMoving(): boolean {
       return moving();
     },
-    isInteracting(): boolean {
-      return drag !== null || orbitPointer !== null || touch.pointers.length > 0;
-    },
     zoomTargetLy(): number | null {
       return target;
     },
@@ -998,6 +993,22 @@ export function attachControls(
       target = null;
     },
     dispose(): void {
+      // A map disposed in the middle of a drag gives the canvas back without a capture.
+      // The browser throws on an id the element does not hold, so each release is
+      // guarded: `hasPointerCapture` is missing on some test doubles of a canvas.
+      const held = [dragPointer, orbitPointer, ...touch.pointers.map((one) => one.id)];
+      for (const id of held) {
+        if (id === null) continue;
+        try {
+          canvas.releasePointerCapture(id);
+        } catch {
+          // The element holds no capture of that id, which is the state dispose wants.
+        }
+      }
+      drag = null;
+      dragPointer = null;
+      orbitPointer = null;
+      touch = NO_TOUCH;
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);

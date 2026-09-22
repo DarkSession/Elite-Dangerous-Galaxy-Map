@@ -44,6 +44,22 @@ describe('the entry point with no WebGL2 context', () => {
     expect(frames).not.toHaveBeenCalled();
   });
 
+  test('asks for no frame on a disposed map', async () => {
+    scope.window = { removeEventListener: () => undefined };
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    map.dispose();
+    frames.mockClear();
+
+    // Every setter wakes the loop, and a wake restarts a loop that stopped. `dispose`
+    // stops it for good, so the wake of a disposed map must request nothing.
+    map.setGridVisible(true);
+    map.setSystemNamesVisible(true);
+    map.debug.wake();
+
+    expect(frames).not.toHaveBeenCalled();
+  });
+
   test('keeps reading records with no context', async () => {
     const map = createGalaxyMap(refusingCanvas());
     await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
@@ -492,6 +508,59 @@ describe('the grid change notification', () => {
     map.setGridVisible(true);
     expect(moves).toEqual([true, false]);
     expect(map.isGridVisible()).toBe(true);
+  });
+});
+
+describe('the seven visibility switches', () => {
+  const scope = globalThis as unknown as {
+    window?: unknown;
+    requestAnimationFrame?: unknown;
+  };
+  let hadWindow = false;
+
+  beforeEach(() => {
+    hadWindow = 'window' in scope;
+    scope.window = {};
+    scope.requestAnimationFrame = vi.fn();
+  });
+
+  afterEach(() => {
+    if (!hadWindow) delete scope.window;
+    delete scope.requestAnimationFrame;
+  });
+
+  test('leave the state as it is on a value that is not a boolean', async () => {
+    const map = createGalaxyMap(refusingCanvas());
+    await expect(map.ready).rejects.toThrow(NO_WEBGL2_MESSAGE);
+    // Each switch is taken off its default first. Three setters read a non-boolean their
+    // own way before this rule, and a switch left at its default would hide two of them.
+    map.setRegionsVisible(false);
+    map.setShapesVisible(false);
+    map.setSystemNamesVisible(true);
+    map.setSystemIconsVisible(false);
+    map.setGridVisible(true);
+    map.setCursorMarkerVisible(false);
+    const read = (): boolean[] => [
+      map.areRegionsVisible(),
+      map.areShapesVisible(),
+      map.areNebulaeVisible(),
+      map.areSystemNamesVisible(),
+      map.areSystemIconsVisible(),
+      map.isGridVisible(),
+      map.isCursorMarkerVisible(),
+    ];
+    const before = read();
+
+    for (const value of ['yes', undefined] as unknown as boolean[]) {
+      map.setRegionsVisible(value);
+      map.setShapesVisible(value);
+      map.setNebulaeVisible(value);
+      map.setSystemNamesVisible(value);
+      map.setSystemIconsVisible(value);
+      map.setGridVisible(value);
+      map.setCursorMarkerVisible(value);
+      expect(read(), `the value ${String(value)} moved a switch`).toEqual(before);
+    }
   });
 });
 

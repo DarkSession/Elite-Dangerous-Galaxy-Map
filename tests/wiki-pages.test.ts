@@ -112,9 +112,14 @@ const supported = [...mainExports, ...nebulaExports].sort();
 
 /** The link targets of a markdown text that are not an address on the web. */
 function localTargets(text: string): string[] {
-  return [...text.matchAll(/\]\(([^)\s]+)\)/g)]
-    .map((match) => match[1] as string)
-    .filter((target) => !target.includes(':') && !target.startsWith('#'));
+  return (
+    [...text.matchAll(/\]\(([^)\s]+)\)/g)]
+      .map((match) => match[1] as string)
+      .filter((target) => !target.includes(':') && !target.startsWith('#'))
+      // A link to a member of another page carries an anchor. The page is what the tree
+      // holds, so the anchor comes off before the name is read.
+      .map((target) => target.split('#')[0] as string)
+  );
 }
 
 describe('the page set', () => {
@@ -452,10 +457,12 @@ describe('the link rewrite', () => {
     const rewritten = rewriteLinks(
       'See [GalaxyMap](../interfaces/GalaxyMap.md) and ' +
         '[GalaxyMapOptions](./GalaxyMapOptions.md) and ' +
+        '[cursor](StartView.md#cursor) and ' +
         '[the survey](https://example.test/survey).',
     );
     expect(rewritten).toBe(
       'See [GalaxyMap](GalaxyMap) and [GalaxyMapOptions](GalaxyMapOptions) and ' +
+        '[cursor](StartView#cursor) and ' +
         '[the survey](https://example.test/survey).',
     );
   });

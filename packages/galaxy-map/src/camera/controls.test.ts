@@ -4,6 +4,7 @@ import {
   ALL_INTERACTION,
   applyKeyDown,
   applyKeyUp,
+  attachControls,
   beginDrag,
   beginPress,
   dragCursor,
@@ -631,5 +632,47 @@ describe('the interaction switches', () => {
     expect(readInteraction(held, 'off')).toEqual(held);
     // A field that is not a boolean is a field the setting does not name.
     expect(readInteraction(held, { orbit: 'no', keys: 0 })).toEqual(held);
+  });
+});
+
+describe('dispose', () => {
+  test('releases the pointer capture the canvas holds', () => {
+    const handlers = new Map<string, (event: unknown) => void>();
+    const released: number[] = [];
+    const canvas = {
+      clientWidth: 800,
+      clientHeight: 600,
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      addEventListener: (name: string, handler: (event: unknown) => void) => {
+        handlers.set(name, handler);
+      },
+      removeEventListener: () => undefined,
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: (id: number) => {
+        released.push(id);
+      },
+    } as unknown as HTMLCanvasElement;
+    const scope = globalThis as unknown as { window?: unknown };
+    const hadWindow = 'window' in scope;
+    scope.window = {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+
+    const controls = attachControls(canvas, createDefaultView());
+    // The right button starts a pan drag, which takes the capture of its own pointer.
+    handlers.get('pointerdown')?.({
+      pointerType: 'mouse',
+      button: 2,
+      pointerId: 7,
+      clientX: 10,
+      clientY: 10,
+      preventDefault: () => undefined,
+    });
+    controls.dispose();
+    if (!hadWindow) delete scope.window;
+
+    expect(released).toEqual([7]);
   });
 });

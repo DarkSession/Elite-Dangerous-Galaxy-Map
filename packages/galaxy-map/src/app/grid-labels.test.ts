@@ -176,6 +176,10 @@ describe('the crossing labels', () => {
     expect(crossingLabelText(-1000.4, 12345, 0)).toBe('-1,000 : 12,345 : 0');
     expect(labelNumber(999)).toBe('999');
     expect(labelNumber(-1234567)).toBe('-1,234,567');
+    // A value that rounds to negative zero reads `0` and not `-0`.
+    expect(labelNumber(-0.4)).toBe('0');
+    // `Math.round` takes a half up, so 1,234,567.5 reads as 1,234,568.
+    expect(labelNumber(1234567.5)).toBe('1,234,568');
   });
 
   test('carry the plane height as the middle number', () => {
@@ -836,6 +840,58 @@ describe('the label overlay', () => {
 
     const second = made.reduce((sum, element) => sum + element.writes.length, 0);
     expect(second).toBe(0);
+  });
+
+  test('sweeps once for one view epoch and reads the background every frame', () => {
+    const { host, made } = fakeHost();
+    const overlay = createGridLabelOverlay(host);
+    const base = {
+      viewport: VIEWPORT,
+      bounds: BOUNDS,
+      browse: BROWSE,
+      spacingLy: 1000,
+    };
+
+    overlay.update({
+      ...base,
+      view: viewAt([0, 0, 0], 1000),
+      background: flatReading(120, 68, [0, 0, 0]),
+      epoch: 1,
+    });
+    const first = overlay.readings().map((one) => `${one.text}@${one.x},${one.y}`);
+    expect(first.length).toBeGreaterThan(0);
+    const dark = overlay.readings()[0]?.opacity ?? 0;
+    for (const element of made) element.writes.length = 0;
+
+    // The same epoch, a view a sweep would answer differently and a brighter reading.
+    // The placements are the ones of the epoch, and the background still reaches every
+    // label: the reading of a view lands one or two frames after the view.
+    overlay.update({
+      ...base,
+      view: viewAt([1500, 0, 0], 1000),
+      background: flatReading(120, 68, [240, 235, 230]),
+      epoch: 1,
+    });
+    expect(overlay.readings().map((one) => `${one.text}@${one.x},${one.y}`)).toEqual(
+      first,
+    );
+    expect(overlay.readings()[0]?.opacity ?? 0).toBeLessThan(dark);
+    const written = made.flatMap((element) =>
+      element.writes.map((write) => write.name),
+    );
+    expect(written).toContain('opacity');
+    expect(written).toContain('color');
+
+    // A raised epoch sweeps again, so the labels follow the view.
+    overlay.update({
+      ...base,
+      view: viewAt([1500, 0, 0], 1000),
+      background: flatReading(120, 68, [240, 235, 230]),
+      epoch: 2,
+    });
+    expect(
+      overlay.readings().map((one) => `${one.text}@${one.x},${one.y}`),
+    ).not.toEqual(first);
   });
 
   test('reads the background at the centre of its own box', () => {

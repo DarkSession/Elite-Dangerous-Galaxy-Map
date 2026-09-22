@@ -11,6 +11,7 @@
 //
 // A tween library is a dependency for 60 lines of arithmetic, and a spring has no end
 // time, so `selectionFlightMs` would have no answer.
+import { clamp } from '../math';
 import { clampDistance, FIELD_OF_VIEW_DEGREES } from './view';
 import type { View } from './view';
 
@@ -59,12 +60,6 @@ export interface FlightPlan {
    * are the same view, and the caller then takes the end state in that frame.
    */
   readonly durationMs: number;
-}
-
-function clamp(value: number, low: number, high: number): number {
-  if (value < low) return low;
-  if (value > high) return high;
-  return value;
 }
 
 /** The straight distance between two cursors, in light years. */

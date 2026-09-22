@@ -34,11 +34,15 @@ const SINGULAR_SHARE = 1e-12;
 /**
  * Writes one style property only when it differs. The overlay rewrites every property of
  * every element in each frame, and a write of the value an element already holds is a DOM
- * change the browser records. `src/app/grid-labels.ts` and `src/hud/dom.ts` hold the same
- * three lines, and the three are not shared: the HUD is an opt-in module in its own chunk
- * and the library must not pull it into the core one.
+ * change the browser records. `src/app/grid-labels.ts` reads this one. `src/hud/dom.ts`
+ * holds the same three lines and is not shared: the HUD is an opt-in module in its own
+ * chunk and the library must not pull it into the core one.
  */
-function setStyle(element: ElementCSSInlineStyle, name: string, value: string): void {
+export function setStyle(
+  element: ElementCSSInlineStyle,
+  name: string,
+  value: string,
+): void {
   if (element.style.getPropertyValue(name) === value) return;
   element.style.setProperty(name, value);
 }
@@ -332,8 +336,13 @@ export function planePlacement(placement: PlanePlacement): PlanePlaced | null {
 
 /**
  * Writes the styles one placement needs on an element, and writes nothing that does not
- * move. The element's transform origin is its own top left corner, which is the corner
- * the homography's local box starts at.
+ * move.
+ *
+ * It writes the four that a placement moves. The other four never move, so the element
+ * factories write them once at creation: `position: absolute`, `left: 0`, `top: 0` and
+ * a transform origin of the element's own top left corner, which is the corner the
+ * homography's local box starts at. Each write here is a read of the CSSOM first, so
+ * four writes a placement is four reads a placement.
  *
  * Every plane element draws under every upright one. A pin, a hover ring, a system name
  * or a region name each names one thing, and a plane element names a place, so the name
@@ -347,12 +356,8 @@ export function writeOnPlane(
   heightCss: number,
   placed: PlanePlaced,
 ): void {
-  setStyle(element, 'position', 'absolute');
-  setStyle(element, 'left', '0px');
-  setStyle(element, 'top', '0px');
   setStyle(element, 'width', `${widthCss}px`);
   setStyle(element, 'height', `${heightCss}px`);
-  setStyle(element, 'transform-origin', '0 0');
   setStyle(element, 'transform', placed.transform);
   setStyle(element, 'z-index', '0');
 }

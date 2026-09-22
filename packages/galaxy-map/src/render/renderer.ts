@@ -73,8 +73,13 @@ import type {
   BackgroundFrame,
   BackgroundPass,
   BackgroundReading,
+  ReadbackStats,
 } from './background-pass';
-export type { BackgroundFrame, BackgroundReading } from './background-pass';
+export type {
+  BackgroundFrame,
+  BackgroundReading,
+  ReadbackStats,
+} from './background-pass';
 import { createCompositePass, DEFAULT_EXPOSURE } from './composite-pass';
 import type { CompositePass } from './composite-pass';
 import {
@@ -295,6 +300,12 @@ export interface Renderer {
    * nebulae carries none of the three.
    */
   setNebulae(draw: NebulaDraw): void;
+  /**
+   * Turns the nebulae on or off, as `setRegionDraw` turns the region overlay. It is the
+   * host's switch; the `nebulae` pass switch is the probe the browser tests read, and
+   * neither moves the other.
+   */
+  setNebulaDraw(draw: boolean): void;
   /** How many nebula instances the last frame drew. */
   nebulaDrawnCount(): number;
   /** How many draw calls the last frame's nebula pass issued: one per record drawn. */
@@ -352,6 +363,8 @@ export interface Renderer {
   /** How many draw calls the last frame's icon pass issued: at most one, because the
    * arrows and the icons share one instance stream. */
   iconDrawCalls(): number;
+  /** The mean time of the last 120 icon placement sweeps, in milliseconds. */
+  iconSweepMs(): number;
   /** The size of the shape line buffer in device pixels, or null while it holds none. */
   shapeLineBufferSize(): [number, number] | null;
   /**
@@ -424,6 +437,20 @@ export interface Renderer {
    */
   backgroundFrame(): BackgroundFrame | null;
   /**
+   * Asks the frame to read the background reading back to the processor. A read-back is
+   * a cost only a coordinate label spends, so the caller turns it on while a label is
+   * placed and off while none is. A frame that builds no reading takes none whatever
+   * this holds.
+   */
+  setBackgroundReadback(on: boolean): void;
+  /**
+   * How many background read-backs the frames since the last reset took, and what they
+   * cost. The take runs before the frame's first draw command.
+   */
+  readbackStats(): ReadbackStats;
+  /** Starts the read-back mean again. */
+  resetReadbackStats(): void;
+  /**
    * Holds the close fade at a value from 0 to 1. `null` gives the fade back to the zoom
    * distance. A test holds it at 1 to read the field at a close view.
    */
@@ -478,9 +505,72 @@ export interface Renderer {
 }
 
 /** Creates the renderer and compiles every program. */
+/**
+ * What one frame works out at its top and what it writes for the probes.
+ *
+ * The renderer held each of these as a variable of its own, and the frame wrote sixteen
+ * of them one at a time. One object holds them together: the frame resets it at the top,
+ * `drawOverlays` reads it, and every probe reads the frame that drew last.
+ */
+interface FrameState {
+  /** The view the frame drew. */
+  view: View;
+  /** The camera position in game coordinates. */
+  camera: [number, number, number];
+  /**
+   * The cursor in the camera-relative world frame, whose third axis runs the other way
+   * to the game's. The marker and the icon draws measure their range from this point.
+   */
+  cursorOffset: [number, number, number];
+  /** The centre of the density volume in that same frame, or the origin with no volume. */
+  volumeCentre: [number, number, number];
+  /** The drawing buffer size in device pixels. */
+  width: number;
+  height: number;
+  /** Device pixels per CSS pixel. */
+  pixelRatio: number;
+  /** The focal length in device pixels, and the same length in CSS pixels. */
+  focal: number;
+  focalCss: number;
+  /** How many marker instances the frame drew. */
+  systemMarkers: number;
+  /** What the star field drew: the vertices, the stars and the ones it dropped. */
+  starVertices: number;
+  starStars: number;
+  starSuppressed: number;
+  /** What the coordinate grid drew, and what its labels read. */
+  gridVertices: number;
+  gridSpacing: number;
+  gridLevels: GridLevelReading[];
+  /** True where the frame built a background reading for the grid labels. */
+  background: boolean;
+  /** The draw calls of the shape overlay, the markers and the icon stacks. */
+  shapeCalls: number;
+  markerCalls: number;
+  iconCalls: number;
+  /** What the nebula pass drew. */
+  nebulaDrawn: number;
+  nebulaCalls: number;
+  nebulaAboveFloor: number;
+  nebulaCovered: number;
+  /** The range pair the two sprite passes were sent, which no pixel states. */
+  nebulaSprite: [number, number];
+}
+
+/** What `createRenderer` takes besides the context and the canvas. */
+export interface RendererOptions {
+  /**
+   * Called where a thing the renderer fetched for itself lands and changes the picture
+   * without a draw. The icon vectors are the one such thing: they arrive after the frame
+   * that named them drew. The map sets it to its own wake.
+   */
+  readonly onChange?: () => void;
+}
+
 export function createRenderer(
   gl: WebGL2RenderingContext,
   canvas: HTMLCanvasElement,
+  options: RendererOptions = {},
 ): Renderer {
   // The scene targets are `RGBA16F`, which blends with this extension alone.
   const float = gl.getExtension('EXT_color_buffer_float') !== null;
@@ -532,42 +622,29 @@ export function createRenderer(
   let starField: StarField | null = null;
   let systemSet: RealSystemSet | null = null;
   let systemPass: SystemPass | null = null;
-  let systemMarkers = 0;
   let starModel: GalaxyModel | null = null;
-  let starVertices = 0;
-  let starStars = 0;
-  let starSuppressed = 0;
   let closeHold: number | null = null;
   let nearHold: number | null = null;
   const gridPass: GridPass = createGridPass(gl, gridProgram, triangle.vertexArray);
   let gridDraw = false;
-  let gridVertices = 0;
-  let gridSpacingOfFrame = 0;
-  let backgroundOfFrame = false;
-  let gridLevelsOfFrame: GridLevelReading[] = [];
+  // True while a coordinate label is on the screen to spend the read-back on.
+  let readbackAsked = false;
   let regionPass: RegionPass | null = null;
   let regionDraw = true;
   const shapePass: ShapePass = createShapePass(gl, shapePrograms, triangle.vertexArray);
   let shapeSet: ShapeSet | null = null;
   let shapeDraw = true;
-  let shapeCalls = 0;
-  let markerCalls = 0;
-  const iconPass: IconPass = createIconPass(gl, iconProgram);
+  const iconPass: IconPass = createIconPass(gl, iconProgram, {
+    textures: options.onChange === undefined ? {} : { onReady: options.onChange },
+  });
   let iconDraw = true;
-  let iconCalls = 0;
   let selectedSystem = -1;
   let cloudPass: CloudPass | null = null;
   let nebulaDraw: NebulaDraw | null = null;
+  let nebulaeDraw = true;
   // The draw order of the records. The map draws in the order the selection gives, and
   // a browser test turns this on to read that the frame does not follow it.
   let nebulaOrderReversed = false;
-  let nebulaDrawn = 0;
-  let nebulaCalls = 0;
-  let nebulaAboveFloor = 0;
-  let nebulaCovered = 0;
-  // The range pair the sprite passes were sent for the last frame. A browser test reads
-  // it, because the depth gate is what it names and no pixel states it.
-  let nebulaSprite: [number, number] = [NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]];
   let volumePass: VolumePass | null = null;
   let volumeTexture: VolumeTexture | null = null;
   let volumeBox: DensityVolume | null = null;
@@ -604,6 +681,35 @@ export function createRenderer(
   };
 
   const frames: FrameAccumulator = createFrameAccumulator();
+
+  // The frame's own state, held here so the draw path allocates none of it.
+  const frame: FrameState = {
+    view: { cursor: [0, 0, 0], distance: 0, yaw: 0, pitch: 0 },
+    camera: [0, 0, 0],
+    cursorOffset: [0, 0, 0],
+    volumeCentre: [0, 0, 0],
+    width: 0,
+    height: 0,
+    pixelRatio: 1,
+    focal: 0,
+    focalCss: 0,
+    systemMarkers: 0,
+    starVertices: 0,
+    starStars: 0,
+    starSuppressed: 0,
+    gridVertices: 0,
+    gridSpacing: 0,
+    gridLevels: [],
+    background: false,
+    shapeCalls: 0,
+    markerCalls: 0,
+    iconCalls: 0,
+    nebulaDrawn: 0,
+    nebulaCalls: 0,
+    nebulaAboveFloor: 0,
+    nebulaCovered: 0,
+    nebulaSprite: [NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]],
+  };
 
   const viewProjection = mat4.create();
   const inverseViewProjection = mat4.create();
@@ -642,10 +748,221 @@ export function createRenderer(
     height: Math.max(1, canvas.clientHeight),
   });
 
-  const drawFrame = (view: View): void => {
-    resize();
+  /**
+   * Works out what the whole frame reads and clears what it writes. The three passes
+   * that take the volume centre, and the three that take the cursor offset, each worked
+   * the point out for themselves.
+   */
+  const startFrame = (view: View): void => {
     const width = canvas.width;
     const height = canvas.height;
+    const camera = cameraPosition(view);
+    frame.view = view;
+    frame.camera = camera;
+    frame.width = width;
+    frame.height = height;
+    frame.pixelRatio = width / Math.max(1, canvas.clientWidth);
+    frame.focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+    frame.focalCss = frame.focal / frame.pixelRatio;
+    frame.cursorOffset = [
+      view.cursor[0] - camera[0],
+      view.cursor[1] - camera[1],
+      camera[2] - view.cursor[2],
+    ];
+    const box = volumeBox;
+    frame.volumeCentre =
+      box === null
+        ? [0, 0, 0]
+        : [
+            box.origin[0] + 0.5 * box.extent[0] - camera[0],
+            box.origin[1] + 0.5 * box.extent[1] - camera[1],
+            camera[2] - (box.origin[2] + 0.5 * box.extent[2]),
+          ];
+    frame.systemMarkers = 0;
+    frame.starVertices = 0;
+    frame.starStars = 0;
+    frame.starSuppressed = 0;
+    frame.gridVertices = 0;
+    frame.gridSpacing = 0;
+    frame.gridLevels = [];
+    frame.background = false;
+    frame.shapeCalls = 0;
+    frame.markerCalls = 0;
+    frame.iconCalls = 0;
+  };
+
+  /**
+   * Draws everything over the tone map: the coordinate grid, the region boundaries, the
+   * markers, the shapes and the icon stacks. It reads the frame the caller started and
+   * writes its own readings there.
+   *
+   * The grid draws before the region overlay and the markers, so a boundary and a
+   * marker both draw over a grid line, and the grid adds no light the tone map reads.
+   */
+  const drawOverlays = (state: FrameState): void => {
+    const view = state.view;
+    const camera = state.camera;
+    const width = state.width;
+    const height = state.height;
+    const pixelRatio = state.pixelRatio;
+    const focal = state.focal;
+    const focalCss = state.focalCss;
+
+    // The grid fades in as the camera comes near: nothing at 12,000 light years and
+    // further, full at 4,000 and nearer. A band of 0 draws nothing at all, so the pass
+    // does not run and the three probes read what they read for a grid that is off.
+    const band = gridVisibility(view.distance);
+    state.background = passes.grid && gridDraw && band > 0;
+    if (state.background) {
+      // The reading is built from the scene target and not from the frame the user
+      // sees, so the region overlay and the markers are not in it: the grid merges with
+      // the galaxy and not with the other overlays.
+      backgroundPass.render(sceneTarget.texture, width, height, look.exposure);
+      // The copy of the reading this frame built, which the take at the top of the next
+      // frame picks up. A frame with no label on the screen starts none, once a first
+      // reading has landed: the take above lands it, so the frame that lands it starts
+      // no second copy.
+      if (readbackAsked || backgroundPass.frame() === null) backgroundPass.start();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
+
+      state.gridSpacing = gridLabelLevel(focalCss, view.distance);
+      state.gridLevels = gridLevelReadings(focalCss, view.distance);
+      state.gridVertices = gridPass.draw({
+        inverseViewProjection: inverseViewProjection as Float32Array,
+        cursor: view.cursor,
+        camera,
+        pixelRatio,
+        bounds: galaxyModel.bounds,
+        band,
+        // Every level reaches 100 of its own lines each side of the cursor and no
+        // further, so the reach of a level follows the level and never the zoom.
+        reach: gridReachPerLevel(gridReach),
+        background: backgroundPass.texture,
+      });
+    }
+
+    // The region boundaries are an overlay, not scene light. They draw over the
+    // finished frame with alpha blending. A fade of 0 draws nothing at all, so the far
+    // view is the frame it was before the overlay existed.
+    const regions = regionFade(view.distance);
+    if (passes.regions && regionDraw && regionPass !== null && regions > 0) {
+      regionPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        inverseViewProjection: inverseViewProjection as Float32Array,
+        // The galactic plane is `y = 0` in game coordinates, and the world frame is
+        // camera-relative, so the plane sits one camera height below the origin.
+        planeY: -camera[1],
+        chunkOffset: [-camera[0], -camera[1], camera[2]],
+        fade: regions,
+        pixelRatio,
+      });
+    }
+
+    // The markers draw over the tone map and over the boundary overlay, and before the
+    // shapes. A sphere is a space that holds systems, so it must be able to wash the
+    // markers inside it and behind it, and it can only do that over markers the frame
+    // already holds. The range buffer is what keeps it off the markers in front of it.
+    const drawnShapes = passes.shapes && shapeDraw ? shapeSet : null;
+    // The instance buffers are written here and not in the draw below, because the marker
+    // pass needs to know whether a sphere draws before it draws itself.
+    const shapeCounts =
+      drawnShapes === null
+        ? { spheres: 0, segments: 0 }
+        : shapePass.prepare(drawnShapes);
+    // The icon stacks read the same buffer, so the pass selects and places them here,
+    // before the marker pass draws, and the count joins the shape counts below.
+    let stacks = 0;
+    if (passes.systems && iconDraw && systemSet !== null) {
+      stacks = iconPass.prepare({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        cursorOffset: state.cursorOffset,
+        near: nearHold ?? nearPlane(view.distance),
+        pixelRatio,
+        set: systemSet,
+        selectedIndex: selectedSystem,
+      });
+    } else {
+      // A frame with the switch off reports no placement, and not the placements of the
+      // frame before it.
+      iconPass.clear();
+    }
+    // A map with no shape and no stack writes no range, and costs what it costs without
+    // the buffer. A line reads the buffer as a sphere does: the line step caps its own
+    // wash over a marker body, and a set of lines and no sphere is an ordinary set, so
+    // the range draw follows the shapes and not the spheres alone.
+    const rangeTarget =
+      shapeCounts.spheres > 0 || shapeCounts.segments > 0 || stacks > 0
+        ? rangeBuffer
+        : null;
+    if (rangeTarget !== null) {
+      // The shape steps read the buffer at their own fragment coordinate, so it holds the
+      // drawing buffer size and not a share of it. The size follows the first frame that
+      // draws a shape and not the resize, because 1920x1080 of one float a pixel is
+      // 8.3 MB and a map that draws no shape reads none of it.
+      rangeTarget.resize(width, height);
+      // The clear runs here and not in the marker pass, because a frame with a sphere and
+      // no marker must read an empty buffer and not the markers of an older state.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, rangeTarget.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.clearBufferfv(gl.COLOR, 0, [RANGE_EMPTY, 0, 0, 0]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
+    }
+
+    if (passes.systems && systemPass !== null && systemSet !== null) {
+      state.systemMarkers = systemPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        cursorOffset: state.cursorOffset,
+        pixelRatio,
+        set: systemSet,
+        range: rangeTarget === null ? null : rangeTarget.framebuffer,
+      });
+      state.markerCalls = systemPass.drawCalls();
+    }
+
+    // The shapes draw last: the spheres over the markers, washing each by how much of the
+    // shell lies behind it, and then the lines. A line carries no range of its own, so it
+    // draws after the spheres and a limb never erases a route.
+    if (drawnShapes !== null) {
+      state.shapeCalls = shapePass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        pixelRatio,
+        focal,
+        set: drawnShapes,
+        range: rangeTarget === null ? null : rangeTarget.texture,
+      });
+    }
+
+    // The icon stacks draw last. They sat over the shapes as DOM elements, so drawing
+    // them after the shapes keeps that order. The DOM overlay still draws over them,
+    // which `system-icons` states and accepts.
+    if (stacks > 0 && systemSet !== null) {
+      state.iconCalls = iconPass.draw({
+        viewProjection: viewProjection as Float32Array,
+        camera,
+        cursorOffset: state.cursorOffset,
+        near: nearHold ?? nearPlane(view.distance),
+        pixelRatio,
+        set: systemSet,
+        selectedIndex: selectedSystem,
+        range: rangeTarget === null ? null : rangeTarget.texture,
+      });
+    }
+  };
+
+  const drawFrame = (view: View): void => {
+    // The first statement of the frame, before any draw command. A take after the
+    // frame's commands is a round trip that drains every one of them: it measured
+    // 0.40 ms a frame in the animation loop against 0.19 ms here.
+    backgroundPass.take();
+    resize();
+    startFrame(view);
+    const width = frame.width;
+    const height = frame.height;
 
     mat4.multiply(
       viewProjection,
@@ -654,7 +971,7 @@ export function createRenderer(
     );
     mat4.invert(inverseViewProjection, viewProjection);
 
-    const camera = cameraPosition(view);
+    const camera = frame.camera;
 
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
@@ -679,11 +996,7 @@ export function createRenderer(
         // The volume box is centred on the galactic centre in the plane, so the
         // fade by radius needs no value from the model. The test "has its plane
         // mid-point at the model centre" in `src/scene-data/volume.test.ts` holds that.
-        centre: [
-          origin[0] + 0.5 * extent[0] - camera[0],
-          origin[1] + 0.5 * extent[1] - camera[1],
-          camera[2] - (origin[2] + 0.5 * extent[2]),
-        ],
+        centre: frame.volumeCentre,
         emission: look.emission,
         absorption: look.absorption,
         detail: detail === null ? null : detail.texture,
@@ -698,16 +1011,10 @@ export function createRenderer(
     if (passes.clouds && cloudPass !== null && volumeBox !== null) {
       const halfFocal =
         halfTarget.height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
-      const origin = volumeBox.origin;
-      const extent = volumeBox.extent;
       cloudPass.draw({
         viewProjection: viewProjection as Float32Array,
         chunkOffset: [-camera[0], -camera[1], camera[2]],
-        centre: [
-          origin[0] + 0.5 * extent[0] - camera[0],
-          origin[1] + 0.5 * extent[1] - camera[1],
-          camera[2] - (origin[2] + 0.5 * extent[2]),
-        ],
+        centre: frame.volumeCentre,
         targetSize: [halfTarget.width, halfTarget.height],
         spriteScale: halfFocal,
         brightness: look.cloudBrightness,
@@ -722,17 +1029,18 @@ export function createRenderer(
     // The pass draws the records into a target of its own and composites that target
     // here, so a dark nebula attenuates what the two passes before it drew at the
     // composite and not during the record loop.
-    nebulaDrawn = 0;
-    nebulaCalls = 0;
-    nebulaAboveFloor = 0;
-    nebulaCovered = 0;
+    frame.nebulaDrawn = 0;
+    frame.nebulaCalls = 0;
+    frame.nebulaAboveFloor = 0;
+    frame.nebulaCovered = 0;
     // What the two sprite passes read from the nebula draw. A frame that drew no record
     // keeps the null and the far pair, so it draws the frame it drew before the nebulae
     // reached the sprites. The two edges are never equal: `smoothstep` is undefined in
     // GLSL ES 3.00 for `edge0 >= edge1`, and the NaN would turn every sprite black.
     let nebulaTexture: WebGLTexture | null = null;
     let nebulaRange: [number, number] = [NO_NEBULA_RANGE[0], NO_NEBULA_RANGE[1]];
-    if (passes.nebulae && nebulaDraw !== null) {
+    const nebulaeOn = passes.nebulae && nebulaeDraw;
+    if (nebulaeOn && nebulaDraw !== null) {
       const area = viewport();
       // The march reads the volume the volume pass draws. Where the volume pass does
       // not draw, the record takes no extinction: a nebula must not be dimmed by
@@ -775,14 +1083,7 @@ export function createRenderer(
         // without a volume, and the value is a placeholder for the frame that has none.
         boxSize:
           box === null ? [1, 1, 1] : [box.extent[0], box.extent[1], box.extent[2]],
-        centre:
-          box === null
-            ? [0, 0, 0]
-            : [
-                box.origin[0] + 0.5 * box.extent[0] - camera[0],
-                box.origin[1] + 0.5 * box.extent[1] - camera[1],
-                camera[2] - (box.origin[2] + 0.5 * box.extent[2]),
-              ],
+        centre: frame.volumeCentre,
         lo: box === null ? 0 : box.lo,
         span: box === null ? 0 : box.hi - box.lo,
         epsilon: box === null ? 0 : box.epsilon,
@@ -804,10 +1105,10 @@ export function createRenderer(
         ),
         reverseOrder: nebulaOrderReversed,
       });
-      nebulaDrawn = nebulaDraw.drawnCount;
-      nebulaCalls = nebulaDraw.drawCalls;
-      nebulaAboveFloor = nebulaDraw.aboveFloorCount;
-      nebulaCovered = nebulaDraw.coveredArea;
+      frame.nebulaDrawn = nebulaDraw.drawnCount;
+      frame.nebulaCalls = nebulaDraw.drawCalls;
+      frame.nebulaAboveFloor = nebulaDraw.aboveFloorCount;
+      frame.nebulaCovered = nebulaDraw.coveredArea;
       nebulaTexture = nebulaDraw.transmittance;
       if (nebulaTexture !== null) {
         nebulaRange = spriteNebulaRange(nebulaDraw.frontRange, nebulaDraw.centreRange);
@@ -823,7 +1124,7 @@ export function createRenderer(
 
     // The glow adds a blurred copy of the volume, the clouds and the nebulae, so a
     // halo surrounds the disc.
-    if (passes.glow && (passes.volume || passes.clouds || passes.nebulae)) {
+    if (passes.glow && (passes.volume || passes.clouds || nebulaeOn)) {
       glowPass.render(
         halfTarget.texture,
         look.glowWeight,
@@ -841,7 +1142,7 @@ export function createRenderer(
     // The star field takes the near field over from the point cloud below a zoom
     // distance of 8,000 light years. The two carry one weight between them, so their
     // shares sum to 1 at every range and the total light does not change.
-    const focal = height / (2 * Math.tan((FIELD_OF_VIEW_DEGREES * Math.PI) / 360));
+    const focal = frame.focal;
     // The field and the handover read the effective zoom distance, which holds at 640
     // light years, so the base size class never steps at 320 and the point cloud's near
     // void does not halve inside the band the closest zoom opened.
@@ -859,12 +1160,7 @@ export function createRenderer(
     // multiplies the star pass's weight alone: the point pass keeps the handover weight,
     // so the light the field gives up leaves the frame rather than moving to the cloud.
     const close = heldCloseFade(closeHold, view.distance);
-    starVertices = 0;
-    starStars = 0;
-    starSuppressed = 0;
-    systemMarkers = 0;
-
-    nebulaSprite = nebulaRange;
+    frame.nebulaSprite = nebulaRange;
 
     if (passes.points && pointPass !== null) {
       pointPass.draw({
@@ -896,9 +1192,9 @@ export function createRenderer(
         nebulaRange,
         targetSize: [sceneTarget.width, sceneTarget.height],
       });
-      starVertices = starPass.vertexCount;
-      starStars = table.drawnStars;
-      starSuppressed = table.suppressedStars;
+      frame.starVertices = starPass.vertexCount;
+      frame.starStars = table.drawnStars;
+      frame.starSuppressed = table.suppressedStars;
     }
 
     // The tone map writes the frame the user sees.
@@ -908,173 +1204,7 @@ export function createRenderer(
     gl.clear(gl.COLOR_BUFFER_BIT);
     composite.tonemap(sceneTarget.texture, look.exposure);
 
-    // The coordinate grid draws over the tone map and before the region overlay and the
-    // markers, so a boundary and a marker both draw over a grid line and the grid adds
-    // no light the tone map reads.
-    gridVertices = 0;
-    const pixelRatio = width / Math.max(1, canvas.clientWidth);
-    const focalCss = focal / pixelRatio;
-    // The grid fades in as the camera comes near: nothing at 12,000 light years and
-    // further, full at 4,000 and nearer. A band of 0 draws nothing at all, so the pass
-    // does not run and the three probes read what they read for a grid that is off.
-    const band = gridVisibility(view.distance);
-    backgroundOfFrame = passes.grid && gridDraw && band > 0;
-    if (backgroundOfFrame) {
-      // The reading is built from the scene target and not from the frame the user
-      // sees, so the region overlay and the markers are not in it: the grid merges with
-      // the galaxy and not with the other overlays.
-      backgroundPass.render(sceneTarget.texture, width, height, look.exposure);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, width, height);
-
-      gridSpacingOfFrame = gridLabelLevel(focalCss, view.distance);
-      gridLevelsOfFrame = gridLevelReadings(focalCss, view.distance);
-      gridVertices = gridPass.draw({
-        inverseViewProjection: inverseViewProjection as Float32Array,
-        cursor: view.cursor,
-        camera,
-        pixelRatio,
-        bounds: galaxyModel.bounds,
-        band,
-        // Every level reaches 100 of its own lines each side of the cursor and no
-        // further, so the reach of a level follows the level and never the zoom.
-        reach: gridReachPerLevel(gridReach),
-        background: backgroundPass.texture,
-      });
-    } else {
-      // The three probes must agree: a frame with no grid reports no vertices, no
-      // spacing and no levels, and not the readings of the frame the grid last drew in.
-      gridSpacingOfFrame = 0;
-      gridLevelsOfFrame = [];
-    }
-
-    // The region boundaries are an overlay, not scene light. They draw over the
-    // finished frame with alpha blending. A fade of 0 draws nothing at all, so the far
-    // view is the frame it was before the overlay existed.
-    const regions = regionFade(view.distance);
-    if (passes.regions && regionDraw && regionPass !== null && regions > 0) {
-      regionPass.draw({
-        viewProjection: viewProjection as Float32Array,
-        inverseViewProjection: inverseViewProjection as Float32Array,
-        // The galactic plane is `y = 0` in game coordinates, and the world frame is
-        // camera-relative, so the plane sits one camera height below the origin.
-        planeY: -camera[1],
-        chunkOffset: [-camera[0], -camera[1], camera[2]],
-        fade: regions,
-        pixelRatio,
-      });
-    }
-
-    // The markers draw over the tone map and over the boundary overlay, and before the
-    // shapes. A sphere is a space that holds systems, so it must be able to wash the
-    // markers inside it and behind it, and it can only do that over markers the frame
-    // already holds. The range buffer is what keeps it off the markers in front of it.
-    const drawnShapes = passes.shapes && shapeDraw ? shapeSet : null;
-    // The instance buffers are written here and not in the draw below, because the marker
-    // pass needs to know whether a sphere draws before it draws itself.
-    const shapeCounts =
-      drawnShapes === null
-        ? { spheres: 0, segments: 0 }
-        : shapePass.prepare(drawnShapes);
-    // The icon stacks read the same buffer, so the pass selects and places them here,
-    // before the marker pass draws, and the count joins the shape counts below.
-    iconCalls = 0;
-    let stacks = 0;
-    if (passes.systems && iconDraw && systemSet !== null) {
-      stacks = iconPass.prepare({
-        viewProjection: viewProjection as Float32Array,
-        camera,
-        cursorOffset: [
-          view.cursor[0] - camera[0],
-          view.cursor[1] - camera[1],
-          camera[2] - view.cursor[2],
-        ],
-        near: nearHold ?? nearPlane(view.distance),
-        pixelRatio,
-        set: systemSet,
-        selectedIndex: selectedSystem,
-      });
-    } else {
-      // A frame with the switch off reports no placement, and not the placements of the
-      // frame before it.
-      iconPass.clear();
-    }
-    // A map with no shape and no stack writes no range, and costs what it costs without
-    // the buffer. A line reads the buffer as a sphere does: the line step caps its own
-    // wash over a marker body, and a set of lines and no sphere is an ordinary set, so
-    // the range draw follows the shapes and not the spheres alone.
-    const rangeTarget =
-      shapeCounts.spheres > 0 || shapeCounts.segments > 0 || stacks > 0
-        ? rangeBuffer
-        : null;
-    if (rangeTarget !== null) {
-      // The shape steps read the buffer at their own fragment coordinate, so it holds the
-      // drawing buffer size and not a share of it. The size follows the first frame that
-      // draws a shape and not the resize, because 1920x1080 of one float a pixel is
-      // 8.3 MB and a map that draws no shape reads none of it.
-      rangeTarget.resize(width, height);
-      // The clear runs here and not in the marker pass, because a frame with a sphere and
-      // no marker must read an empty buffer and not the markers of an older frame.
-      gl.bindFramebuffer(gl.FRAMEBUFFER, rangeTarget.framebuffer);
-      gl.viewport(0, 0, width, height);
-      gl.clearBufferfv(gl.COLOR, 0, [RANGE_EMPTY, 0, 0, 0]);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, width, height);
-    }
-
-    markerCalls = 0;
-    if (passes.systems && systemPass !== null && systemSet !== null) {
-      systemMarkers = systemPass.draw({
-        viewProjection: viewProjection as Float32Array,
-        camera,
-        // The cursor in the camera-relative world frame, whose third axis runs the other
-        // way to the game's. The draw-range cut measures from this point.
-        cursorOffset: [
-          view.cursor[0] - camera[0],
-          view.cursor[1] - camera[1],
-          camera[2] - view.cursor[2],
-        ],
-        pixelRatio,
-        set: systemSet,
-        range: rangeTarget === null ? null : rangeTarget.framebuffer,
-      });
-      markerCalls = systemPass.drawCalls();
-    }
-
-    // The shapes draw last: the spheres over the markers, washing each by how much of the
-    // shell lies behind it, and then the lines. A line carries no range of its own, so it
-    // draws after the spheres and a limb never erases a route.
-    shapeCalls = 0;
-    if (drawnShapes !== null) {
-      shapeCalls = shapePass.draw({
-        viewProjection: viewProjection as Float32Array,
-        camera,
-        pixelRatio,
-        focal,
-        set: drawnShapes,
-        range: rangeTarget === null ? null : rangeTarget.texture,
-      });
-    }
-
-    // The icon stacks draw last. They sat over the shapes as DOM elements, so drawing
-    // them after the shapes keeps that order. The DOM overlay still draws over them,
-    // which `system-icons` states and accepts.
-    if (stacks > 0 && systemSet !== null) {
-      iconCalls = iconPass.draw({
-        viewProjection: viewProjection as Float32Array,
-        camera,
-        cursorOffset: [
-          view.cursor[0] - camera[0],
-          view.cursor[1] - camera[1],
-          camera[2] - view.cursor[2],
-        ],
-        near: nearHold ?? nearPlane(view.distance),
-        pixelRatio,
-        set: systemSet,
-        selectedIndex: selectedSystem,
-        range: rangeTarget === null ? null : rangeTarget.texture,
-      });
-    }
+    drawOverlays(frame);
   };
 
   return {
@@ -1112,20 +1242,23 @@ export function createRenderer(
       nebulaDraw?.dispose();
       nebulaDraw = draw;
     },
+    setNebulaDraw(draw: boolean): void {
+      nebulaeDraw = draw;
+    },
     nebulaDrawnCount(): number {
-      return nebulaDrawn;
+      return frame.nebulaDrawn;
     },
     nebulaDrawCalls(): number {
-      return nebulaCalls;
+      return frame.nebulaCalls;
     },
     nebulaAboveFloorCount(): number {
-      return nebulaAboveFloor;
+      return frame.nebulaAboveFloor;
     },
     nebulaSpriteRange(): [number, number] {
-      return [nebulaSprite[0], nebulaSprite[1]];
+      return [frame.nebulaSprite[0], frame.nebulaSprite[1]];
     },
     nebulaCoveredArea(): number {
-      return nebulaCovered;
+      return frame.nebulaCovered;
     },
     setDetail(detail: SurfaceDetail): void {
       detailTexture?.dispose();
@@ -1145,7 +1278,7 @@ export function createRenderer(
       shapeDraw = draw;
     },
     shapeDrawCalls(): number {
-      return shapeCalls;
+      return frame.shapeCalls;
     },
     setSystemIconsDraw(draw: boolean): void {
       iconDraw = draw;
@@ -1160,13 +1293,16 @@ export function createRenderer(
       return iconPass.placements();
     },
     iconDrawCalls(): number {
-      return iconCalls;
+      return frame.iconCalls;
+    },
+    iconSweepMs(): number {
+      return iconPass.sweepMeanMs();
     },
     shapeLineBufferSize(): [number, number] | null {
       return shapePass.lineBufferSize();
     },
     markerDrawCalls(): number {
-      return markerCalls;
+      return frame.markerCalls;
     },
     rangeBufferSize(): [number, number] | null {
       return rangeBuffer === null ? null : [rangeBuffer.width, rangeBuffer.height];
@@ -1220,28 +1356,28 @@ export function createRenderer(
       }
     },
     starVertexCount(): number {
-      return starVertices;
+      return frame.starVertices;
     },
     starDrawnCount(): number {
-      return starStars;
+      return frame.starStars;
     },
     starSuppressedCount(): number {
-      return starSuppressed;
+      return frame.starSuppressed;
     },
     systemMarkerCount(): number {
-      return systemMarkers;
+      return frame.systemMarkers;
     },
     setGridDraw(draw: boolean): void {
       gridDraw = draw;
     },
     gridVertexCount(): number {
-      return gridVertices;
+      return frame.gridVertices;
     },
     gridSpacingLy(): number {
-      return gridSpacingOfFrame;
+      return frame.gridSpacing;
     },
     gridLevels(): GridLevelReading[] {
-      return gridLevelsOfFrame;
+      return frame.gridLevels;
     },
     backgroundSize(): [number, number] {
       return backgroundPass.size();
@@ -1250,10 +1386,19 @@ export function createRenderer(
       return regionPass?.coverageSize() ?? null;
     },
     backgroundReading(): BackgroundReading | null {
-      return backgroundOfFrame ? backgroundPass.read() : null;
+      return frame.background ? backgroundPass.read() : null;
     },
     backgroundFrame(): BackgroundFrame | null {
       return backgroundPass.frame();
+    },
+    setBackgroundReadback(on: boolean): void {
+      readbackAsked = on;
+    },
+    readbackStats(): ReadbackStats {
+      return backgroundPass.readbackStats();
+    },
+    resetReadbackStats(): void {
+      backgroundPass.resetReadbackStats();
     },
     setCloseFade(value: number | null): void {
       closeHold = value;
@@ -1293,16 +1438,12 @@ export function createRenderer(
       nebulaOrderReversed = value;
     },
     setPasses(next: Partial<PassSwitches>): void {
-      if (next.volume !== undefined) passes.volume = next.volume;
-      if (next.clouds !== undefined) passes.clouds = next.clouds;
-      if (next.nebulae !== undefined) passes.nebulae = next.nebulae;
-      if (next.points !== undefined) passes.points = next.points;
-      if (next.stars !== undefined) passes.stars = next.stars;
-      if (next.grid !== undefined) passes.grid = next.grid;
-      if (next.regions !== undefined) passes.regions = next.regions;
-      if (next.shapes !== undefined) passes.shapes = next.shapes;
-      if (next.glow !== undefined) passes.glow = next.glow;
-      if (next.systems !== undefined) passes.systems = next.systems;
+      // The loop reads the switches the renderer holds, so a name the caller invents
+      // writes nothing, and a value that is not a boolean leaves the switch as it is.
+      for (const name of Object.keys(passes) as (keyof PassSwitches)[]) {
+        const value = next[name];
+        if (typeof value === 'boolean') passes[name] = value;
+      }
     },
     look,
     viewport,

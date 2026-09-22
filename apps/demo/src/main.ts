@@ -354,50 +354,25 @@ function start(target: HTMLCanvasElement): void {
   });
 
   const debug = map.debug;
+  // The two view calls are handle members and not probes, so the page forwards them by
+  // hand.
   global.getView = () => map.getView();
   global.setView = (next) => map.setView(next);
-  global.project = (point) => debug.project(point);
-  global.setPasses = (next) => debug.setPasses(next);
-  global.setNebulaOcclusion = (value) => debug.setNebulaOcclusion(value);
-  global.setNebulaOrderReversed = (value) => debug.setNebulaOrderReversed(value);
-  global.starVertexCount = () => debug.starVertexCount();
-  global.starDrawnCount = () => debug.starDrawnCount();
-  global.starSuppressedCount = () => debug.starSuppressedCount();
-  global.systemMarkerCount = () => debug.systemMarkerCount();
-  global.nebulaDrawnCount = () => debug.nebulaDrawnCount();
-  global.nebulaDrawCalls = () => debug.nebulaDrawCalls();
-  global.nebulaAboveFloorCount = () => debug.nebulaAboveFloorCount();
-  global.nebulaCoveredArea = () => debug.nebulaCoveredArea();
-  global.nebulaSpriteRange = () => debug.nebulaSpriteRange();
-  global.nebulaeAttached = () => debug.nebulaeAttached();
-  global.setCloseFade = (value) => debug.setCloseFade(value);
-  global.setNearPlane = (value) => debug.setNearPlane(value);
-  global.frameStats = () => debug.frameStats();
-  global.resetFrameStats = () => debug.resetFrameStats();
-  global.drawingBufferSize = () => debug.drawingBufferSize();
-  global.readPixel = (x, y) => debug.readPixel(x, y);
-  global.readRect = (x, y, width, height) => debug.readRect(x, y, width, height);
-  global.measureFrames = (count) => debug.measureFrames(count);
-  global.drawNow = () => debug.drawNow();
-  global.planePointAt = (x, y) => debug.planePointAt(x, y);
-  global.regionSampleCounts = () => debug.regionSampleCounts();
-  global.regionSampleTotal = () => debug.regionSampleTotal();
-  global.labelSampling = () => debug.labelSampling();
-  global.resetLabelSampling = () => debug.resetLabelSampling();
-  global.regionNameAtScreen = (x, y) => debug.regionNameAtScreen(x, y);
-  global.selectionSampling = () => debug.selectionSampling();
-  global.resetSelectionSampling = () => debug.resetSelectionSampling();
-  global.frameIntervalStats = () => debug.frameIntervalStats();
-  global.resetFrameIntervalStats = () => debug.resetFrameIntervalStats();
-  global.gridVertexCount = () => debug.gridVertexCount();
-  global.gridSpacingLy = () => debug.gridSpacingLy();
-  global.gridLevels = () => debug.gridLevels();
-  global.selectionFlightMs = () => debug.selectionFlightMs();
-  global.zoomTargetLy = () => debug.zoomTargetLy();
-  global.regionLinePositions = () => debug.regionLinePositions();
-  global.regionLineChains = () => debug.regionLineChains();
-  global.compileTestProgram = (vertex, fragment) =>
-    debug.compileTestProgram(vertex, fragment);
+  // One loop forwards every probe. The page listed 41 by hand, which left a new probe
+  // unreadable until someone added a line for it.
+  //
+  // The loop reads the property descriptors and not the values: `look` and `renderer`
+  // are getters, `look` throws before the renderer is built, and a descriptor read
+  // calls neither. Both carry a value that is not a function, so neither is forwarded;
+  // the page keeps its own `renderer` accessor below and the tests reach `look` through
+  // `map.debug.look`.
+  const probes = global as unknown as Record<string, unknown>;
+  for (const [name, held] of Object.entries(Object.getOwnPropertyDescriptors(debug))) {
+    const value: unknown = held.value;
+    if (typeof value !== 'function') continue;
+    probes[name] = (...given: unknown[]): unknown =>
+      (value as (...args: unknown[]) => unknown).apply(debug, given);
+  }
 
   window.addEventListener('hashchange', () => {
     // The handler reads the fragment once and puts the whole of it in place before it

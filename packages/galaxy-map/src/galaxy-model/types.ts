@@ -99,11 +99,3 @@ export interface PlanePoint {
   readonly x: number;
   readonly z: number;
 }
-
-/** Galactocentric polar coordinates in the plane. */
-export interface PolarPoint {
-  /** Distance from the galactic centre in light years. */
-  readonly radius: number;
-  /** Angle from `+x` toward `+z`, in radians. */
-  readonly azimuth: number;
-}

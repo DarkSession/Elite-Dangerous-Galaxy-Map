@@ -728,7 +728,8 @@ frame.
 
 **The switch SHALL be on the supported surface and not on `debug`.** `GalaxyMapOptions` SHALL
 carry an optional `cursorMarker`, and the handle SHALL carry `setCursorMarkerVisible(on)` and
-`getCursorMarkerVisible()`. The default SHALL be **on**. The grid is the precedent: it holds
+`isCursorMarkerVisible()`. The reader was `getCursorMarkerVisible()`; the name follows
+`isGridVisible()`, and `real-systems` states the naming rule. The default SHALL be **on**. The grid is the precedent: it holds
 a `grid` option and `setGridVisible`, and its pass switch on `debug` is a probe for the
 browser tests and not the way a host turns it off. A host that draws its own cursor needs a
 supported way to turn this one off, and `debug` is stated as no part of the supported
@@ -786,7 +787,7 @@ those names one thing and the cursor names a place.
 #### Scenario: The option chooses the marker at start-up
 
 - **WHEN** the browser test builds a map with `cursorMarker: false`, reads
-  `getCursorMarkerVisible()` and the overlay, then builds one with no `cursorMarker` and
+  `isCursorMarkerVisible()` and the overlay, then builds one with no `cursorMarker` and
   reads both again
 - **THEN** the first gives false and no marker, and the second gives true and one marker
 

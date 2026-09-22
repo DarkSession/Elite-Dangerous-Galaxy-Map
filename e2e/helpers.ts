@@ -674,3 +674,32 @@ export async function serveFactionsDump(page: Page, text: string): Promise<void>
     });
   });
 }
+
+/** Waits for the first read-back to land, so the map asks for no more of them. */
+export async function waitForFirstReading(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      window.__galaxyMap?.wake?.();
+      return window.galaxyMap?.debug.backgroundFrame() !== null;
+    },
+    undefined,
+    { timeout: 30000 },
+  );
+}
+
+/** Holds `W` down until the map drew `count` frames, and gives back the drawn frames. */
+export async function heldKeyFrames(page: Page, count: number): Promise<number> {
+  await page.mouse.move(960, 540);
+  await page.evaluate(() => {
+    window.__galaxyMap?.resetFrameStats?.();
+    window.galaxyMap?.debug.resetReadbackStats();
+  });
+  await page.keyboard.down('w');
+  await page.waitForFunction(
+    (want) => (window.__galaxyMap?.frameStats?.().frames ?? 0) >= want,
+    count,
+    { timeout: 30000 },
+  );
+  await page.keyboard.up('w');
+  return page.evaluate(() => window.__galaxyMap?.frameStats?.().frames ?? -1);
+}

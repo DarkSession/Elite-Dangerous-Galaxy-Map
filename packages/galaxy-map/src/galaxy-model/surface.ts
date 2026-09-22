@@ -1,10 +1,5 @@
 // The planar part of the galaxy model. See `docs/galaxy-density-model.md`.
-import type {
-  ArmParameters,
-  GalaxyModelDocument,
-  PlanePoint,
-  PolarPoint,
-} from './types';
+import type { ArmParameters, GalaxyModelDocument, PlanePoint } from './types';
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
 const TWO_PI = Math.PI * 2;
@@ -101,13 +96,6 @@ export function prepareSurface(document: GalaxyModelDocument): PreparedSurface {
     boundsZLow: document.bounds.z[0],
     boundsZHigh: document.bounds.z[1],
   };
-}
-
-/** Turns a plane point into galactocentric radius and azimuth. */
-export function toPolar(prepared: PreparedSurface, x: number, z: number): PolarPoint {
-  const u = x - prepared.centreX;
-  const v = z - prepared.centreZ;
-  return { radius: Math.hypot(u, v), azimuth: Math.atan2(v, u) };
 }
 
 /** The logarithmic radius the winding law and the arm amplitudes read. */

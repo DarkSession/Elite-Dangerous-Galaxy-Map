@@ -8,6 +8,8 @@
 // drives the same calls the HUD does: `getDatasets`, `getLoadedDataset`, `loadDataset`
 // and `onDatasetChange`.
 import { readBounds } from '../camera/view';
+import { readViewInput } from './view-input';
+import type { StartView } from './view-input';
 import type { BrowseBounds } from '../camera/view';
 import type {
   AddReport,
@@ -44,57 +46,12 @@ export interface DatasetContent {
  * that wants every load to frame its set names a field beside `fit`, such as the pitch
  * the camera holds, or drops `bounds` from the entry.
  *
- * The `StartView` fields are repeated here rather than imported, because `create-map.ts`
- * imports this module and not the other way round.
+ * The five `StartView` fields come from `./view-input`, which holds the reader both
+ * options take.
  */
-export interface DatasetView {
+export interface DatasetView extends StartView {
   /** Centres on the box of the set and frames the whole of it. */
   readonly fit?: 'systems';
-  readonly cursor?: readonly [number, number, number];
-  readonly system?: string;
-  readonly distance?: number;
-  readonly yaw?: number;
-  readonly pitch?: number;
-}
-
-/**
- * Reads an entry's `view`, or null where the map cannot read it. An unreadable field
- * makes the whole setting unreadable, as `readStartView` does, so a load never opens at
- * half of what the entry asked for.
- */
-export function readDatasetView(value: unknown): DatasetView | null {
-  if (value === null || typeof value !== 'object') return null;
-  const source = value as Record<string, unknown>;
-  const view: {
-    fit?: 'systems';
-    cursor?: [number, number, number];
-    system?: string;
-    distance?: number;
-    yaw?: number;
-    pitch?: number;
-  } = {};
-  if (source['fit'] !== undefined) {
-    if (source['fit'] !== 'systems') return null;
-    view.fit = 'systems';
-  }
-  if (source['cursor'] !== undefined) {
-    const cursor = source['cursor'];
-    if (!Array.isArray(cursor) || cursor.length !== 3) return null;
-    if (!(cursor as unknown[]).every((part) => Number.isFinite(part))) return null;
-    const point = cursor as number[];
-    view.cursor = [point[0] as number, point[1] as number, point[2] as number];
-  }
-  if (source['system'] !== undefined) {
-    if (typeof source['system'] !== 'string' || source['system'] === '') return null;
-    view.system = source['system'];
-  }
-  for (const field of ['distance', 'yaw', 'pitch'] as const) {
-    const held = source[field];
-    if (held === undefined) continue;
-    if (typeof held !== 'number' || !Number.isFinite(held)) return null;
-    view[field] = held;
-  }
-  return view;
 }
 
 /** One entry of the catalog, as the host writes it. */
@@ -217,7 +174,7 @@ export function readDatasets(datasets: unknown): CatalogReport {
     // An unreadable `bounds` or `view` does not drop the entry: the set still loads, and
     // the entry then acts as one that named neither field.
     const bounds = raw.bounds === undefined ? null : readBounds(raw.bounds);
-    const view = raw.view === undefined ? null : readDatasetView(raw.view);
+    const view = raw.view === undefined ? null : readViewInput(raw.view);
     entries.push({
       id,
       label,

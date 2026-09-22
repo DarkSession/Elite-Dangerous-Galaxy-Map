@@ -169,6 +169,18 @@ export interface GalaxyMapGlobal {
    * runs.
    */
   zoomTargetLy?: () => number | null;
+  /**
+   * How many background read-backs the frames since the reset took, and their mean time
+   * in milliseconds. The take runs at the top of the frame, so `frameStats` does not
+   * see it.
+   */
+  readbackStats?: () => { frames: number; meanMs: number; worstMs: number };
+  /** Starts the read-back mean again. */
+  resetReadbackStats?: () => void;
+  /** The mean time of the icon placement sweep, in milliseconds. */
+  iconSweepMs?: () => number;
+  /** Wakes the frame loop, as a change of the map does. */
+  wake?: () => void;
 }
 
 declare global {

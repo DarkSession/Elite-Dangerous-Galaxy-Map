@@ -144,8 +144,14 @@ const libraryRoot = join(root, 'packages', 'galaxy-map');
  * overlay now writes on each element, and the box the owned label host takes from the
  * canvas each frame. Both reach every map: the overlay draws the regions, which are on
  * by default. The bound rises to **280,000**, which leaves 4,197 bytes of room.
+ *
+ * The quality and frame path change takes the reading to **279,529 bytes**, from
+ * **276,570** on the commit before it. The 2,959 bytes are the read-back timing, the
+ * view epoch of the grid labels, the boxel cache of the star field, the flat icon views
+ * and the icon sweep probe, less the dead members and the merged copies the change
+ * deletes. The bound rises to **285,000**, which leaves 5,471 bytes of room.
  */
-const ENTRY_CHUNK_LIMIT = 280_000;
+const ENTRY_CHUNK_LIMIT = 285_000;
 
 /**
  * How large the HUD chunk may be, in bytes. It measured **31,201 bytes** on the first

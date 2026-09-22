@@ -135,6 +135,36 @@ export function relativeToCamera(
   return [point[0] - camera[0], point[1] - camera[1], -(point[2] - camera[2])];
 }
 
+/**
+ * Projects a point in game coordinates to the screen with a matrix and a camera the
+ * caller built. A sweep that projects many points of one frame builds the pair once and
+ * calls this, because building the matrix per point is three matrix builds per point.
+ */
+export function projectWith(
+  matrix: mat4,
+  camera: readonly [number, number, number],
+  point: readonly [number, number, number],
+  viewport: Viewport,
+): ScreenPoint {
+  // The renderer's world frame runs its third axis the other way to the game's.
+  const offsetX = point[0] - camera[0];
+  const offsetY = point[1] - camera[1];
+  const offsetZ = -(point[2] - camera[2]);
+  const clipX =
+    matrix[0] * offsetX + matrix[4] * offsetY + matrix[8] * offsetZ + matrix[12];
+  const clipY =
+    matrix[1] * offsetX + matrix[5] * offsetY + matrix[9] * offsetZ + matrix[13];
+  const clipW =
+    matrix[3] * offsetX + matrix[7] * offsetY + matrix[11] * offsetZ + matrix[15];
+  const ndcX = clipX / clipW;
+  const ndcY = clipY / clipW;
+  return {
+    x: (ndcX * 0.5 + 0.5) * viewport.width,
+    y: (0.5 - ndcY * 0.5) * viewport.height,
+    inFront: clipW > 0,
+  };
+}
+
 /** Projects a point in game coordinates to the screen. */
 export function project(
   view: View,

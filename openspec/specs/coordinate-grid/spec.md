@@ -301,10 +301,27 @@ scenario that needs both a bright background and a dark one takes **two views**.
 at 4,000 light years does not hold the galactic core and the dark space between the arms
 together.
 
-The map SHALL read the reading back to the processor once in each frame that builds it,
-and that read SHALL NOT wait for the card. The labels of a frame MAY therefore read the
-reading of the frame before. One frame of delay on an opacity is not visible, and a read
-that waits costs more than the pass it reads.
+The map SHALL read the reading back to the processor, and that read SHALL NOT wait for
+the card. The read-back of a frame SHALL be taken at the **start** of the next frame,
+before that frame's first draw command. A read-back taken after the frame's draw commands
+is a round trip to the GPU process that drains every command queued before it. Under a
+drag over the default view it measured 0.40 ms a frame in the animation loop against
+0.19 ms at the start of the frame; in the scenario below, a held key over the galactic
+core with the grid on, it measured 1.37 ms against 0.39 ms.
+A tight draw loop with no gap between frames cannot see the difference, so the bound
+below is measured in the animation loop and not with `measureFrames`. The labels of a
+frame MAY therefore read the reading of an earlier frame. The picture does not change
+between two frames of one view, because no shader reads a clock, and a change wakes a
+draw whose labels read the reading of the frame that changed.
+
+A read-back is a cost only a coordinate label spends. Once a first reading has landed,
+the frame SHALL NOT read the reading back while no coordinate label is placed, which is
+a frame with the grid on at a view where the placement keeps no label: a pitch of 0 degrees, where the plane is
+edge-on, or the far end of the band, where the labels fade before the grid does. The
+reading SHALL still be built in such a frame, so `backgroundReading()` and the first
+label that returns read the last reading that landed. `debug` SHALL carry
+`readbackStats()`, which returns the count and the mean time in milliseconds of the
+read-backs since the last `resetReadbackStats()`, measured around the read-back call.
 
 `debug` SHALL carry `backgroundSize()`, which returns the width and the height of the
 reading's own target, and `[0, 0]` before the first frame that builds it. It reports the
@@ -362,6 +379,29 @@ that.
   dither is a fixed hash of the pixel, so 30 frames with the camera still are byte-identical
   and a still test could not fail. What the requirement claims is that the reading does not
   jump as the point cloud's grain slides under it, and only a moving camera shows that
+
+#### Scenario: The read-back costs under half a millisecond in the loop
+
+- **WHEN** the browser test turns the grid on at 1920x1080 at a zoom of 4,000 light years
+  and a pitch of 5 degrees, calls `resetReadbackStats()`, holds a movement key for 120
+  animation frames, and reads `readbackStats()`
+- **THEN** the count is above 100 and the mean is 0.50 ms or less. Five readings of the
+  scenario gave 0.35 to 0.44 ms, and the old position gave 1.37 ms
+
+#### Scenario: No label, no read-back
+
+- **WHEN** the browser test turns the grid on at a zoom of 4,000 light years and a pitch
+  of 0 degrees, where the grid draws and the label readings hold no label, calls
+  `resetReadbackStats()`, holds a movement key for 120 animation frames, and reads
+  `readbackStats()` and `backgroundSize()`
+- **THEN** the count is 0 and the size is 120 by 68, so the reading was built and never
+  read back
+
+#### Scenario: The label reads a reading that landed
+
+- **WHEN** the browser test turns the grid on at a zoom of 4,000 light years and a pitch
+  of 5 degrees, draws three frames and reads `backgroundReading()`
+- **THEN** the reading holds 120 by 68 texels
 
 ### Requirement: The grid reports what it drew
 

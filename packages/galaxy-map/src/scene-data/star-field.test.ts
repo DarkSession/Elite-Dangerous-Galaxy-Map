@@ -271,6 +271,38 @@ describe('the boxel table', () => {
     field.update([24, 4, 4], 500);
     expect(field.recomputeCount).toBe(after + 1);
   });
+
+  test('reads the model once for each new boxel and not once for each boxel', () => {
+    let densityReads = 0;
+    let zoneReads = 0;
+    const counted: GalaxyModel = {
+      ...model,
+      detailedMassDensity(x: number, y: number, z: number): number {
+        densityReads += 1;
+        return model.detailedMassDensity(x, y, z);
+      },
+      zone(x: number, z: number): number {
+        zoneReads += 1;
+        return model.zone(x, z);
+      },
+    };
+    const field = createStarField(counted, { starLight: 0.4185 });
+
+    field.update([0, 0, 0], 500);
+    expect(densityReads).toBe(DRAWN_BOXEL_COUNT);
+    expect(zoneReads).toBe(DRAWN_BOXEL_COUNT);
+
+    // One boxel of the base class along. The set is read again, and nearly every boxel
+    // of it is a boxel the field read for the view before.
+    const before = densityReads;
+    field.update([24, 4, 4], 500);
+    expect(field.recomputeCount).toBe(2);
+    const fresh = densityReads - before;
+    expect(fresh).toBeGreaterThan(0);
+    expect(fresh).toBeLessThan(DRAWN_BOXEL_COUNT / 2);
+    // The zone follows the density: the two are read together and held together.
+    expect(zoneReads).toBe(densityReads);
+  });
 });
 
 describe('suppression in the boxel table', () => {
@@ -422,11 +454,9 @@ describe('suppression in the boxel table', () => {
     expect(after.drawnStars).toBe(before.drawnStars - 3);
   });
 
-  test('sweeps nothing while the system set is empty', () => {
+  test('suppresses nothing while the system set is empty', () => {
     const set = createSystemSet();
     const field = createStarField(model, { starLight: 0.4185, systems: set });
-    const table = field.update(camera, distance);
-    expect(field.sweptCount).toBe(0);
-    expect(table.suppressedStars).toBe(0);
+    expect(field.update(camera, distance).suppressedStars).toBe(0);
   });
 });

@@ -59,11 +59,13 @@ function transformedCorners(
 }
 
 /** An element that records every style write, so a test can count them. */
-function fakeElement(): { element: HTMLElement; writes: string[] } {
+function fakeElement(): { element: HTMLElement; writes: string[]; reads: string[] } {
   const held = new Map<string, string>();
   const writes: string[] = [];
+  const reads: string[] = [];
   const style = {
     getPropertyValue(name: string): string {
+      reads.push(name);
       return held.get(name) ?? '';
     },
     setProperty(name: string, value: string): void {
@@ -71,7 +73,7 @@ function fakeElement(): { element: HTMLElement; writes: string[] } {
       held.set(name, value);
     },
   };
-  return { element: { style } as unknown as HTMLElement, writes };
+  return { element: { style } as unknown as HTMLElement, writes, reads };
 }
 
 describe('a plane element', () => {
@@ -215,6 +217,19 @@ describe('a plane element', () => {
       return { left: anchor.x - 80, top: anchor.y - 80, width: 160, height: 160 };
     };
     expect(overlaps(uprightOf(-300), uprightOf(300))).toBe(false);
+  });
+
+  test('the placement reads and writes the four properties that move', () => {
+    const { element, writes, reads } = fakeElement();
+    expect(
+      placeOnPlane(element, placementOf(viewAt(1000, 30), 200, 200)),
+    ).not.toBeNull();
+
+    // The other four, `position`, `left`, `top` and `transform-origin`, never move, so
+    // the element factories write them once at creation and the placement reads none of
+    // them. Every write here is a read of the CSSOM first.
+    expect(writes).toEqual(['width', 'height', 'transform', 'z-index']);
+    expect(reads).toEqual(['width', 'height', 'transform', 'z-index']);
   });
 
   test('the placement writes no style it already holds', () => {

@@ -173,6 +173,22 @@ describe('the catalog reader', () => {
     expect(report.entries[0]).not.toHaveProperty('view');
   });
 
+  test('drops a view whose cursor holds two numbers', () => {
+    const report = readDatasets([
+      {
+        id: 'one',
+        label: 'One',
+        view: { cursor: [1, 2], pitch: 60 },
+        load: () => EMPTY,
+      },
+    ]);
+
+    // One unreadable field makes the whole view unreadable, so the `pitch` beside it
+    // goes with the cursor.
+    expect(report.rejected).toEqual([]);
+    expect(report.entries[0]).not.toHaveProperty('view');
+  });
+
   test('gives an empty catalog for no option', () => {
     expect(readDatasets(undefined)).toEqual({ entries: [], rejected: [] });
   });

@@ -30,7 +30,7 @@ import {
 } from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
-import { planePlacement, writeOnPlane } from './plane-overlay';
+import { planePlacement, setStyle, writeOnPlane } from './plane-overlay';
 import type { PlanePlaced } from './plane-overlay';
 
 /**
@@ -138,18 +138,6 @@ export const GRID_LABEL_STROKE = `${GRID_LABEL_STROKE_CSS}px ${GRID_LABEL_STROKE
  */
 export const GRID_LABEL_PAINT_ORDER = 'stroke fill';
 
-/**
- * Writes one style property only when it differs. The overlay writes every property of
- * every label in each frame, and a write of the value an element already holds is a DOM
- * change the browser records. `src/hud/dom.ts` holds the same three lines for the HUD
- * panels. The two are not shared, because the HUD is an opt-in module in its own chunk
- * and the library must not pull it into the core one.
- */
-function setStyle(element: HTMLElement, name: string, value: string): void {
-  if (element.style.getPropertyValue(name) === value) return;
-  element.style.setProperty(name, value);
-}
-
 /** The font family every coordinate label draws in. */
 export const GRID_LABEL_FONT_FAMILY = "'IBM Plex Mono', ui-monospace, monospace";
 
@@ -165,17 +153,13 @@ export const GRID_LABEL_FONT_MAX_CSS = 512;
 /**
  * A whole number with a thousands separator, for example `-12,345`. A number of three
  * digits or fewer carries no separator.
+ *
+ * The locale is named, so the separator is the comma at every locale the browser runs
+ * in. The `|| 0` turns negative zero into zero, which is the one value where
+ * `toLocaleString` reads `-0`.
  */
 export function labelNumber(value: number): string {
-  const whole = Math.round(value);
-  const digits = String(Math.abs(whole));
-  let out = '';
-  for (let at = 0; at < digits.length; at += 1) {
-    const left = digits.length - at;
-    out += digits[at] as string;
-    if (left > 1 && left % 3 === 1) out += ',';
-  }
-  return whole < 0 ? `-${out}` : out;
+  return (Math.round(value) || 0).toLocaleString('en-US');
 }
 
 /**
@@ -333,6 +317,12 @@ export interface GridLabelFrame {
   readonly browse: ResolvedBounds;
   /** The background reading, or null while the map has none. */
   readonly background: GridLabelReading | null;
+  /**
+   * The view epoch, which rises on every write of the view and on a resize. The overlay
+   * keeps the placements of the last epoch and sweeps again only where the number moved.
+   * A caller that gives none sweeps on every frame.
+   */
+  readonly epoch?: number;
 }
 
 /** The background under one point of the canvas, each channel from 0 to 255. */
@@ -715,7 +705,12 @@ export interface GridLabelOverlay {
 function makeLabel(document: Document): HTMLElement {
   const element = document.createElement('div');
   element.className = 'gm-grid-label';
+  // The four styles a placement never moves. `writeOnPlane` writes the size, the
+  // transform and the level, and each of its writes is a CSSOM read first.
   setStyle(element, 'position', 'absolute');
+  setStyle(element, 'left', '0px');
+  setStyle(element, 'top', '0px');
+  setStyle(element, 'transform-origin', '0 0');
   setStyle(element, 'pointer-events', 'none');
   setStyle(element, 'white-space', 'nowrap');
   setStyle(element, 'box-sizing', 'border-box');
@@ -787,6 +782,13 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
   const measure = createGridLabelMeasure(document);
   let shown = 0;
   let placed: GridLabelPlaced[] = [];
+  // The placements of the last sweep, and what they were swept for. The sweep reads the
+  // view, the level spacing and the browsable space alone, so a frame that holds all
+  // three keeps them.
+  let placements: GridLabelPlacement[] = [];
+  let sweptEpoch: number | null = null;
+  let sweptSpacing = 0;
+  let sweptBrowse: ResolvedBounds | null = null;
 
   const labelAt = (index: number): HTMLElement => {
     let element = labels[index];
@@ -801,6 +803,8 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
     for (const element of labels) element.remove();
     shown = 0;
     placed = [];
+    placements = [];
+    sweptEpoch = null;
   };
 
   return {
@@ -810,7 +814,22 @@ export function createGridLabelOverlay(host: HTMLElement): GridLabelOverlay {
         return;
       }
 
-      const placements = gridLabelPlacements(frame, measure);
+      // The projection sweep runs once per view. The background read below runs on
+      // every frame, because the reading of a view lands one or two frames after the
+      // view and a gate over the whole update would hold every label's tint on the
+      // reading of the view before.
+      const epoch = frame.epoch ?? null;
+      if (
+        epoch === null ||
+        epoch !== sweptEpoch ||
+        frame.spacingLy !== sweptSpacing ||
+        frame.browse !== sweptBrowse
+      ) {
+        placements = gridLabelPlacements(frame, measure);
+        sweptEpoch = epoch;
+        sweptSpacing = frame.spacingLy;
+        sweptBrowse = frame.browse;
+      }
       const readings: GridLabelPlaced[] = [];
       for (let index = 0; index < placements.length; index += 1) {
         const placement = placements[index] as GridLabelPlacement;

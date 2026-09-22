@@ -31,7 +31,6 @@ import {
   offerNearest,
   resetNearest,
 } from '../scene-data/nearest-keep';
-import { DEFAULT_MAX_DRAW_RANGE_LY } from '../scene-data/real-systems';
 import type { RealSystemSet } from '../scene-data/real-systems';
 import { createIconTextures, NO_ICON_LAYER } from './icon-textures';
 import type { IconTextureOptions, IconTextures } from './icon-textures';
@@ -143,6 +142,11 @@ export interface IconPass {
   draw(frame: IconPassFrame): number;
   /** How many draw calls the last draw issued. */
   drawCalls(): number;
+  /**
+   * The mean time of the last `SWEEP_SAMPLES` placement sweeps, in milliseconds. A
+   * browser test reads it through the handle to hold the sweep to its budget.
+   */
+  sweepMeanMs(): number;
   /** What the last `prepare` placed, in draw order, which is the furthest stack first. */
   placements(): IconPlacement[];
   /**
@@ -168,6 +172,9 @@ export function createIconProgram(gl: WebGL2RenderingContext): Program {
   ]);
 }
 
+/** How many sweeps the mean of the time probe covers. */
+const SWEEP_SAMPLES = 120;
+
 /** What `createIconPass` takes besides the context and the program. */
 export interface IconPassOptions {
   /** Passed straight to the texture array. A unit run gives its own rasteriser. */
@@ -192,6 +199,11 @@ export function createIconPass(
 
   const textures: IconTextures = createIconTextures(gl, options.textures);
   const keep = createNearestKeep(MAX_ICON_STACKS);
+  // What the last sweeps cost. The ring holds one reading per sweep, so the probe reads
+  // the frames of the measurement and not every frame since the map opened.
+  const sweepMs = new Float64Array(SWEEP_SAMPLES);
+  let sweepAt = 0;
+  let sweepCount = 0;
   const instances = new Float32Array(MAX_INSTANCES * INSTANCE_FLOATS);
   // What the frame placed, held as parallel arrays so the draw path allocates nothing.
   // `placements()` builds the objects, and only a test calls it.
@@ -263,173 +275,196 @@ export function createIconPass(
     placed += 1;
   };
 
+  /**
+   * Selects and places the stacks of one frame. `prepare` times it, so the frame's own
+   * reading covers the whole walk and nothing else.
+   */
+  const sweep = (frame: Omit<IconPassFrame, 'range'>): number => {
+    placed = 0;
+    const set = frame.set;
+    // A set in which no record holds an icon costs no per-frame work at all. The icon
+    // switch defaults on, so without this a host that names no icon would begin
+    // paying for a sweep of its own set.
+    if (set.iconIndexCount === 0) return 0;
+
+    textures.setPixelRatio(frame.pixelRatio);
+
+    const matrix = frame.viewProjection;
+    const camera = frame.camera;
+    const cursor = frame.cursorOffset;
+    const positions = set.positions;
+    const flags = set.markerFlags;
+    // The sweep reads the set's flat views and builds no record and no category for a
+    // candidate. `drawRanges` holds the draw range of the category each record draws
+    // through, which is the limit a stack is cut at.
+    const limits = set.drawRanges;
+    const iconStarts = set.iconStarts;
+    const iconCounts = set.iconCounts;
+    const iconVectors = set.iconVectors;
+    const count = set.count;
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const indices = set.iconIndices;
+
+    resetNearest(keep);
+    for (let at = 0; at < indices.length; at += 1) {
+      const index = indices[at] as number;
+      // A stale entry: the record that named an icon was replaced by one that names
+      // none. It costs one read and draws nothing.
+      if (index < 0 || index >= count) continue;
+      if (flags[index] !== 1) continue;
+      if (iconCounts[index] === 0) continue;
+
+      // The offset is built with `Math.fround` per axis, which reproduces bit for bit
+      // the `float32` the marker position buffer holds. The range from it is therefore
+      // the range the card measures the marker at, to within the square root.
+      const base = index * 3;
+      const x = Math.fround((positions[base] as number) - camera[0]);
+      const y = Math.fround((positions[base + 1] as number) - camera[1]);
+      // The world frame's third axis runs the other way to the game's.
+      const z = Math.fround(camera[2] - (positions[base + 2] as number));
+
+      // The cut measures from the cursor, as `systems.vert` does, so the pass keeps
+      // the stacks of the markers the frame drew. The size measures from the camera.
+      const limit = limits[index] as number;
+      const cx = x - cursor[0];
+      const cy = y - cursor[1];
+      const cz = z - cursor[2];
+      if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
+
+      const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+      if (clipW <= frame.near) continue;
+      const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
+      const clipY = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
+      const deviceX = (clipX / clipW + 1) * halfWidth;
+      const deviceY = (1 - clipY / clipW) * halfHeight;
+      // A candidate outside the viewport is dropped before any other work.
+      if (deviceX < 0 || deviceY < 0 || deviceX > width || deviceY > height) continue;
+
+      offerNearest(keep, index, Math.hypot(x, y, z));
+    }
+
+    const stackCount = keep.count;
+    if (stackCount === 0) return 0;
+
+    const ratio = frame.pixelRatio;
+    // The quad is 28 CSS pixels square, which is what the size rule states. It is not
+    // the texture side: `iconLayerSide` floors the ratio at 1, so a screen under a
+    // ratio of 1 holds a readable texture, and a quad of that side would draw a 56 CSS
+    // pixel icon at a ratio of 0.5 over a stack step of 15 device pixels.
+    const iconSide = Math.max(1, Math.round(ICON_CSS_SIZE * ratio));
+    const arrowWidth = Math.max(1, Math.round(ARROW_WIDTH_CSS * ratio));
+    const arrowHeight = Math.max(1, Math.round(ARROW_HEIGHT_CSS * ratio));
+
+    // The furthest stack first, so a nearer stack draws over a further one. The keeper
+    // holds its entries nearest first, so the walk runs backwards.
+    for (let slot = keep.count - 1; slot >= 0; slot -= 1) {
+      const index = keep.indices[slot] as number;
+      const range = keep.ranges[slot] as number;
+      const iconAt = iconStarts[index] as number;
+      const iconsHeld = iconCounts[index] as number;
+      if (iconsHeld === 0) continue;
+
+      const base = index * 3;
+      const x = Math.fround((positions[base] as number) - camera[0]);
+      const y = Math.fround((positions[base + 1] as number) - camera[1]);
+      const z = Math.fround(camera[2] - (positions[base + 2] as number));
+      const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+      const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
+      const clipY = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
+      const deviceX = (clipX / clipW + 1) * halfWidth;
+      const centreYCss = ((1 - clipY / clipW) * halfHeight) / ratio;
+      const markerCss = markerCssSize(range);
+      const selected = index === frame.selectedIndex;
+
+      // The arrow goes first, under the lowest icon and before the icons of its own
+      // stack in the stream. It draws for every kept stack, whatever the state of the
+      // vectors: a record with icons has an arrow.
+      const lowest = iconVectors[iconAt] as ResolvedIcon;
+      const arrowTop = Math.round(
+        arrowApexCss(centreYCss, markerCss, selected) * ratio - arrowHeight,
+      );
+      const arrowLeft = Math.round(deviceX - arrowWidth / 2);
+      const arrowBase = placed * INSTANCE_FLOATS;
+      instances[arrowBase] = arrowLeft;
+      instances[arrowBase + 1] = arrowTop;
+      instances[arrowBase + 2] = arrowWidth;
+      instances[arrowBase + 3] = arrowHeight;
+      instances[arrowBase + 4] = (lowest.color[0] as number) / 255;
+      instances[arrowBase + 5] = (lowest.color[1] as number) / 255;
+      instances[arrowBase + 6] = (lowest.color[2] as number) / 255;
+      instances[arrowBase + 7] = range;
+      instances[arrowBase + 8] = KIND_ARROW;
+      note(
+        1,
+        index,
+        0,
+        arrowLeft / ratio,
+        arrowTop / ratio,
+        arrowWidth / ratio,
+        arrowHeight / ratio,
+        lowest.color,
+        '',
+      );
+
+      for (let at = 0; at < iconsHeld; at += 1) {
+        const icon = iconVectors[iconAt + at];
+        if (icon === undefined) continue;
+        // An icon draws only once its vector is ready. Loading is asynchronous, so the
+        // first frames after a record arrives may draw fewer icons than it names, and
+        // a URL the browser refuses never becomes ready. The rest of the stack draws.
+        const layer = textures.layerOf(icon.url);
+        if (layer === NO_ICON_LAYER) continue;
+        // The icon keeps the place its index of the record gives, so a vector that is
+        // not ready leaves a gap rather than moving the ones above it down.
+        const top = Math.round(
+          iconBottomCss(centreYCss, markerCss, at, selected) * ratio - iconSide,
+        );
+        const left = Math.round(deviceX - iconSide / 2);
+        const iconBase = placed * INSTANCE_FLOATS;
+        instances[iconBase] = left;
+        instances[iconBase + 1] = top;
+        instances[iconBase + 2] = iconSide;
+        instances[iconBase + 3] = iconSide;
+        instances[iconBase + 4] = layer;
+        // The other two data floats carry an arrow's fill, and an icon leaves them at 0.
+        instances[iconBase + 5] = 0;
+        instances[iconBase + 6] = 0;
+        instances[iconBase + 7] = range;
+        instances[iconBase + 8] = KIND_ICON;
+        note(
+          0,
+          index,
+          at,
+          left / ratio,
+          top / ratio,
+          iconSide / ratio,
+          iconSide / ratio,
+          icon.color,
+          icon.url,
+        );
+      }
+    }
+
+    return stackCount;
+  };
+
   return {
     prepare(frame: Omit<IconPassFrame, 'range'>): number {
-      placed = 0;
-      const set = frame.set;
-      // A set in which no record holds an icon costs no per-frame work at all. The icon
-      // switch defaults on, so without this a host that names no icon would begin
-      // paying for a sweep of its own set.
-      if (set.iconIndexCount === 0) return 0;
-
-      textures.setPixelRatio(frame.pixelRatio);
-
-      const matrix = frame.viewProjection;
-      const camera = frame.camera;
-      const cursor = frame.cursorOffset;
-      const positions = set.positions;
-      const flags = set.markerFlags;
-      const categoryIndices = set.categoryIndices;
-      const count = set.count;
-      const width = gl.drawingBufferWidth;
-      const height = gl.drawingBufferHeight;
-      const halfWidth = width / 2;
-      const halfHeight = height / 2;
-      const indices = set.iconIndices;
-
-      resetNearest(keep);
-      for (let at = 0; at < indices.length; at += 1) {
-        const index = indices[at] as number;
-        // A stale entry: the record that named an icon was replaced by one that names
-        // none. It costs one read and draws nothing.
-        if (index < 0 || index >= count) continue;
-        if (flags[index] !== 1) continue;
-        const icons = set.system(index)?.icons;
-        if (icons === undefined || icons.length === 0) continue;
-
-        // The offset is built with `Math.fround` per axis, which reproduces bit for bit
-        // the `float32` the marker position buffer holds. The range from it is therefore
-        // the range the card measures the marker at, to within the square root.
-        const base = index * 3;
-        const x = Math.fround((positions[base] as number) - camera[0]);
-        const y = Math.fround((positions[base + 1] as number) - camera[1]);
-        // The world frame's third axis runs the other way to the game's.
-        const z = Math.fround(camera[2] - (positions[base + 2] as number));
-
-        // The cut measures from the cursor, as `systems.vert` does, so the pass keeps
-        // the stacks of the markers the frame drew. The size measures from the camera.
-        const category = set.category(categoryIndices[index] as number);
-        const limit =
-          category === null ? DEFAULT_MAX_DRAW_RANGE_LY : category.maxDrawRange;
-        const cx = x - cursor[0];
-        const cy = y - cursor[1];
-        const cz = z - cursor[2];
-        if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
-
-        const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
-        if (clipW <= frame.near) continue;
-        const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
-        const clipY = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
-        const deviceX = (clipX / clipW + 1) * halfWidth;
-        const deviceY = (1 - clipY / clipW) * halfHeight;
-        // A candidate outside the viewport is dropped before any other work.
-        if (deviceX < 0 || deviceY < 0 || deviceX > width || deviceY > height) continue;
-
-        offerNearest(keep, index, Math.hypot(x, y, z));
-      }
-
-      const stackCount = keep.count;
-      if (stackCount === 0) return 0;
-
-      const ratio = frame.pixelRatio;
-      // The quad is 28 CSS pixels square, which is what the size rule states. It is not
-      // the texture side: `iconLayerSide` floors the ratio at 1, so a screen under a
-      // ratio of 1 holds a readable texture, and a quad of that side would draw a 56 CSS
-      // pixel icon at a ratio of 0.5 over a stack step of 15 device pixels.
-      const iconSide = Math.max(1, Math.round(ICON_CSS_SIZE * ratio));
-      const arrowWidth = Math.max(1, Math.round(ARROW_WIDTH_CSS * ratio));
-      const arrowHeight = Math.max(1, Math.round(ARROW_HEIGHT_CSS * ratio));
-
-      // The furthest stack first, so a nearer stack draws over a further one. The keeper
-      // holds its entries nearest first, so the walk runs backwards.
-      for (let slot = keep.count - 1; slot >= 0; slot -= 1) {
-        const index = keep.indices[slot] as number;
-        const range = keep.ranges[slot] as number;
-        const icons = set.system(index)?.icons as readonly ResolvedIcon[] | undefined;
-        if (icons === undefined || icons.length === 0) continue;
-
-        const base = index * 3;
-        const x = Math.fround((positions[base] as number) - camera[0]);
-        const y = Math.fround((positions[base + 1] as number) - camera[1]);
-        const z = Math.fround(camera[2] - (positions[base + 2] as number));
-        const clipW = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
-        const clipX = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
-        const clipY = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
-        const deviceX = (clipX / clipW + 1) * halfWidth;
-        const centreYCss = ((1 - clipY / clipW) * halfHeight) / ratio;
-        const markerCss = markerCssSize(range);
-        const selected = index === frame.selectedIndex;
-
-        // The arrow goes first, under the lowest icon and before the icons of its own
-        // stack in the stream. It draws for every kept stack, whatever the state of the
-        // vectors: a record with icons has an arrow.
-        const lowest = icons[0] as ResolvedIcon;
-        const arrowTop = Math.round(
-          arrowApexCss(centreYCss, markerCss, selected) * ratio - arrowHeight,
-        );
-        const arrowLeft = Math.round(deviceX - arrowWidth / 2);
-        const arrowBase = placed * INSTANCE_FLOATS;
-        instances[arrowBase] = arrowLeft;
-        instances[arrowBase + 1] = arrowTop;
-        instances[arrowBase + 2] = arrowWidth;
-        instances[arrowBase + 3] = arrowHeight;
-        instances[arrowBase + 4] = (lowest.color[0] as number) / 255;
-        instances[arrowBase + 5] = (lowest.color[1] as number) / 255;
-        instances[arrowBase + 6] = (lowest.color[2] as number) / 255;
-        instances[arrowBase + 7] = range;
-        instances[arrowBase + 8] = KIND_ARROW;
-        note(
-          1,
-          index,
-          0,
-          arrowLeft / ratio,
-          arrowTop / ratio,
-          arrowWidth / ratio,
-          arrowHeight / ratio,
-          lowest.color,
-          '',
-        );
-
-        for (let at = 0; at < icons.length; at += 1) {
-          const icon = icons[at];
-          if (icon === undefined) continue;
-          // An icon draws only once its vector is ready. Loading is asynchronous, so the
-          // first frames after a record arrives may draw fewer icons than it names, and
-          // a URL the browser refuses never becomes ready. The rest of the stack draws.
-          const layer = textures.layerOf(icon.url);
-          if (layer === NO_ICON_LAYER) continue;
-          // The icon keeps the place its index of the record gives, so a vector that is
-          // not ready leaves a gap rather than moving the ones above it down.
-          const top = Math.round(
-            iconBottomCss(centreYCss, markerCss, at, selected) * ratio - iconSide,
-          );
-          const left = Math.round(deviceX - iconSide / 2);
-          const iconBase = placed * INSTANCE_FLOATS;
-          instances[iconBase] = left;
-          instances[iconBase + 1] = top;
-          instances[iconBase + 2] = iconSide;
-          instances[iconBase + 3] = iconSide;
-          instances[iconBase + 4] = layer;
-          // The other two data floats carry an arrow's fill, and an icon leaves them at 0.
-          instances[iconBase + 5] = 0;
-          instances[iconBase + 6] = 0;
-          instances[iconBase + 7] = range;
-          instances[iconBase + 8] = KIND_ICON;
-          note(
-            0,
-            index,
-            at,
-            left / ratio,
-            top / ratio,
-            iconSide / ratio,
-            iconSide / ratio,
-            icon.color,
-            icon.url,
-          );
-        }
-      }
-
-      return stackCount;
+      const startedMs = performance.now();
+      const kept = sweep(frame);
+      sweepMs[sweepAt] = performance.now() - startedMs;
+      sweepAt = (sweepAt + 1) % SWEEP_SAMPLES;
+      if (sweepCount < SWEEP_SAMPLES) sweepCount += 1;
+      return kept;
+    },
+    sweepMeanMs(): number {
+      if (sweepCount === 0) return 0;
+      let total = 0;
+      for (let at = 0; at < sweepCount; at += 1) total += sweepMs[at] as number;
+      return total / sweepCount;
     },
 
     draw(frame: IconPassFrame): number {

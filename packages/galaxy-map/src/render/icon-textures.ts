@@ -67,6 +67,12 @@ export interface IconTextureOptions {
    * document, so the tests pass their own.
    */
   readonly rasterise?: (url: string, side: number) => Promise<TexImageSource>;
+  /**
+   * Called once each time a vector lands in its layer. A vector is fetched after the
+   * frame that named it drew, so the picture changes without a write of the view: the
+   * map wakes its frame loop on this.
+   */
+  readonly onReady?: () => void;
 }
 
 /**
@@ -167,6 +173,7 @@ export function createIconTextures(
         );
         gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
         entry.state = 'ready';
+        options.onReady?.();
       })
       .catch((reason: unknown) => {
         // A stale answer, as above. A load the ratio change replaced must not mark the

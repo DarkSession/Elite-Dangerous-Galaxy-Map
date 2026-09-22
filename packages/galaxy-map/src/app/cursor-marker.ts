@@ -10,6 +10,7 @@
 // through `src/app/plane-overlay.ts`, so a circle on the plane reads as an ellipse on the
 // screen and the arrows lean with the pitch. A mark that faced the screen would say where
 // the cursor projects and not where it is.
+import { smoothStep } from '../math';
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import { placeOnPlane, planeSpanForScreenX } from './plane-overlay';
@@ -58,12 +59,6 @@ export const CURSOR_MARKER_NEAR_LY = 12000;
  * thing of the map rather than as the cursor.
  */
 export const CURSOR_MARKER_FAR_LY = 60000;
-
-/** The smooth step of `smoothstep(low, high, value)`. */
-function smoothStep(low: number, high: number, value: number): number {
-  const part = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return part * part * (3 - 2 * part);
-}
 
 /**
  * The side of the marker's box on the screen, in CSS pixels, at a camera distance to the
@@ -136,7 +131,12 @@ export function createCursorMarker(document: Document): SVGSVGElement {
     'viewBox',
     `0 0 ${String(CURSOR_MARKER_BOX)} ${String(CURSOR_MARKER_BOX)}`,
   );
+  // The four styles a placement never moves, written once here. `placeOnPlane` writes
+  // the size, the transform and the level alone.
   svg.style.position = 'absolute';
+  svg.style.left = '0px';
+  svg.style.top = '0px';
+  svg.style.transformOrigin = '0 0';
   svg.style.pointerEvents = 'none';
   svg.style.overflow = 'visible';
 

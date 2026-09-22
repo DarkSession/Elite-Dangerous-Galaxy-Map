@@ -223,13 +223,19 @@ async function trackLabel(
     async ([label, span, x, y, z]) => {
       window.galaxyMap?.setView({ cursor: [x as number, y as number, z as number] });
       const readings: { t: number; x: number | null; y: number | null }[] = [];
-      const started = performance.now();
+      let started: number | null = null;
       return await new Promise<typeof readings>((resolve) => {
-        const step = (): void => {
+        // The time each reading carries is the timestamp of the animation frame and not
+        // a wall clock reading. The map paces its own rates by that timestamp, and a
+        // callback can run some milliseconds after the frame it belongs to: after an
+        // idle stretch the two clocks are a frame apart, and a rate measured against the
+        // wall clock would then read twice the rate the map applied.
+        const step = (now: number): void => {
+          started ??= now;
           const element = Array.from(document.querySelectorAll('.region-label')).find(
             (node) => node.textContent === label,
           );
-          const t = performance.now() - started;
+          const t = now - started;
           if (element === undefined) readings.push({ t, x: null, y: null });
           else {
             const box = element.getBoundingClientRect();
@@ -586,9 +592,9 @@ test.describe('the labels at 1280 by 720', () => {
   });
 
   // The scenario "The labels settle before the loop drops to the idle rate". A map
-  // nobody touches draws every frame for 1200 milliseconds after a change, and one
-  // frame each 200 milliseconds after that. A label that still eased at 1200
-  // milliseconds would therefore step across the screen once every 200 milliseconds.
+  // nobody touches draws every frame for 1200 milliseconds after a change, and stops
+  // after that. A label that still eased at 1200 milliseconds would therefore stop
+  // short of its place.
   test('no label moves after the settle window', async ({ page }) => {
     await openView(page, '#c=0,0,0&d=20000&p=35&y=0');
     await page.waitForTimeout(2000);
@@ -631,7 +637,7 @@ test.describe('the sampling budget at 1920 by 1080', () => {
     await page.evaluate(() => window.__galaxyMap?.resetLabelSampling?.());
     await page.waitForFunction(
       // The check runs on every animation frame, and it moves the pointer as a user's
-      // hand does, because a map nobody touches draws at the idle rate.
+      // hand does, because a map nobody touches draws no frame.
       () => {
         document.querySelector('canvas')?.dispatchEvent(
           new PointerEvent('pointermove', {
@@ -641,6 +647,9 @@ test.describe('the sampling budget at 1920 by 1080', () => {
             pointerType: 'mouse',
           }),
         );
+        // A pointer move renders no canvas, so the wake is what holds the loop drawing
+        // while the sweep fills its 300 frames.
+        window.__galaxyMap?.wake?.();
         return (window.__galaxyMap?.labelSampling?.().frames ?? 0) >= 300;
       },
       undefined,

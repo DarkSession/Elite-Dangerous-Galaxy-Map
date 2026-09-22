@@ -13,6 +13,7 @@
 // `src/hud/styles.ts` does for the three faces: the library build inlines a small asset
 // as a data URI otherwise, and 16 of those would put about 15 KB of base64 in the entry
 // chunk of every host, including one that names no icon.
+import { readColor } from './read-field';
 import { GALAXY_MAP_MARKERS } from '@elite-dangerous-almanac/core/galaxy-map/markers';
 import bookmark from '@elite-dangerous-almanac/core/assets/galaxy-map/bookmark.svg?url&no-inline';
 import communityGoal from '@elite-dangerous-almanac/core/assets/galaxy-map/community-goal.svg?url&no-inline';
@@ -80,21 +81,6 @@ function readHexColor(hex: string): [number, number, number] {
     Number.parseInt(hex.slice(3, 5), 16),
     Number.parseInt(hex.slice(5, 7), 16),
   ];
-}
-
-/**
- * Three finite numbers from 0 to 255, or null. `src/scene-data/shapes.ts` and
- * `src/scene-data/real-systems.ts` each hold the same reader for their own colours.
- */
-function readColor(value: unknown): [number, number, number] | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  const parts: number[] = [];
-  for (const part of value) {
-    if (typeof part !== 'number' || !Number.isFinite(part)) return null;
-    if (part < 0 || part > 255) return null;
-    parts.push(part);
-  }
-  return [parts[0] as number, parts[1] as number, parts[2] as number];
 }
 
 /**
