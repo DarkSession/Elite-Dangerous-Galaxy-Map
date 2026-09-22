@@ -434,13 +434,18 @@ interface IntervalStats {
  * and a turn of the loop that draws nothing costs nothing to read. The draw count comes
  * back with the reading, so every caller can prove its window drew.
  */
-async function intervalOver120Frames(page: Page): Promise<IntervalStats> {
+async function intervalOver120Frames(
+  page: Page,
+  x = 960,
+  y = 540,
+): Promise<IntervalStats> {
   await page.evaluate(() => {
     window.__galaxyMap?.resetFrameIntervalStats?.();
     window.__galaxyMap?.resetFrameStats?.();
   });
-  // The middle of the 1920x1080 viewport, so a test that hovers a system there keeps it.
-  await hoverFrames(page, 120, 960, 540);
+  // The default is the middle of the 1920x1080 viewport, so a test that hovers a system
+  // there keeps it. A test at another viewport names its own point.
+  await hoverFrames(page, 120, x, y);
   return page.evaluate(() => ({
     ...(window.__galaxyMap?.frameIntervalStats?.() ?? {
       frames: 0,
@@ -1376,4 +1381,41 @@ test('a pointer move over a still camera renders no canvas', async ({ page }) =>
   };
   expect(Math.abs((box.left + box.right) / 2 - 960)).toBeLessThan(3);
   expect(Math.abs((box.top + box.bottom) / 2 - 540)).toBeLessThan(3);
+});
+
+/*
+ * The narrow layout. The scrim covers the whole canvas while a drawer is open, and it is
+ * a flat colour with no filter, so the compositor draws one translucent layer over the
+ * frame and does no per-frame work of its own. The claim is read and not assumed: a
+ * blurred overlay is re-blurred every frame and a flat one is not.
+ *
+ * The reading is here and not in `e2e/hud-mobile.spec.ts`, because that file runs on
+ * several workers and a time taken beside five other browsers is a reading of the
+ * machine.
+ */
+test.describe('the narrow layout', () => {
+  test.use({ viewport: { width: 412, height: 880 }, deviceScaleFactor: 1 });
+
+  test('the scrim costs no measurable frame time', async ({ page }) => {
+    test.setTimeout(180000);
+    await openMap(page, '', { hud: true });
+    expect(await addSpreadSystems(page)).toBe(FULL_SET);
+    await waitFrames(page, 10);
+
+    // The middle of the 412 by 880 viewport.
+    const closed = await intervalOver120Frames(page, 206, 440);
+    await page.locator('.gm-hud__drawer-tab--left').click();
+    await page.waitForTimeout(400);
+    expect(await page.locator('.gm-hud').getAttribute('data-panel')).toBe('left');
+    const open = await intervalOver120Frames(page, 206, 440);
+    console.log('the frame interval with the scrim', { closed, open });
+
+    expect(closed.frames).toBeGreaterThanOrEqual(110);
+    expect(open.frames).toBeGreaterThanOrEqual(110);
+    // The map must have drawn in both windows. A window that drew less has a shorter mean
+    // interval, and the reading would then pass for the wrong reason.
+    expect(closed.draws).toBeGreaterThanOrEqual(110);
+    expect(open.draws).toBeGreaterThanOrEqual(110);
+    expect(open.meanMs).toBeLessThanOrEqual(closed.meanMs + 1);
+  });
 });

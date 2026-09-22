@@ -332,6 +332,10 @@ test('a fresh load draws the grid and a g=0 fragment does not', async ({ page })
 });
 
 test('the HUD grid switch writes the field', async ({ page }) => {
+  // The one test of this file that reads the HUD. The map options panel is a drawer
+  // below 1400 pixels, so the switch is drawn only above that width. Every other test
+  // here reads the canvas with no HUD and keeps the 1280 by 720 viewport of the file.
+  await page.setViewportSize({ width: 1600, height: 900 });
   await openMap(page, '#c=0,0,0&d=1000&p=35&y=0', { demoData: true, hud: true });
   const toggle = page.locator('.gm-hud__toggle[data-name="coordinate-grid"]');
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
