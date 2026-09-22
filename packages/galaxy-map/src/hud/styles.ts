@@ -674,7 +674,8 @@ const styleText = `
   color: #ffb055;
   overflow-wrap: anywhere;
 }
-.gm-hud__info-close {
+.gm-hud__info-close,
+.gm-hud__right-empty-close {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
@@ -685,7 +686,8 @@ const styleText = `
   color: ${ACCENT};
   font-size: 14px;
 }
-.gm-hud__info-close:hover {
+.gm-hud__info-close:hover,
+.gm-hud__right-empty-close:hover {
   background: rgba(255, 150, 60, 0.2);
 }
 .gm-hud__info-body {
@@ -1087,6 +1089,102 @@ const styleText = `
   color: rgba(244, 230, 216, 0.4);
 }
 
+/*
+ * The elements of the narrow layout. The HUD builds all three at every width and this
+ * block hides them, so the media query at the end of the sheet is the one place the
+ * breakpoint is written and the script reads the left tab to learn what it decided.
+ * The look rules stay here, so the query holds layout alone.
+ */
+.gm-hud__drawer-tab {
+  display: none;
+  position: absolute;
+  top: 50%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 30px;
+  padding: 14px 0;
+  transform: translateY(-50%);
+  background: rgba(14, 10, 14, 0.96);
+  border: 1px solid rgba(255, 150, 60, 0.4);
+  color: rgba(255, 154, 60, 0.9);
+}
+.gm-hud__drawer-tab[aria-expanded='true'] {
+  z-index: 46;
+  border-color: ${ACCENT};
+  color: ${ACCENT};
+}
+.gm-hud__drawer-tab--left {
+  border-left: 0;
+}
+.gm-hud__drawer-tab--right {
+  border-right: 0;
+}
+/* The chevron points away from its own edge, and turns as the drawer opens. */
+.gm-hud__drawer-tab-chevron {
+  flex: 0 0 auto;
+  transform: rotate(0deg);
+  transition: transform 260ms ease;
+}
+.gm-hud__drawer-tab[aria-expanded='true'] .gm-hud__drawer-tab-chevron {
+  transform: rotate(180deg);
+}
+.gm-hud__drawer-tab-label {
+  font-family: ${MONO};
+  font-size: 8px;
+  letter-spacing: 1px;
+  writing-mode: vertical-rl;
+  color: inherit;
+}
+.gm-hud__scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 3, 6, 0.55);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+/*
+ * The wrapper of the right drawer. It makes no box above the breakpoint, so the
+ * information panel lays out against the HUD root exactly as it did before it had a
+ * parent, and the wide layout does not move.
+ */
+.gm-hud__right {
+  display: contents;
+}
+.gm-hud__right-empty {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.gm-hud__right-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  padding: 30px 22px;
+  text-align: center;
+}
+.gm-hud__right-empty-mark {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  transform: rotate(45deg);
+  border: 1px solid rgba(255, 150, 60, 0.6);
+}
+.gm-hud__right-empty-text {
+  margin: 0;
+  font-family: ${MONO};
+  font-size: 10px;
+  letter-spacing: 2px;
+  line-height: 1.9;
+  color: rgba(244, 230, 216, 0.45);
+}
+
 .gm-hud__lightbox {
   position: absolute;
   inset: 0;
@@ -1162,6 +1260,281 @@ const styleText = `
   font-size: 10px;
   letter-spacing: 2px;
   color: rgba(244, 230, 216, 0.45);
+}
+
+/*
+ * The drawer layout. The wide layout spends 316 pixels on the left column, 380 on the
+ * information panel and 44 of margin. That is 740 pixels of chrome, and a 1366-pixel
+ * laptop with both columns open keeps 626 pixels of map between them. Below 1400
+ * pixels the two columns become drawers, and an edge tab each opens them over the map.
+ *
+ * The width alone chooses the layout: no rule here reads a pointer type or a user
+ * agent, so a mouse at this width gets the drawers as a finger does.
+ */
+@media (max-width: 1399px) {
+  /*
+   * The left column becomes the left drawer. It is \`position: absolute\` and not
+   * \`fixed\`: the HUD root is \`overflow: hidden\`, and that is what clips the closed
+   * drawer off the screen. A fixed drawer would escape the clip and leave a host's box.
+   *
+   * \`visibility: hidden\` takes the closed drawer out of the tab order, out of hit
+   * testing and out of paint, and the delay makes it wait for the slide to end.
+   */
+  .gm-hud__left {
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(88vw, 360px);
+    z-index: 40;
+    pointer-events: auto;
+    background: rgb(14, 10, 14);
+    border-right: 1px solid rgba(255, 150, 60, 0.33);
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition:
+      transform 260ms ease,
+      visibility 0s linear 260ms;
+  }
+  .gm-hud[data-panel='left'] .gm-hud__left {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform 260ms ease,
+      visibility 0s;
+  }
+  .gm-hud__right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(88vw, 360px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    z-index: 40;
+    pointer-events: auto;
+    background: rgb(14, 10, 14);
+    border-left: 1px solid rgba(255, 150, 60, 0.33);
+    transform: translateX(102%);
+    visibility: hidden;
+    transition:
+      transform 260ms ease,
+      visibility 0s linear 260ms;
+  }
+  .gm-hud[data-panel='right'] .gm-hud__right {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform 260ms ease,
+      visibility 0s;
+  }
+  /*
+   * The drawer is one sheet. The wide layout draws the category panel and the map options
+   * panel as two bordered boxes with 12 pixels of map between them, which inside a drawer
+   * reads as a seam across it. The drawer carries the colour and the border, so the panels
+   * inside it carry neither, and a rule on the options panel keeps the one line that
+   * separates the two.
+   */
+  .gm-hud__left {
+    gap: 0;
+  }
+  .gm-hud__left .gm-hud__panel {
+    background: transparent;
+    border: 0;
+  }
+  .gm-hud__left .gm-hud__options-panel {
+    border-top: 1px solid rgba(255, 150, 60, 0.2);
+  }
+  /* The information panel fills the drawer, which carries the colour and the border. */
+  .gm-hud__info {
+    position: static;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    flex: 1 1 auto;
+    z-index: auto;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .gm-hud__info[hidden] + .gm-hud__right-empty {
+    display: flex;
+  }
+  .gm-hud__drawer-tab {
+    display: flex;
+    z-index: 45;
+    pointer-events: auto;
+    transition:
+      left 260ms ease,
+      right 260ms ease;
+  }
+  .gm-hud__drawer-tab--left {
+    left: 0;
+  }
+  .gm-hud__drawer-tab--right {
+    right: 0;
+  }
+  /*
+   * The open drawer's tab sits beyond the drawer's outer edge, and not inside it, so
+   * the drawer shows its whole width. The tab keeps the border it has against the
+   * screen edge off, because that side now meets the drawer's own border.
+   *
+   * The open tab and the closed one overlap on a screen near the drawer's width. The
+   * open tab goes over, so the tap that closes the open drawer always lands.
+   */
+  .gm-hud[data-panel='left'] .gm-hud__drawer-tab--left {
+    left: min(88vw, 360px);
+  }
+  .gm-hud[data-panel='right'] .gm-hud__drawer-tab--right {
+    right: min(88vw, 360px);
+  }
+  /*
+   * The scrim covers the map and the top bar while a drawer is open, so the dataset
+   * field and the step arrows are not reachable and neither needs a rule for that case.
+   * It is a flat colour with no filter: a blurred overlay is re-blurred every frame and
+   * a flat one is not.
+   */
+  .gm-hud__scrim {
+    display: block;
+    z-index: 30;
+    pointer-events: none;
+  }
+  .gm-hud[data-panel] .gm-hud__scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/*
+ * The phone layout. A 412-pixel screen is not a small desk: the top bar cannot hold
+ * four things in one row, a finger needs a bigger target than a pointer, and the
+ * dataset library wastes a border of scrim on a window. Below 720 pixels the bar wraps,
+ * the region name goes, every control takes the 44-pixel floor and the library fills
+ * the screen. The drawers above are already in force at this width.
+ */
+@media (max-width: 720px) {
+  /*
+   * The bar wraps into two rows. The title, the zoom and the reset button take the
+   * first, the dataset field takes the second and fills it. The region name goes: a
+   * 412-pixel row cannot hold four things, and the user asks for the region again by
+   * moving the camera.
+   */
+  .gm-hud__top-bar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 8px 12px;
+  }
+  .gm-hud__top-left {
+    order: 1;
+  }
+  .gm-hud__top-right {
+    order: 2;
+    gap: 12px;
+  }
+  .gm-hud__top-centre {
+    order: 3;
+    flex: 1 0 100%;
+    padding: 0;
+  }
+  .gm-hud__region {
+    display: none;
+  }
+  /*
+   * The first row holds three things in 388 pixels, and an even share clips all three: the
+   * title reads GALACTIC CAR…, the zoom reads ZOOM 60,0… and the reset label paints
+   * past its own border. The zoom and the button are the two that must not clip, because
+   * a cut number is a wrong number, so the right group takes the width it needs and the
+   * title takes what is left. The title is the one of the three that says the same thing
+   * short, and it already ends in an ellipsis where it must.
+   */
+  .gm-hud__top-right {
+    flex: 0 0 auto;
+  }
+  .gm-hud__zoom,
+  .gm-hud__reset {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .gm-hud__title {
+    font-size: 14px;
+    letter-spacing: 3px;
+  }
+  .gm-hud__dataset {
+    flex: 1 1 auto;
+  }
+  .gm-hud__dataset-value {
+    max-width: none;
+  }
+  /*
+   * The 44-pixel floor, which is the smallest target a finger hits without a second
+   * try. One rule over the two element names and no exemption: a list of selectors is
+   * a second place to remember, and a control added later would be small until someone
+   * noticed. The rule grows the box and not the mark, because a category dot and a copy
+   * button both draw on an element inside the button.
+   */
+  .gm-hud button,
+  .gm-hud input {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /*
+   * The edge tab is the one exemption, and it is a width and not a height. A 412-pixel
+   * screen holds a 360-pixel drawer, so two 44-pixel tabs beside it would overlap on the
+   * middle and a tap on the closed one would land on the open one. At 30 pixels they do
+   * not, and one tap moves from one drawer to the other. The tab keeps the 44-pixel
+   * height, and its label makes it about 80 tall, so the target a finger reads is 30 by
+   * 80 on the screen edge, which is where the thumb already is.
+   */
+  .gm-hud .gm-hud__drawer-tab {
+    min-width: 0;
+  }
+  /*
+   * A category line is 63 pixels tall here: the row and the dot are both buttons, so both
+   * take the 44-pixel floor, and the line adds 18 of padding and a 1-pixel rule. The row
+   * is the target that opens the category, so it keeps its 44. The padding is what is
+   * left to give, and 51 pixels of pitch shows 17 lines on an 880-pixel screen where 63
+   * shows 14. The mockup draws 44, with a 34-pixel dot that this floor does not allow.
+   */
+  .gm-hud__category-line {
+    padding: 3px 12px;
+  }
+  /* The dataset library fills the screen, and its chip row scrolls sideways. */
+  .gm-hud__dialog-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    box-shadow: none;
+  }
+  .gm-hud__collections {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .gm-hud__collection {
+    flex: 0 0 auto;
+  }
+}
+
+/*
+ * The drawers, their tabs and the scrim move with no transition under the query above.
+ * The rule sits at the end of the sheet on purpose: the two layout blocks write a
+ * \`transition\` **shorthand**, which resets the duration and the delay, so a rule before
+ * them has no effect. The two compound selectors are here for the same reason, because
+ * \`.gm-hud[data-panel='left'] .gm-hud__left\` beats a bare class.
+ *
+ * The delay goes with the duration: the closed drawer hides its box after the slide, and
+ * with no slide there is nothing to wait for.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .gm-hud__left,
+  .gm-hud__right,
+  .gm-hud__drawer-tab,
+  .gm-hud__drawer-tab-chevron,
+  .gm-hud__scrim,
+  .gm-hud[data-panel='left'] .gm-hud__left,
+  .gm-hud[data-panel='right'] .gm-hud__right {
+    transition: none;
+  }
 }
 `;
 

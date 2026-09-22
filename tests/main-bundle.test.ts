@@ -185,8 +185,26 @@ const ENTRY_CHUNK_LIMIT = 285_000;
  * two step arrows and the counter of the top bar, the spinner and the style rules of all
  * of them are what took the room, and every one of them is HUD code. The guard still
  * holds at that figure, by the same reading as above.
+ *
+ * The reading is **82,858 bytes** with the narrow layout, which passes the 80,000 bound,
+ * so the bound moves to **90,000**, the next round 10,000 bytes above it. The growth is
+ * 1,121 bytes of markup — the two edge tabs, the scrim and the right-drawer placeholder —
+ * and the rest is style: the base rules of those elements and the media block that holds
+ * the drawers, the wrapped top bar, the 44-pixel floor and the full-screen dataset
+ * dialog. Every byte of it is HUD style and markup. The guard still holds at that figure,
+ * by the same reading as above.
+ *
+ * The reading is **86,148 bytes** once that media block becomes two and the look review's
+ * findings are in. The drawers, the tabs and the scrim move to
+ * `@media (max-width: 1399px)` and the phone rules stay in `@media (max-width: 720px)`,
+ * which is 448 bytes of block text. The look fixes add the rest: the opaque drawer, the
+ * single-sheet left drawer, the top bar's first row, the tab's width exemption and the
+ * category line's padding. All of it is HUD style.
+ *
+ * The bound is 88,000, which leaves 1,852 bytes of room. The guard is there to catch
+ * growth, so it tracks the reading rather than sitting a round number above it.
  */
-const HUD_CHUNK_LIMIT = 80_000;
+const HUD_CHUNK_LIMIT = 88_000;
 
 /**
  * Text that only the region cell lookup holds. Both are keys of the cell data object,

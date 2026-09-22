@@ -11,6 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+// The file reads the HUD, so it names a viewport above the drawer breakpoint. Playwright's
+// default of 1280 is inside the band where the panel columns become drawers.
+test.use({ viewport: { width: 1600, height: 900 } });
+
 const CYCLES = fileURLToPath(
   new URL('../apps/demo/demo-data/cycles/', import.meta.url),
 );

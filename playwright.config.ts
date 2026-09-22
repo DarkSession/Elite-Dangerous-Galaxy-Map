@@ -107,6 +107,7 @@ export default defineConfig({
       testIgnore: [
         '00-renderer.spec.ts',
         'touch.spec.ts',
+        'hud-mobile.spec.ts',
         'paint-cost.spec.ts',
         ...timedSpecs,
       ],
@@ -122,7 +123,7 @@ export default defineConfig({
       // project of its own. It shares the GPU launch arguments and runs the renderer
       // check, so the new context asserts hardware rendering as the project above does.
       name: 'chromium-touch',
-      testMatch: ['00-renderer.spec.ts', 'touch.spec.ts'],
+      testMatch: ['00-renderer.spec.ts', 'touch.spec.ts', 'hud-mobile.spec.ts'],
       dependencies: ['renderer-check'],
       use: {
         ...devices['Desktop Chrome'],

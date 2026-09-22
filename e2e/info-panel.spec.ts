@@ -6,7 +6,7 @@ import type { SystemRecordInput } from '../packages/galaxy-map/src/scene-data/re
 // What the information panel draws from a description and from a host's `details`
 // loader. `e2e/hud.spec.ts` is long, so the panel tests of the host controls live here.
 
-test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 
 /** The colour every category in this file takes. */
 const CORE: [number, number, number] = [153, 230, 255];

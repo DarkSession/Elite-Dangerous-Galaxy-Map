@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { openMap, startState, waitForReady } from './helpers';
 
-test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 
 /** How many categories and systems the demo set holds. */
 const DEMO_CATEGORIES = 3;

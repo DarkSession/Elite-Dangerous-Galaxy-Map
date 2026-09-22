@@ -8,7 +8,7 @@
 import { expect, test } from '@playwright/test';
 import { FULL_SET, openMap } from './helpers';
 
-test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 
 /** How many cards the grid holds, which is the bound the frame budget states. */
 const CARDS = 256;

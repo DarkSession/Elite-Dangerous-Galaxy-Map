@@ -17,7 +17,7 @@ import {
   FACTIONS_DUMP_URL,
 } from './helpers';
 
-test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 
 /** The six entries whose records the repository commits, in the order the page gives. */
 const COMMITTED_IDS = [

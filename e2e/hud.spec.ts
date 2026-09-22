@@ -8,7 +8,7 @@ import type {
   SphereInput,
 } from '../packages/galaxy-map/src/scene-data/shapes';
 
-test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 
 /** The colour every category in this file takes. */
 const CORE: [number, number, number] = [153, 230, 255];
@@ -44,6 +44,11 @@ interface HudBuild {
   readonly datasetCount?: number;
   /** What `datasetArrows` the HUD is built with. A non-boolean reads the default. */
   readonly datasetArrows?: unknown;
+  /**
+   * How many collections those entries spread over. With none the entries take the two
+   * names `First` and `Second`, which is what every test but the chip row reads.
+   */
+  readonly datasetCollections?: number;
   /**
    * True adds one sphere after the map builds, so the **Shapes** switch is shown and the
    * **SHAPES** tab is not disabled. The panel drops the switch on a map that holds no
@@ -135,7 +140,12 @@ async function openHud(page: Page, build: HudBuild = {}): Promise<void> {
         ? Array.from({ length: count }, (_unused: unknown, index: number) => ({
             id: `set-${String(index)}`,
             label: `Set ${String(index)}`,
-            collection: index % 2 === 0 ? 'First' : 'Second',
+            collection:
+              options.datasetCollections === undefined
+                ? index % 2 === 0
+                  ? 'First'
+                  : 'Second'
+                : `Collection ${String(index % options.datasetCollections)}`,
             load: (): unknown => ({ categories: [], systems: [] }),
           }))
         : undefined;
@@ -439,11 +449,17 @@ test.describe('the HUD shell', () => {
       return {
         inParent: wrap?.querySelectorAll('.gm-hud').length ?? -1,
         canvases: wrap?.querySelectorAll('canvas').length ?? -1,
+        narrow:
+          wrap?.querySelectorAll(
+            '.gm-hud__drawer-tab, .gm-hud__scrim, .gm-hud__right, .gm-hud__right-empty',
+          ).length ?? -1,
       };
     });
     expect(left.inParent).toBe(0);
     // The canvas the caller gave stays in the page.
     expect(left.canvases).toBe(1);
+    // The elements of the narrow layout go with the root that holds them.
+    expect(left.narrow).toBe(0);
   });
 });
 
@@ -543,9 +559,9 @@ test.describe('the HUD and the map input', () => {
   test('a drag between the panels still orbits', async ({ page }) => {
     await openHud(page);
     const before = await readView(page);
-    await page.mouse.move(640, 360);
+    await page.mouse.move(800, 450);
     await page.mouse.down();
-    await page.mouse.move(700, 390, { steps: 6 });
+    await page.mouse.move(860, 480, { steps: 6 });
     await page.mouse.up();
     const after = await readView(page);
     console.log('the orbit readings', before, after);
@@ -570,9 +586,16 @@ test.describe('the HUD and the map input', () => {
   test('a drag on a panel does not orbit', async ({ page }) => {
     await openHud(page);
     const before = await readView(page);
-    await page.mouse.move(180, 640);
+    // The panel is at the bottom of the left column, whose bottom follows the viewport
+    // height, so the drag reads the panel's own box and does not name a point.
+    const panel = await hud(page).locator('.gm-hud__options-panel').boundingBox();
+    const from = {
+      x: (panel?.x ?? 0) + 20,
+      y: (panel?.y ?? 0) + (panel?.height ?? 0) / 2,
+    };
+    await page.mouse.move(from.x, from.y);
     await page.mouse.down();
-    await page.mouse.move(280, 640, { steps: 6 });
+    await page.mouse.move(from.x + 100, from.y, { steps: 6 });
     await page.mouse.up();
     const after = await readView(page);
 
@@ -2697,17 +2720,20 @@ test.describe('the map options panel', () => {
       }, point);
 
     // Two probes of 100 light years give the pixels a light year moves near the cursor.
-    // The perspective divide makes the scale change with the offset, so the place below
-    // is an approximation, and the test reads where the stack lands.
+    // The perspective divide makes the scale change with the offset, so one step of that
+    // scale falls short of a target far from the cursor. The loop reads where the place
+    // lands and takes another step, until the place is within 2 pixels of the target.
     expect(await addSystems(page, [record('One', [0, 0, 0], 'Alpha')])).toBe(1);
     const centre = await projectOf([0, 0, 0]);
     const right = await projectOf([100, 0, 0]);
     const up = await projectOf([0, 100, 0]);
-    const place: [number, number, number] = [
-      ((target.x - centre.x) * 100) / (right.x - centre.x),
-      ((target.y - centre.y) * 100) / (up.y - centre.y),
-      0,
-    ];
+    const place: [number, number, number] = [0, 0, 0];
+    for (let pass = 0; pass < 8; pass += 1) {
+      const at = await projectOf(place);
+      if (Math.abs(at.x - target.x) < 2 && Math.abs(at.y - target.y) < 2) break;
+      place[0] += ((target.x - at.x) * 100) / (right.x - centre.x);
+      place[1] += ((target.y - at.y) * 100) / (up.y - centre.y);
+    }
     await page.evaluate(() => {
       window.__hudMap?.clearSystems();
     });
@@ -4147,7 +4173,7 @@ test.describe('the lightbox fits the picture', () => {
 // The cap follows the device pixel ratio, so this block runs at a ratio of 2. The
 // viewport is tall enough for 600 CSS pixels of picture: 82 percent of 900 is 738.
 test.describe('the lightbox cap at a device pixel ratio of 2', () => {
-  test.use({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+  test.use({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 2 });
 
   test('a small picture draws at twice its pixels', async ({ page }) => {
     await openLightbox(page, SMALL_PICTURE);
@@ -4569,5 +4595,147 @@ test.describe('the HUD budget', () => {
     expect(open.length).toBeGreaterThanOrEqual(2);
     expect(rows).toBe(200);
     expect(nodes - closedNodes).toBeLessThan(600);
+  });
+});
+
+// The wide layout, against the narrow one the media queries add below 1400 pixels and
+// below 720. Every reading of this file is at 1600 by 900, which is above both widths, so
+// a rule that escaped a query fails one of these.
+test.describe('the wide layout', () => {
+  /** The bounding box of one element of the HUD, read from the page. */
+  async function boxOf(
+    page: Page,
+    selector: string,
+  ): Promise<{ left: number; top: number; width: number; height: number } | null> {
+    return hud(page).evaluate((root, name) => {
+      const element = root.querySelector(name);
+      if (element === null) return null;
+      const at = element.getBoundingClientRect();
+      return { left: at.left, top: at.top, width: at.width, height: at.height };
+    }, selector);
+  }
+
+  /** True while `checkVisibility` says the element is drawn. */
+  async function drawn(page: Page, selector: string): Promise<boolean> {
+    return hud(page).evaluate((root, name) => {
+      const element = root.querySelector(name);
+      return element instanceof HTMLElement && element.checkVisibility();
+    }, selector);
+  }
+
+  test('the wide layout is unmoved', async ({ page }) => {
+    await openHud(page);
+    const left = await boxOf(page, '.gm-hud__left');
+    const info = await boxOf(page, '.gm-hud__info');
+    const bar = await boxOf(page, '.gm-hud__top-bar');
+    const shown = {
+      region: await drawn(page, '.gm-hud__region'),
+      leftTab: await drawn(page, '.gm-hud__drawer-tab--left'),
+      rightTab: await drawn(page, '.gm-hud__drawer-tab--right'),
+      scrim: await drawn(page, '.gm-hud__scrim'),
+      placeholder: await drawn(page, '.gm-hud__right-empty'),
+    };
+    console.log('the wide boxes', { left, info, bar }, shown);
+
+    expect(left?.left).toBe(22);
+    expect(left?.width).toBe(316);
+    // The information panel is hidden while nothing is selected, so its width is read
+    // with one selected below. Here the wrapper must add no box of its own.
+    expect(info?.width).toBe(0);
+    expect(bar?.height).toBe(54);
+    expect(shown).toEqual({
+      region: true,
+      leftTab: false,
+      rightTab: false,
+      scrim: false,
+      placeholder: false,
+    });
+  });
+
+  test('the information panel keeps its wide box', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('One', [0, 0, 100], 'Alpha')]);
+    await select(page, 'One');
+    await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
+    const info = await boxOf(page, '.gm-hud__info');
+    console.log('the wide information panel', info);
+
+    expect(info?.left).toBe(1198);
+    expect(info?.top).toBe(70);
+    expect(info?.width).toBe(380);
+    expect(await drawn(page, '.gm-hud__right-empty')).toBe(false);
+  });
+
+  test('the wide layout keeps its sizes', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('One', [0, 0, 100], 'Alpha')]);
+    await select(page, 'One');
+    await expect(hud(page).locator('.gm-hud__info')).toBeVisible();
+
+    const dot = await boxOf(page, '.gm-hud__category-dot');
+    const copy = await boxOf(page, '.gm-hud__copy');
+    const close = await boxOf(page, '.gm-hud__info-close');
+    console.log('the wide control sizes', { dot, copy, close });
+
+    expect(dot?.width).toBe(20);
+    expect(dot?.height).toBe(20);
+    expect(copy?.width).toBe(20);
+    expect(copy?.height).toBe(20);
+    expect(close?.width).toBe(24);
+    expect(close?.height).toBe(24);
+  });
+
+  test('the wide dialog is unmoved', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 6 });
+    await hud(page).locator('.gm-hud__dataset').click();
+    await expect(hud(page).locator('.gm-hud__dialog')).toBeVisible();
+
+    const frame = await boxOf(page, '.gm-hud__dialog-frame');
+    const lefts = await hud(page)
+      .locator('.gm-hud__dataset-card')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(node.getBoundingClientRect().left)),
+      );
+    console.log('the wide dialog', frame, lefts);
+
+    expect(frame?.width).toBeCloseTo(1040, 0);
+    expect(frame?.height).toBeCloseTo(680, 0);
+    expect(new Set(lefts).size).toBeGreaterThan(1);
+  });
+
+  test('the wide chip row wraps', async ({ page }) => {
+    await openHud(page, { datasets: true, datasetCount: 8, datasetCollections: 8 });
+    await hud(page).locator('.gm-hud__dataset').click();
+    await expect(hud(page).locator('.gm-hud__dialog')).toBeVisible();
+
+    const reading = await hud(page)
+      .locator('.gm-hud__collections')
+      .evaluate((row) => ({
+        scrollWidth: row.scrollWidth,
+        clientWidth: row.clientWidth,
+        tops: [...row.children].map((chip) =>
+          Math.round(chip.getBoundingClientRect().top),
+        ),
+      }));
+    console.log('the wide chip row', reading);
+
+    expect(reading.scrollWidth).toBe(reading.clientWidth);
+    expect(new Set(reading.tops).size).toBeGreaterThan(1);
+  });
+
+  test('the wide layout writes no drawer state', async ({ page }) => {
+    await openHud(page);
+    await addCategories(page, ['Alpha']);
+    await addSystems(page, [record('One', [0, 0, 100], 'Alpha')]);
+    await select(page, 'One');
+    await page.waitForTimeout(400);
+    const held = await hud(page).evaluate((root) => root.getAttribute('data-panel'));
+    console.log('the attribute at the wide width', held);
+    expect(held).toBeNull();
+
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.__hudMap?.getSelection())).toBeNull();
   });
 });

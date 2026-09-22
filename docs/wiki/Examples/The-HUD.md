@@ -22,6 +22,23 @@ panel reads all three on its tick, so a switch appears when you add the first sh
 goes when a dataset load clears them. While the panel shows no switch it shows no panel,
 and the left column holds the category browser alone.
 
+**Below 1400 pixels of viewport width the HUD lays out as two drawers.** The left column
+slides in from the left edge and the information panel from the right, each
+`min(88vw, 360px)` wide. An edge tab on the middle of each edge opens and closes its own
+drawer, a scrim over the map closes the open one on a tap, and `Escape` closes it before
+it clears the selection. A 1366-pixel laptop keeps too little map between two open
+columns, so it gets the drawers as a phone does.
+
+**Below 720 pixels the HUD also takes the phone treatment.** The top bar wraps into two
+rows and drops the region name, every button and input takes at least 44 pixels on each
+side, and the dataset library fills the screen. Between 721 and 1399 pixels the HUD has the
+drawers, the one-row bar with the region name in it, and the controls at the sizes a
+pointer gets.
+
+The width alone chooses both layouts, in two media queries of the HUD's own style sheet, so
+the host needs no option for them and a window the user narrows takes the layout without a
+reload.
+
 The HUD reads the map through the public handle alone, so a host that wants its own
 chrome leaves `hud` out and builds it from the same members.
 
