@@ -178,6 +178,16 @@ describe('the demo import rule', () => {
     ]);
   });
 
+  test('passes the URL helper the cycles page and the Canonn page share', async () => {
+    const eslint = new ESLint();
+    const source = "export { keepInUrl } from '../src/page-url';\n";
+
+    for (const page of ['apps/demo/cycles/main.ts', 'apps/demo/canonn/main.ts']) {
+      const result = await eslint.lintText(source, { filePath: page });
+      expect(result[0]?.messages, page).toEqual([]);
+    }
+  });
+
   test('passes the manifest load the Canonn page makes', async () => {
     const eslint = new ESLint();
     const source =

@@ -2,6 +2,7 @@
 // is a host application, so it gives the map a catalog the way any other host does. The
 // library bundles no data and fetches none.
 import { createGalaxyMap } from '@elite-dangerous-almanac/galaxy-map';
+import { keepInUrl, linkedDataset, linkedView } from '../src/page-url';
 import type {
   CategoryInput,
   DatasetContent,
@@ -64,18 +65,27 @@ const CYCLES: readonly DatasetEntry[] = manifest.map((row): DatasetEntry => ({
   },
 }));
 
+// The `dataset` parameter of the URL names the cycle to open on, as in
+// `cycles/?dataset=cycle-12`. A parameter that names no cycle opens the first one.
+const asked = linkedDataset();
+const opening = CYCLES.find((entry) => entry.id === asked) ?? CYCLES[0];
+
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+const startView = linkedView();
 const map = createGalaxyMap(canvas, {
+  // A view in the fragment beats the view of the start entry.
+  ...(startView === undefined ? {} : { startView }),
   // The catalog is one entry per week of the war, in cycle order, so the step arrows are
   // the control this page wants: one click on the next arrow loads the next week. The
   // dataset library dialog is still there for a jump to a week far from this one.
   hud: { datasetArrows: true },
   datasets: CYCLES,
-  dataset: CYCLES[0].id,
+  dataset: opening.id,
 });
 
 // The handle, so the browser suite can read the records and the view of the page. The
 // member is typed here, in the page that writes it, and not in the suite that reads it.
 (window as Window & { galaxyMap?: GalaxyMap }).galaxyMap = map;
+keepInUrl(map);
 
 await map.ready;

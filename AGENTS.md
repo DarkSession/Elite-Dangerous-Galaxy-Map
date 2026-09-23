@@ -8,8 +8,8 @@ Instructions for AI coding agents working in this repository.
 rendered in the browser with WebGL.
 
 Phase 1 is in the tree: the project setup, the galaxy model port, the scene data, the
-WebGL2 renderer and the camera. [README.md](README.md) gives the setup, the scripts and
-the control scheme.
+WebGL2 renderer and the camera. [CONTRIBUTING.md](CONTRIBUTING.md) gives the setup and the scripts.
+[README.md](README.md) gives the control scheme.
 
 The repository is a **pnpm workspace** with two packages:
 

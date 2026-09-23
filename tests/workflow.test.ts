@@ -191,9 +191,9 @@ describe('the Playwright suite', () => {
     expect(workflow).toContain('local gate');
   });
 
-  test('is named a local gate in the README', () => {
-    const readme = readFileSync(join(root, 'README.md'), 'utf8');
-    expect(readme).toContain('local gate');
+  test('is named a local gate in CONTRIBUTING.md', () => {
+    const contributing = readFileSync(join(root, 'CONTRIBUTING.md'), 'utf8');
+    expect(contributing).toContain('local gate');
   });
 });
 

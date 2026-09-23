@@ -237,7 +237,9 @@ export default tseslint.config(
     // The rule covers the four page directories of the package: `src/`, which holds the
     // demo page, `examples/`, which holds the nine samples, `cycles/` and `canonn/`.
     // `e2e/`, `tests/` and the demo's own build scripts reach package source by relative
-    // path on purpose, and that stays legal.
+    // path on purpose, and that stays legal. `../src/` stays legal as well: from `cycles/`
+    // and `canonn/` it reaches the demo's own `src/`, which holds the code the two pages
+    // share. A sample sits one level deeper, so it cannot reach `src/` with it.
     files: [
       'apps/demo/src/**/*.ts',
       'apps/demo/examples/**/*.ts',
@@ -250,7 +252,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['../*', '../../*', '../../../*', '**/packages/**'],
+              group: ['../*', '!../src', '../../*', '../../../*', '**/packages/**'],
               message:
                 'The demo imports the map by its package name. A relative reach out ' +
                 'of a page directory of apps/demo/ resolves only on the dev server.',
