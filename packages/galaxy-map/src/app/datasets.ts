@@ -32,15 +32,17 @@ export interface DatasetContent {
  * `fit`, which frames the set the load wrote. A field the entry names beside `fit` wins
  * over what `fit` worked out.
  *
- * **A camera that already shows the new set keeps its place.** A `loadDataset` that is
- * not the start load leaves the view alone when all five of these hold:
+ * **A camera inside the bounds of the new set keeps its place.** A `loadDataset` that is
+ * not the start load leaves the view alone when all four of these hold:
  *
  * 1. the entry names `bounds`;
  * 2. those bounds resolve to a restricted space, and the new set holds a system;
  * 3. the `view` names `fit: 'systems'` and no other field;
  * 4. the cursor is inside those bounds and the distance is at or under their far zoom
- *    limit;
- * 5. the distance is at or above the distance `fit: 'systems'` writes for the new set.
+ *    limit.
+ *
+ * The rule does not read the frame of the new set, so a camera zoomed in on one system
+ * keeps its place. A camera the user did not move is held on the same terms.
  *
  * A catalog of one region therefore keeps the angle and the zoom the user set up. A host
  * that wants every load to frame its set names a field beside `fit`, such as the pitch
@@ -70,7 +72,7 @@ export interface DatasetEntry {
   /**
    * Where the camera opens on a load of this entry. An entry that names `bounds` and a
    * `view` of `fit: 'systems'` alone holds the camera where the user put it, whenever
-   * the camera already shows the new set. `DatasetView` states the five conditions and
+   * the camera is inside the new bounds. `DatasetView` states the four conditions and
    * the two ways to keep the frame on every load.
    */
   readonly view?: DatasetView;
@@ -334,11 +336,11 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     }
     if (ticket !== counter) throw new Error(CANCELLED_MESSAGE);
     const report = options.write(content);
-    // A camera that already shows the new set keeps its place. The reading comes after
-    // the write, because an `auto` bound resolves against the records that write put in,
-    // and before `setBounds`, because applying a bound clamps the camera into it and
-    // every later reading is true. The three conditions the entry carries are read first,
-    // so a load that cannot be held does no geometry at all.
+    // A camera inside the new bounds keeps its place. The reading comes after the write,
+    // because an `auto` bound resolves against the records that write put in, and before
+    // `setBounds`, because applying a bound clamps the camera into it and every later
+    // reading is true. The three conditions the entry carries are read first, so a load
+    // that cannot be held does no geometry at all.
     const held =
       !atStart &&
       entry.bounds !== undefined &&

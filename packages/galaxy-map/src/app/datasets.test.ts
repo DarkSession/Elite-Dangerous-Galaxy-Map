@@ -449,7 +449,7 @@ describe('the dataset state', () => {
     expect(plain.views).toEqual([{ fit: 'systems' }]);
   });
 
-  test('holds the view where the camera already shows the new set', async () => {
+  test('holds the view where the camera is inside the new bounds', async () => {
     const work = writer(true);
     const state = createDatasetState({
       datasets: [
@@ -559,7 +559,7 @@ describe('the dataset state', () => {
 
   test('applies the view on the start load', async () => {
     // The camera has no view the user chose yet, so the start load frames its set even
-    // where all five conditions would otherwise hold.
+    // where all four conditions would otherwise hold.
     const work = writer(true);
     const state = createDatasetState({
       datasets: [

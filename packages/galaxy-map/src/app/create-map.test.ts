@@ -845,29 +845,25 @@ describe('the camera over a dataset load', () => {
     expect(map.getBounds()).toEqual(SPHERE);
   });
 
-  test('holds the view at the frame distance and frames it below', async () => {
-    const held = await mapOfTwo();
-    held.map.setView({ cursor: [0, 0, 0], distance: FIT, yaw: 25, pitch: 40 });
-    const before = held.map.getView();
+  test('holds the view below the frame distance', async () => {
+    // The rule does not read the frame distance. A camera nearer than the frame, and a
+    // camera zoomed in on one system, both keep their view.
+    for (const distance of [FIT - 1, 20]) {
+      const { map } = await mapOfTwo();
+      map.setView({ cursor: [0, 0, 0], distance, yaw: 25, pitch: 40 });
+      const before = map.getView();
 
-    await held.map.loadDataset('second');
+      await map.loadDataset('second');
 
-    // Condition 5 reads "at or above", so the camera at the frame distance holds.
-    expect(held.map.getView()).toEqual(before);
-
-    const framed = await mapOfTwo();
-    framed.map.setView({ cursor: [0, 0, 0], distance: FIT - 1, yaw: 25, pitch: 40 });
-
-    await framed.map.loadDataset('second');
-
-    expect(framed.map.getView().distance).toBeCloseTo(FIT, 6);
+      expect(map.getView()).toEqual(before);
+    }
   });
 
   test('applies the view over an empty set under a sphere bound', async () => {
-    // A `sphere` bound over an empty set still resolves to a restricted space, but an
-    // empty box holds the corners of the set before it. The reading is false for it, so
-    // the view applies. A `fit` over an empty set moves the camera nowhere, so the view
-    // change is what tells the two paths apart.
+    // A `sphere` bound over an empty set still resolves to a restricted space, but a load
+    // that wrote no system has no set to hold the camera over. The reading is false for
+    // it, so the view applies. A `fit` over an empty set moves the camera nowhere, so the
+    // view change is what tells the two paths apart.
     const { map, moves } = await mapOfTwo(entry('empty', true));
     map.setView({ cursor: [500, 0, 0], distance: 1500, yaw: 25, pitch: 40 });
     moves.length = 0;
