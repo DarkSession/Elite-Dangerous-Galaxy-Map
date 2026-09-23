@@ -425,35 +425,34 @@ export const OVERWATCH_LICENCE =
 
 /**
  * The category of each state the Thargoid war dump names. One record holds one state, so
- * one system takes one category. The colours run from red through orange to yellow with
- * the danger, and the Titan takes the red. A system the Thargoids left takes blue, which
- * reads apart from the four colours of the war. A record whose state the table does not
- * name is dropped, and the conversion drops a row that no record uses.
+ * one system takes one category, and each category takes a fixed colour. The Titan takes
+ * the red of the maelstrom. A record whose state the table does not name is dropped, and
+ * the conversion drops a row that no record uses.
  */
 export const CATEGORY_OF_STATE = {
   Titan: {
     name: 'Titan',
-    color: [255, 56, 56],
+    color: [204, 0, 0],
     description: 'A system that holds the maelstrom of a Titan.',
   },
   Invasion: {
     name: 'Invasion',
-    color: [255, 138, 40],
+    color: [255, 82, 0],
     description: 'A system a Titan invades.',
   },
   Alert: {
     name: 'Alert',
-    color: [255, 214, 72],
+    color: [241, 194, 50],
     description: 'A system a Titan threatens next.',
   },
   Controlled: {
     name: 'Controlled',
-    color: [72, 214, 104],
+    color: [56, 118, 29],
     description: 'A system a Titan holds.',
   },
   Recovery: {
     name: 'Recovery',
-    color: [72, 160, 255],
+    color: [159, 27, 255],
     description: 'A system that recovers after the Thargoids leave.',
   },
 };
@@ -465,14 +464,11 @@ export const CATEGORY_OF_STATE = {
  * drawing made for a 28 pixel box reads worse beside the game's own symbols.
  * `e2e/system-icons.spec.ts` covers the host form instead.
  *
- * A Titan system takes `titan`, an invaded one takes `front-line` and a threatened one
- * takes `conflict-zone`. A controlled system takes no icon: 112 of the 189 records are
- * controlled, and a stack over each one hides the map.
+ * A Titan system takes `titan`. The other states take no icon, so the colour of the
+ * marker alone gives the state.
  */
 export const ICONS_OF_STATE = {
   Titan: ['titan'],
-  Invasion: ['front-line'],
-  Alert: ['conflict-zone'],
 };
 
 /** What one state says about the Titan, as the first sentence of a description. */

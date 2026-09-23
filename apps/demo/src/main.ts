@@ -217,8 +217,7 @@ const DEMO_DATASETS: readonly DatasetEntry[] = [
     region: 'The bubble, from the Hyades to Col 285 Sector',
     description:
       'The systems of cycle 2 of the Thargoid war, the week of 2022-12-08, with one ' +
-      'category per war state. The icons mark the five maelstroms, the invasions and ' +
-      'the alerts.',
+      'category per war state. The icons mark the five maelstroms.',
     systemCount: 189,
     // The set holds the bubble alone, so the entry names the box of its own systems and
     // opens the camera on it. A switch away from this entry restores the map's own

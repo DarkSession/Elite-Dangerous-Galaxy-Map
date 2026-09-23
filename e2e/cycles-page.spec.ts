@@ -315,3 +315,44 @@ test.describe('the camera over a step between cycles', () => {
     }
   });
 });
+
+// The page keeps the loaded cycle in the `dataset` parameter and the view in the fragment,
+// so a reader can copy the address and open the same picture.
+test.describe('the address of the cycles page', () => {
+  test('carries the cycle and the view, and opens on them again', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('./cycles/');
+    await waitForPage(page);
+
+    const id = `cycle-${String((manifest[4] as CycleRow).cycle)}`;
+    await page.evaluate(async (wanted) => {
+      await window.galaxyMap?.loadDataset(wanted);
+      window.galaxyMap?.setView({ distance: 1500, yaw: 90, pitch: 20 });
+    }, id);
+    await page.waitForFunction(
+      (wanted) =>
+        window.location.search.includes(`dataset=${wanted}`) &&
+        window.location.hash.includes('d=1500'),
+      id,
+    );
+    const address = page.url();
+    const before = await readView(page);
+
+    const copy = await context.newPage();
+    await copy.goto(address);
+    await waitForPage(copy);
+    const loaded = await copy.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    const after = await readView(copy);
+    console.log('the view over a copied address', { address, before, after });
+
+    expect(loaded).toBe(id);
+    expect(after.distance).toBeCloseTo(before.distance, 3);
+    expect(after.yaw).toBeCloseTo(before.yaw, 3);
+    expect(after.pitch).toBeCloseTo(before.pitch, 3);
+    for (const axis of [0, 1, 2]) {
+      expect(after.cursor[axis]).toBeCloseTo(before.cursor[axis] as number, 3);
+    }
+  });
+});

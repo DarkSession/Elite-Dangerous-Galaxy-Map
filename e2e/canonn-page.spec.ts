@@ -42,7 +42,7 @@ const manifest = JSON.parse(
 ) as ManifestRow[];
 
 /** The entry the page opens on, which `apps/demo/canonn/main.ts` names. */
-const OPENING = 'GR';
+const OPENING = 'multifaction';
 
 /** The bytes the ceiling of the opening set holds. */
 const OPENING_CEILING = 1_000_000;
@@ -298,6 +298,29 @@ test.describe('the Canonn page', () => {
     }
   });
 
+  test('opens on the entry the dataset parameter names', async ({ page }) => {
+    const asked = watchSets(page);
+
+    await page.goto('./canonn/?dataset=GR');
+    await waitForPage(page);
+
+    const loaded = await page.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    expect(loaded).toBe('GR');
+    expect([...asked].sort()).toEqual(
+      rowOf('GR')
+        .files.map((file) => file.path)
+        .sort(),
+    );
+  });
+
+  test('opens on the default where the parameter names no entry', async ({ page }) => {
+    await page.goto('./canonn/?dataset=no-such-entry');
+    await waitForPage(page);
+
+    const loaded = await page.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    expect(loaded).toBe(OPENING);
+  });
+
   test('loads a set with the categories its row names', async ({ page }) => {
     await page.goto('./canonn/');
     await waitForPage(page);
@@ -495,5 +518,44 @@ test.describe('the dataset library of the page', () => {
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+  });
+});
+
+// The page keeps the loaded entry in the `dataset` parameter and the view in the fragment,
+// so a reader can copy the address and open the same picture.
+test.describe('the address of the Canonn page', () => {
+  test('carries the entry and the view, and opens on them again', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('./canonn/');
+    await waitForPage(page);
+
+    await page.evaluate(async () => {
+      await window.galaxyMap?.loadDataset('GR');
+      window.galaxyMap?.setView({ distance: 2500, yaw: 45, pitch: 30 });
+    });
+    await page.waitForFunction(
+      () =>
+        window.location.search.includes('dataset=GR') &&
+        window.location.hash.includes('d=2500'),
+    );
+    const address = page.url();
+    const before = await page.evaluate(() => window.galaxyMap?.getView());
+
+    const copy = await context.newPage();
+    await copy.goto(address);
+    await waitForPage(copy);
+    const loaded = await copy.evaluate(() => window.galaxyMap?.getLoadedDataset()?.id);
+    const after = await copy.evaluate(() => window.galaxyMap?.getView());
+    console.log('the view over a copied address', { address, before, after });
+
+    expect(loaded).toBe('GR');
+    expect(after?.distance).toBeCloseTo(before?.distance ?? -1, 3);
+    expect(after?.yaw).toBeCloseTo(before?.yaw ?? -1, 3);
+    expect(after?.pitch).toBeCloseTo(before?.pitch ?? -1, 3);
+    for (const axis of [0, 1, 2]) {
+      expect(after?.cursor[axis]).toBeCloseTo(before?.cursor[axis] ?? -1, 3);
+    }
   });
 });

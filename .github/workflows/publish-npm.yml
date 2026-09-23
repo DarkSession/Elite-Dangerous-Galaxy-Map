@@ -22,11 +22,11 @@
 # **Three things live outside this repository, and no step here can create them**: the
 # npm Trusted Publisher for this package, pointing at this repository and this file; the
 # `npm` GitHub environment the publish job names; and the package's place in the
-# `@elite-dangerous-almanac` organisation. `README.md` records all three.
+# `@elite-dangerous-almanac` organisation.
 #
 # **The first version did not come from this workflow.** A Trusted Publisher is set on a
 # package the registry already holds, so 0.6.0 was published by hand on 2026-09-20. This
-# workflow takes over from 0.6.1. `README.md` records what was run.
+# workflow takes over from 0.6.1.
 name: Publish npm Package
 
 on:

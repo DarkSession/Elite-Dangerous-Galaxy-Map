@@ -14,6 +14,7 @@ import type {
   GalaxyMap,
   SystemRecordInput,
 } from '@elite-dangerous-almanac/galaxy-map';
+import { keepInUrl, linkedDataset, linkedView } from '../src/page-url';
 import { filesOfRow } from './canonn-message';
 import type {
   CanonnAnswer,
@@ -276,15 +277,24 @@ const CANONN: readonly DatasetEntry[] = manifest.map((row): DatasetEntry => ({
 }));
 
 /**
- * The entry the page opens on. Guardian Ruins holds 212 systems in one 55 KB file, so
- * the page draws its first frame without the download of a large set.
+ * The entry the page opens on when the URL names none. Canonn Factions is one 553 KB
+ * file, so the page draws its first frame without the download of a large set.
  */
-const OPENING = 'GR';
+const OPENING = 'multifaction';
 
-const opening = CANONN.find((entry) => entry.id === OPENING) ?? CANONN[0];
+// The `dataset` parameter of the URL names the entry to open on, as in
+// `canonn/?dataset=GR`. A parameter that names no entry opens the default.
+const asked = linkedDataset();
+const opening =
+  CANONN.find((entry) => entry.id === asked) ??
+  CANONN.find((entry) => entry.id === OPENING) ??
+  CANONN[0];
 
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+const startView = linkedView();
 const map = createGalaxyMap(canvas, {
+  // A view in the fragment beats the view of the start entry.
+  ...(startView === undefined ? {} : { startView }),
   // The HUD holds the dataset library dialog, which is how the user steps from one map
   // to the next.
   hud: true,
@@ -295,5 +305,6 @@ const map = createGalaxyMap(canvas, {
 // The handle, so the browser suite can read the records and the view of the page. The
 // member is typed here, in the page that writes it, and not in the suite that reads it.
 (window as CanonnWindow).galaxyMap = map;
+keepInUrl(map);
 
 await map.ready;
