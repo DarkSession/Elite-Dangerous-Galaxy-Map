@@ -1994,9 +1994,9 @@ test.describe('an entry frames its set', () => {
   });
 });
 
-// The rule that holds the camera where the entry's bounds already show the new set. Each
-// test reads the five conditions of `dataset-catalog` through the public handle.
-test.describe('a load holds a camera that shows the new set', () => {
+// The rule that holds a camera inside the bounds of the new set. Each test reads the four
+// conditions of `dataset-catalog` through the public handle.
+test.describe('a load holds a camera inside the new bounds', () => {
   /** The box the entries of one region span, and the distance `fit` writes for it. */
   const BOX: [[number, number, number], [number, number, number]] = [
     [-100, -50, -100],
@@ -2051,8 +2051,7 @@ test.describe('a load holds a camera that shows the new set', () => {
     const after = await readView(page);
     console.log('the view over a step inside the bounds', { before, after });
 
-    // The camera is inside the new bounds and stands off more than the frame would, so
-    // the entry's view does not apply at all.
+    // The camera is inside the new bounds, so the entry's view does not apply at all.
     expect(before.distance).toBeGreaterThan(FIT_DISTANCE);
     expect(before.distance).toBeLessThan(AUTO_LIMIT);
     expect(after).toEqual(before);
@@ -2085,7 +2084,7 @@ test.describe('a load holds a camera that shows the new set', () => {
     expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
   });
 
-  test('a camera zoomed in closer than the frame is framed again', async ({ page }) => {
+  test('a camera zoomed in closer than the frame keeps its view', async ({ page }) => {
     await openDatasets(page, {
       entries: [
         {
@@ -2108,9 +2107,24 @@ test.describe('a load holds a camera that shows the new set', () => {
     console.log('the view over a load from inside the frame', { before, after });
 
     // The frame of the small set leaves the camera nearer than the frame of the wide
-    // one, which is condition 5.
+    // one. The rule does not read the frame distance, so the camera keeps its view.
     expect(before.distance).toBeLessThan(FIT_DISTANCE);
-    expect(Math.abs(after.distance - FIT_DISTANCE)).toBeLessThan(1e-6);
+    expect(after).toEqual(before);
+  });
+
+  test('a camera on one system keeps its view', async ({ page }) => {
+    await openDatasets(page, { entries: REGION, dataset: 'week-one' });
+    // The cursor is on the corner system of the box, and 20 light years is far under the
+    // frame of the set.
+    await setView(page, { cursor: [100, 50, 100], distance: 20, yaw: 25, pitch: 40 });
+
+    const before = await readView(page);
+    expect((await loadDataset(page, 'week-two')).ok).toBe(true);
+    const after = await readView(page);
+    console.log('the view over a load from one system', { before, after });
+
+    expect(before.distance).toBe(20);
+    expect(after).toEqual(before);
   });
 
   test('a camera zoomed out past the frame keeps its view', async ({ page }) => {
@@ -2187,7 +2201,7 @@ test.describe('a load holds a camera that shows the new set', () => {
     page,
   }) => {
     // The sphere holds the default camera, which stands at the origin 60,000 light years
-    // out, and its far zoom limit is 80,000. All five conditions would hold but for the
+    // out, and its far zoom limit is 80,000. All four conditions would hold but for the
     // start load, which has no camera the user chose.
     await openDatasets(page, {
       entries: [

@@ -98,7 +98,7 @@ itself, and the HUD SHALL show no dataset field. This is the map every host gets
   and the HUD
 - **THEN** the reading is empty and the HUD holds no dataset field
 
-### Requirement: The handle loads one dataset at a time
+### Requirement: The handle loads one dataset at a time and holds a camera inside the new bounds
 
 The handle SHALL carry these members:
 
@@ -131,39 +131,35 @@ where the options name no `startView`. Without this rule a host that opens the m
 camera the URL named would have that camera overwritten when the start load settled, which
 happens after the page has already drawn.
 
-**A camera that already shows the new set SHALL stay where it is.** On a `loadDataset` that
-is not the start load, the entry's `view` SHALL NOT apply when **all five** of these hold:
+**A camera inside the bounds of the new set SHALL stay where it is.** On a `loadDataset`
+that is not the start load, the entry's `view` SHALL NOT apply when **all four** of these
+hold:
 
 1. the entry names `bounds`;
 2. those bounds resolve to a restricted space, and the new set holds a system. An `auto`
-   bound over a set with no system resolves to unrestricted, and an empty system box holds
-   the corners of the set before it, which condition 5 would then read;
+   bound over a set with no system resolves to unrestricted. A load that wrote no system
+   has no set to hold the camera over, so it takes the entry's `view`;
 3. the entry's `view` names `fit: 'systems'` and no other field;
 4. the camera's `cursor` is inside the resolved bounds and its `distance` is at or under
-   the far zoom limit of those bounds;
-5. the camera's `distance` is at or above the distance `fit: 'systems'` writes for the new
-   set **before the new bounds clamp it**, so the camera already shows at least as much as
-   the frame would. A bound narrower than its own set therefore always re-frames, because
-   conditions 4 and 5 cannot both hold for it.
+   the far zoom limit of those bounds.
 
-**Condition 5 is what makes "inside" mean "can still see it".** An `auto` bound is the system
-box grown by its margin, which is 1,000 light years where the host names none, so a camera
-can be far inside the bounds and still be zoomed in on a corner of the set. Without this
-condition a catalog whose sets grow — the war cycles page is one, where the first week spans
-33 light years and the widest spans 381 — would hold the camera at the first week's frame for
-every week after it, and the reader would see a fraction of each. With it, a reader who never
-touches the camera is re-framed while the set outgrows the view and is then left alone, and a
-reader who zoomed out to take in the whole set keeps that view for every later load.
+**The rule SHALL NOT read the frame distance of the new set.** A camera nearer than the
+frame of the new set SHALL be held when the four conditions hold. A user who zoomed in on
+one system therefore keeps the cursor, the distance, the yaw and the pitch over the load.
+A camera that the user did not move after the last load is held on the same terms: the
+rule does not tell a camera the user placed from a camera a load placed. On a catalog whose
+sets grow, such as the war cycles page, a reader who never touches the camera keeps the
+frame of the first set for every later load.
 
-**Conditions 4 and 5 SHALL be read against the camera as it stood before the entry's bounds
-moved it.** Applying a `bounds` clamps the live camera into it, so a reading taken after that step
+**Condition 4 SHALL be read against the camera as it stood before the entry's bounds moved
+it.** Applying a `bounds` clamps the live camera into it, so a reading taken after that step
 is true for every restricted bound and the condition would decide nothing. The reading
 SHALL therefore happen after the records are written, because an `auto` bound resolves
 against them, and before the bounds take effect.
 
 A catalog of one region — the war cycles page is one entry per week of the same front —
 otherwise re-frames the camera on every step, and the reader loses the angle and the zoom
-they set up. The five conditions together keep that from costing a jump the user needs:
+they set up. The four conditions together keep that from costing a jump the user needs:
 
 - **Condition 1** holds the old behaviour for an entry that names no `bounds`. Its space is
   unrestricted, so the camera is always inside it, and a set in a different part of the
@@ -175,9 +171,8 @@ they set up. The five conditions together keep that from costing a jump the user
   frames whatever loaded.
 - **Condition 4** is the reading of "inside". A camera zoomed out past the new far limit
   would be pulled in by the clamp whatever this rule did, so it is not inside.
-- **Condition 5** is the reading of "can still see it", which the paragraph above states.
 
-Where any of the five fails, the entry's `view` SHALL apply, which is what every load did
+Where any of the four fails, the entry's `view` SHALL apply, which is what every load did
 before. The rule SHALL NOT read a record of the set: it reads one cursor, one distance and
 the bounds the entry is about to set.
 
@@ -351,19 +346,28 @@ sees why the map has not changed yet.
   `bounds`, with the camera anywhere, and reads the view
 - **THEN** the view moves to the frame of that entry's systems
 
-#### Scenario: A camera zoomed in closer than the frame is framed again
+#### Scenario: A camera zoomed in closer than the frame keeps its view
 
 - **WHEN** a browser test loads a first entry whose systems sit in a small box, so the frame
-  leaves the camera close in, then loads a second entry naming the same `bounds` and
-  `view: { fit: 'systems' }` whose systems span a much wider box that holds the first
-- **THEN** the view moves to the frame of the second entry's systems, because the camera was
-  inside the bounds but nearer than the frame of the new set
+  leaves the camera close in, reads the view, then loads a second entry naming the same
+  `bounds` and `view: { fit: 'systems' }` whose systems span a much wider box that holds the
+  first, and reads the view again
+- **THEN** the distance of the first reading is under the frame distance of the second
+  entry, and the cursor, the distance, the yaw and the pitch are the same in both readings
 
 #### Scenario: A camera zoomed out past the frame keeps its view
 
 - **WHEN** the same test zooms the camera out to a distance above the frame of the second
   entry but at or under the far zoom limit of its bounds, and loads that second entry
 - **THEN** the cursor, the distance, the yaw and the pitch are unchanged
+
+#### Scenario: A camera on one system keeps its view
+
+- **WHEN** a browser test loads an entry naming `bounds: { mode: 'auto' }` and
+  `view: { fit: 'systems' }`, calls `setView` with the cursor on one of its systems and a
+  distance of 20 light years, loads a second entry naming the same `bounds` and `view`
+  whose `auto` bounds hold that cursor, and reads the view before and after
+- **THEN** the cursor, the distance, the yaw and the pitch are the same in both readings
 
 #### Scenario: A named field beats a camera inside the bounds
 
@@ -376,7 +380,7 @@ sees why the map has not changed yet.
 - **WHEN** a browser test builds a map with no `startView` and a start entry whose `bounds`
   are a sphere wide enough to hold the default camera, at a far zoom limit above the default
   distance, and whose `view` is `{ fit: 'systems' }`, waits for `ready` and reads the view
-- **THEN** the view is the frame of the start entry's systems, although all five conditions
+- **THEN** the view is the frame of the start entry's systems, although all four conditions
   would otherwise hold
 
 #### Scenario: An auto bound over an empty set applies the view

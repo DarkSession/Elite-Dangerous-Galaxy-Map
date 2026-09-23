@@ -45,9 +45,9 @@ function cycleSet(file: { categories: unknown; systems: unknown }): DatasetConte
  *
  * Each entry names the box of its own records, because one cycle holds the bubble alone.
  * A switch to another cycle replaces the records, and it opens the camera on the new box
- * only where the camera does not already show that cycle. Every cycle covers the same
- * front, so a reader who zoomed out to take the whole of it in keeps that view for every
- * step. `DatasetView` states the five conditions.
+ * only where the camera is not inside the bounds of that cycle. Every cycle covers the
+ * same front, so a reader keeps their view for every step. A view zoomed in on one
+ * system stays too. `DatasetView` states the four conditions.
  * `load()` imports the one file of that cycle, so the browser downloads one week at a
  * time and not the whole war.
  */

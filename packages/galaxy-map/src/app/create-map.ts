@@ -1342,8 +1342,7 @@ export function createGalaxyMap(
 
   /**
    * The distance `fit: 'systems'` opens at for the set now on the map: the far zoom limit
-   * of half the diagonal of the set's own box. `applyDatasetView` writes it and
-   * `viewInsideBounds` reads the camera against it, so the two cannot drift apart.
+   * of half the diagonal of the set's own box. `applyDatasetView` writes it.
    */
   const systemsFitDistance = (): number => {
     const box = set.systemBox;
@@ -1372,15 +1371,11 @@ export function createGalaxyMap(
     // a jump to a set in another part of the galaxy.
     if (asked.mode === 'unrestricted') return false;
     // An `auto` bound over a set with no system resolves to unrestricted. A `sphere`
-    // bound over one does not, but `clearSystems` in `src/scene-data/real-systems.ts`
-    // marks the box empty and leaves the corners, so the box still holds the set before
-    // this one and the frame distance below would read those corners.
+    // bound over one does not, but a load that wrote no system has no set to hold the
+    // camera over, so the entry's view applies.
     if (set.systemBox.empty) return false;
     const shape = resolveBounds(asked, set.systemBox);
     if (view.distance > shape.maxDistanceLy) return false;
-    // The camera shows at least as much as the frame would. Without this an `auto` bound,
-    // which grows the box by 1,000 light years, holds a camera zoomed in on one corner.
-    if (view.distance < systemsFitDistance()) return false;
     // "Inside" is read as its own test and not as a round trip through `clampCursor`: a
     // clamped cursor lands on the surface of a sphere, and the distance of that point can
     // read an ulp above the radius.

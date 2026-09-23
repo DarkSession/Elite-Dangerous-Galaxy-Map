@@ -259,8 +259,9 @@ async function loadRow(row: ManifestRow): Promise<readonly SystemRecordInput[]> 
  * map at a time and not the 38.9 MB of the tree.
  *
  * Every entry names `bounds` and a `view` of `fit: 'systems'` alone, so a load holds the
- * camera where the reader put it whenever the camera already shows the new map. A map the
- * camera cannot see still frames itself. `DatasetView` states the five conditions.
+ * camera where the reader put it whenever the camera is inside the new bounds. A map
+ * whose bounds do not hold the camera still frames itself. `DatasetView` states the four
+ * conditions.
  */
 const CANONN: readonly DatasetEntry[] = manifest.map((row): DatasetEntry => ({
   id: row.id,

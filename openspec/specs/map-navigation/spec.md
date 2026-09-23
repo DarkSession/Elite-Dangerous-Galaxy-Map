@@ -923,11 +923,10 @@ entry that names both therefore opens on the systems **where it opens at all**, 
 back to the margin: the zoom the bound allows is wider than the frame `fit` opens at, because
 the margin is room to fly and not room to look at.
 
-**A load that holds the camera writes no distance at all.** `dataset-catalog` states five
+**A load that holds the camera writes no distance at all.** `dataset-catalog` states four
 conditions under which a `loadDataset` that is not the start load leaves the camera where it
 is. Where they hold, the entry's `view` does not apply, so this rule does not run and the
-camera keeps the distance the user set. The last of those conditions reads the camera against
-the very distance this rule would write, so a held camera is never nearer than the frame.
+camera keeps its distance. A held camera can be nearer than the frame of the new set.
 
 **A change of the bounds SHALL re-clamp the view in the frame it happens**, so a host that
 narrows the space while the camera is outside it does not leave the camera there. The view

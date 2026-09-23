@@ -14,13 +14,13 @@ stays open while the load runs, draws a spinner on the card, and closes when the
 settles.
 
 An entry may name a `bounds` and a `view`. The load writes the bounds, then opens the
-camera where the `view` asks. **A camera that already shows the new set keeps its place.**
-A load that is not the start load leaves the view alone when the entry names `bounds`,
-those bounds resolve to a restricted space over a set with a system, the `view` is
-`fit: 'systems'` and no other field, the cursor is inside those bounds, and the camera
-stands at least as far out as the frame would put it. A catalog of one region therefore
-keeps the angle and the zoom the reader set up. To frame the set on every load, name a
-field beside `fit`, such as the pitch the camera holds, or drop `bounds` from the entry.
+camera where the `view` asks. **A camera inside the bounds of the new set keeps its
+place.** A load that is not the start load leaves the view alone when the entry names
+`bounds`, those bounds resolve to a restricted space over a set with a system, the `view`
+is `fit: 'systems'` and no other field, and the cursor is inside those bounds. A camera
+zoomed in on one system keeps its place too. A catalog of one region therefore keeps the
+angle and the zoom the reader set up. To frame the set on every load, name a field beside
+`fit`, such as the pitch the camera holds, or drop `bounds` from the entry.
 
 `hud.datasetArrows` draws a previous and a next arrow around the field, and an `i / n`
 counter after them. Each arrow loads the entry beside the loaded one in **catalog order**,
