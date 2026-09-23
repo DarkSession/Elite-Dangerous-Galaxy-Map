@@ -465,8 +465,21 @@ export interface Renderer {
    * the rule already gives 10.
    */
   setNearPlane(value: number | null): void;
-  /** Draws one frame and adds its time to the frame statistics. */
+  /**
+   * Draws one frame and adds its time to the frame statistics, where an input of the
+   * picture changed since the last frame it drew. The inputs are the stale flag, the
+   * view, the drawing buffer size, the read-back switch and the versions of the system
+   * set and the shape set. A call that finds none of them changed draws nothing, keeps
+   * the pixels of the last frame and adds no time. It still takes a background reading
+   * that is ready.
+   */
   render(view: View): void;
+  /**
+   * Marks the picture stale, so the next `render` draws. The map calls it on every change
+   * that wakes the loop. Every setter of this interface that changes the picture marks
+   * it as well.
+   */
+  invalidate(): void;
   /** The mean and the worst frame time since the last reset. */
   frameStats(): FrameStats;
   /** Starts the frame time mean again. */
@@ -504,7 +517,6 @@ export interface Renderer {
   dispose(): void;
 }
 
-/** Creates the renderer and compiles every program. */
 /**
  * What one frame works out at its top and what it writes for the probes.
  *
@@ -567,6 +579,7 @@ export interface RendererOptions {
   readonly onChange?: () => void;
 }
 
+/** Creates the renderer and compiles every program. */
 export function createRenderer(
   gl: WebGL2RenderingContext,
   canvas: HTMLCanvasElement,
@@ -634,8 +647,17 @@ export function createRenderer(
   const shapePass: ShapePass = createShapePass(gl, shapePrograms, triangle.vertexArray);
   let shapeSet: ShapeSet | null = null;
   let shapeDraw = true;
+  // True where the next `render` must draw, whatever the compare below reads. A change
+  // that no compared input shows sets it: a setter, the map's wake and an icon vector
+  // that lands.
+  let stale = true;
   const iconPass: IconPass = createIconPass(gl, iconProgram, {
-    textures: options.onChange === undefined ? {} : { onReady: options.onChange },
+    textures: {
+      onReady: (): void => {
+        stale = true;
+        options.onChange?.();
+      },
+    },
   });
   let iconDraw = true;
   let selectedSystem = -1;
@@ -954,12 +976,11 @@ export function createRenderer(
     }
   };
 
-  const drawFrame = (view: View): void => {
-    // The first statement of the frame, before any draw command. A take after the
-    // frame's commands is a round trip that drains every one of them: it measured
-    // 0.40 ms a frame in the animation loop against 0.19 ms here.
-    backgroundPass.take();
-    resize();
+  /**
+   * Draws one frame into a drawing buffer that already has its size. `drawFrame` and
+   * `render` take the reading and resize first.
+   */
+  const drawResized = (view: View): void => {
     startFrame(view);
     const width = frame.width;
     const height = frame.height;
@@ -1207,9 +1228,36 @@ export function createRenderer(
     drawOverlays(frame);
   };
 
+  const drawFrame = (view: View): void => {
+    // The first statement of the frame, before any draw command. A take after the
+    // frame's commands is a round trip that drains every one of them: it measured
+    // 0.40 ms a frame in the animation loop against 0.19 ms here.
+    backgroundPass.take();
+    resize();
+    drawResized(view);
+  };
+
+  // What the last frame `render` drew was drawn for. `render` compares it with the next
+  // call and draws nothing where every value is the same and the flag is off.
+  const drawn = {
+    cursorX: 0,
+    cursorY: 0,
+    cursorZ: 0,
+    distance: 0,
+    yaw: 0,
+    pitch: 0,
+    width: 0,
+    height: 0,
+    readback: false,
+    systemVersion: -1,
+    categoryVersion: -1,
+    shapeVersion: -1,
+  };
+
   return {
     resize,
     setVolume(volume: DensityVolume): void {
+      stale = true;
       // The renderer owns the texture, because the volume pass draws it and the nebula
       // pass marches it. One upload serves both.
       volumeTexture?.dispose();
@@ -1223,10 +1271,12 @@ export function createRenderer(
       );
     },
     setPointCloud(cloud: PointCloud): void {
+      stale = true;
       pointPass?.dispose();
       pointPass = createPointPass(gl, pointProgram, cloud);
     },
     setCloudSet(set: CloudSet): void {
+      stale = true;
       cloudPass?.dispose();
       cloudPass = createCloudPass(
         gl,
@@ -1236,6 +1286,7 @@ export function createRenderer(
       );
     },
     setNebulae(draw: NebulaDraw): void {
+      stale = true;
       // The source builds the draw and throws on volumes the textures cannot hold or
       // on a context that gives no buffer. The old draw is disposed after the new one
       // arrives, so a call that throws leaves the frame drawing the draw it had.
@@ -1243,6 +1294,7 @@ export function createRenderer(
       nebulaDraw = draw;
     },
     setNebulaDraw(draw: boolean): void {
+      stale = true;
       nebulaeDraw = draw;
     },
     nebulaDrawnCount(): number {
@@ -1261,32 +1313,41 @@ export function createRenderer(
       return frame.nebulaCovered;
     },
     setDetail(detail: SurfaceDetail): void {
+      stale = true;
       detailTexture?.dispose();
       detailTexture = createDetailTexture(gl, detail);
     },
     setRegionLines(lines: RegionLines): void {
+      stale = true;
       regionPass?.dispose();
       regionPass = createRegionPass(gl, regionPrograms, lines, triangle.vertexArray);
     },
     setRegionDraw(draw: boolean): void {
+      stale = true;
       regionDraw = draw;
     },
     setShapes(set: ShapeSet | null): void {
+      stale = true;
       shapeSet = set;
     },
     setShapeDraw(draw: boolean): void {
+      stale = true;
       shapeDraw = draw;
     },
     shapeDrawCalls(): number {
       return frame.shapeCalls;
     },
     setSystemIconsDraw(draw: boolean): void {
+      // The map calls this on every turn, so the flag rises on a change alone.
+      if (draw !== iconDraw) stale = true;
       iconDraw = draw;
     },
     systemIconsDraw(): boolean {
       return iconDraw;
     },
     setSelectedSystem(index: number): void {
+      // The map calls this on every turn, so the flag rises on a change alone.
+      if (index !== selectedSystem) stale = true;
       selectedSystem = index;
     },
     iconPlacements(): IconPlacement[] {
@@ -1333,6 +1394,7 @@ export function createRenderer(
       return rangePixel[0] as number;
     },
     setStarField(model: GalaxyModel): void {
+      stale = true;
       starPass?.dispose();
       starModel = model;
       starField = createStarField(model, {
@@ -1342,6 +1404,7 @@ export function createRenderer(
       starPass = createStarPass(gl, starProgram);
     },
     setSystems(set: RealSystemSet | null): void {
+      stale = true;
       systemSet = set;
       systemPass?.dispose();
       systemPass =
@@ -1368,6 +1431,7 @@ export function createRenderer(
       return frame.systemMarkers;
     },
     setGridDraw(draw: boolean): void {
+      stale = true;
       gridDraw = draw;
     },
     gridVertexCount(): number {
@@ -1392,6 +1456,8 @@ export function createRenderer(
       return backgroundPass.frame();
     },
     setBackgroundReadback(on: boolean): void {
+      // The map calls this on every turn, so the flag rises on a change alone.
+      if (on !== readbackAsked) stale = true;
       readbackAsked = on;
     },
     readbackStats(): ReadbackStats {
@@ -1401,15 +1467,59 @@ export function createRenderer(
       backgroundPass.resetReadbackStats();
     },
     setCloseFade(value: number | null): void {
+      stale = true;
       closeHold = value;
     },
     setNearPlane(value: number | null): void {
+      stale = true;
       nearHold = value;
     },
     render(view: View): void {
       const start = performance.now();
-      drawFrame(view);
+      // The take and the resize come first, as in every frame. The resize shows a change
+      // of the canvas box here, whichever path changed it.
+      backgroundPass.take();
+      resize();
+      const systemVersion = systemSet === null ? -1 : systemSet.version;
+      const categoryVersion = systemSet === null ? -1 : systemSet.categoryVersion;
+      const shapeVersion = shapeSet === null ? -1 : shapeSet.version;
+      if (
+        !stale &&
+        view.cursor[0] === drawn.cursorX &&
+        view.cursor[1] === drawn.cursorY &&
+        view.cursor[2] === drawn.cursorZ &&
+        view.distance === drawn.distance &&
+        view.yaw === drawn.yaw &&
+        view.pitch === drawn.pitch &&
+        canvas.width === drawn.width &&
+        canvas.height === drawn.height &&
+        readbackAsked === drawn.readback &&
+        systemVersion === drawn.systemVersion &&
+        categoryVersion === drawn.categoryVersion &&
+        shapeVersion === drawn.shapeVersion
+      ) {
+        // No shader reads a clock, so the frame would be the one the canvas holds. The
+        // context preserves its drawing buffer, so those pixels stay on the screen.
+        return;
+      }
+      drawResized(view);
       frames.add(performance.now() - start);
+      stale = false;
+      drawn.cursorX = view.cursor[0];
+      drawn.cursorY = view.cursor[1];
+      drawn.cursorZ = view.cursor[2];
+      drawn.distance = view.distance;
+      drawn.yaw = view.yaw;
+      drawn.pitch = view.pitch;
+      drawn.width = canvas.width;
+      drawn.height = canvas.height;
+      drawn.readback = readbackAsked;
+      drawn.systemVersion = systemVersion;
+      drawn.categoryVersion = categoryVersion;
+      drawn.shapeVersion = shapeVersion;
+    },
+    invalidate(): void {
+      stale = true;
     },
     frameStats(): FrameStats {
       return frames.read();
@@ -1419,6 +1529,9 @@ export function createRenderer(
     },
     measureFrames(view: View, count: number): number {
       if (count < 1) return 0;
+      // The frames below draw a view of the caller's, which need not be the view the
+      // last `render` drew, so the next `render` draws again.
+      stale = true;
       // A first frame warms the pipeline, so the mean measures steady state.
       drawFrame(view);
       waitForGpu();
@@ -1432,12 +1545,15 @@ export function createRenderer(
       return total / count;
     },
     setNebulaOcclusion(value: number): void {
+      stale = true;
       look.nebulaOcclusion = value;
     },
     setNebulaOrderReversed(value: boolean): void {
+      stale = true;
       nebulaOrderReversed = value;
     },
     setPasses(next: Partial<PassSwitches>): void {
+      stale = true;
       // The loop reads the switches the renderer holds, so a name the caller invents
       // writes nothing, and a value that is not a boolean leaves the switch as it is.
       for (const name of Object.keys(passes) as (keyof PassSwitches)[]) {

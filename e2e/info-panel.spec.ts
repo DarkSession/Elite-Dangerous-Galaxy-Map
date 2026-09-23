@@ -610,9 +610,9 @@ test.describe('the details loader', () => {
 
     await expect(description(page)).toHaveText('from the record');
     // The drawn frames and not the view distance: the camera eases toward the record
-    // the test selected, so the distance moves whether or not the map draws. The window
-    // is 20 frames and not 5, because a still map draws once each 200 milliseconds and
-    // 5 frames are shorter than that gap.
+    // the test selected, so the distance moves whether or not the map draws. The
+    // selection flight writes the view on each turn, so the map draws in these 20
+    // frames. A still map draws no frame at all.
     const frames = await page.evaluate(async () => {
       const before = window.__panelMap?.debug.frameStats().frames ?? -1;
       for (let index = 0; index < 20; index += 1) {

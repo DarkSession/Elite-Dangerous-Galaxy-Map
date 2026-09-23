@@ -5,11 +5,12 @@ import { createGalaxyModel } from '../galaxy-model/model';
 import { generateCloudSet } from './cloud-set';
 import {
   cloudSetTransferables,
+  detailGridTransferables,
   pointCloudTransferables,
   surfaceDetailTransferables,
   WORKER_STARTED,
 } from './messages';
-import type { PointCloudRequest, PointCloudResponse } from './messages';
+import type { PointCloudResponse } from './messages';
 import {
   buildSurfaceTable,
   DEFAULT_POINT_COUNT,
@@ -23,31 +24,40 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 // `WORKER_STARTED` in `messages.ts`.
 scope.postMessage(WORKER_STARTED);
 
-async function build(request: PointCloudRequest | null): Promise<void> {
+async function build(): Promise<void> {
   const grid = await loadDetailGrid();
   const model = createGalaxyModel(parameters, grid);
   const table = buildSurfaceTable(model);
   const cloud = generatePointCloud(model, {
-    count: request?.count ?? DEFAULT_POINT_COUNT,
-    seed: request?.seed ?? DEFAULT_SEED,
+    count: DEFAULT_POINT_COUNT,
+    seed: DEFAULT_SEED,
     table,
   });
   // The cloud set comes from the same table, with its own seed, so its samples do
   // not repeat the point cloud's.
   const cloudSet = generateCloudSet(model, {
-    seed: (request?.seed ?? DEFAULT_SEED) + 1,
+    seed: DEFAULT_SEED + 1,
     table,
   });
-  const response: PointCloudResponse = { cloud, cloudSet, detail: table.detail };
+  // The grid goes to the main thread too, which builds the star field model from it. The
+  // worker has no more use for it after the cloud set, so the buffer moves.
+  const response: PointCloudResponse = {
+    cloud,
+    cloudSet,
+    detail: table.detail,
+    grid,
+  };
   scope.postMessage(response, [
     ...pointCloudTransferables(cloud),
     ...cloudSetTransferables(cloudSet),
     ...surfaceDetailTransferables(table.detail),
+    ...detailGridTransferables(grid),
   ]);
 }
 
-scope.addEventListener('message', (event: MessageEvent<PointCloudRequest>) => {
-  void build(event.data).catch((error: unknown) => {
+// The message from the main thread carries no data. It only starts the build.
+scope.addEventListener('message', () => {
+  void build().catch((error: unknown) => {
     // A rejected promise does not reach the worker's error event, so the throw moves
     // to a task of its own, where the main thread hears it.
     setTimeout(() => {

@@ -992,27 +992,33 @@ test('dispose stops the map and repeats safely', async ({ page }) => {
   await openMap(page);
   const result = await page.evaluate(async () => {
     const map = window.galaxyMap;
-    if (map === undefined) return { before: -1, after: -2, threw: true };
+    if (map === undefined)
+      return { before: -1, after: -2, turnsBefore: -1, turnsAfter: -2, threw: true };
+    // The wake holds the loop, so a loop that dispose did not stop turns in the frames
+    // below. The loop turns and not the draws: a turn at an unchanged view draws nothing.
+    map.debug.wake();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const before = map.debug.frameStats().frames;
     map.dispose();
-    // 30 frames and not 10: a still map draws once each 200 milliseconds, so a shorter
-    // window would pass on a map whose loop still ran.
+    const turnsBefore = map.debug.frameIntervalStats().frames;
     for (let index = 0; index < 30; index += 1) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
     const after = map.debug.frameStats().frames;
+    const turnsAfter = map.debug.frameIntervalStats().frames;
     let threw = false;
     try {
       map.dispose();
     } catch {
       threw = true;
     }
-    return { before, after, threw };
+    return { before, after, turnsBefore, turnsAfter, threw };
   });
   console.log('dispose', result);
 
   expect(result.before).toBeGreaterThan(0);
   expect(result.after).toBe(result.before);
+  expect(result.turnsAfter).toBe(result.turnsBefore);
   expect(result.threw).toBe(false);
 });
 

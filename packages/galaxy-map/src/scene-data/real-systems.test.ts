@@ -924,6 +924,21 @@ describe('the category switch', () => {
     expect(set.drawsMarker(1)).toBe(true);
   });
 
+  test('finds a record added after the filter by a mixed-case part of its name', () => {
+    const set = setWith('A');
+    set.addSystems([record('Sol', 'A')]);
+    set.setNameFilter('rHo Ophi');
+    set.addSystems([record('Rho Ophiuchi', 'A')]);
+
+    expect(Array.from(set.markerFlags)).toEqual([0, 1]);
+
+    // A clear drops the kept names with the records, so the next set reads its own.
+    set.clearSystems();
+    set.addSystems([record('Achenar', 'A'), record('RHO OPHIUCHI', 'A')]);
+
+    expect(Array.from(set.markerFlags)).toEqual([0, 1]);
+  });
+
   test('raises the category version, so the marker pass rebuilds', () => {
     const set = setWith('A');
     const before = set.categoryVersion;

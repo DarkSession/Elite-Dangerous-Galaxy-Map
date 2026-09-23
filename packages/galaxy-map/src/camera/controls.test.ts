@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { project } from './projection';
+import { inverseViewProjection, project } from './projection';
 import {
   ALL_INTERACTION,
   applyKeyDown,
@@ -322,6 +322,27 @@ describe('the right drag', () => {
     const screen = project(view, (start as NonNullable<typeof start>).point, viewport);
     expect(Math.abs(screen.x - endPixel.x)).toBeLessThan(1);
     expect(Math.abs(screen.y - endPixel.y)).toBeLessThan(1);
+  });
+
+  test('builds the inverse again for a viewport that changed during the drag', () => {
+    const narrow = { width: 1200, height: 1080 };
+    const pixel = { x: 700, y: 600 };
+    const start = beginDrag(createDefaultView(), { x: 800, y: 600 }, viewport);
+    expect(start).not.toBeNull();
+    const kept = start as NonNullable<typeof start>;
+    const fresh = {
+      ...kept,
+      inverse: inverseViewProjection(kept.view, narrow),
+      inverseWidth: narrow.width,
+      inverseHeight: narrow.height,
+    };
+    const resized = createDefaultView();
+    const expected = createDefaultView();
+    dragCursor(resized, kept, pixel, narrow);
+    dragCursor(expected, fresh, pixel, narrow);
+
+    expect(resized.cursor).toEqual(expected.cursor);
+    expect(kept.inverseWidth).toBe(narrow.width);
   });
 });
 

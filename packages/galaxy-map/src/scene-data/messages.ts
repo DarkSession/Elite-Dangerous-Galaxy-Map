@@ -1,4 +1,5 @@
 // The messages the scene-data workers exchange with the main thread.
+import type { SurfaceDetailGrid } from '../galaxy-model/detail';
 import type {
   CloudSet,
   CoarseRegionGrid,
@@ -18,12 +19,6 @@ import type {
  */
 export const WORKER_STARTED = 'started';
 
-/** What the main thread asks the point cloud worker for. */
-export interface PointCloudRequest {
-  readonly count: number;
-  readonly seed: number;
-}
-
 /**
  * What the point cloud worker sends back: the point cloud, the cloud set and the
  * surface detail grid. All three come from one surface table.
@@ -32,10 +27,12 @@ export interface PointCloudResponse {
   readonly cloud: PointCloud;
   readonly cloudSet: CloudSet;
   readonly detail: SurfaceDetail;
+  /**
+   * The detail grid the worker decoded to build its model. The main thread builds the
+   * star field model from it, so it does not fetch and decode the PNG a second time.
+   */
+  readonly grid: SurfaceDetailGrid;
 }
-
-/** What the volume worker sends back. */
-export type VolumeResponse = DensityVolume;
 
 /** What the region worker sends back: the boundary set and the coarse region grid. */
 export interface RegionLinesResponse {
@@ -71,6 +68,11 @@ export function surfaceDetailTransferables(detail: SurfaceDetail): Transferable[
   return [detail.data.buffer as ArrayBuffer];
 }
 
+/** The buffer a detail grid message moves instead of copying. */
+export function detailGridTransferables(grid: SurfaceDetailGrid): Transferable[] {
+  return [grid.values.buffer as ArrayBuffer];
+}
+
 /** The buffers a region line message moves instead of copying. */
 export function regionLinesTransferables(lines: RegionLines): Transferable[] {
   return [
@@ -103,6 +105,7 @@ export function sceneDataTransferables(scene: SceneData): Transferable[] {
     ...cloudSetTransferables(scene.cloudSet),
     ...volumeTransferables(scene.volume),
     ...surfaceDetailTransferables(scene.detail),
+    ...detailGridTransferables(scene.detailGrid),
     ...regionLinesTransferables(scene.regionLines),
     ...coarseRegionGridTransferables(scene.regionGrid),
     scene.regionFlow.buffer as ArrayBuffer,

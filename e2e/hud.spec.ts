@@ -4503,9 +4503,9 @@ test.describe('the HUD budget', () => {
     // The view-driven readouts settle inside 200 ms, so the count starts after them.
     await page.waitForTimeout(300);
 
-    const writes = await page.evaluate(async () => {
+    const { writes, styleCalls } = await page.evaluate(async () => {
       const root = document.querySelector('#hud-wrap .gm-hud');
-      if (root === null) return -1;
+      if (!(root instanceof HTMLElement)) return { writes: -1, styleCalls: -1 };
       let count = 0;
       const observer = new MutationObserver((records) => {
         count += records.length;
@@ -4516,15 +4516,38 @@ test.describe('the HUD budget', () => {
         attributes: true,
         subtree: true,
       });
-      for (let frame = 0; frame < 120; frame += 1) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      // A write of the value an element already carries makes no mutation record, so
+      // the mutation count cannot see it. The test counts the calls themselves as well.
+      // A still frame builds no element, so the set of HUD styles is fixed here.
+      const styles = new WeakSet<CSSStyleDeclaration>([root.style]);
+      for (const element of root.querySelectorAll<HTMLElement | SVGElement>('*')) {
+        styles.add(element.style);
       }
-      observer.disconnect();
-      return count;
+      const prototype = CSSStyleDeclaration.prototype;
+      const setProperty = prototype.setProperty;
+      let calls = 0;
+      prototype.setProperty = function (
+        this: CSSStyleDeclaration,
+        ...args: Parameters<CSSStyleDeclaration['setProperty']>
+      ): void {
+        if (styles.has(this)) calls += 1;
+        setProperty.apply(this, args);
+      };
+      try {
+        for (let frame = 0; frame < 120; frame += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+      } finally {
+        prototype.setProperty = setProperty;
+        observer.disconnect();
+      }
+      return { writes: count, styleCalls: calls };
     });
     console.log('the HUD DOM writes over 120 still frames', writes);
+    console.log('the HUD style writes over 120 still frames', styleCalls);
 
     expect(writes).toBe(0);
+    expect(styleCalls).toBe(0);
   });
 
   test('the node count does not follow the set', async ({ page }) => {

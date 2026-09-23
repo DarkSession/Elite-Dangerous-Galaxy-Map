@@ -14,7 +14,6 @@
 // nothing about `src/app/`, where `create-map.ts` already imports it. What this module
 // must not read is renderer state: it takes the level, the bounds and the camera
 // distance from the frame it is given.
-import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/projection';
 import type { Viewport } from '../camera/projection';
 import type { ResolvedBounds, View } from '../camera/view';
 import type { Range } from '../galaxy-model/types';
@@ -30,8 +29,14 @@ import {
 } from '../render/grid-pass';
 import { boxesOverlap } from './labels';
 import type { LabelBox } from './labels';
-import { planePlacement, setStyle, writeOnPlane } from './plane-overlay';
+import {
+  planeFrame,
+  planeJacobian,
+  planePlacement,
+  writeOnPlane,
+} from './plane-overlay';
 import type { PlanePlaced } from './plane-overlay';
+import { setStyle } from './set-style';
 
 /**
  * How many spacings of the label level each side of the cursor carry a candidate. The
@@ -109,6 +114,9 @@ export const GRID_LABEL_MIN_ALPHA = 0.09;
  */
 const JACOBIAN_STEP = 1e-3;
 
+/** The scratch the sweep reads each crossing's Jacobian into. See `planeJacobian`. */
+const jacobian = new Float64Array(6);
+
 /**
  * The opacity of a label over a dark background. It is below the 0.86 the label carried
  * before the merge, because the label no longer stands over a hard outline.
@@ -151,15 +159,22 @@ export const GRID_LABEL_FONT_MIN_CSS = 8;
 export const GRID_LABEL_FONT_MAX_CSS = 512;
 
 /**
+ * The number format of every label, made once. Chrome builds a new format for each call
+ * of `toLocaleString`, which costs 29 times the call of a format it keeps, and the sweep
+ * formats three numbers for each of 25 crossings.
+ */
+const LABEL_NUMBER_FORMAT = new Intl.NumberFormat('en-US');
+
+/**
  * A whole number with a thousands separator, for example `-12,345`. A number of three
  * digits or fewer carries no separator.
  *
  * The locale is named, so the separator is the comma at every locale the browser runs
- * in. The `|| 0` turns negative zero into zero, which is the one value where
- * `toLocaleString` reads `-0`.
+ * in. The `|| 0` turns negative zero into zero, which is the one value where the format
+ * reads `-0`.
  */
 export function labelNumber(value: number): string {
-  return (Math.round(value) || 0).toLocaleString('en-US');
+  return LABEL_NUMBER_FORMAT.format(Math.round(value) || 0);
 }
 
 /**
@@ -515,37 +530,16 @@ export function gridLabelPlacements(
   if (!(worst.widthPerEm > 0) || !(worst.capPerEm > 0)) return [];
   const capHeightLy = gridLabelCapHeightLy(spacingLy, worst);
 
-  const matrix = viewProjectionMatrix(view, viewport);
-  const near = nearPlane(view.distance);
-  const halfWidth = viewport.width / 2;
-  const halfHeight = viewport.height / 2;
   // The sweep holds the subtraction in `float64`, so a crossing 45,000 light years out
   // keeps its resolution.
-  const camera = cameraPosition(view);
-  const planeY = view.cursor[1] - camera[1];
+  const plane = planeFrame(view, viewport, view.cursor[1]);
   const baseX = Math.round(view.cursor[0] / spacingLy) * spacingLy;
   const baseZ = Math.round(view.cursor[2] / spacingLy) * spacingLy;
   // The band is the camera's distance to the cursor, one reading for the whole frame,
   // which is what the pass sends the shader.
   const band = gridVisibility(view.distance);
-
-  /** A point of the plane in CSS pixels of the canvas, or null behind the near plane. */
-  const project = (gameX: number, gameZ: number): { x: number; y: number } | null => {
-    // The renderer's world frame runs its third axis the other way to the game's.
-    const offsetX = gameX - camera[0];
-    const offsetZ = camera[2] - gameZ;
-    const clipW =
-      matrix[3] * offsetX + matrix[7] * planeY + matrix[11] * offsetZ + matrix[15];
-    if (clipW <= near) return null;
-    const clipX =
-      matrix[0] * offsetX + matrix[4] * planeY + matrix[8] * offsetZ + matrix[12];
-    const clipY =
-      matrix[1] * offsetX + matrix[5] * planeY + matrix[9] * offsetZ + matrix[13];
-    return {
-      x: (clipX / clipW + 1) * halfWidth,
-      y: (1 - clipY / clipW) * halfHeight,
-    };
-  };
+  // The step along each game axis that reads the Jacobian, one for the whole frame.
+  const step = spacingLy * JACOBIAN_STEP;
 
   const candidates: GridLabelPlacement[] = [];
   const distances: number[] = [];
@@ -559,27 +553,22 @@ export function gridLabelPlacements(
       const away = Math.hypot(gameX - view.cursor[0], gameZ - view.cursor[2]);
       const reach = gridLabelReach(away, spacingLy);
       if (reach <= 0) continue;
-      const at = project(gameX, gameZ);
-      if (at === null) continue;
-      const { x, y } = at;
       // The crossing's own projected point is not a gate. A label lies in the cell above
       // and left of its crossing, so the crossing is the label's bottom right corner and
       // not a point of the text. `planePlacement` below drops a label whose whole quad
       // lies outside the viewport, which is the reading the spec asks for.
       //
-      // The near-plane check above stays, because the Jacobian and the alpha gate read
-      // the projected crossing and a point behind the camera has no useful one.
-      // The two steps that make the Jacobian of the projection at this crossing.
-      const step = spacingLy * JACOBIAN_STEP;
-      const alongX = project(gameX + step, gameZ);
-      const alongZ = project(gameX, gameZ + step);
-      if (alongX === null || alongZ === null) continue;
+      // The near-plane check stays, because the Jacobian and the alpha gate read the
+      // projected crossing and a point behind the camera has no useful one.
+      if (!planeJacobian(plane, gameX, gameZ, step, jacobian)) continue;
+      const x = jacobian[0] as number;
+      const y = jacobian[1] as number;
       // The columns of the Jacobian: CSS pixels of the screen for one light year of the
       // game axis.
-      const xOverX = (alongX.x - x) / step;
-      const yOverX = (alongX.y - y) / step;
-      const xOverZ = (alongZ.x - x) / step;
-      const yOverZ = (alongZ.y - y) / step;
+      const xOverX = jacobian[2] as number;
+      const yOverX = jacobian[3] as number;
+      const xOverZ = jacobian[4] as number;
+      const yOverZ = jacobian[5] as number;
       const determinant = xOverX * yOverZ - xOverZ * yOverX;
       if (determinant === 0) continue;
       // The rows of the inverse: light years of each game axis for one CSS pixel.
@@ -705,8 +694,8 @@ export interface GridLabelOverlay {
 function makeLabel(document: Document): HTMLElement {
   const element = document.createElement('div');
   element.className = 'gm-grid-label';
-  // The four styles a placement never moves. `writeOnPlane` writes the size, the
-  // transform and the level, and each of its writes is a CSSOM read first.
+  // The styles a placement never moves. `writeOnPlane` writes the size, the transform
+  // and the level.
   setStyle(element, 'position', 'absolute');
   setStyle(element, 'left', '0px');
   setStyle(element, 'top', '0px');

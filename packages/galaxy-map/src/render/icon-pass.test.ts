@@ -11,6 +11,11 @@ import {
   MAX_ICON_STACKS,
 } from '../scene-data/icon-stack';
 import { markerCssSize } from '../scene-data/marker-size';
+import {
+  createNearestKeep,
+  offerNearest,
+  resetNearest,
+} from '../scene-data/nearest-keep';
 import { createSystemSet } from '../scene-data/real-systems';
 import type { RealSystemSet, SystemRecordInput } from '../scene-data/real-systems';
 import { rebasePositions } from './system-pass';
@@ -392,6 +397,78 @@ describe('the icon stack placement', () => {
     // The 8 furthest are the first 8 records, which sit at the largest z.
     for (let index = 0; index < 8; index += 1) expect(kept.has(index)).toBe(false);
     for (let index = 8; index < 40; index += 1) expect(kept.has(index)).toBe(true);
+  });
+
+  test('keeps the stacks the keeper keeps with no early reject, over 5,000 systems', async () => {
+    // The sweep refuses a stack at or past the furthest kept one before it projects it.
+    // This holds that the refusal changes nothing: a keeper that is offered every
+    // candidate the other gates pass keeps the same indices in the same order. The camera
+    // sits at `x = 0`, and each second system is the mirror of the one before it in `x`,
+    // so the set holds pairs at the same range and the rule for a tie is tested too.
+    const context = fakeContext();
+    const pass = passOver(context.gl);
+    const view: View = { cursor: [0, 0, 0], distance: 2000, yaw: 0, pitch: 20 };
+    const camera = cameraPosition(view);
+    expect(camera[0]).toBe(0);
+    const records: SystemRecordInput[] = [];
+    let seed = 4711;
+    const unit = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    for (let index = 0; index < 2500; index += 1) {
+      // Positions on the game's 1/32 grid, in a box around the cursor.
+      const x = Math.round((unit() - 0.5) * 3000 * 32) / 32;
+      const y = Math.round((unit() - 0.5) * 600 * 32) / 32;
+      const z = Math.round((unit() - 0.5) * 3000 * 32) / 32;
+      const icon = [hostIcon('/a.svg', [1, 2, 3])];
+      records.push(record(`P${index}`, [x, y, z], icon));
+      records.push(record(`M${index}`, [-x, y, z], icon));
+    }
+    const set = setOf(records);
+    expect(set.count).toBe(5000);
+
+    prepareOf(pass, set, { view });
+    await settle();
+    prepareOf(pass, set, { view });
+    // The pass reports the furthest stack first, and the keeper holds the nearest first.
+    const swept = ofKind(pass.placements(), 'arrow')
+      .map((one) => one.systemIndex)
+      .reverse();
+
+    // The same gates the sweep runs, and every candidate offered to the keeper.
+    const matrix = matrixOf(view);
+    const cursor = cursorOffsetOf(view, camera);
+    const keep = createNearestKeep(MAX_ICON_STACKS);
+    resetNearest(keep);
+    for (let index = 0; index < set.count; index += 1) {
+      const x = Math.fround((set.positions[index * 3] as number) - camera[0]);
+      const y = Math.fround((set.positions[index * 3 + 1] as number) - camera[1]);
+      const z = Math.fround(camera[2] - (set.positions[index * 3 + 2] as number));
+      const limit = set.drawRanges[index] as number;
+      const cx = x - cursor[0];
+      const cy = y - cursor[1];
+      const cz = z - cursor[2];
+      if (cx * cx + cy * cy + cz * cz > limit * limit) continue;
+      const w = matrix[3]! * x + matrix[7]! * y + matrix[11]! * z + matrix[15]!;
+      if (w <= 1) continue;
+      const deviceX =
+        ((matrix[0]! * x + matrix[4]! * y + matrix[8]! * z + matrix[12]!) / w + 1) *
+        (VIEWPORT.width / 2);
+      const deviceY =
+        (1 - (matrix[1]! * x + matrix[5]! * y + matrix[9]! * z + matrix[13]!) / w) *
+        (VIEWPORT.height / 2);
+      if (deviceX < 0 || deviceY < 0) continue;
+      if (deviceX > VIEWPORT.width || deviceY > VIEWPORT.height) continue;
+      offerNearest(keep, index, Math.sqrt(x * x + y * y + z * z));
+    }
+    const wanted = [...keep.indices.subarray(0, keep.count)];
+
+    expect(wanted).toHaveLength(MAX_ICON_STACKS);
+    // The pairs tie, so a kept pair shows that the kept set reaches the ties.
+    const ties = wanted.filter((index) => wanted.includes(index ^ 1));
+    expect(ties.length).toBeGreaterThan(0);
+    expect(swept).toEqual(wanted);
   });
 
   test('reports the furthest stack first, so a nearer stack draws over it', async () => {

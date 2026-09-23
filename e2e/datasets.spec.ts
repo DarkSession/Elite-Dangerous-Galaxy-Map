@@ -1558,6 +1558,54 @@ test('a failed fetch leaves the map as it was', async ({ page }) => {
   expect(reading.frames).toBe(10);
 });
 
+// The scenario "A second click stops the multifaction download". The HUD starts no second
+// load while one runs, so the test loads through the handle, as a host does.
+test('a second load stops the multifaction download', async ({ page }) => {
+  // The route holds the answer past the second load. A request that the page aborted
+  // cannot take the answer, so the fulfil may throw.
+  await page.route(FACTIONS_DUMP_URL, async (route) => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 5000));
+    await route.fulfill({ status: 200, body: '' }).catch(() => undefined);
+  });
+  const failed: string[] = [];
+  page.on('requestfailed', (request) => {
+    if (request.url() === FACTIONS_DUMP_URL)
+      failed.push(request.failure()?.errorText ?? '');
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openMap(page, '', { demoData: true });
+
+  const requested = page.waitForRequest(FACTIONS_DUMP_URL);
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    (window as unknown as { __firstLoad: Promise<string> }).__firstLoad = map
+      .loadDataset('multifaction')
+      .then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+  });
+  await requested;
+
+  const reading = await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map === undefined) throw new Error('The page has no map.');
+    await map.loadDataset('guardian-ruins');
+    const first = await (window as unknown as { __firstLoad: Promise<string> })
+      .__firstLoad;
+    return { first, loaded: map.getLoadedDataset()?.id ?? null };
+  });
+  await expect.poll(() => failed.length, { timeout: 5000 }).toBeGreaterThan(0);
+  console.log('the multifaction load after a second load', { reading, failed, errors });
+
+  expect(reading.first).toBe('The dataset load was cancelled by a later one.');
+  expect(reading.loaded).toBe('guardian-ruins');
+  expect(failed[0]).toContain('ABORTED');
+  expect(errors).toEqual([]);
+});
+
 test('a dump that names neither faction rejects', async ({ page }) => {
   await serveFactionsDump(page, DUMP_WITHOUT_CANONN);
   await openMap(page, '', { demoData: true });
@@ -1831,8 +1879,8 @@ test.describe('an entry frames its set', () => {
   }) => {
     // The `system` field of an entry is resolved at the load, because the load wrote
     // the set a step before. The start view holds its own name over the frames a host
-    // may take to add the record, and it drops it after 600 of them. An entry that
-    // rode that hold would move nowhere on a page that has drawn longer.
+    // may take to add the record, and it drops it after 600 turns of the frame work. An
+    // entry that rode that hold would move nowhere on a page that has drawn longer.
     await openDatasets(page, {
       entries: [
         { id: 'first', systems: 4 },
@@ -1841,7 +1889,7 @@ test.describe('an entry frames its set', () => {
       dataset: 'first',
     });
 
-    // 700 drawn frames, which is past the 600 the pending start holds for.
+    // 700 turns of the frame work, which is past the 600 the pending start holds for.
     await page.evaluate(() => {
       for (let count = 0; count < 700; count += 1) {
         window.__datasetMap?.debug.drawNow();

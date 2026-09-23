@@ -1,6 +1,7 @@
 // The game's control scheme: orbit with the left button, drag the cursor in the plane
 // with the right button, zoom with the wheel and move with the keyboard.
-import { planePoint } from './projection';
+import type { mat4 } from 'gl-matrix';
+import { cameraPosition, inverseViewProjection, planePointFrom } from './projection';
 import type { Viewport } from './projection';
 import {
   clampCursor,
@@ -130,6 +131,18 @@ export interface DragStart {
   readonly view: View;
   /** The plane point under the first pixel. */
   readonly point: readonly [number, number, number];
+  /**
+   * The inverse view-projection matrix of the start view at the viewport size
+   * `inverseWidth` by `inverseHeight`. The drag reads the start view on each move, so
+   * the inverse is built once. A resize during the drag builds it again.
+   */
+  inverse: mat4;
+  /** The viewport width that `inverse` was built for. */
+  inverseWidth: number;
+  /** The viewport height that `inverse` was built for. */
+  inverseHeight: number;
+  /** The camera position of the start view, where each ray of the drag starts. */
+  readonly origin: readonly [number, number, number];
 }
 
 /**
@@ -319,9 +332,18 @@ export function beginDrag(
   viewport: Viewport,
 ): DragStart | null {
   const start = copyView(view);
-  const point = planePoint(start, pixel, viewport, start.cursor[1]);
+  const inverse = inverseViewProjection(start, viewport);
+  const origin = cameraPosition(start);
+  const point = planePointFrom(inverse, origin, pixel, viewport, start.cursor[1]);
   if (point === null) return null;
-  return { view: start, point };
+  return {
+    view: start,
+    point,
+    inverse,
+    inverseWidth: viewport.width,
+    inverseHeight: viewport.height,
+    origin,
+  };
 }
 
 /**
@@ -335,7 +357,21 @@ export function dragCursor(
   viewport: Viewport,
   bounds: ResolvedBounds = unrestrictedBounds(),
 ): void {
-  const current = planePoint(start.view, pixel, viewport, start.view.cursor[1]);
+  if (
+    viewport.width !== start.inverseWidth ||
+    viewport.height !== start.inverseHeight
+  ) {
+    start.inverse = inverseViewProjection(start.view, viewport);
+    start.inverseWidth = viewport.width;
+    start.inverseHeight = viewport.height;
+  }
+  const current = planePointFrom(
+    start.inverse,
+    start.origin,
+    pixel,
+    viewport,
+    start.view.cursor[1],
+  );
   if (current === null) return;
   view.cursor = clampCursor(
     [

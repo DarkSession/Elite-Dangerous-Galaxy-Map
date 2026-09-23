@@ -12,6 +12,7 @@ import {
   formatWhole,
   make,
   makeButton,
+  makeSvg,
   replaceChildrenKeepingFocus,
   restoreFocus,
   setAttribute,
@@ -170,15 +171,9 @@ export interface CategoryPanel {
  * true. It carries `aria-hidden`, because the row already states the same thing.
  */
 function makeChevronIcon(doc: Document): SVGSVGElement {
-  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('width', '14');
-  svg.setAttribute('height', '14');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
+  const svg = makeSvg(doc, '0 0 16 16', 14);
   svg.setAttribute('stroke-width', '1.8');
   svg.setAttribute('stroke-linecap', 'square');
-  svg.setAttribute('aria-hidden', 'true');
   const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
   line.setAttribute('points', '4,6 8,10.5 12,6');
   svg.appendChild(line);

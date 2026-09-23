@@ -9,7 +9,7 @@
 // and `onDatasetChange`.
 import { readBounds } from '../camera/view';
 import { readViewInput } from './view-input';
-import type { StartView } from './view-input';
+import type { ViewInput } from './view-input';
 import type { BrowseBounds } from '../camera/view';
 import type {
   AddReport,
@@ -46,13 +46,10 @@ export interface DatasetContent {
  * that wants every load to frame its set names a field beside `fit`, such as the pitch
  * the camera holds, or drops `bounds` from the entry.
  *
- * The five `StartView` fields come from `./view-input`, which holds the reader both
- * options take.
+ * The fields are those of `ViewInput`, which the start view option reads as well. The
+ * name stays, because hosts write it.
  */
-export interface DatasetView extends StartView {
-  /** Centres on the box of the set and frames the whole of it. */
-  readonly fit?: 'systems';
-}
+export type DatasetView = ViewInput;
 
 /** One entry of the catalog, as the host writes it. */
 export interface DatasetEntry {
@@ -77,8 +74,14 @@ export interface DatasetEntry {
    * the two ways to keep the frame on every load.
    */
   readonly view?: DatasetView;
-  /** Reads the set. The library calls it and adds what comes back. */
-  load(): DatasetContent | Promise<DatasetContent>;
+  /**
+   * Reads the set. The library calls it and adds what comes back.
+   *
+   * The map aborts `signal` when a later load starts and when the map is disposed while
+   * this load is in flight. A load that fetches passes the signal to `fetch`, so a
+   * download that nobody reads stops. A load that declares no parameter still fits.
+   */
+  load(signal: AbortSignal): DatasetContent | Promise<DatasetContent>;
 }
 
 /** One entry as a reader of the handle sees it. It carries no `load`. */
@@ -237,11 +240,9 @@ export interface DatasetWriter {
    * It is false where the bounds resolve to unrestricted, because every camera is inside
    * an unrestricted space and a reading of true would stop a jump the user needs.
    *
-   * `runLoad` never passes `null`: it reads `entry.bounds !== undefined` first. The
-   * argument takes `null` so that it mirrors `setBounds(entry.bounds ?? null)` letter for
-   * letter, and the two calls cannot drift on to different bounds.
+   * `runLoad` calls it only for an entry that names `bounds`.
    */
-  viewInsideBounds(bounds: BrowseBounds | null): boolean;
+  viewInsideBounds(bounds: BrowseBounds): boolean;
 }
 
 /**
@@ -286,7 +287,10 @@ export interface DatasetState {
    * load succeeded, and it gives null when the catalog is empty.
    */
   startLoad(): Promise<void> | null;
-  /** Drops every listener. `dispose` calls it. */
+  /**
+   * Drops every listener and aborts the load in flight. A load that settles later writes
+   * nothing and rejects as cancelled. `dispose` calls it.
+   */
   clear(): void;
 }
 
@@ -298,6 +302,8 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
   // Each load takes the next number. A load writes the map only while its number is
   // still the newest, so a later call wins and an earlier one rejects as cancelled.
   let counter = 0;
+  // The controller of the newest load while it is in flight, and null after it settles.
+  let active: AbortController | null = null;
 
   const announce = (): void => {
     const entry = loaded === null ? null : datasetInfo(loaded);
@@ -311,7 +317,21 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     }
     counter += 1;
     const ticket = counter;
-    const content = await entry.load();
+    active?.abort();
+    const controller = new AbortController();
+    active = controller;
+    let content: DatasetContent;
+    try {
+      content = await entry.load(controller.signal);
+    } catch (error) {
+      // A load that passes the signal to `fetch` rejects on the abort. The abort is the
+      // later load or the dispose, so the promise rejects as cancelled, as a replaced
+      // load that resolved does.
+      if (ticket !== counter) throw new Error(CANCELLED_MESSAGE, { cause: error });
+      throw error;
+    } finally {
+      if (active === controller) active = null;
+    }
     if (ticket !== counter) throw new Error(CANCELLED_MESSAGE);
     const report = options.write(content);
     // A camera that already shows the new set keeps its place. The reading comes after
@@ -324,7 +344,7 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
       entry.bounds !== undefined &&
       entry.view !== undefined &&
       fitOnly(entry.view) &&
-      options.viewInsideBounds(entry.bounds ?? null);
+      options.viewInsideBounds(entry.bounds);
     // The bounds and the view are written before the announce, so a listener that adds
     // the shapes of the entry reads the bounds the entry asked for.
     options.setBounds(entry.bounds ?? null);
@@ -379,6 +399,10 @@ export function createDatasetState(options: DatasetStateOptions): DatasetState {
     },
     clear(): void {
       listeners.clear();
+      // The raise fails the ticket check of the load in flight, so it writes nothing.
+      counter += 1;
+      active?.abort();
+      active = null;
     },
   };
 }

@@ -329,7 +329,7 @@ export function fitSampleBuffers(
  * nothing each frame; a caller that gives none gets a fresh set.
  *
  * The view-projection matrix is inverted once for the whole sweep. Inverting it per
- * point, as `rayDirection` does, would be 2,000 matrix inversions a frame.
+ * point would be 2,000 matrix inversions a frame.
  */
 export function sampleFrame(
   view: View,

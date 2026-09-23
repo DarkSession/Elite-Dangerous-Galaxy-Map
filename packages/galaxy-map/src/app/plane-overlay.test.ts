@@ -8,6 +8,7 @@ import {
   planePlacement,
 } from './plane-overlay';
 import type { PlanePlacement } from './plane-overlay';
+import { setStyle } from './set-style';
 
 const VIEWPORT = { width: 1920, height: 1080 };
 
@@ -58,8 +59,18 @@ function transformedCorners(
   return placed.corners.map((point) => ({ x: point.x, y: point.y }));
 }
 
-/** An element that records every style write, so a test can count them. */
-function fakeElement(): { element: HTMLElement; writes: string[]; reads: string[] } {
+/**
+ * An element that records every style write and every style read, so a test can count
+ * them. `serialise` gives the form the element reports a value back in, as a browser
+ * gives the `font` shorthand back in a form of its own.
+ */
+function fakeElement(
+  serialise: (name: string, value: string) => string = (_, value) => value,
+): {
+  element: HTMLElement;
+  writes: string[];
+  reads: string[];
+} {
   const held = new Map<string, string>();
   const writes: string[] = [];
   const reads: string[] = [];
@@ -70,7 +81,7 @@ function fakeElement(): { element: HTMLElement; writes: string[]; reads: string[
     },
     setProperty(name: string, value: string): void {
       writes.push(name);
-      held.set(name, value);
+      held.set(name, serialise(name, value));
     },
   };
   return { element: { style } as unknown as HTMLElement, writes, reads };
@@ -219,17 +230,40 @@ describe('a plane element', () => {
     expect(overlaps(uprightOf(-300), uprightOf(300))).toBe(false);
   });
 
-  test('the placement reads and writes the four properties that move', () => {
+  test('the placement writes the four properties that move and reads none', () => {
     const { element, writes, reads } = fakeElement();
     expect(
       placeOnPlane(element, placementOf(viewAt(1000, 30), 200, 200)),
     ).not.toBeNull();
 
     // The other four, `position`, `left`, `top` and `transform-origin`, never move, so
-    // the element factories write them once at creation and the placement reads none of
-    // them. Every write here is a read of the CSSOM first.
+    // the element factories write them once at creation. The compare reads the value the
+    // library kept and not the element.
     expect(writes).toEqual(['width', 'height', 'transform', 'z-index']);
-    expect(reads).toEqual(['width', 'height', 'transform', 'z-index']);
+    expect(reads).toEqual([]);
+  });
+
+  // The scenario "The placement reads no style back" of `plane-overlay`.
+  test('the placement reads no style back', () => {
+    const { element, reads } = fakeElement();
+    const placement = placementOf(viewAt(1000, 30), 200, 200);
+    expect(placeOnPlane(element, placement)).not.toBeNull();
+    expect(placeOnPlane(element, placement)).not.toBeNull();
+    expect(reads).toEqual([]);
+  });
+
+  // The scenario "A value the browser gives back in another form is written once". The
+  // element reports the font in the form Chrome gives, so a compare against the value
+  // read back never matched and wrote the font again on each frame.
+  test('a value the browser gives back in another form is written once', () => {
+    const { element, writes } = fakeElement((name, value) =>
+      name === 'font' ? value.replace('px/', 'px / ') : value,
+    );
+    const font = "16px/16px 'IBM Plex Mono', ui-monospace, monospace";
+    setStyle(element, 'font', font);
+    setStyle(element, 'font', font);
+    expect(element.style.getPropertyValue('font')).not.toBe(font);
+    expect(writes).toEqual(['font']);
   });
 
   test('the placement writes no style it already holds', () => {

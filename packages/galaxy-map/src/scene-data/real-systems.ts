@@ -552,6 +552,9 @@ export function createSystemSet(): RealSystemSet {
   let positions = new Float64Array(0);
   let categoryIndices = new Uint16Array(0);
   const systems: RealSystem[] = [];
+  // The name of each system folded to lower case, written once when the record is added.
+  // The name filter reads it, so a change of the filter text folds no name again.
+  const foldedNames: string[] = [];
   // The running box of every system the set has been given. `boxEmpty` is the flag, so a
   // reader never meets the numbers the box holds before the first record.
   let boxEmpty = true;
@@ -743,8 +746,7 @@ export function createSystemSet(): RealSystemSet {
     for (let index = 0; index < systems.length; index += 1) {
       const drawn = firstCategoryOn(index);
       const kept =
-        !filtering ||
-        (systems[index] as RealSystem).name.toLowerCase().includes(nameFilterFold);
+        !filtering || (foldedNames[index] as string).includes(nameFilterFold);
       const draws = drawn >= 0 && kept;
       markerFlags[index] = draws ? 1 : 0;
       // A system with every category off draws no marker, so the index it holds never
@@ -784,6 +786,7 @@ export function createSystemSet(): RealSystemSet {
   const writeSystem = (slot: number, system: RealSystem): void => {
     grow(slot + 1);
     systems[slot] = system;
+    foldedNames[slot] = system.name.toLowerCase();
     // The record's categories go in as table rows, once. A replacement writes over the
     // run it had while the run is long enough, so a call that replaces the whole set
     // adds no row to the flat run. The run of a record grows to the largest count the
@@ -1035,6 +1038,7 @@ export function createSystemSet(): RealSystemSet {
 
     clearSystems(): void {
       systems.length = 0;
+      foldedNames.length = 0;
       catRowCount = 0;
       catCount.fill(0);
       catRoom.fill(0);
@@ -1052,6 +1056,7 @@ export function createSystemSet(): RealSystemSet {
 
     clearSystemsAndCategories(): void {
       systems.length = 0;
+      foldedNames.length = 0;
       catRowCount = 0;
       catCount.fill(0);
       catRoom.fill(0);

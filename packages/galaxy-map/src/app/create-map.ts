@@ -15,17 +15,16 @@ import {
 } from '../camera/view';
 import type { BrowseBounds, ResolvedBounds } from '../camera/view';
 import type { View } from '../camera/view';
-import { loadDetailGrid } from '../galaxy-model/detail';
 import type { NebulaSource } from '../render/nebula-slot';
 import parameters from '../galaxy-model/galaxy-model.json' with { type: 'json' };
 import { createGalaxyModel } from '../galaxy-model/model';
-import type { HudHandle, HudOptions } from '../hud/types';
+import type { HudHandle, HudOptions, HudProbes } from '../hud/types';
 import { createRenderContext } from '../render/context';
 import type { RenderContextResult } from '../render/context';
 import { createFrameAccumulator, createRenderer } from '../render/renderer';
 import type { FrameAccumulator, FrameStats, Renderer } from '../render/renderer';
 import { loadSceneData } from '../scene-data/load';
-import { pickSystem } from '../scene-data/picking';
+import { createKeptPick, pickSystem } from '../scene-data/picking';
 import {
   createSystemSet,
   MODEL_BOUNDS,
@@ -264,7 +263,11 @@ export type FlightOutcome = 'landed' | 'interrupted';
 // too. The type is named here again so the barrel and a host keep one import.
 export type { StartView } from './view-input';
 
-/** How many drawn frames a pending start view waits for its record. */
+/**
+ * How many turns of the frame work a pending start view waits for its record. A turn
+ * counts whether or not it rendered the canvas: a pending start holds the loop awake with
+ * nothing to render, so a count of renders would never reach the limit.
+ */
 const PENDING_START_FRAMES = 600;
 
 /**
@@ -541,8 +544,8 @@ export interface GalaxyMap {
   /**
    * Loads one dataset of the catalog: it calls the entry's `load()`, empties the set and
    * the table, and reads the two arrays that came back. A failed load leaves the map
-   * with the set it already had. A second call while a first one runs wins, and the
-   * first rejects as cancelled.
+   * with the set it already had. A second call while a first one runs wins: the map
+   * aborts the signal it gave the first `load()`, and the first rejects as cancelled.
    */
   loadDataset(id: string): Promise<DatasetLoadResult>;
   /** Calls `listener` after the loaded dataset changes. Returns an unsubscribe. */
@@ -821,8 +824,11 @@ export function createGalaxyMap(
    * its systems after the map is built, so the identity is unknown in the first frame.
    */
   let pendingStart: string | null = null;
-  /** How many frames the map has drawn. A pending start expires at 600 of them. */
-  let framesDrawn = 0;
+  /**
+   * How many turns ran the frame work, whether or not they rendered the canvas. A pending
+   * start expires at 600 of them.
+   */
+  let frameWorkTurns = 0;
   /**
    * The time the loop draws every frame until. Every change pushes it forward by
    * `SETTLE_MS`, and the loop stops past it.
@@ -840,9 +846,14 @@ export function createGalaxyMap(
    * A disposed map wakes nothing at all. Every setter calls this with no check of its
    * own, and a late answer to a fetch calls it too, so the check belongs here: `dispose`
    * stops the loop and no call after it may start one.
+   *
+   * It marks the renderer stale, so the next turn renders even where the view, the size
+   * and the set versions did not change. A setter that changes only the look is such a
+   * change.
    */
   const wake = (): void => {
     if (disposed) return;
+    renderer?.invalidate();
     awakeUntil = performance.now() + SETTLE_MS;
     startLoop();
   };
@@ -879,7 +890,7 @@ export function createGalaxyMap(
     if (pendingStart === null) return;
     // A map whose host never adds that record does not hold the start for the life of
     // the page.
-    if (framesDrawn >= PENDING_START_FRAMES) {
+    if (frameWorkTurns >= PENDING_START_FRAMES) {
       dropPendingStart();
       return;
     }
@@ -904,6 +915,9 @@ export function createGalaxyMap(
   // The last pointer position over the canvas, in canvas CSS pixels. The hover pick runs
   // once per frame from it, because a pointer event can arrive faster than a frame.
   let lastPointer: { x: number; y: number } | null = null;
+  // The hover pick of the last turn. A turn at the same view, pointer, set and canvas
+  // size gives the same answer, so the sweep runs only where one of them changed.
+  const hoverPick = createKeptPick();
 
   // The HUD is behind a dynamic import, so a host that never asks for it does not
   // download it. The import starts in the same tick the map is built and `ready` waits
@@ -915,7 +929,7 @@ export function createGalaxyMap(
         ? options.hud
         : null;
   const hudModule = hudOptions === null ? null : import('../hud/index');
-  let hud: HudHandle | null = null;
+  let hud: (HudHandle & HudProbes) | null = null;
   let hudDirty = false;
   let handle: GalaxyMap | null = null;
 
@@ -1343,8 +1357,7 @@ export function createGalaxyMap(
   };
 
   /**
-   * Whether the camera stands inside `bounds` if they are applied now. `null` reads the
-   * bounds the options named, which is what `applyDatasetBounds(null)` restores.
+   * Whether the camera stands inside `bounds` if they are applied now.
    *
    * The reading applies nothing: it resolves the bounds into a local shape and writes
    * neither `boundsSetting` nor `resolvedBounds`. The state machine reads it before it
@@ -1354,8 +1367,7 @@ export function createGalaxyMap(
    * It reads the setting and not the resolved shape for the unrestricted case, because
    * `unrestrictedBounds` gives a box a host could also have written by hand.
    */
-  const viewInsideBounds = (bounds: BrowseBounds | null): boolean => {
-    const asked = bounds ?? optionBounds;
+  const viewInsideBounds = (asked: BrowseBounds): boolean => {
     // Every camera is inside an unrestricted space, so a reading of true here would stop
     // a jump to a set in another part of the galaxy.
     if (asked.mode === 'unrestricted') return false;
@@ -1418,7 +1430,7 @@ export function createGalaxyMap(
     // `cursor` beats `system`, as it does in the start view. The name is resolved here
     // and not through `pendingStart`: the load wrote the set before this call, so the
     // record is already there, and a pending start is dropped after
-    // `PENDING_START_FRAMES` frames. A page that has drawn more than that would take the
+    // `PENDING_START_FRAMES` turns. A page that has turned more than that would take the
     // entry's `system` field and move nowhere. A name the set does not hold leaves the
     // view where it is, as a `fit` over an empty set does.
     if (asked.cursor !== undefined) {
@@ -1480,7 +1492,7 @@ export function createGalaxyMap(
     // call to `STILL_FRAME`, and the loop passes a timing of its own, so this wakes on
     // the change and never on the loop's own draw.
     if (timing === STILL_FRAME) wake();
-    framesDrawn += 1;
+    frameWorkTurns += 1;
     const selectedIndex =
       selectedIdentity === null ? -1 : set.indexOfIdentity(selectedIdentity);
     // The renderer draws the icon stacks, and it draws before the overlay below works
@@ -1513,8 +1525,11 @@ export function createGalaxyMap(
     cursorMarker?.update({ view, viewport: size, on: cursorMarkerOn });
     // The hover pick runs once per frame and not once per pointer event, and it runs
     // again here after a camera move, because the marker under a still pointer moves
-    // when the camera does.
-    hoverIndex = lastPointer === null ? -1 : pickSystem(set, view, size, lastPointer);
+    // when the camera does. A turn that moved nothing keeps the answer of the turn before.
+    hoverIndex =
+      lastPointer === null
+        ? -1
+        : hoverPick.pick(set, view, size, lastPointer, viewEpoch);
     markers?.update({
       view,
       viewport: size,
@@ -1555,7 +1570,10 @@ export function createGalaxyMap(
     if (renderer === null) return;
     const size = renderer.viewport();
     const started = performance.now();
-    hoverIndex = lastPointer === null ? -1 : pickSystem(set, view, size, lastPointer);
+    hoverIndex =
+      lastPointer === null
+        ? -1
+        : hoverPick.pick(set, view, size, lastPointer, viewEpoch);
     markers?.update({
       view,
       viewport: size,
@@ -1577,6 +1595,25 @@ export function createGalaxyMap(
     if (loadingImage !== null) placeLoadingImage(loadingImage, canvas);
   };
 
+  /**
+   * Takes a change of the canvas box that no window resize gave, as when a host opens a
+   * side panel. It does not resize the drawing buffer. The browser runs this after the
+   * animation frame callbacks and before the paint, and a change of `canvas.width`
+   * clears the buffer, so a resize here would paint an empty canvas for one frame. The
+   * next render resizes the buffer first and draws into it at once.
+   */
+  const onBoxChange = (): void => {
+    viewEpoch += 1;
+    if (loadingImage !== null) placeLoadingImage(loadingImage, canvas);
+    wake();
+  };
+  /**
+   * The observer of the canvas box, and null where the browser gives no `ResizeObserver`.
+   * The window listener stays beside it, because a change of the device pixel ratio does
+   * not always change the box.
+   */
+  let boxObserver: ResizeObserver | null = null;
+
   const start = async (): Promise<void> => {
     // The context waits for the workers to start, or for the cap. See `WORKER_STARTED`.
     // The cap bounds the wait on a slow network, where the worker scripts take longer
@@ -1596,10 +1633,6 @@ export function createGalaxyMap(
     }
     const gl = context.gl;
 
-    // The star field needs the model with the detail grid, because its counts and its
-    // light both read the detailed density. The grid is a small fetch, and the star
-    // field is built after the scene arrives, so the fetch starts here.
-    const detailPromise = loadDetailGrid();
     // The nebulae are not part of the first frame. A failure here leaves the map
     // without them and every other pass drawing, so the pair is reported and dropped
     // rather than thrown. Both halves settle, because one half alone draws nothing and
@@ -1701,6 +1734,9 @@ export function createGalaxyMap(
       },
     });
     window.addEventListener('resize', onResize);
+    boxObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onBoxChange);
+    boxObserver?.observe(canvas);
 
     // `dispose` aborts the load, and the abort rejects the promise. That is the map
     // coming down and not a start-up failure, so `ready` settles rather than rejects.
@@ -1725,11 +1761,10 @@ export function createGalaxyMap(
     regionGrid = scene.regionGrid;
     regionLines = scene.regionLines;
 
-    // The grid is a small fetch and is there before the scene, so the await settles
-    // at once.
-    const detailGrid = await detailPromise;
-    if (disposed) return;
-    renderer.setStarField(createGalaxyModel(parameters, detailGrid));
+    // The star field needs the model with the detail grid, because its counts and its
+    // light both read the detailed density. The point cloud worker decoded the grid for
+    // its own model and sent it with the scene, so this thread fetches and decodes none.
+    renderer.setStarField(createGalaxyModel(parameters, scene.detailGrid));
 
     await nextFrame();
     if (disposed) return;
@@ -1794,7 +1829,7 @@ export function createGalaxyMap(
       // page.
       //
       // A pending start and a running flight hold the loop awake: the start expires on
-      // a count of drawn frames, and the flight moves the view on every turn.
+      // a count of turns, and the flight moves the view on every turn.
       const awake = now < awakeUntil || pendingStart !== null || flight !== null;
       if (awake) {
         // The frame covers the time since the last turn of the loop. The interval is a
@@ -1933,6 +1968,8 @@ export function createGalaxyMap(
         heldTouchAction = null;
       }
       window.removeEventListener('resize', onResize);
+      boxObserver?.disconnect();
+      boxObserver = null;
       hud?.dispose();
       hud = null;
       if (pendingVolumes !== null) {

@@ -2,6 +2,7 @@
 import {
   baseSizeClass,
   boxelEdge,
+  coveredRadius,
   DRAWN_BOXEL_COUNT,
   DRAWN_CLASS_COUNT,
   starSpreadValue,
@@ -114,7 +115,7 @@ export function heldCloseFade(held: number | null, distance: number): number {
  */
 export function handoverRadii(distance: number): [number, number] {
   const top = baseSizeClass(distance) + DRAWN_CLASS_COUNT - 1;
-  return [COVERED_BOXELS * boxelEdge(top - 1), COVERED_BOXELS * boxelEdge(top)];
+  return [COVERED_BOXELS * boxelEdge(top - 1), coveredRadius(distance)];
 }
 
 /** The share of the light a star carries at a range. */

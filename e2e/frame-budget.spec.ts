@@ -1186,8 +1186,11 @@ test('a still map draws at the idle rate and wakes on a change', async ({ page }
   expect(still.draws).toBe(0);
   expect(still.turns).toBe(0);
 
+  // The scenario "A view change wakes the loop". The loop turns on each frame of the
+  // settle window, and the renderer draws only the turns whose inputs changed.
   const moved = await page.evaluate(async () => {
     window.__galaxyMap?.resetFrameStats?.();
+    window.__galaxyMap?.resetFrameIntervalStats?.();
     window.__galaxyMap?.setView?.({
       cursor: [0, 0, 0],
       distance: 3000,
@@ -1195,13 +1198,19 @@ test('a still map draws at the idle rate and wakes on a change', async ({ page }
       pitch: 35,
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 300));
-    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+    return {
+      draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+      turns: window.__galaxyMap?.frameIntervalStats?.().frames ?? -1,
+    };
   });
-  console.log('the draws in 300 milliseconds after a view change', moved);
+  console.log('the loop in 300 milliseconds after a view change', moved);
 
-  // At the rate of the display 300 milliseconds is 18 frames. A map that woke draws
-  // every one of them; a map that did not would draw one or two.
-  expect(moved).toBeGreaterThan(10);
+  // At the rate of the display 300 milliseconds is 18 turns. A map that woke turns on
+  // each of them. One write of the view draws one frame. The read-back switch can
+  // change once after a jump, and that draws one more, so the bound is 3.
+  expect(moved.turns).toBeGreaterThan(10);
+  expect(moved.draws).toBeGreaterThanOrEqual(1);
+  expect(moved.draws).toBeLessThanOrEqual(3);
 
   // A switch on the handle changes the picture without a write of the view. The HUD
   // holds four of them, so a map that slept through one would follow a click 200
@@ -1235,6 +1244,112 @@ test('a still map draws at the idle rate and wakes on a change', async ({ page }
   console.log('the draws in 300 milliseconds after one wheel notch', wheeled);
 
   expect(wheeled).toBeGreaterThan(10);
+});
+
+/**
+ * The sum of the colour bytes of the whole canvas. The sum runs inside the page. The
+ * context has no alpha, so the alpha byte reads 255 on an empty canvas and is left out.
+ */
+async function canvasSum(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const map = window.__galaxyMap;
+    const canvas = document.getElementById('map');
+    if (map?.readRect === undefined || !(canvas instanceof HTMLCanvasElement))
+      return -1;
+    const bytes = map.readRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    let sum = 0;
+    for (let index = 0; index < bytes.length; index += 4) {
+      sum +=
+        (bytes[index] as number) +
+        (bytes[index + 1] as number) +
+        (bytes[index + 2] as number);
+    }
+    return sum;
+  });
+}
+
+// The scenario "A turn with no change keeps the picture". A turn that skips the render
+// leaves the drawing buffer as the last render left it, and the page shows that buffer.
+test('a turn with no change keeps the picture', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  await page.evaluate(() => {
+    const map = window.galaxyMap;
+    if (map === undefined) return;
+    map.setGridVisible(false);
+    map.setView({ cursor: [0, 0, 0], distance: 3000, yaw: 10, pitch: 35 });
+  });
+  await page.waitForTimeout(500);
+
+  const before = await canvasSum(page);
+  await page.evaluate(() => window.__galaxyMap?.drawNow?.());
+  const after = await canvasSum(page);
+  console.log('the picture before and after a draw from outside the loop', {
+    before,
+    after,
+  });
+
+  // The loop skipped each turn after the first one, and the sum of the frame that the
+  // page kept equals the sum of a new render.
+  expect(before).toBeGreaterThan(0);
+  expect(after).toBe(before);
+});
+
+// The scenario "The wake probe renders on each frame". Six browser test loops call the
+// probe on each frame to hold the loop awake, and they read a frame that the loop drew.
+test('the wake probe renders on each frame', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  // Past the settle window that opening the map opened.
+  await page.waitForTimeout(2000);
+
+  const draws = await page.evaluate(async () => {
+    window.__galaxyMap?.resetFrameStats?.();
+    for (let index = 0; index < 20; index += 1) {
+      window.__galaxyMap?.wake?.();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+  });
+  console.log('the draws in 20 frames of wake calls', draws);
+
+  expect(draws).toBeGreaterThanOrEqual(18);
+});
+
+// The scenario "A look write through the probe reaches the screen". The renderer does not
+// see a write of a look field, so the probe wakes the loop when a test reads it.
+test('a look write through the probe reaches the screen', async ({ page }) => {
+  test.setTimeout(120000);
+  await openMap(page);
+  // Barnard's Loop, the view that draws the most nebula records.
+  await page.evaluate(() => {
+    window.galaxyMap?.setView({
+      cursor: [624.4, -425.9, -1229.5],
+      distance: 6000,
+      yaw: 0,
+      pitch: 35,
+    });
+  });
+  await page.waitForTimeout(2000);
+
+  const lit = await canvasSum(page);
+  await page.evaluate(async () => {
+    const map = window.galaxyMap;
+    if (map !== undefined) map.debug.look.nebulaLightGain = [0, 0, 0];
+    for (let index = 0; index < 3; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+  });
+  const looped = await canvasSum(page);
+  // A draw from outside the loop wakes the map, and the wake marks the renderer stale, so
+  // this draw renders even where the loop already drew the same look.
+  await page.evaluate(() => window.__galaxyMap?.drawNow?.());
+  const drawn = await canvasSum(page);
+  console.log('the nebula light gain through the probe', { lit, looped, drawn });
+
+  // The gain changes the picture, so a loop that missed the write keeps the lit sum.
+  expect(looped).not.toBe(lit);
+  expect(looped).toBe(drawn);
 });
 
 // The scenario "An icon texture wakes the loop". The icon vector is fetched after the
@@ -1307,15 +1422,23 @@ test('a flight and a held key hold the loop', async ({ page }) => {
   await openMap(page);
   await page.waitForTimeout(2000);
 
+  // The loop turns and not the draws: a turn of the settle window after the flight moves
+  // nothing, so it draws nothing. The flight takes about 1,150 ms and the settle window
+  // after it 1,200 ms, which is about 140 turns. A loop that the flight did not hold
+  // turns for the one settle window that the call opened, which is about 72 turns.
   const flown = await page.evaluate(async () => {
     window.__galaxyMap?.resetFrameStats?.();
+    window.__galaxyMap?.resetFrameIntervalStats?.();
     void window.galaxyMap?.flyTo({ cursor: [0, 0, 20000], distance: 6000 });
     await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-    return window.__galaxyMap?.frameStats?.().frames ?? -1;
+    return {
+      draws: window.__galaxyMap?.frameStats?.().frames ?? -1,
+      turns: window.__galaxyMap?.frameIntervalStats?.().frames ?? -1,
+    };
   });
-  console.log('the draws in three seconds of a flight', flown);
+  console.log('the loop in three seconds of a flight', flown);
 
-  expect(flown).toBeGreaterThan(100);
+  expect(flown.turns).toBeGreaterThan(100);
 
   await page.waitForTimeout(2000);
   await page.evaluate(() => window.__galaxyMap?.resetFrameStats?.());

@@ -9,7 +9,6 @@ import {
   planePointFrom,
   project,
   projectWith,
-  rayDirection,
   rayDirectionFrom,
   relativeToCamera,
   toWorld,
@@ -142,20 +141,6 @@ describe('the reused inverse', () => {
     { x: viewport.width / 2, y: viewport.height / 2 },
     { x: 137, y: 911 },
   ];
-
-  // `rayDirection` inverts the matrix on every call and the label sweep cannot pay
-  // that 2,000 times a frame, so the sweep uses `rayDirectionFrom` with one inverse.
-  // This test is what says the two give the same answer.
-  test('gives the same ray as the call that inverts the matrix itself', () => {
-    const inverse = inverseViewProjection(view, viewport);
-    for (const pixel of pixels) {
-      const shared = rayDirectionFrom(inverse, pixel, viewport);
-      const alone = rayDirection(view, pixel, viewport);
-      for (let axis = 0; axis < 3; axis += 1) {
-        expect(shared[axis]).toBe(alone[axis]);
-      }
-    }
-  });
 
   test('gives the same plane point as the call that inverts the matrix itself', () => {
     const inverse = inverseViewProjection(view, viewport);

@@ -20,6 +20,10 @@ import { cameraPosition, nearPlane, viewProjectionMatrix } from '../camera/proje
 import type { Viewport } from '../camera/projection';
 import type { View } from '../camera/view';
 import type { AnchorPoint, LabelBox } from './labels';
+// The style writer lives in a module of its own, which imports nothing. The HUD imports
+// it as a value, and a HUD import of this module would reach the camera layer through
+// the projection import above.
+import { setStyle } from './set-style';
 
 /** How many unknowns the direct linear transform solves for. `h33` is fixed at 1. */
 const SOLVE_SIZE = 8;
@@ -30,22 +34,6 @@ const SOLVE_SIZE = 8;
  * 0, and a quad that is nearly a line gives one near it.
  */
 const SINGULAR_SHARE = 1e-12;
-
-/**
- * Writes one style property only when it differs. The overlay rewrites every property of
- * every element in each frame, and a write of the value an element already holds is a DOM
- * change the browser records. `src/app/grid-labels.ts` reads this one. `src/hud/dom.ts`
- * holds the same three lines and is not shared: the HUD is an opt-in module in its own
- * chunk and the library must not pull it into the core one.
- */
-export function setStyle(
-  element: ElementCSSInlineStyle,
-  name: string,
-  value: string,
-): void {
-  if (element.style.getPropertyValue(name) === value) return;
-  element.style.setProperty(name, value);
-}
 
 /** What one plane placement reads. */
 export interface PlanePlacement {
@@ -231,6 +219,128 @@ export function planeMatrix3d(homography: Float64Array): string {
 }
 
 /**
+ * What a projection of plane points reads, taken once for a frame: the view-projection
+ * matrix, the camera, the near plane, the half viewport and the plane's `y` less the
+ * camera's `y`.
+ */
+export interface PlaneFrame {
+  readonly matrix: ReturnType<typeof viewProjectionMatrix>;
+  readonly camera: readonly [number, number, number];
+  readonly near: number;
+  readonly halfWidth: number;
+  readonly halfHeight: number;
+  readonly offsetY: number;
+}
+
+/**
+ * The frame that projects points of the plane at game `y` equal to `planeY`.
+ *
+ * The galaxy spans 100,000 light years, so the camera comes off in `float64` before
+ * anything reaches the matrix. An absolute coordinate cannot place a 10 light year
+ * element.
+ */
+export function planeFrame(view: View, viewport: Viewport, planeY: number): PlaneFrame {
+  const camera = cameraPosition(view);
+  return {
+    matrix: viewProjectionMatrix(view, viewport),
+    camera,
+    near: nearPlane(view.distance),
+    halfWidth: viewport.width / 2,
+    halfHeight: viewport.height / 2,
+    offsetY: planeY - camera[1],
+  };
+}
+
+/**
+ * Writes the screen point of the plane point (`x`, `z`) into `out` at `at` and `at + 1`,
+ * in CSS pixels of the canvas. It gives false, and writes nothing, where the point lies
+ * at or behind the near plane.
+ */
+function projectInto(
+  frame: PlaneFrame,
+  x: number,
+  z: number,
+  out: Float64Array,
+  at: number,
+): boolean {
+  const matrix = frame.matrix;
+  // The renderer's world frame runs its third axis the other way to the game's.
+  const offsetX = x - frame.camera[0];
+  const offsetY = frame.offsetY;
+  const offsetZ = frame.camera[2] - z;
+  const clipW =
+    (matrix[3] as number) * offsetX +
+    (matrix[7] as number) * offsetY +
+    (matrix[11] as number) * offsetZ +
+    (matrix[15] as number);
+  if (!(clipW > frame.near)) return false;
+  const clipX =
+    (matrix[0] as number) * offsetX +
+    (matrix[4] as number) * offsetY +
+    (matrix[8] as number) * offsetZ +
+    (matrix[12] as number);
+  const clipY =
+    (matrix[1] as number) * offsetX +
+    (matrix[5] as number) * offsetY +
+    (matrix[9] as number) * offsetZ +
+    (matrix[13] as number);
+  out[at] = (clipX / clipW + 1) * frame.halfWidth;
+  out[at + 1] = (1 - clipY / clipW) * frame.halfHeight;
+  return true;
+}
+
+/** The scratch of `projectOnPlane`. */
+const projected = new Float64Array(2);
+
+/**
+ * The screen point of the plane point (`x`, `z`), in CSS pixels of the canvas, or null
+ * where the point lies at or behind the near plane.
+ */
+export function projectOnPlane(
+  frame: PlaneFrame,
+  x: number,
+  z: number,
+): AnchorPoint | null {
+  if (!projectInto(frame, x, z, projected, 0)) return null;
+  return { x: projected[0] as number, y: projected[1] as number };
+}
+
+/** The scratch of `planeJacobian`: the point, the step along `x` and the step along `z`. */
+const stepped = new Float64Array(6);
+
+/**
+ * The projection's local rate at the plane point (`x`, `z`). It projects the point and
+ * two points `step` light years along the game `x` and `z` axes, and writes six values
+ * into `out`: the screen `x` and `y` of the point, then the screen `x` and `y` for one
+ * light year of the game `x` axis, then the same for the game `z` axis. It gives false,
+ * and leaves `out` as it was, where any of the three points lies at or behind the near
+ * plane.
+ *
+ * The grid label sweep calls it for each candidate of each frame, so it allocates
+ * nothing.
+ */
+export function planeJacobian(
+  frame: PlaneFrame,
+  x: number,
+  z: number,
+  step: number,
+  out: Float64Array,
+): boolean {
+  if (!projectInto(frame, x, z, stepped, 0)) return false;
+  if (!projectInto(frame, x + step, z, stepped, 2)) return false;
+  if (!projectInto(frame, x, z + step, stepped, 4)) return false;
+  const atX = stepped[0] as number;
+  const atY = stepped[1] as number;
+  out[0] = atX;
+  out[1] = atY;
+  out[2] = ((stepped[2] as number) - atX) / step;
+  out[3] = ((stepped[3] as number) - atY) / step;
+  out[4] = ((stepped[4] as number) - atX) / step;
+  out[5] = ((stepped[5] as number) - atY) / step;
+  return true;
+}
+
+/**
  * Where a plane element lands on the screen, or null where the placement drops it.
  *
  * A placement is dropped, and the element is left out of the overlay, when:
@@ -249,41 +359,14 @@ export function planeMatrix3d(homography: Float64Array): string {
 export function planePlacement(placement: PlanePlacement): PlanePlaced | null {
   const { view, viewport } = placement;
   if (!(viewport.width > 0) || !(viewport.height > 0)) return null;
-  const matrix = viewProjectionMatrix(view, viewport);
-  const near = nearPlane(view.distance);
-  const halfWidth = viewport.width / 2;
-  const halfHeight = viewport.height / 2;
-  // The galaxy spans 100,000 light years, so the camera comes off in `float64` before
-  // anything reaches the matrix. An absolute coordinate cannot place a 10 light year
-  // element.
-  const camera = cameraPosition(view);
-  const offsetY = placement.planeY - camera[1];
+  const frame = planeFrame(view, viewport, placement.planeY);
+  const camera = frame.camera;
 
   const corners: AnchorPoint[] = [];
   for (const corner of planeCorners(placement)) {
-    // The renderer's world frame runs its third axis the other way to the game's.
-    const offsetX = (corner[0] as number) - camera[0];
-    const offsetZ = camera[2] - (corner[1] as number);
-    const clipW =
-      (matrix[3] as number) * offsetX +
-      (matrix[7] as number) * offsetY +
-      (matrix[11] as number) * offsetZ +
-      (matrix[15] as number);
-    if (!(clipW > near)) return null;
-    const clipX =
-      (matrix[0] as number) * offsetX +
-      (matrix[4] as number) * offsetY +
-      (matrix[8] as number) * offsetZ +
-      (matrix[12] as number);
-    const clipY =
-      (matrix[1] as number) * offsetX +
-      (matrix[5] as number) * offsetY +
-      (matrix[9] as number) * offsetZ +
-      (matrix[13] as number);
-    corners.push({
-      x: (clipX / clipW + 1) * halfWidth,
-      y: (1 - clipY / clipW) * halfHeight,
-    });
+    const point = projectOnPlane(frame, corner[0] as number, corner[1] as number);
+    if (point === null) return null;
+    corners.push(point);
   }
 
   // The signed area of the quad on the screen. Seen from above the plane a face-on
@@ -341,8 +424,8 @@ export function planePlacement(placement: PlanePlacement): PlanePlaced | null {
  * It writes the four that a placement moves. The other four never move, so the element
  * factories write them once at creation: `position: absolute`, `left: 0`, `top: 0` and
  * a transform origin of the element's own top left corner, which is the corner the
- * homography's local box starts at. Each write here is a read of the CSSOM first, so
- * four writes a placement is four reads a placement.
+ * homography's local box starts at. `setStyle` compares each value with the value it
+ * last wrote, so a placement that moves nothing reads no style and writes none.
  *
  * Every plane element draws under every upright one. A pin, a hover ring, a system name
  * or a region name each names one thing, and a plane element names a place, so the name
@@ -394,50 +477,18 @@ export function planeSpanForScreenX(
   point: readonly [number, number],
   pixels: number,
 ): number | null {
-  const matrix = viewProjectionMatrix(view, viewport);
-  const near = nearPlane(view.distance);
-  const halfWidth = viewport.width / 2;
-  const halfHeight = viewport.height / 2;
-  const camera = cameraPosition(view);
-  const offsetY = planeY - camera[1];
-  const project = (x: number, z: number): AnchorPoint | null => {
-    const offsetX = x - camera[0];
-    const offsetZ = camera[2] - z;
-    const clipW =
-      (matrix[3] as number) * offsetX +
-      (matrix[7] as number) * offsetY +
-      (matrix[11] as number) * offsetZ +
-      (matrix[15] as number);
-    if (!(clipW > near)) return null;
-    const clipX =
-      (matrix[0] as number) * offsetX +
-      (matrix[4] as number) * offsetY +
-      (matrix[8] as number) * offsetZ +
-      (matrix[12] as number);
-    const clipY =
-      (matrix[1] as number) * offsetX +
-      (matrix[5] as number) * offsetY +
-      (matrix[9] as number) * offsetZ +
-      (matrix[13] as number);
-    return {
-      x: (clipX / clipW + 1) * halfWidth,
-      y: (1 - clipY / clipW) * halfHeight,
-    };
-  };
-
-  const x = point[0] as number;
-  const z = point[1] as number;
-  const at = project(x, z);
   // The step is small, so the reading is the local rate the shader takes as a derivative
   // and not a secant of a map that bends hard toward the horizon.
   const step = Math.max(1e-3, Math.abs(view.distance) * 1e-4);
-  const alongX = project(x + step, z);
-  const alongZ = project(x, z + step);
-  if (at === null || alongX === null || alongZ === null) return null;
-  const xOverX = (alongX.x - at.x) / step;
-  const yOverX = (alongX.y - at.y) / step;
-  const xOverZ = (alongZ.x - at.x) / step;
-  const yOverZ = (alongZ.y - at.y) / step;
+  const rate = new Float64Array(6);
+  const frame = planeFrame(view, viewport, planeY);
+  if (!planeJacobian(frame, point[0] as number, point[1] as number, step, rate)) {
+    return null;
+  }
+  const xOverX = rate[2] as number;
+  const yOverX = rate[3] as number;
+  const xOverZ = rate[4] as number;
+  const yOverZ = rate[5] as number;
   const determinant = xOverX * yOverZ - xOverZ * yOverX;
   if (determinant === 0) return null;
   // The plane step whose screen image is `pixels` across and nothing down.

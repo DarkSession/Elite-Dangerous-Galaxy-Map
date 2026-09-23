@@ -1,4 +1,5 @@
 // Scene data is typed arrays and plain numbers only. Nothing here knows about WebGL.
+import type { SurfaceDetailGrid } from '../galaxy-model/detail';
 
 /** A cloud of sample points drawn from the model's volume density. */
 export interface PointCloud {
@@ -105,6 +106,8 @@ export interface SceneData {
   readonly cloudSet: CloudSet;
   readonly volume: DensityVolume;
   readonly detail: SurfaceDetail;
+  /** The detail grid the point cloud worker decoded. The star field model reads it. */
+  readonly detailGrid: SurfaceDetailGrid;
   /** The boundary set the region overlay draws. */
   readonly regionLines: RegionLines;
   readonly regionGrid: CoarseRegionGrid;
